@@ -112,7 +112,7 @@ These rules are especially strict for anything that could affect security invari
 
 1. **Security Model**
    - Current `expectedSecurityModel = "dallas"` (Core/Configuration/SecurityConfiguration.swift)
-   - Do not change, remove, or comment out DNS TXT validation against the ordered `securityModelDomains` list (`securitymodels.siikkari.net` → `securitymodels.lutheran.radio` → `securitymodels.lutheranradio.sk`). Ordered host walk (do not weaken): (1) authoritative answer = DNSSEC-validated TXT rdata accepted by the callback (including empty set); (2) contains expected model → success, stop; (3) does not contain it → permanent fail, stop (no fall-through); (4) transient (error, timeout, no validate bit, etc.) → next host, fully trusted if that host returns an authoritative allow-list containing the expected model.
+   - Do not change, remove, or comment out DNS TXT validation against the ordered `securityModelDomains` list (`securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk`). Ordered host walk (do not weaken): (1) authoritative answer = DNSSEC-validated TXT rdata accepted by the callback (including empty set); (2) contains expected model → success, stop; (3) does not contain it → permanent fail, stop (no fall-through); (4) transient (error, timeout, no validate bit, etc.) → next host, fully trusted if that host returns an authoritative allow-list containing the expected model.
    - Never bypass full-certificate fingerprint pinning. Runtime acceptance is `pinnedFingerprintDigests` — sole production leaf is preferred-apex `*.siikkari.net` `32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD` (`pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest`). Do not reintroduce retired pre-cutover leaves (e.g. former `CC:F7:…:3D:CC`) onto the acceptance list without a coordinated rotation and security review — obsolete pins enlarge the set of certificates the runtime will accept.
    - Never weaken SPKI pinning in Info.plist (sole media apex pin: `siikkari.net` / `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`)
    - Never reintroduce hard-coded `lutheran.radio` media hosts; streaming apex SSOT is `preferredStreamingDomainSuffixes` (`siikkari.net` only). Media apex and DNS TXT hosts are **independent** lists.
@@ -120,7 +120,7 @@ These rules are especially strict for anything that could affect security invari
    - Never remove MIE/EMTE hardened runtime entitlements
 
    **DNS TXT Validation Specifics**
-   - Query order is ``securityModelDomains`` (primary `securitymodels.siikkari.net`, secondary `securitymodels.lutheran.radio`, backup `securitymodels.lutheranradio.sk`). The secondary zone currently serves the live allow-list and uses DNSSEC with signed delegation (visible RRSIG records). Primary may be empty until published — treated as transient when no authoritative answer is obtained (see ordered host walk above).
+   - Query order is ``securityModelDomains`` (primary `securitymodels.siikkari.net`, secondary `securitymodels.lutheranradio.eu`, backup `securitymodels.lutheranradio.sk`). Primary serves the live allow-list (DNSSEC-signed TXT + RRSIG). Secondary/backup mirror the same list for **transient-only** fallback when no authoritative answer is obtained (see ordered host walk above).
    - The app calls `DNSServiceQueryRecord` with `kDNSServiceFlagsValidate` (strict) and requires the echoed bit in the callback `flags` before trusting any TXT rdata. Unvalidated responses are transient failures.
    - Always consult the "Why DNS TXT Records?" and "Media Apex Cutover" sections in `README.md` for the latest DNSSEC status, AD flag behavior, and verification commands.
    - Any change touching DNS validation must preserve or strengthen the documented security properties (including the four-point ordered host walk in ``<doc:Security-Invariants>`` Invariant 1).
@@ -433,8 +433,9 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 | `Core/Security/`                                  | `CertificateFingerprint` + `CertificateValidator` (Core framework)             | Security-sensitive; compiled into main app + widget extension                  |
 | `Info.plist`                                      | ATS pinning (SPKI + domain)                                                    | Never edit without updating `SecurityConfiguration` and validator              |
 | `LutheranRadioWidget/`                            | Home-screen / Control / LA SwiftUI shells + AppIntents                         | Thin delegates; presentation via `import WidgetSurface`; same `Core` security rules |
+| `RadioLiveActivityManager.swift`                  | Live Activity start/update, language + playing soft ensure, deferred recreation while request-ineligible, foreground owned-surface heal | Soft ensure may lag system-held language under continuous lock; become-active heals. Canonical: `docs/Live-Activity-Stacking-and-Media-Surfaces.md`. Never end interactive LA solely for language lag while request ineligible. |
 | `WidgetSurface/`                                  | Presentation-only embedded framework (visual state, coordinators, timeline factory, liveness, metadata display, language chrome, pure Provider assembly) | App embeds; extension + widget tests link. **No** security logic. See cross-target section. |
-| `docs/`                                           | All architecture & security decision records                                   | Read before any major change                                                   |
+| `docs/`                                           | All architecture & security decision records                                   | Read before any major change; LA language ensure residual lives in Live-Activity stacking + Widget Functionality Roadmap (mechanism names only) |
 | `SharedPlayerManager.swift` (+ extensions) + `DirectStreamingPlayer+WidgetStub.swift` + `SecurityValidationFacade.swift` + `WidgetDisplayModels.swift` + `WidgetIntentExecution.swift` + `WidgetRefreshManager.swift` (+ test support) + `MediaTransportLatencyTimeline.swift` | Membership-exception SSOT: actor state, named security call-site intents, intent execution + snapshot hygiene, widget refresh; DEBUG transport latency timeline | Compiled into app + extension + `LutheranRadioWidgetTests`. Pure presentation lives in `WidgetSurface/`. Never duplicate widget state logic. Security *policy* stays in `Core/`. |
 
 ### Core Framework Surface Area (Mandatory Knowledge)
@@ -497,7 +498,7 @@ Operate in full agentic mode at all times:
 - Explicitly evaluate security, localization, and build impact first.
 - If the agent supports tools (Grok tools, Claude computer use, code interpreter, browser, etc.), use them aggressively to:
   * Validate xcodebuild commands
-  * Fetch current DNS TXT records (`securitymodels.siikkari.net` primary, then `securitymodels.lutheran.radio` secondary / live allow-list)
+  * Fetch current DNS TXT records (`securitymodels.siikkari.net` primary / live allow-list, then secondary/backup for parity)
   * Verify certificate fingerprints against `*.siikkari.net` (use README openssl SPKI + leaf DER commands; match `pinnedFingerprintDigests`)
   * Cross-check Apple docs or Swift proposals when relevant
 - Before writing any code that touches security, certificate validation, streaming URLs, DNS validation, or the security model, run:

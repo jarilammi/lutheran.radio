@@ -1391,8 +1391,9 @@ extension SharedPlayerManager {
         // lastPushedContent / ActivityKit on `.prePlay` after this method has already
         // cleared the hold. Soft language ensure often exhausts during the attach storm and
         // enters quiet for the destination — status-driven language pushes then defer for
-        // the rest of a lock stretch. Settled language acceptance fires **one** high-signal
-        // dual-axis push after hold clear (quiet bypass once per destination while ineligible).
+        // the rest of a lock stretch. Settled language acceptance re-arms a **full** soft
+        // language-ensure budget after hold clear (quiet cleared once per destination while
+        // ineligible; bounded delayed soft ensure continues if owned language still lags).
         // Soft-resume / post-attach audible can leave owned visual on `.prePlay` while the
         // actor is already `.playing`. Settled playing acceptance is the peer: one dual-axis
         // push with playing-quiet bypass once per play cycle while ineligible (consume-once

@@ -106,14 +106,14 @@ Expected: All four results must be under `./Core/`. If not, stop and ask.
 **2. Fetch current live security models (cross-check against snapshot and `expectedSecurityModel`):**
 
 ```bash
-# Primary TXT host (may be empty until fully published — transient fallback applies)
+# Primary TXT host (live operational allow-list)
 dig +short +dnssec TXT securitymodels.siikkari.net
 
-# Secondary (current live allow-list while primary is not yet populated)
-dig +short +dnssec TXT securitymodels.lutheran.radio
+# Full response with DNSSEC details and RRSIG (primary)
+dig +dnssec TXT securitymodels.siikkari.net | grep -E "(^securitymodels|flags:|AD:|RRSIG)"
 
-# Full response with DNSSEC details and RRSIG (secondary)
-dig +dnssec TXT securitymodels.lutheran.radio | grep -E "(^securitymodels|flags:|AD:|RRSIG)"
+# Secondary (transient fallback mirror; keep consistent with primary)
+dig +short +dnssec TXT securitymodels.lutheranradio.eu
 ```
 
 **3. Verify pinned certificate material (SPKI for ATS + leaf for runtime parity):**
@@ -262,9 +262,9 @@ After cleaning, retry the build and test steps above.
 | Item                          | Value / Note                                                                                                                                                                                                 | Source (always use via `Core/`)                                                    |
 |-------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
 | `expectedSecurityModel`       | `"dallas"` (must be present in the live TXT for streaming to be allowed)                                                                                                                                    | `SecurityConfiguration.swift` (via `SecurityConfiguration.current`)                |
-| Live active models (DNS TXT)  | `houston,starbase,fredericksburg,brenham,dallas` (served today from secondary until primary TXT is live)                                                                                                      | `dig +short +dnssec TXT securitymodels.lutheran.radio`                             |
+| Live active models (DNS TXT)  | `houston,starbase,fredericksburg,brenham,dallas` (live on primary; secondary/backup mirror for transient fallback)                                                                                            | `dig +short +dnssec TXT securitymodels.siikkari.net`                               |
 | Streaming media apex          | Sole apex: `siikkari.net` (`european.siikkari.net`, `livestream.siikkari.net`, language hosts). Use `preferredStreamingDomainSuffixes` / `streamingHostCandidates(leadingLabel:)` — never hard-code. | `SecurityConfiguration.current`                                                    |
-| DNS TXT model hosts (order)   | `securitymodels.siikkari.net` → `securitymodels.lutheran.radio` → `securitymodels.lutheranradio.sk` (ordered host walk: authoritative answer stops; only transient advances — see Security Model Validation) | `securityModelDomains`                                                             |
+| DNS TXT model hosts (order)   | `securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk` (ordered host walk: authoritative answer stops; only transient advances — see Security Model Validation) | `securityModelDomains`                                                             |
 | Runtime leaf pins (authoritative) | `CertificateFingerprint` digests (raw 32-byte SHA-256 of leaf DER). Never compare hex strings at runtime. Validator accepts **any** entry in the list.                                                     | `pinnedFingerprintDigests`                                                         |
 | Sole production leaf pin (`*.siikkari.net`) | Colon-hex: `32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD` (same leaf on `european` / `livestream`)                                              | `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` (alias) / colon-hex views |
 | Acceptable digests for validator | `pinnedFingerprintDigests` = sole live siikkari leaf (retired pre-cutover leaves are **not** accepted)                                                                                                       | `SecurityConfiguration.current`                                                    |
@@ -284,13 +284,13 @@ This build completes the **production data-plane cutover** from the former media
 | Streaming / ping / HEAD hosts | `*.lutheran.radio` (and dual-apex preference in older builds) | **Sole media apex** `siikkari.net` via `preferredStreamingDomainSuffixes` (`european`, `livestream`, language hosts) |
 | ATS `NSPinnedDomains` | `lutheran.radio` SPKI pin(s) | **`siikkari.net`** SPKI: `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=` |
 | Runtime leaf pins | Single historical DER digest (then dual during cutover overlap) | **`pinnedFingerprintDigests`** = sole live `*.siikkari.net` `32:82:…:70:CD` (retired `CC:F7:…:3D:CC` removed — obsolete pins enlarge the accept set) |
-| DNS TXT allow-list order | `securitymodels.lutheran.radio` → `.lutheranradio.sk` | `securitymodels.siikkari.net` → **`securitymodels.lutheran.radio`** (live allow-list today) → `.lutheranradio.sk` |
+| DNS TXT allow-list order | `securitymodels.lutheran.radio` → `.lutheranradio.sk` (historical) | **`securitymodels.siikkari.net`** (live primary) → `securitymodels.lutheranradio.eu` → `.lutheranradio.sk` |
 
 **Why a single runtime pin (post-cutover):** Production media is solely `*.siikkari.net`. Keeping a retired pre-cutover leaf on `pinnedFingerprintDigests` would accept certificates the data plane no longer serves and enlarge the MITM target set. Future rotations should **append** the next leaf for a deliberate overlap window, then **drop** the old digest once the prior leaf is no longer operationally required.
 
-**Why TXT still falls back to `lutheran.radio`:** Primary TXT (`securitymodels.siikkari.net`) may be empty until fully published; when no **authoritative** answer is obtained, the ordered host walk advances (Invariant 1). Streaming never uses retired `lutheran.radio` media hosts.
+**Why secondary/backup still exist:** Primary TXT (`securitymodels.siikkari.net`) is live and fully populated. Secondary (`securitymodels.lutheranradio.eu`) and backup (`.lutheranradio.sk`) mirror the same allow-list for **transient-only** fallback when no **authoritative** answer is obtained from an earlier host (Invariant 1 ordered walk). Streaming never uses retired `lutheran.radio` media hosts.
 
-**Operational verify (copy-paste):** SPKI + leaf DER commands under [Agent Verification Commands](#agent-verification-commands); live models via secondary `dig` until primary TXT is populated.
+**Operational verify (copy-paste):** SPKI + leaf DER commands under [Agent Verification Commands](#agent-verification-commands); live models via primary `dig` (and secondary/backup for parity).
 
 See also: ``<doc:Security-Invariants>`` (media vs TXT separation), ``<doc:Architecture>``, [`CODING_AGENT.md`](CODING_AGENT.md#documentation--comment-standards-for-ai-coding-agents) (Documentation Standards).
 
@@ -420,8 +420,8 @@ See also: [`CODING_AGENT.md`](CODING_AGENT.md) (Strict Memory Safety (SE-0458) +
 
 The app performs security model validation to confirm that the version in use matches an approved security implementation before streaming content. This protects against compromised or obsolete app versions.
 
-1. **Primary domain:** `securitymodels.siikkari.net`
-   **Secondary domain:** `securitymodels.lutheran.radio` (established allow-list; used while primary TXT is not yet published)
+1. **Primary domain:** `securitymodels.siikkari.net` (live operational allow-list)
+   **Secondary domain:** `securitymodels.lutheranradio.eu` (transient-only mirror of the allow-list)
    **Backup domain:** `securitymodels.lutheranradio.sk` (final transient fallback)
 2. **Mechanism:** Queries DNS TXT records (via `DNSServiceQueryRecord` + `kDNSServiceFlagsValidate`) from the ordered list of domains, applying the ordered host walk above.
 3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"dallas"`, always read via `SecurityConfiguration.current`)
@@ -436,14 +436,14 @@ The app uses DNS TXT records on the ordered `securityModelDomains` list for ligh
 
 **DNSSEC Protection**
 
-DNS TXT hosts on the ordered `securityModelDomains` list are expected to be under **DNSSEC-signed** zones. Today the **operational** allow-list is still served from **`securitymodels.lutheran.radio`** (secondary): that zone uses DNSSEC with signed delegation (visible RRSIG records; chain of trust from the `.radio` TLD). The primary host `securitymodels.siikkari.net` is first in the query order; until it publishes a live TXT, failures there remain **transient** and the validator continues to the secondary.
+DNS TXT hosts on the ordered `securityModelDomains` list are expected to be under **DNSSEC-signed** zones. Today the **operational** allow-list is served from **`securitymodels.siikkari.net`** (primary): that zone uses DNSSEC with signed delegation (visible RRSIG records). Secondary (`securitymodels.lutheranradio.eu`) and backup (`securitymodels.lutheranradio.sk`) mirror the same list for transient-only fallback under the ordered host walk.
 
-When the secondary is queried with the DO (DNSSEC OK) bit set (e.g. `dig +dnssec`), the response includes:
+When primary (or a fallback host) is queried with the DO (DNSSEC OK) bit set (e.g. `dig +dnssec`), the response includes:
 - The TXT record containing the comma-separated list of valid models:
   `"houston,starbase,fredericksburg,brenham,dallas"`
 - An accompanying **RRSIG** signature.
 
-In the current observed responses for the secondary, the **AD (Authenticated Data)** flag is **not** set (`;; flags: qr rd ra`), indicating that the recursive resolver did not perform (or did not assert) full DNSSEC validation when answering the query. Re-check both primary and secondary with the Agent Verification Commands after any DNS publish.
+In current observed recursive responses, the **AD (Authenticated Data)** flag may **not** be set (`;; flags: qr rd ra` / `qr aa rd ra`), indicating that the recursive resolver did not perform (or did not assert) full DNSSEC validation when answering the query. Re-check primary and fallbacks with the Agent Verification Commands after any DNS publish.
 
 **Current Validation Behavior (DNSSEC-hardened)**
 
@@ -478,34 +478,35 @@ See ``<doc:Security-Invariants>`` (new Invariant 2) and `Core/Configuration/Secu
 To check the current TXT record and DNSSEC-related information:
 
 ```bash
-# Primary (may be empty until published — transient fallback applies)
+# Primary — live operational allow-list
 dig +short +dnssec TXT securitymodels.siikkari.net
 dig +dnssec TXT securitymodels.siikkari.net | grep -E "(^securitymodels|flags:|AD:|RRSIG)"
 
-# Secondary — current live allow-list while primary is not yet populated
-dig +short +dnssec TXT securitymodels.lutheran.radio
-dig +dnssec TXT securitymodels.lutheran.radio | grep -E "(^securitymodels|flags:|AD:|RRSIG)"
+# Secondary / backup — transient fallback mirrors (keep consistent with primary)
+dig +short +dnssec TXT securitymodels.lutheranradio.eu
+dig +short +dnssec TXT securitymodels.lutheranradio.sk
 ```
 
 Look for the **AD** flag (Authenticated Data) in the `;; flags:` line (useful diagnostic). For the app, success is determined by the `kDNSServiceFlagsValidate` bit returned to the `DNSServiceQueryRecord` callback (checked in `SecurityModelValidator.dnsQueryCallback`), not solely by the AD bit in `dig` output. The system resolver behavior controls whether the bit is set.
 
 ### Verifying the Security Model
 
-To check the current valid security models (query both primary and secondary):
+To check the current valid security models (query primary and fallbacks):
 
 ```bash
 dig +short +dnssec TXT securitymodels.siikkari.net
-dig +short +dnssec TXT securitymodels.lutheran.radio
+dig +short +dnssec TXT securitymodels.lutheranradio.eu
+dig +short +dnssec TXT securitymodels.lutheranradio.sk
 ```
 
-Example secondary output (captured live; always re-verify with `dig` before relying on it):
+Example primary output (captured live; always re-verify with `dig` before relying on it):
 
 ```
 "houston,starbase,fredericksburg,brenham,dallas"
-TXT 13 3 600 20260728124521 20260726104521 34505 lutheran.radio. Pao+xo933TYptYj8hQ2P1wGkGjwToXOmw8B8nD9UCJ0hUexSuHuRWq+Z TxB440SiHahCcw4tSQy2iqcBuog+gg==
+TXT 13 3 600 20260731153447 20260729133447 34505 siikkari.net. iNU6P/Ar7CsNPBDOtaWov/8twE+mNg5NEUQjt/FH4s7ZkqPuORbu9qFY 4uvX49eKNBxSZP1BMgcmjyl0K///lg==
 ```
 
-Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```dallas```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed on a **validated** responding host, validation fails permanently for that host (no fall-through on permanent absence). To update the allow-list: publish / update the TXT on ```securitymodels.siikkari.net``` (primary) and keep secondary/backup (```securitymodels.lutheran.radio```, ```securitymodels.lutheranradio.sk```) consistent.
+Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```dallas```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed on a **validated** responding host, validation fails permanently for that host (no fall-through on permanent absence). To update the allow-list: publish / update the TXT on ```securitymodels.siikkari.net``` (primary) and keep secondary/backup (```securitymodels.lutheranradio.eu```, ```securitymodels.lutheranradio.sk```) consistent.
 
 See also: ``<doc:Security-Invariants>`` (Invariant 1), [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules).
 
@@ -544,7 +545,7 @@ This feature enhances availability while maintaining the app's privacy-first pri
 | File / Symbol                                              | Responsibility                                                                 | Important notes for agents |
 |------------------------------------------------------------|--------------------------------------------------------------------------------|----------------------------|
 | `Core/Configuration/SecurityConfiguration.swift`           | Single source of truth for all policy and constants (`expectedSecurityModel`, sole live leaf via `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests`, `isInTransitionWindow`, `transitionWindow*`, `maxAllowedTimeSkew`, `modelCacheDuration`, `certificateValidationCacheDuration`, `securityModelDomains`, `preferredStreamingDomainSuffixes`, `streamingHostCandidates(leadingLabel:)`, `hostRequiresDNSSECValidation`, `requiresDNSSECValidationForStreaming`, `makeSecureEphemeralConfiguration`, `current`) | Never duplicate these values elsewhere. Colon-hex views (`pinnedLeafFingerprint`, `pinnedSiikkariLeafFingerprint`, `pinnedFingerprints`) are for README/openssl parity only. DNS model cache (1 h) and certificate pin-result cache (10 min) are **distinct** constants. Streaming media apex (`siikkari.net` only) is **independent** of DNS TXT host order. Do not keep retired leaf digests on the production acceptance list. The secure session factory is the central point for `requiresDNSSECValidation` + cache hardening on streaming sessions. |
-| `Core/Actors/SecurityModelValidator.swift`                 | Actor-isolated DNS TXT security model validation against ordered `securityModelDomains` (`siikkari.net` primary → `lutheran.radio` → `lutheranradio.sk`) | Uses `kDNSServiceFlagsValidate` + explicit callback bit check for DNSSEC (strict). `Span<UInt8>` / `UTF8Span` zero-copy rdata borrow in `dns_sd` callback. 1-hour success-only cache via `modelCacheDuration`. Four-point ordered host walk (authoritative answer stops; only transient advances). Entry point: `validateSecurityModel()`. The **only** place DNS TXT logic is allowed. |
+| `Core/Actors/SecurityModelValidator.swift`                 | Actor-isolated DNS TXT security model validation against ordered `securityModelDomains` (`siikkari.net` primary → `lutheranradio.eu` → `lutheranradio.sk`) | Uses `kDNSServiceFlagsValidate` + explicit callback bit check for DNSSEC (strict). `Span<UInt8>` / `UTF8Span` zero-copy rdata borrow in `dns_sd` callback. 1-hour success-only cache via `modelCacheDuration`. Four-point ordered host walk (authoritative answer stops; only transient advances). Entry point: `validateSecurityModel()`. The **only** place DNS TXT logic is allowed. |
 | `Core/Security/CertificateFingerprint.swift`               | 32-byte SHA-256 DER digest type + stack-local hashing via `Data.span` + constant-time `constantTimeMatches` | Runtime code must never compare hex strings. Materializes colon-hex only for docs/tooling. |
 | `Core/Security/CertificateValidator.swift`                 | Runtime full-certificate (DER) pinning + 10-minute success cache (`certificateValidationCacheDuration`) + transition window + device/server time-skew protection | Complements (does not replace) ATS SPKI pinning from `Info.plist`. Uses `pinnedFingerprintDigests`. Must **not** read `modelCacheDuration`. Time skew > 5 min permanently disables leniency for the process. |
 | `DirectStreamingPlayer.swift` (+ domain extensions; streaming delegates) | Main audio engine façade; embeds security model in stream URLs; domain files own catalog, server selection, attach, recovery, resource loader, SSL; consumes validators; resource-loader sessions via the Core secure factory | Consumes the Core single sources of truth (including DNSSEC-enabled sessions). No policy duplication. Error classification treats DNSSEC-unavailable cases as transient. Isolation map on the façade documents domain ownership. |
@@ -596,7 +597,7 @@ Player-domain transitions are expressed through typed `PlayerEvent` notification
 | `SharedPlayerManager` — `events` | Live `AsyncStream<PlayerEvent>` | Delivers events after subscription only. Widget extensions cannot observe this stream. |
 | `SharedPlayerManager` — `currentState` | Authoritative present-state snapshot | Read at observation start; use with `makeEventsStreamWithReplay()` for late subscribers. |
 | `SharedPlayerManager` — `makeEventsStreamWithReplay()` | Per-subscriber stream: four synthesized prefix events from `currentState`, then live forward | Materializes the shared live stream while actor-isolated and yields before return so forwarding iterators attach before callers drive mutations. |
-| `SharedPlayerManager` — `PersistedWidgetState` / `loadPersistedWidgetState()` / `savePersistedWidgetState()` | In-process session snapshot for widget refresh derivation | Memory-only within a runtime; cold launch resets to factory `.prePlay` via `resetToFactoryDefaultsOnLaunch()`. Cross-process widget timelines read snapshots, not `events`. |
+| `SharedPlayerManager` — `PersistedWidgetState` / `loadPersistedWidgetState()` / `savePersistedWidgetState()` | In-process session snapshot for widget refresh derivation | Memory-only **session** within a runtime (OI-1); cold launch resets to factory `.prePlay` via `resetToFactoryDefaultsOnLaunch()`. Extension Providers also read privacy-gated ``homeWidgetLiveChrome`` / ``homeWidgetStreamMetadata`` (not `events`). |
 | `SharedPlayerManager` — `currentPlaybackIntent` / `PlaybackIntent` | Authoritative playback intent decisions | Sticky pause/lock semantics; stream-failure paths preserve intent for auto-resume. |
 | `WidgetRefreshManager` — `handlePlayerEvent` | Tier 2 consumer: sole main-app **mutation-path** timeline driver | Routes through `refreshIfNeeded(..., trigger: .playerEvent)`; privacy/teardown gates, debounce, coalesce unchanged. Imperative triggers: lifecycle / teardown / extensionOptimistic / mediaSurface (`WidgetRefreshTrigger`). |
 | `RadioPlayerCoordinator/beginObservingVisualStateForChrome()` | Primary durable **main-app** play/pause + status-pill paint | Multi-cast ``makeEventsStreamWithReplay()`` → ``updateUI(for:)`` on ``visualStateDidChange`` (no second engine status required). Status path is demoted race lead + errors via pure ``RadioPlayerChromeVisualResolver``. Non-forcing. See docs/Widget-Presentation-Dataflow.md (main-app chrome authority). |
@@ -628,8 +629,9 @@ See [docs/Widget-Presentation-Dataflow.md](docs/Widget-Presentation-Dataflow.md)
 | Presentation framework | `WidgetSurface/` (coordinators, timeline factory, liveness, display models, language chrome, pure Provider assembly) |
 | Intent execution (cross-target) | `WidgetIntentExecution` in membership-exception `WidgetIntentExecution.swift` |
 | Provider presentation assembly (pure) | `WidgetProviderPresentationAssembly` in `WidgetSurface/` |
-| Provider snapshot hygiene (SPM-coupled) | `WidgetProviderSnapshotResolver` in membership-exception `WidgetDisplayModels.swift` |
-| Now Playing + LA stacking, start policy, metadata push cost | [docs/Live-Activity-Stacking-and-Media-Surfaces.md](docs/Live-Activity-Stacking-and-Media-Surfaces.md) |
+| Provider snapshot hygiene (SPM-coupled) | `WidgetProviderSnapshotResolver` in membership-exception `WidgetDisplayModels.swift` (``resolveHomeWidgetChromeFields``: agreement → session; disagreement → fresher `updatedAt`; neither → factory; session → ``homeWidgetStreamMetadata`` for program title) |
+| Privacy-gated home live chrome (cross-process paint) | App Group ``homeWidgetLiveChrome`` + [`docs/Home-Live-Chrome-App-Group-Mirror-Design.md`](docs/Home-Live-Chrome-App-Group-Mirror-Design.md); presentation dataflow § cross-process live chrome |
+| Now Playing + LA stacking, start policy, language/playing ensure, deferred recreation | [docs/Live-Activity-Stacking-and-Media-Surfaces.md](docs/Live-Activity-Stacking-and-Media-Surfaces.md) (soft ensure while lock-ineligible may lag; become-active heals) |
 | Media surface refresh wrapper | `SharedPlayerManager.refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)` |
 | Intent + snapshot contract tests (main-app host) | `WidgetIntentContractTests.swift`, `WidgetIntentPendingDrainTests.swift`, `WidgetIntentJoinedRoundTripTests.swift`, `WidgetDisplayModelsTests.swift` |
 | Extension-profile widget tests | `LutheranRadioWidgetTests/` (no `LUTHERAN_MAIN_APP`) |
@@ -679,7 +681,7 @@ When introducing a new security model (requires security review + documentation 
 
 1. Choose a unique name not listed in the table (e.g., a distinct city or codename). Confirm it has never been used.
 2. Update `expectedSecurityModel` in `Core/Configuration/SecurityConfiguration.swift` (the only allowed location).
-3. Add the new name to the DNS TXT record for `securitymodels.siikkari.net` (primary) and keep secondary/backup (`securitymodels.lutheran.radio`, `securitymodels.lutheranradio.sk`) consistent.
+3. Add the new name to the DNS TXT record for `securitymodels.siikkari.net` (primary) and keep secondary/backup (`securitymodels.lutheranradio.eu`, `securitymodels.lutheranradio.sk`) consistent.
 4. Append a new row to the table above with the current date, app version, and name.
 5. Update the "Current Security Snapshot" and any live example outputs in this README.
 6. Improve surrounding documentation per the Documentation & Comment Standards in [`CODING_AGENT.md`](CODING_AGENT.md) (add "Why", Security Invariant callouts, cross-links to ``<doc:Security-Invariants>`` and the Architecture article, update agent checklist context if needed).

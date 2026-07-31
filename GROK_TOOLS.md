@@ -29,10 +29,10 @@ Run any command in the environment's shell (typically zsh or bash on macOS with 
 
 **Example — Verify security model + live SSL pins (copy-paste ready)**:
 ```xml
-call tool bash with command is dig +short +dnssec TXT securitymodels.siikkari.net; dig +short +dnssec TXT securitymodels.lutheran.radio; openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null 2>/dev/null | openssl x509 -outform DER | openssl dgst -sha256
+call tool bash with command is dig +short +dnssec TXT securitymodels.siikkari.net; dig +short +dnssec TXT securitymodels.lutheranradio.eu; openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null 2>/dev/null | openssl x509 -outform DER | openssl dgst -sha256
 ```
 
-Primary TXT may be empty until published (transient fallback). Secondary (`securitymodels.lutheran.radio`) currently serves the live allow-list. Leaf DER SHA-256 for `*.siikkari.net` must match `pinnedSiikkariLeafFingerprintDigest` in `SecurityConfiguration` (see README "Current Security Snapshot" and "Media Apex Cutover").
+Primary (`securitymodels.siikkari.net`) serves the live allow-list. Secondary/backup mirror it for transient-only fallback. Leaf DER SHA-256 for `*.siikkari.net` must match `pinnedSiikkariLeafFingerprintDigest` in `SecurityConfiguration` (see README "Current Security Snapshot" and "Media Apex Cutover").
 
 **Example — Clean build (canonical gate from CODING_AGENT.md — bleeding-edge for agents)**:
 ```xml
@@ -118,6 +118,7 @@ Do **not** call them as function calls. Use them to enhance the final answer (e.
 - On macOS hosts you have full access to Xcode 26+ command-line tools (`xcodebuild`, `xcrun`, `swift`, `agvtool`, etc.).
 - Strict Swift 6 + memory safety build settings are enforced project-wide. Clean builds must emit **zero warnings**.
 - Security work **must** follow the mandatory reading order and verification commands documented in `README.md` and `CODING_AGENT.md`.
+- Live Activity language / lock-stretch work: read `docs/Live-Activity-Stacking-and-Media-Surfaces.md` and `docs/Widget-Functionality-Roadmap.md` (ContentState convergence) before changing ensure/recreation policy. Soft language ensure may lag under continuous lock-ineligible; become-active heals; never end the only interactive LA while request is ineligible solely for language lag. Product comments must use mechanism names only (never living prompts or evidence filenames).
 - After any file modification, you are expected to run the appropriate verification commands and report results.
 
 ## Maintenance

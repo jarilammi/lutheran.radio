@@ -91,11 +91,13 @@ import WidgetSurface
 /// or system `contentUpdates`. Language-only status re-pushes defer while quiet; visual mutations
 /// still push. **Settled language acceptance:** after stream-switch hold clears (authoritative
 /// ``setPlaying`` / soft-resume audible path), ``pushSettledLanguageAcceptanceContentIfNeeded()``
-/// fires **one** high-signal dual-axis ``updateCurrentActivity()`` even when language quiet is
-/// engaged for that destination — quiet is intentionally cleared for that single settle push so
-/// the attach-storm soft budget is not the only acceptance window. Consume-once per destination
-/// while request stays ineligible prevents soft-resume no-op thrash; re-arm consume on destination
-/// change, eligibility, become-active, or `contentUpdates`.
+/// clears language quiet and re-runs a **full** soft language-ensure budget for the destination
+/// (attach-storm exhaustion must not be the only acceptance window). Consume-once per destination
+/// while request stays ineligible prevents soft-resume no-op thrash of the settle entry; re-arm
+/// consume on destination change, eligibility, become-active, or `contentUpdates`. When owned
+/// language still lags after that post-audible soft cycle while request is ineligible, status-driven
+/// thrash re-enters quiet **and** bounded delayed post-settled language ensure retries re-clear quiet
+/// on a longer cadence — never end+request while ineligible.
 /// **Settled playing acceptance:** peer for owned visual — after hold/connect clear while the
 /// actor is authoritative `.playing` and owned visual still lags (``.prePlay`` / ``.userPaused``),
 /// ``pushSettledPlayingAcceptanceContentIfNeeded()`` fires **one** dual-axis high-signal push
@@ -310,20 +312,49 @@ class RadioLiveActivityManager: ObservableObject {
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private var languageEnsureQuietPendingDestination: String?
 
-    /// Destination for which a post-hold **settled** language acceptance push already ran while
+    /// Destination for which a post-hold **settled** language acceptance cycle already ran while
     /// interactive request was ineligible.
     ///
     /// Soft language ensure often exhausts during the stream-switch attach storm (Connecting),
-    /// enters quiet, then never re-pushes when audible start finally clears the hold — leaving
+    /// enters quiet, then would never re-push when audible start finally clears the hold — leaving
     /// system-held `content.state.currentLanguage` on the prior stream until unlock. Settled
-    /// acceptance consumes **one** high-signal dual-axis push per destination after hold clear;
-    /// further soft-resume no-ops stay quiet until destination change, eligibility, become-active,
-    /// or system `contentUpdates`.
+    /// acceptance consumes **one** post-hold soft-ensure re-arm per destination after hold clear;
+    /// further soft-resume no-ops skip re-entering settle while ineligible until destination change,
+    /// eligibility, become-active, or system `contentUpdates`. Bounded delayed post-settled retries
+    /// (``schedulePostSettledLanguageEnsureRetriesIfNeeded(destination:)``) continue soft ensure
+    /// after that cycle without re-opening the settle entry itself.
     ///
     /// - SeeAlso: ``pushSettledLanguageAcceptanceContentIfNeeded()``,
     ///   ``shouldPushSettledLanguageAcceptance(destinationLanguage:ownedContentLanguage:isStreamSwitchHoldActive:settledAcceptanceConsumedDestination:isRequestEligible:)``,
+    ///   ``shouldSchedulePostSettledLanguageEnsureRetries(hasCurrentActivity:destinationLanguage:ownedContentLanguage:isStreamSwitchHoldActive:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private var languageSettledAcceptanceConsumedDestination: String?
+
+    /// Delayed post-settled language soft-ensure retries after audible destination settle.
+    ///
+    /// Soft ensure during Connecting + one settle cycle can still leave system-held language on
+    /// the prior stream while request is ineligible. Status-driven thrash stays quiet; this task
+    /// re-clears quiet on a longer cadence and re-runs soft ensure without end+request.
+    /// Cancelled on end paths, destination change, foreground owned-surface ensure, and match.
+    ///
+    /// - SeeAlso: ``schedulePostSettledLanguageEnsureRetriesIfNeeded(destination:)``,
+    ///   ``pushSettledLanguageAcceptanceContentIfNeeded()``.
+    private var postSettledLanguageEnsureRetryTask: Task<Void, Never>?
+
+    /// Maximum delayed soft-ensure cycles after a post-hold settled language acceptance still lags.
+    ///
+    /// - SeeAlso: ``postSettledLanguageEnsureDelayedIntervalsMilliseconds``,
+    ///   ``schedulePostSettledLanguageEnsureRetriesIfNeeded(destination:)``.
+    static let postSettledLanguageEnsureMaxDelayedAttempts = 3
+
+    /// Sleep intervals (ms) before each delayed post-settled language ensure attempt.
+    ///
+    /// Longer than attach-storm soft yields so ActivityKit has room to accept language after
+    /// audible settle without thrashing status-driven media-surface refreshes.
+    ///
+    /// - SeeAlso: ``postSettledLanguageEnsureMaxDelayedAttempts``,
+    ///   ``schedulePostSettledLanguageEnsureRetriesIfNeeded(destination:)``.
+    static let postSettledLanguageEnsureDelayedIntervalsMilliseconds: [UInt64] = [400, 1_000, 2_000]
 
     /// Whether soft playing ensure exhausted while interactive request was ineligible and
     /// owned visual still lagged authoritative `.playing`.
@@ -1477,14 +1508,16 @@ class RadioLiveActivityManager: ObservableObject {
         return false
     }
 
-    /// Whether a post-hold **settled** language acceptance push should run.
+    /// Whether a post-hold **settled** language acceptance soft-ensure re-arm should run.
     ///
     /// Soft language ensure often burns its budget during the stream-switch attach storm while
     /// Connecting, then quiet-pending blocks further status-driven pushes for that destination.
-    /// When stream-switch hold clears (authoritative audible start / soft-resume), one high-signal
-    /// dual-axis ContentState push is allowed even though quiet would otherwise defer language-only
+    /// When stream-switch hold clears (authoritative audible start / soft-resume), one post-hold
+    /// soft language-ensure re-arm is allowed even though quiet would otherwise defer language-only
     /// status re-pushes. Consume-once per destination while request stays ineligible prevents
-    /// soft-resume no-op thrash; eligibility re-opens the settle window (unlock recovery).
+    /// soft-resume no-op thrash of the settle entry; eligibility re-opens the settle window
+    /// (unlock recovery). Bounded delayed post-settled retries continue after the entry without
+    /// re-opening this gate.
     ///
     /// - Parameters:
     ///   - destinationLanguage: ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``.
@@ -1493,9 +1526,10 @@ class RadioLiveActivityManager: ObservableObject {
     ///     settle waits until hold clears (Connecting honesty preserved).
     ///   - settledAcceptanceConsumedDestination: ``languageSettledAcceptanceConsumedDestination``.
     ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``.
-    /// - Returns: `true` when a single settle push should run.
+    /// - Returns: `true` when a post-hold language soft-ensure re-arm should run.
     /// - Note: Does **not** invent `.playing` during hold (hold gate). Does **not** end+request.
     /// - SeeAlso: ``pushSettledLanguageAcceptanceContentIfNeeded()``,
+    ///   ``shouldSchedulePostSettledLanguageEnsureRetries(hasCurrentActivity:destinationLanguage:ownedContentLanguage:isStreamSwitchHoldActive:)``,
     ///   ``shouldDeferRedundantLanguagePushWhileQuiet(candidateLanguage:ownedContentLanguage:ownedContentVisual:candidateVisual:quietPendingDestination:isRequestEligible:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func shouldPushSettledLanguageAcceptance(
@@ -1520,6 +1554,39 @@ class RadioLiveActivityManager: ObservableObject {
         }
         // Eligible (unlock / presentable): always allow settle when language still lags.
         // Ineligible: allow when not yet consumed for this destination.
+        return true
+    }
+
+    /// Whether bounded delayed post-settled language soft-ensure retries should be scheduled.
+    ///
+    /// After the post-hold settle soft-ensure re-arm still leaves owned language lagging the
+    /// destination, status-driven thrash re-enters quiet. Delayed retries re-clear quiet on a
+    /// longer cadence so ActivityKit can accept destination language while request stays
+    /// ineligible — without end+request and without re-burning attach-storm status callbacks.
+    ///
+    /// - Parameters:
+    ///   - hasCurrentActivity: Whether this process owns an interactive activity.
+    ///   - destinationLanguage: ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``.
+    ///   - ownedContentLanguage: Owned `content.state.currentLanguage`, if any.
+    ///   - isStreamSwitchHoldActive: ``SharedPlayerManager/isStreamSwitchPrePlayHoldActive``.
+    /// - Returns: `true` when ownership is non-nil, hold is clear, destination is non-empty, and
+    ///   owned language is missing or still ≠ destination.
+    /// - Note: Does **not** invent `.playing`. Does **not** decide end+request.
+    /// - SeeAlso: ``schedulePostSettledLanguageEnsureRetriesIfNeeded(destination:)``,
+    ///   ``pushSettledLanguageAcceptanceContentIfNeeded()``,
+    ///   ``postSettledLanguageEnsureDelayedIntervalsMilliseconds``.
+    static func shouldSchedulePostSettledLanguageEnsureRetries(
+        hasCurrentActivity: Bool,
+        destinationLanguage: String,
+        ownedContentLanguage: String?,
+        isStreamSwitchHoldActive: Bool
+    ) -> Bool {
+        guard hasCurrentActivity else { return false }
+        guard !destinationLanguage.isEmpty else { return false }
+        guard !isStreamSwitchHoldActive else { return false }
+        if let ownedContentLanguage, ownedContentLanguage == destinationLanguage {
+            return false
+        }
         return true
     }
 
@@ -2069,26 +2136,33 @@ class RadioLiveActivityManager: ObservableObject {
         playingEnsureQuietSkipLogged = false
     }
 
-    /// One high-signal dual-axis ContentState push after stream-switch hold has cleared.
+    /// Post-hold language soft-ensure re-arm after stream-switch hold has cleared.
     ///
     /// Soft language ensure often exhausts during the attach storm (Connecting) and enters
     /// quiet pending for the destination. Status-driven language-only re-pushes then defer,
     /// so system-held language can freeze for the rest of a lock stretch even after audio is
     /// already on the destination stream. Call this from authoritative audible start
-    /// (``SharedPlayerManager/setPlaying()``) and soft-resume no-op reconcile so **one**
-    /// settle push can carry destination language + current honest visual after hold clear.
+    /// (``SharedPlayerManager/setPlaying()``) and soft-resume no-op reconcile so a **full**
+    /// soft language-ensure budget re-runs after hold clear (not only a single ActivityKit
+    /// update). Consume-once per destination while ineligible keeps soft-resume no-ops from
+    /// re-entering this settle entry; bounded delayed retries continue after the entry when
+    /// owned language still lags.
     ///
-    /// **Quiet bypass (once):** Clears ``languageEnsureQuietPendingDestination`` so
-    /// ``shouldDeferRedundantLanguagePushWhileQuiet`` does not drop this push, then
-    /// ``updateCurrentActivity()``. Marks ``languageSettledAcceptanceConsumedDestination``
-    /// while request is ineligible so soft-resume no-ops do not re-thrash. Re-enters quiet
-    /// when owned language still mismatches after the push while ineligible.
+    /// **Quiet re-arm (post-audible):** Clears ``languageEnsureQuietPendingDestination`` so
+    /// ``shouldRunLanguageContentEnsureSoftPushes`` and ``shouldDeferRedundantLanguagePushWhileQuiet``
+    /// do not drop the post-hold soft cycle, then ``ensureAuthoritativeLanguageContentIfNeeded()``.
+    /// Marks ``languageSettledAcceptanceConsumedDestination`` while request is ineligible so
+    /// soft-resume no-ops do not re-thrash the settle entry. When owned language still mismatches
+    /// after the soft cycle while ineligible, re-enters quiet for status thrash **and** schedules
+    /// ``schedulePostSettledLanguageEnsureRetriesIfNeeded(destination:)``.
     ///
     /// - Precondition: Main actor; stream-switch hold should already be cleared by the caller
     ///   (policy also gates on hold). Interactive ``currentActivity`` may be nil (no-op).
-    /// - Postcondition: At most one ActivityKit update for this settle cycle when policy fires;
-    ///   no end+request; does not invent `.playing` during hold.
+    /// - Postcondition: When policy fires, soft language ensure ran up to its budget; optional
+    ///   delayed retries may remain in flight while language still lags; no end+request; does
+    ///   not invent `.playing` during hold.
     /// - SeeAlso: ``shouldPushSettledLanguageAcceptance(destinationLanguage:ownedContentLanguage:isStreamSwitchHoldActive:settledAcceptanceConsumedDestination:isRequestEligible:)``,
+    ///   ``shouldSchedulePostSettledLanguageEnsureRetries(hasCurrentActivity:destinationLanguage:ownedContentLanguage:isStreamSwitchHoldActive:)``,
     ///   ``ensureAuthoritativeLanguageContentIfNeeded()``,
     ///   ``SharedPlayerManager/setPlaying()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
@@ -2128,23 +2202,28 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
-        // Clear language quiet so the settle push is not dropped as a language-only defer.
+        // Clear language quiet so post-hold soft ensure gets a full budget (attach-storm quiet
+        // must not freeze destination language after audible settle).
         languageEnsureQuietPendingDestination = nil
         languageEnsureQuietSkipLogged = false
-        // Consume-once while ineligible — soft-resume no-ops must not re-open thrash.
+        // Consume-once while ineligible — soft-resume no-ops must not re-open the settle entry.
         if !requestEligible {
             languageSettledAcceptanceConsumedDestination = destination
         }
+        // Fresh settle cycle owns delayed retries for this destination.
+        cancelPostSettledLanguageEnsureRetries()
 
         #if DEBUG
         print(
-            "🔴 Live Activity settled language acceptance push " +
+            "🔴 Live Activity settled language acceptance soft-ensure re-arm " +
             "(destination=\(destination) owned=\(ownedLanguage ?? "nil"); " +
-            "quiet bypass once after hold clear)"
+            "quiet cleared for full post-hold language budget)"
         )
         #endif
 
-        await updateCurrentActivity()
+        // Full soft language-ensure budget after hold clear — prefer multi-attempt soft path
+        // over a single dual-axis update so ActivityKit has more than one acceptance window.
+        await ensureAuthoritativeLanguageContentIfNeeded()
 
         let acceptedLanguage = currentActivity?.content.state.currentLanguage
         if acceptedLanguage == destination {
@@ -2154,11 +2233,13 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
-        // Still lagging while locked — re-enter quiet; FG rail / contentUpdates re-arm later.
+        // Still lagging while locked — re-enter quiet for status thrash, keep pending ensure
+        // for become-active, and schedule longer-cadence soft ensure without end+request.
         let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
             areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
+        let holdAfter = await manager.isStreamSwitchPrePlayHoldActive
         if !eligibleAfter, !destination.isEmpty {
             languageEnsureQuietPendingDestination = destination
             languageEnsureQuietSkipLogged = false
@@ -2167,9 +2248,118 @@ class RadioLiveActivityManager: ObservableObject {
             print(
                 "🔴 Live Activity settled language acceptance still lagging " +
                 "(destination=\(destination) owned=\(acceptedLanguage ?? "nil"); " +
-                "quiet re-armed; recreation remains eligibility-gated)"
+                "quiet re-armed; delayed soft ensure scheduled; recreation remains eligibility-gated)"
             )
             #endif
+        }
+        if Self.shouldSchedulePostSettledLanguageEnsureRetries(
+            hasCurrentActivity: currentActivity != nil,
+            destinationLanguage: destination,
+            ownedContentLanguage: acceptedLanguage,
+            isStreamSwitchHoldActive: holdAfter
+        ) {
+            schedulePostSettledLanguageEnsureRetriesIfNeeded(destination: destination)
+        }
+    }
+
+    /// Cancels any in-flight delayed post-settled language soft-ensure retries.
+    ///
+    /// - SeeAlso: ``schedulePostSettledLanguageEnsureRetriesIfNeeded(destination:)``,
+    ///   ``pushSettledLanguageAcceptanceContentIfNeeded()``.
+    @MainActor
+    private func cancelPostSettledLanguageEnsureRetries() {
+        postSettledLanguageEnsureRetryTask?.cancel()
+        postSettledLanguageEnsureRetryTask = nil
+    }
+
+    /// Schedules bounded delayed soft language ensure after post-hold settle still lags.
+    ///
+    /// Status-driven quiet correctly stops attach-storm thrash; these retries re-clear quiet
+    /// on ``postSettledLanguageEnsureDelayedIntervalsMilliseconds`` so destination language can
+    /// still converge while request is ineligible — without ending the interactive surface.
+    /// Cancelled when language matches, destination advances, hold re-arms, ownership ends,
+    /// or foreground owned-surface ensure takes over.
+    ///
+    /// - Parameter destination: Destination language code captured at settle lag time.
+    /// - Precondition: Main actor; policy already decided schedule is needed.
+    /// - Postcondition: At most one delayed retry task; each attempt may re-run soft ensure.
+    /// - SeeAlso: ``shouldSchedulePostSettledLanguageEnsureRetries(hasCurrentActivity:destinationLanguage:ownedContentLanguage:isStreamSwitchHoldActive:)``,
+    ///   ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``postSettledLanguageEnsureMaxDelayedAttempts``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    private func schedulePostSettledLanguageEnsureRetriesIfNeeded(destination: String) {
+        guard !destination.isEmpty else { return }
+        cancelPostSettledLanguageEnsureRetries()
+        let intervals = Self.postSettledLanguageEnsureDelayedIntervalsMilliseconds
+        let maxAttempts = min(Self.postSettledLanguageEnsureMaxDelayedAttempts, intervals.count)
+        guard maxAttempts > 0 else { return }
+
+        postSettledLanguageEnsureRetryTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for attempt in 1...maxAttempts {
+                let delayMs = intervals[attempt - 1]
+                try? await Task.sleep(for: .milliseconds(delayMs))
+                guard !Task.isCancelled else { return }
+                if SharedPlayerManager.isRunningInUITestMode { return }
+                #if DEBUG
+                if self.isRunningUnderTest { return }
+                #endif
+                guard self.currentActivity != nil else { return }
+
+                let manager = SharedPlayerManager.shared
+                let currentDestination = await manager.liveActivityLanguageCodeForContentPush()
+                // Destination advanced — a new settle / mutation owns recovery.
+                guard currentDestination == destination else { return }
+                let hold = await manager.isStreamSwitchPrePlayHoldActive
+                let owned = self.currentActivity?.content.state.currentLanguage
+                guard Self.shouldSchedulePostSettledLanguageEnsureRetries(
+                    hasCurrentActivity: self.currentActivity != nil,
+                    destinationLanguage: currentDestination,
+                    ownedContentLanguage: owned,
+                    isStreamSwitchHoldActive: hold
+                ) else {
+                    // Owned converged (or hold re-armed / unowned) — drop quiet for this dest.
+                    if owned == destination {
+                        self.languageEnsureQuietPendingDestination = nil
+                        self.languageEnsureQuietSkipLogged = false
+                        self.languageSettledAcceptanceConsumedDestination = nil
+                    }
+                    return
+                }
+
+                // Re-open one soft-ensure cycle without re-opening settle consume.
+                self.languageEnsureQuietPendingDestination = nil
+                self.languageEnsureQuietSkipLogged = false
+
+                #if DEBUG
+                print(
+                    "🔴 Live Activity post-settled language ensure retry " +
+                    "\(attempt)/\(maxAttempts) destination=\(destination) owned=\(owned ?? "nil")"
+                )
+                #endif
+                await self.ensureAuthoritativeLanguageContentIfNeeded()
+
+                let accepted = self.currentActivity?.content.state.currentLanguage
+                if accepted == destination {
+                    self.languageEnsureQuietPendingDestination = nil
+                    self.languageEnsureQuietSkipLogged = false
+                    self.languageSettledAcceptanceConsumedDestination = nil
+                    return
+                }
+
+                // Still lagging — quiet status thrash until next delayed attempt or FG rail.
+                let eligible = Self.isInteractiveLiveActivityRequestEligible(
+                    areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                    isApplicationActive: UIApplication.shared.applicationState == .active
+                )
+                if !eligible {
+                    self.languageEnsureQuietPendingDestination = destination
+                    self.languageEnsureQuietSkipLogged = false
+                    self.pendingInteractiveLiveActivityEnsure = true
+                }
+            }
+            self.postSettledLanguageEnsureRetryTask = nil
         }
     }
 
@@ -2710,7 +2900,9 @@ class RadioLiveActivityManager: ObservableObject {
         // AGENT NOTE: Both axes clear together — language-only unlock must not leave playing
         // quiet blocking visual recovery (and the reverse). Also clear settled language/playing
         // consume so presentable cycles can re-attempt high-signal acceptance if soft ensure
-        // still lags after unlock.
+        // still lags after unlock. Cancel delayed post-settled language retries — foreground
+        // soft ensure owns this presentable cycle.
+        cancelPostSettledLanguageEnsureRetries()
         languageEnsureQuietPendingDestination = nil
         languageSettledAcceptanceConsumedDestination = nil
         playingEnsureQuietPending = false
@@ -2876,9 +3068,11 @@ class RadioLiveActivityManager: ObservableObject {
             languageEnsureQuietPendingDestination = nil
             languageEnsureQuietSkipLogged = false
         }
-        // New destination re-opens the post-hold settled language acceptance window.
+        // New destination re-opens the post-hold settled language acceptance window and drops
+        // delayed retries scheduled for a prior destination.
         if languageSettledAcceptanceConsumedDestination != language {
             languageSettledAcceptanceConsumedDestination = nil
+            cancelPostSettledLanguageEnsureRetries()
         }
         // New stream-switch cycle re-arms playing ensure + settled playing acceptance.
         playingEnsureQuietPending = false
@@ -3038,6 +3232,7 @@ class RadioLiveActivityManager: ObservableObject {
 
         // Defense-in-depth UI test isolation — no ActivityKit IPC under test hosts.
         if SharedPlayerManager.isRunningInUITestMode {
+            cancelPostSettledLanguageEnsureRetries()
             currentActivity = nil
             lastPushedContent = nil
             consecutiveStalledContentPushes = 0
@@ -3059,6 +3254,7 @@ class RadioLiveActivityManager: ObservableObject {
 
         #if DEBUG
         if isRunningUnderTest {
+            cancelPostSettledLanguageEnsureRetries()
             currentActivity = nil
             lastPushedContent = nil
             consecutiveStalledContentPushes = 0
@@ -3083,6 +3279,7 @@ class RadioLiveActivityManager: ObservableObject {
         // (observe race, prior partial end, force-quit residual reaped on next launch).
         let activities = collectActivitiesToEnd()
 
+        cancelPostSettledLanguageEnsureRetries()
         currentActivity = nil
         lastPushedContent = nil
         consecutiveStalledContentPushes = 0
@@ -3487,7 +3684,9 @@ class RadioLiveActivityManager: ObservableObject {
         interactiveContentRecreationsAttempted = 0
         // Any contentUpdates yield is an ActivityKit acceptance moment — drop quiet so a
         // subsequent ensure can re-evaluate (or stay a no-op if language/visual already match).
-        // Also re-open settled language/playing acceptance for a later lag.
+        // Also re-open settled language/playing acceptance for a later lag. Cancel delayed
+        // post-settled language retries when system has advanced (match or new acceptance).
+        cancelPostSettledLanguageEnsureRetries()
         languageEnsureQuietPendingDestination = nil
         languageSettledAcceptanceConsumedDestination = nil
         playingEnsureQuietPending = false
@@ -3507,6 +3706,7 @@ class RadioLiveActivityManager: ObservableObject {
         #if DEBUG
         if _test_harnessSimulatesActiveActivity {
             _test_harnessSimulatesActiveActivity = false
+            cancelPostSettledLanguageEnsureRetries()
             currentActivity = nil
             lastPushedContent = nil
             consecutiveStalledContentPushes = 0
@@ -3526,6 +3726,7 @@ class RadioLiveActivityManager: ObservableObject {
         }
         #endif
         guard currentActivity != nil else { return }
+        cancelPostSettledLanguageEnsureRetries()
         currentActivity = nil
         lastPushedContent = nil
         consecutiveStalledContentPushes = 0
@@ -3712,6 +3913,21 @@ class RadioLiveActivityManager: ObservableObject {
             isStreamSwitchHoldActive: isStreamSwitchHoldActive,
             settledAcceptanceConsumedDestination: settledAcceptanceConsumedDestination,
             isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: whether delayed post-settled language soft-ensure retries should schedule.
+    func _test_shouldSchedulePostSettledLanguageEnsureRetries(
+        hasCurrentActivity: Bool,
+        destinationLanguage: String,
+        ownedContentLanguage: String?,
+        isStreamSwitchHoldActive: Bool
+    ) -> Bool {
+        Self.shouldSchedulePostSettledLanguageEnsureRetries(
+            hasCurrentActivity: hasCurrentActivity,
+            destinationLanguage: destinationLanguage,
+            ownedContentLanguage: ownedContentLanguage,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive
         )
     }
 

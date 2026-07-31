@@ -705,10 +705,10 @@ extension DirectStreamingPlayer {
             )
             #endif
             // Actor chrome already playing (soft-resume after setPlaying, or KVO re-entry).
-            // Settled language + playing acceptance (quiet bypass once after hold clear;
-            // consume-once while ineligible) so owned ContentState language/visual cannot stick
-            // on a prior stream / `.prePlay` while audio continues — without end+request or
-            // soft-resume ensure thrash.
+            // Settled language soft-ensure re-arm + playing acceptance (quiet cleared after
+            // hold clear; consume-once while ineligible; delayed language soft ensure if still
+            // lagging) so owned ContentState language/visual cannot stick on a prior stream /
+            // `.prePlay` while audio continues — without end+request or soft-resume thrash.
             await RadioLiveActivityManager.shared.pushSettledLanguageAcceptanceContentIfNeeded()
             await RadioLiveActivityManager.shared.pushSettledPlayingAcceptanceContentIfNeeded()
             await RadioLiveActivityManager.shared.ensureAuthoritativePlayingContentIfNeeded()

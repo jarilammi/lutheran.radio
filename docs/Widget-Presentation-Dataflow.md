@@ -77,10 +77,10 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 **Core rule (Cleanup Invariant)**: Widget and Live Activity surfaces are **active / updating only while the main app process is running** (foreground or background audio). Once the main process has quit (normal termination or force-quit), they must transition to a stable passive or last-known state and must not receive further pings, timeline reloads driven from the dead process, or Activity updates.
 
 ### How Termination Achieves Passive State
-- **Liveness heuristic (SSOT)**: `SharedPlayerManager.isMainAppProcessRecentlyActive()` (backed by the `lastUpdateTime` key + explicit `0` sentinel). Widget family views delegate the passive-branch decision to ``WidgetLivenessPresentation/shouldShowPassiveTapToOpen(isMainAppRecentlyActive:)`` (`WidgetSurface/WidgetLivenessPresentation.swift`) to render either full interactive controls + status + metadata or the "tap_to_open" prompt.
-- **Process isolation**: the termination sentinel is **presentation / extension only**. Main-app cold launch, `play()`, resurrection, and restore use in-process sticky intent after ``resetToFactoryDefaultsOnLaunch()`` — never `lastUpdateTime == 0` as a play gate. Play status does not survive process death.
+- **Liveness heuristic (SSOT)**: `SharedPlayerManager.isMainAppProcessRecentlyActive()` (backed by the `lastUpdateTime` key + explicit `0` sentinel). Widget family views delegate the passive-branch decision to ``WidgetLivenessPresentation/shouldShowPassiveTapToOpen(isMainAppRecentlyActive:)`` (`WidgetSurface/WidgetLivenessPresentation.swift`) to render either full interactive controls + status + metadata or the "tap_to_open" prompt. **Liveness owns interactive vs passive** — privacy-gated live chrome (below) is never proof the main app is still interactive.
+- **Process isolation**: the termination sentinel is **presentation / extension only**. Main-app cold launch, `play()`, resurrection, and restore use in-process sticky intent after ``resetToFactoryDefaultsOnLaunch()`` — never `lastUpdateTime == 0` as a play gate. Play status does not survive process death (OI-1).
 - **On observed termination** (AppDelegate `applicationWillTerminate`, SceneDelegate `sceneDidDisconnect`, `UIApplication.willTerminateNotification`):
-  - `SharedPlayerManager.forceStaleLivenessTimestampForTermination()` writes the sentinel `0` (and clears instant-feedback transients). Any subsequent Provider run immediately sees the passive path.
+  - `SharedPlayerManager.forceStaleLivenessTimestampForTermination()` writes the sentinel `0`, clears instant-feedback transients, clears durable LA mirrors, and **explicitly clears** privacy-gated ``homeWidgetLiveChrome`` (session-scoped only). Prefer explicit clear over “stale mirror + passive overlay” so passive Providers cannot briefly flash last play/pause glyphs from a dead process. Any subsequent Provider run immediately sees the passive path and factory visual defaults when session + live chrome are absent.
   - `RadioLiveActivityManager.handleAppWillTerminate()` **sweeps all** system-held Live Activities (not only the local `currentActivity` ref), pushes a final coherent `.userPaused` ContentState that **preserves last-known language chrome** (and program metadata when available), ends with `.immediate` dismissal, and **waits** (bounded run-loop pump + detached ActivityKit work) so process death cannot race an unfinished unstructured `Task`.
   - `WidgetRefreshManager.cancelPendingRefresh()` drops in-flight debounced work.
   - While the main process is alive, ``WidgetRefreshManager`` also identity-coalesces identical connecting / sticky chrome (`shouldCoalesceIdenticalNonPlayingRefresh`) so attach-path and dual-path storms do not spam `reloadTimelines` for unchanged language/visual. Language changes always reload (and mark the candidate **immediate** for regress gates). Stale debounced targets that regress a newer snapshot are discarded (`refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)`). Execute-time **memory SSOT authority** (`refreshWouldRegressMemoryAuthority(executing:memory:isImmediate:)`) additionally discards targets that reverse ``SharedPlayerManager/currentVisualState`` (residual sticky after intentional Connecting; premature ``.playing`` during switch/connect hold; non-immediate post-audible Connecting after audible play).
@@ -112,10 +112,11 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 
 ### Separation of Concerns
 
-| Concern                        | Single Source of Truth                  | Write Path                                      | Read for Live Activity                  | Disk I/O on hot path? |
+| Concern                        | Single Source of Truth                  | Write Path                                      | Read for Live Activity / Provider       | Disk I/O on hot path? |
 |--------------------------------|-----------------------------------------|-------------------------------------------------|-----------------------------------------|-----------------------|
-| Widgets + Control widgets      | In-process `PersistedWidgetState` session snapshot (visual/lang) + privacy-gated App Group ``homeWidgetStreamMetadata`` (program title/speaker only) | `persistWidgetSnapshot`, `performActualSave`, `saveCombinedWidgetState`, widget intents via ``persistOptimisticWidgetSnapshot``; ICY via ``persistStreamMetadataForWidgets()`` / privacy-gate open re-stamp | `loadPersistedWidgetState()` + ``loadHomeWidgetStreamMetadataMirror()`` via ``WidgetProviderSnapshotResolver`` | Visual memory-only (OI-1); program metadata mirror is privacy-gated App Group |
-| Widget passive chrome after quit | Liveness (`lastUpdateTime` + sentinel `0`) | `bumpWidgetLivenessTimestamp`, `forceStaleLivenessTimestampForTermination` | `isMainAppProcessRecentlyActive` / ``WidgetLivenessPresentation`` | Yes (providers) |
+| Widgets + Control widgets (visual / language / hasError) | In-process `PersistedWidgetState` session snapshot + privacy-gated App Group ``homeWidgetLiveChrome`` | `persistWidgetSnapshot` / ``savePersistedWidgetState`` → ``stampHomeWidgetLiveChromeFromSession`` (sticky early pause, ``setPlaying``, switch hold, ``performActualSave``); extension optimistic via ``persistOptimisticWidgetSnapshot`` / ``signalWidgetSwitchAction``; gate-open re-stamp | ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` via pure ``resolveHomeWidgetChromeFields``: **agreement → session; disagreement → fresher `updatedAt`; neither → factory** | Session is memory-only (OI-1); live chrome is privacy-gated App Group (session-scoped; cleared on terminate / gate close / privacy clear / factory residual). Fresher main mirror heals stale extension-session switch-hold ``.prePlay``. |
+| Widgets + Control widgets (program title/speaker) | In-process session `streamMetadata` + privacy-gated App Group ``homeWidgetStreamMetadata`` | ICY via ``persistStreamMetadataForWidgets()`` / privacy-gate open re-stamp; snapshot saves when gate open | Resolver: session metadata → ``loadHomeWidgetStreamMetadataMirror()`` (unchanged single-concern peer) | Program metadata mirror is privacy-gated App Group |
+| Widget passive chrome after quit | Liveness (`lastUpdateTime` + sentinel `0`) | `bumpWidgetLivenessTimestamp`, `forceStaleLivenessTimestampForTermination` (also clears live chrome + LA mirrors + instant feedback) | `isMainAppProcessRecentlyActive` / ``WidgetLivenessPresentation`` — **not** live chrome | Yes (providers) |
 | App relaunch / main-app play   | In-process visual + `PlaybackIntent` after ``resetToFactoryDefaultsOnLaunch()`` | Factory reset + sticky intent SSOT; **not** termination sentinel | Cold-launch / `play()` / resurrection | No prior-process play gate |
 | Live Activity (transient UI)   | In-memory `currentVisualState` + `currentStreamMetadata` + stream language (`liveActivityLanguageCodeForContentPush` — attach via `mainAppLiveActivityLanguageCode` / `selectedStream`, or destination language while `streamSwitchConnectingLanguageCode` is stamped: Connecting hold **or** sticky-paused stamp without hold) | None for LA itself. Visual/metadata/language mutations + direct notify; durable LA language App Group mirror warmed on push | `await manager.currentVisualState` / `currentStreamMetadata` + language for `ContentState.currentLanguage` | **No** (in-memory compare + conditional `Activity.update`) |
 
@@ -123,7 +124,7 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 
 1. **Primary drivers** (no timer required):
    - `SharedPlayerManager.setPlaying()`, `stop()`, `setUserPaused()`, `markAsUserPaused()` — after the widget-persisting save they post a `Task { await RadioLiveActivityManager.shared.updateCurrentActivity() }`.
-   - `didUpdateStreamMetadata(_:)` — after mutating the in-memory metadata, calls the LA manager directly, **then** persists for widgets (session snapshot + privacy-gated ``homeWidgetStreamMetadata`` App Group mirror). This ordering ensures LA sees the fresh title without waiting for disk. When ICY arrived under write suppression, ``restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()`` re-stamps once when ``hasActiveWidgets`` opens.
+   - `didUpdateStreamMetadata(_:)` — after mutating the in-memory metadata, calls the LA manager directly, **then** persists for widgets (session snapshot + privacy-gated ``homeWidgetStreamMetadata`` App Group mirror). This ordering ensures LA sees the fresh title without waiting for disk. When ICY arrived under write suppression, ``restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()`` re-stamps once when ``hasActiveWidgets`` opens. ICY does **not** stamp live chrome (metadata-only path).
    - `RadioPlayerCoordinator` toggle / remote / sleep paths — direct calls after state is stable.
    - Lifecycle: `handleAppDidEnterForeground` (correction), `handleAppWillEnterBackground` (auto-start when playing).
 
@@ -132,7 +133,7 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
    - Suppress uses ``shouldSuppressLiveActivityContentPush`` against private `lastPushedContent` **and** owned `content.state.currentLanguage` **and** owned `content.state.visualState` (owned language + visual beat optimistic suppress memory).
    - Only when not suppressed does it call `Activity.update`, then re-seeds `lastPushedContent` from the activity’s observed `content.state` (never an unverified aspirational candidate).
    - ``ensureAuthoritativeLanguageContentIfNeeded()`` re-pushes (up to ``authoritativeLanguageContentEnsureMaxAttempts``, re-reading owned language after each push) when destination language from ``liveActivityLanguageCodeForContentPush()`` still differs from owned / last language (peer to playing ensure). After budget exhaustion while interactive request is ineligible, language ensure quiet pending stops status-driven thrash for that destination until re-arm (destination change, eligibility, become-active, or `contentUpdates`). Language-only ``updateCurrentActivity`` re-pushes defer while quiet; visual mutations still push. Also on foreground / become-active via ``ensureAuthoritativeContentOnForegroundIfNeeded()`` when ownership is non-nil (clears language + playing quiet first; dual SceneDelegate hooks debounced by ``shouldInvokeOwnedSurfaceForegroundEnsure`` while still consuming quiet/pending).
-   - ``pushSettledLanguageAcceptanceContentIfNeeded()`` fires **one** dual-axis high-signal push after stream-switch hold clears (``setPlaying`` / soft-resume no-op) when owned language still lags destination — bypasses language quiet once per destination while ineligible so attach-storm quiet cannot freeze flag chrome for the whole lock stretch. Consume-once; re-open on destination change, eligibility, become-active, or `contentUpdates`.
+   - ``pushSettledLanguageAcceptanceContentIfNeeded()`` after stream-switch hold clears (``setPlaying`` / soft-resume no-op) when owned language still lags destination: clears language quiet once, re-runs a **full** ``ensureAuthoritativeLanguageContentIfNeeded()`` soft budget, and while still lagging under ineligible request schedules bounded delayed post-settled soft ensure (``postSettledLanguageEnsureDelayedIntervalsMilliseconds``). Consume-once settle entry while ineligible; re-open on destination change, eligibility, become-active, or `contentUpdates`. Soft budgets may still exhaust without owned language acceptance for some lock-stretch playing switches; become-active / ``ensureAuthoritativeContentOnForegroundIfNeeded()`` is the proven presentable-window heal.
    - ``pushSettledPlayingAcceptanceContentIfNeeded()`` fires **one** dual-axis high-signal push after hold/connect clear when the actor is authoritative `.playing` and owned visual still lags (``.prePlay`` / ``.userPaused``) — bypasses playing quiet once while ineligible so attach-storm / soft-resume quiet cannot freeze Connecting chrome for the whole lock stretch. Consume-once; re-open on optimistic toggle / stream-switch, eligibility, become-active, or `contentUpdates`.
    - ``ensureAuthoritativePlayingContentIfNeeded()`` re-pushes (up to ``authoritativePlayingContentEnsureMaxAttempts``, re-reading owned visual after each push) when actor is authoritative `.playing` without hold/connect but last-pushed or owned visual is still `.prePlay` or `.userPaused` (stream-switch Connecting sampler + soft-resume pause / Connecting freeze). After budget exhaustion while request is ineligible, playing ensure quiet pending stops status-driven thrash; visual-only `.playing` repair re-pushes defer while quiet; pause and language mutations still push. Re-arm on ``rearmPlayingEnsureQuietPending()``, optimistic toggle / stream-switch, eligibility, become-active, or `contentUpdates`. Concurrent soft-ensure re-entry collapses into one in-flight loop per axis. Also invoked from soft-resume publish when actor visual is already `.playing` (publish no-op path runs settled language + playing acceptance then soft ensure without blind re-arm) and from foreground owned-surface ensure. ``setPlaying`` sequences settled language acceptance then settled playing acceptance then soft playing ensure so one ContentState can co-converge both axes without soft-resume thrash.
    - After a bounded streak of `Activity.update` results that leave system-held chrome lagging (system `content.state` language still prior, or visual stuck on `.userPaused` / `.prePlay` while candidate needs Connecting/playing/pause), recreation is considered. End + ``startActivity()`` runs **only when** interactive request is eligible (activities enabled + application active); otherwise the existing surface is kept and a pending ensure is recorded **once** per freeze (no deferred-log flood while still ineligible). On become-active with ownership already non-nil, ``shouldInvokeOwnedSurfaceForegroundEnsure`` gates the cycle (consume quiet/pending; debounce dual hooks; second pass when chrome still lags while eligible), then soft language/playing ensure runs first; eligible-only recreation only if soft ensure still fails. Pure visual freezes prefer soft playing-ensure retries. See docs/Live-Activity-Stacking-and-Media-Surfaces.md.
@@ -176,13 +177,55 @@ to `WidgetEventObserver.beginObserving(unsafeSequence:onElement:onTermination:)`
 
 See `RadioLiveActivityManager.swift` (``beginObservingActivityEvents(_:)``, ``activityObservationTask``, class header), `WidgetSurface/WidgetEventObserver.swift`, and the cross-references below. The Tier 2 Live Activity events item (plus the parallel PlayerEvent consumer in `WidgetRefreshManager`) is complete; the common observation pattern is now in one internal helper for future consumers.
 
+### Cross-Process Home Live Chrome (Privacy-Gated Projection)
+
+**Problem:** OI-1 correctly made visual/playback chrome **memory-only** for the session (`inMemorySessionWidgetSnapshot`). The incomplete half of that contract was live **cross-process paint**: home/Control Providers run in the widget extension and **cannot** read main-app session RAM. ``WidgetRefreshManager.performRefresh`` only calls `WidgetCenter.reloadTimelines` — it does **not** pass visual/language into WidgetKit. Main-process “refresh executed … visualState: .playing” is a **scheduler label**, not Provider paint proof. Extension paint comes from App Group + process-local session, re-read after each reload wake.
+
+**Solution:** Privacy-gated App Group key ``homeWidgetLiveChrome`` (JSON ``HomeWidgetLiveChrome``: visual + language + hasError + stamp metadata). Same privacy class as ``homeWidgetStreamMetadata`` (write only while ``hasActiveWidgets`` or widget-process bypass; clear on gate close, privacy clear, factory residual, terminate).
+
+| Layer | Role |
+|-------|------|
+| **Session RAM** (`loadPersistedWidgetState`) | Process-local SSOT after extension optimistic intent or main-app in-process host |
+| **Live chrome mirror** (`loadHomeWidgetLiveChromeMirror`) | Extension-readable projection when main-only transitions left no extension session |
+| **Factory** | ``.prePlay`` + ``preferredWidgetLanguage()`` + `hasError == false` when both absent |
+| **`reloadTimelines`** | Wake signal only — payload is the mirror / session, not the reload call itself |
+
+**Provider read order** (``WidgetProviderSnapshotResolver/resolveFromSnapshot``):
+
+```text
+// Visual / language / hasError — pure resolveHomeWidgetChromeFields
+// agreement → session; disagreement → greater updatedAt (tie → session); neither → factory
+session + homeWidgetLiveChrome → preferredWidgetLanguage() when language empty
+
+// Program metadata (unchanged; separate key)
+session.streamMetadata → homeWidgetStreamMetadata → nil
+```
+
+When chrome fields agree, session wins (same-process optimistic continuity). When they disagree, the **fresher** wall-clock stamp wins so main-app settle on ``homeWidgetLiveChrome`` can heal a stale extension-session switch-hold ``.prePlay`` without inventing mid-hold ``.playing`` when the mirror still holds Connecting. Main-app settle after drain must stamp the mirror so extension cold wakes and warm extension processes both converge.
+
+**Writers (mechanism names):**
+
+| Path | Stamps live chrome? |
+|------|---------------------|
+| ``savePersistedWidgetState`` / ``persistWidgetSnapshot`` (gate open) | Yes — ``stampHomeWidgetLiveChromeFromSession`` (identity skip) |
+| Sticky early pause, ``setPlaying``, switch hold, paused switch, ``performActualSave`` | Yes (project honesty; soft-resume holds prior ``.userPaused``, no intermediate Connecting) |
+| Extension optimistic toggle / switch | Yes (widget-process bypass; same pure planners) |
+| ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded`` | Once on gate false→true |
+| ICY / ``persistStreamMetadataForWidgets`` | **No** (metadata only) |
+| LA ContentState push | **No** (different gate class; not home privacy) |
+| ``bumpWidgetLivenessTimestamp`` alone | **No** (liveness ≠ chrome) |
+
+**Must never:** invent ``.playing`` when the mirror holds ``.prePlay`` (switch hold); treat live chrome as interactive-app proof; read LA durable mirrors or retired on-disk visual keys for home chrome; restore play chrome across cold launch (OI-1).
+
+**Canonical mechanism SSOT:** [`docs/Home-Live-Chrome-App-Group-Mirror-Design.md`](Home-Live-Chrome-App-Group-Mirror-Design.md) (§5 writers, §6 Provider order, §6.3 passive/termination, §7 privacy clear). App Group table row in `SharedPlayerManager.swift`.
+
 ### Invariants (Must Hold After Any Edit)
 
-- **PersistedWidgetState is never bypassed** for widget display, liveness, or relaunch decisions. All providers, `loadSharedState`, and `isMainAppProcessRecentlyActive` continue to read it.
+- **PersistedWidgetState is never bypassed** for in-process session display or liveness derivation. Providers resolve via ``WidgetProviderSnapshotResolver`` (``resolveHomeWidgetChromeFields`` freshness for visual/language/hasError; session → program-metadata mirror for titles).
 - Live Activity visual state can be (and is) derived from in-memory SPM values without requiring a `UserDefaults` write in the common path.
 - An `Activity.update` is sent only when `(visualState, streamMetadata)` differs from the last pushed value.
-- Termination cleanup (`handleAppWillTerminate` with waited system end, `forceStaleLivenessTimestampForTermination`, cold-launch residual reaping in `observeExistingActivities`) must remain correct: no interactive LA after process death on delivered paths; residuals reaped on relaunch.
-- Widget observable behavior (timeline entries, "tap_to_open" after quit, program title in snapshots) is unchanged.
+- Termination cleanup (`handleAppWillTerminate` with waited system end, `forceStaleLivenessTimestampForTermination` including ``clearHomeWidgetLiveChromeMirror()``, cold-launch residual reaping in `observeExistingActivities`) must remain correct: no interactive LA after process death on delivered paths; no resurrected home play chrome (OI-1); residuals reaped on relaunch.
+- Widget observable behavior (timeline entries, "tap_to_open" after quit, program title in snapshots) remains privacy-gated; live chrome is session-scoped only.
 
 ### Background Playing Considerations
 
@@ -240,7 +283,7 @@ Same-stream soft-resume (`canSoftResumeSameStream`) intentionally **skips** stam
 |---------|-----------------------------------|
 | Home widget | Connecting skip + event-path coalesce (this doc, termination section) |
 | Main app | Primary: ``visualStateDidChange`` → ``updateUI``; status race lead only (this section) |
-| Live Activity | ``setPlaying`` → settled playing acceptance + soft ensure; **not** main-app status resolver — see [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) “Connecting Chrome vs Audible Start” |
+| Live Activity | ``setPlaying`` → settled language acceptance (soft-ensure re-arm + delayed post-settled ensure) then settled playing acceptance + soft ensure; presentable-window heal via foreground owned-surface ensure; **not** main-app status resolver — see [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) |
 
 **SeeAlso:** ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``, ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``, ``RadioPlayerChromeVisualResolver``, ``SharedPlayerManager/setPlaying()``, ``SharedPlayerManager/makeEventsStreamWithReplay()``, [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) (main-app chrome consumer), [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md), `Lutheran RadioTests/RadioPlayerChromeVisualResolverTests.swift`.
 
@@ -254,7 +297,7 @@ System Now Playing, Live Activities, and widgets are three independent iOS surfa
 - **Coordinated refresh:** ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)`` (main app) aligns Now Playing + Live Activity after visual transitions; widget reloads remain on the Tier 2 ``PlayerEvent`` observer unless explicitly requested.
 - **LA start policy:** First `.playing` via ``setPlaying()`` (``.startOrUpdate``); background catch-up via ``RadioLiveActivityManager/handleAppWillEnterBackground()``; termination ends LA immediately.
 
-Full stacking matrix, push-cost analysis, and QA scenarios: [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md).
+Full stacking matrix, language/playing ensure, deferred recreation, presentable-window heal residual, push-cost analysis, and QA scenarios: [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md).
 
 ## Cross-References
 
@@ -275,25 +318,29 @@ Full stacking matrix, push-cost analysis, and QA scenarios: [`docs/Live-Activity
 
 - `WidgetSurface/WidgetLanguageDisplay.swift` — pure ``displayFlag(for:)``, ``displayLanguageName(for:preferredStreamLanguage:)``.
 - `WidgetSurface/WidgetProviderPresentationAssembly.swift` — pure Provider presentation slice assembly.
-- Membership-exception `WidgetDisplayModels.swift` — ``WidgetProviderSnapshotResolver`` (snapshot reads, actor hygiene, stream-catalog labels), catalog-aware ``displayLanguageName(for:)`` wrapper, ``WidgetIntentExecution``; calls `SharedPlayerManager` / `WidgetRefreshManager` for hygiene and optimistic intent side effects.
+- Membership-exception `WidgetDisplayModels.swift` — ``WidgetProviderSnapshotResolver`` (``resolveHomeWidgetChromeFields`` freshness for visual/language/hasError; program metadata peer; actor hygiene; stream-catalog labels), catalog-aware ``displayLanguageName(for:)`` wrapper, ``WidgetIntentExecution``; calls `SharedPlayerManager` / `WidgetRefreshManager` for hygiene and optimistic intent side effects.
+- `WidgetSurface/HomeWidgetLiveChrome.swift` — pure ``HomeWidgetLiveChrome`` payload + identity-skip helper (presentation-only).
 - `LutheranRadioWidget.swift` — `SimpleEntry`, `Provider`, family views, `WidgetMetadataRegion` (thin delegates to coordinators + factory).
 - `LutheranRadioWidgetLiveActivity.swift` — `LutheranRadioLiveActivityWidget`, `LockScreenLiveActivityView`, Dynamic Island regions, intents.
 - `LutheranRadioWidgetControl.swift` — Control widget `Value` + toggle (same derivation path as home widgets).
-- `SharedPlayerManager.swift` — `PersistedWidgetState`, `isMainAppProcessRecentlyActive`, `forceStaleLivenessTimestampForTermination`, `bumpWidgetLivenessTimestamp`.
+- `SharedPlayerManager.swift` (+ Persistence / AppGroup extensions) — `PersistedWidgetState`, App Group SSOT table (``homeWidgetLiveChrome``, ``homeWidgetStreamMetadata``), `isMainAppProcessRecentlyActive`, `forceStaleLivenessTimestampForTermination`, `bumpWidgetLivenessTimestamp`, live-chrome stamp/clear helpers.
 - `RadioLiveActivityManager.swift`, `WidgetRefreshManager.swift`, `AppDelegate.swift`, `SceneDelegate.swift`.
 - `RadioPlayerCoordinator+StatusDistribution.swift` — main-app chrome dual path: ``beginObservingVisualStateForChrome()`` (primary SSOT paint), ``handleStatusChange`` (demoted adapter), pure ``RadioPlayerChromeVisualResolver`` (soft-resume hold promote, sticky pause, Connecting race, supersession gate).
 - `CODING_AGENT.md` — Documentation & Comment Standards, Single Source of Truth Principles, cross-target shared files.
-- [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) — widget backlog, test coverage, `WidgetSurface` coordinator status.
-- [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) — non-forcing `PlayerEvent` consumers including main-app chrome observation.
+- [`docs/Home-Live-Chrome-App-Group-Mirror-Design.md`](Home-Live-Chrome-App-Group-Mirror-Design.md) — mechanism SSOT for privacy-gated home live chrome (writers, Provider order, privacy clear, success criteria).
+- [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) — widget backlog, test coverage, `WidgetSurface` coordinator status, freshness stack.
+- [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) — non-forcing `PlayerEvent` consumers including main-app chrome observation; OI-1 + live projection note.
 - [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) — Connecting-until-audible, soft-resume publish, LA settled acceptance (orthogonal to main chrome status adapter).
 
 All user-visible strings use `String(localized: "...", table: "Localizable")`.
 
 ## See Also
 
-- `README.md` (Single Sources of Truth section — event-driven consumers + presentation surfaces)
+- `README.md` (Single Sources of Truth section — event-driven consumers + presentation surfaces + live chrome pointer)
+- [`docs/Home-Live-Chrome-App-Group-Mirror-Design.md`](Home-Live-Chrome-App-Group-Mirror-Design.md) (privacy-gated ``homeWidgetLiveChrome`` mechanism SSOT)
 - [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md)
-- [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) (main-app chrome consumer; multi-cast replay)
+- [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) (main-app chrome consumer; multi-cast replay; OI-1)
 - [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) (Connecting vs audible start; soft-resume / setPlaying surfaces)
 - ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``, ``RadioPlayerChromeVisualResolver``
+- ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``, ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``
 - `<doc:Architecture>` (in the Core DocC catalog)

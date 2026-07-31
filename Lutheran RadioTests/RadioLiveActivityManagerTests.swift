@@ -729,14 +729,15 @@ class RadioLiveActivityManagerTests: XCTestCase {
         manager._test_clearLastPushedContent()
     }
 
-    /// After soft language ensure quiet while lock/ineligible, one high-signal settle push is
-    /// allowed after stream-switch hold clears (audible start / soft-resume path).
+    /// After soft language ensure quiet while lock/ineligible, post-hold settle re-arms soft
+    /// language ensure after stream-switch hold clears (audible start / soft-resume path).
     ///
     /// Protects lock-stretch language freeze: attach-storm soft budget often exhausts during
     /// Connecting, then quiet defers language-only status re-pushes for the rest of the stretch.
     /// Settled acceptance is consume-once per destination while ineligible; destination change
-    /// and eligibility re-open the window. Does **not** invent `.playing` during hold; does
-    /// **not** end+request while ineligible.
+    /// and eligibility re-open the settle entry. Delayed post-settled soft ensure may continue
+    /// after the entry while owned language still lags. Does **not** invent `.playing` during
+    /// hold; does **not** end+request while ineligible.
     func testSettledLanguageAcceptancePushAfterHoldClearWhileQuiet() {
         // Hold still active → wait for setPlaying (Connecting honesty).
         XCTAssertFalse(
@@ -758,7 +759,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 settledAcceptanceConsumedDestination: nil,
                 isRequestEligible: false
             ),
-            "Post-hold language mismatch must allow one settled acceptance push"
+            "Post-hold language mismatch must allow one settled acceptance soft-ensure re-arm"
         )
         // Consume-once while still ineligible.
         XCTAssertFalse(
@@ -850,6 +851,124 @@ class RadioLiveActivityManagerTests: XCTestCase {
         manager._test_setLanguageSettledAcceptanceConsumedDestination(nil)
         manager._test_setLanguageEnsureQuietPendingDestination(nil)
         manager._test_clearLastPushedContent()
+    }
+
+    /// After post-hold settle soft ensure still leaves owned language lagging, delayed soft
+    /// ensure retries must remain schedulable even when quiet / settle consume are engaged.
+    ///
+    /// Protects destination language honesty after widget / background stream switch: quiet
+    /// correctly stops status thrash, but must not permanently freeze language ensure until
+    /// unlock. Does **not** invent `.playing`; does **not** end while request ineligible
+    /// (recreation eligibility is a separate gate).
+    func testPostSettledLanguageEnsureRetriesScheduleWhileOwnedLanguageLags() {
+        // Quiet + settle consumed + owned still prior language → still schedule delayed ensure.
+        XCTAssertTrue(
+            manager._test_shouldSchedulePostSettledLanguageEnsureRetries(
+                hasCurrentActivity: true,
+                destinationLanguage: "et",
+                ownedContentLanguage: "fi",
+                isStreamSwitchHoldActive: false
+            ),
+            "Post-audible lag with owned prior language must schedule delayed soft ensure"
+        )
+        // Missing owned language while destination stamped → schedule.
+        XCTAssertTrue(
+            manager._test_shouldSchedulePostSettledLanguageEnsureRetries(
+                hasCurrentActivity: true,
+                destinationLanguage: "et",
+                ownedContentLanguage: nil,
+                isStreamSwitchHoldActive: false
+            ),
+            "Missing owned language must schedule delayed soft ensure for destination"
+        )
+        // Owned already matches destination → no delayed ensure.
+        XCTAssertFalse(
+            manager._test_shouldSchedulePostSettledLanguageEnsureRetries(
+                hasCurrentActivity: true,
+                destinationLanguage: "et",
+                ownedContentLanguage: "et",
+                isStreamSwitchHoldActive: false
+            ),
+            "Matched owned language must not schedule delayed soft ensure"
+        )
+        // Hold still active → wait for audible settle (Connecting honesty).
+        XCTAssertFalse(
+            manager._test_shouldSchedulePostSettledLanguageEnsureRetries(
+                hasCurrentActivity: true,
+                destinationLanguage: "et",
+                ownedContentLanguage: "fi",
+                isStreamSwitchHoldActive: true
+            ),
+            "Stream-switch hold must block delayed post-settled language ensure"
+        )
+        // Unowned surface → no schedule (missing-card path is separate).
+        XCTAssertFalse(
+            manager._test_shouldSchedulePostSettledLanguageEnsureRetries(
+                hasCurrentActivity: false,
+                destinationLanguage: "et",
+                ownedContentLanguage: "fi",
+                isStreamSwitchHoldActive: false
+            ),
+            "Unowned activity must not schedule delayed post-settled language ensure"
+        )
+        // Empty destination → no schedule.
+        XCTAssertFalse(
+            manager._test_shouldSchedulePostSettledLanguageEnsureRetries(
+                hasCurrentActivity: true,
+                destinationLanguage: "",
+                ownedContentLanguage: "fi",
+                isStreamSwitchHoldActive: false
+            ),
+            "Empty destination must not schedule delayed language ensure"
+        )
+
+        // Destination mutation still clears quiet / re-arms soft ensure for a new language
+        // (settle consume reopen is covered by the settled acceptance suite).
+        manager._test_setLanguageEnsureQuietPendingDestination("et")
+        XCTAssertFalse(
+            manager._test_shouldRunLanguageContentEnsureSoftPushes(
+                needsLanguageEnsure: true,
+                destinationLanguage: "et",
+                quietPendingDestination: "et",
+                isRequestEligible: false
+            ),
+            "Quiet for same destination while ineligible must still suppress status soft ensure"
+        )
+        XCTAssertTrue(
+            manager._test_shouldRunLanguageContentEnsureSoftPushes(
+                needsLanguageEnsure: true,
+                destinationLanguage: "et",
+                quietPendingDestination: nil,
+                isRequestEligible: false
+            ),
+            "Clearing quiet (delayed retry / post-hold re-arm) must allow soft ensure again"
+        )
+        // Foreground ensure still runs when language quiet is set (owned language lag).
+        XCTAssertTrue(
+            manager._test_shouldInvokeOwnedSurfaceForegroundEnsure(
+                hasCurrentActivity: true,
+                lastOwnedSurfaceForegroundEnsureAt: Date(),
+                now: Date(),
+                debounceInterval: 60,
+                languageEnsureQuietPending: true,
+                playingEnsureQuietPending: false,
+                pendingInteractiveLiveActivityEnsure: false,
+                contentEnsureStillNeeded: true,
+                isRequestEligible: false
+            ),
+            "Language quiet pending must force owned-surface foreground ensure on become-active"
+        )
+        // Recreation remains gated when request is ineligible (surface continuity).
+        XCTAssertFalse(
+            manager._test_shouldRecreateAfterForegroundSoftEnsureFailed(
+                languageStillMismatches: true,
+                playingStillStalled: false,
+                isRequestEligible: false,
+                recreationsAttempted: 0
+            ),
+            "Language-only lag while request ineligible must not end+request"
+        )
+        manager._test_setLanguageEnsureQuietPendingDestination(nil)
     }
 
     /// After soft playing ensure quiet while lock/ineligible, one high-signal settle push is

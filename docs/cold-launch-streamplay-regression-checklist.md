@@ -6,7 +6,7 @@ Regression guard for Lutheran Radio playback startup, resume, stream switching, 
 
 **Canonical agent rules:** [`CODING_AGENT.md`](../CODING_AGENT.md) — read first.
 
-**Last updated:** 2026-07-16
+**Last updated:** 2026-07-30
 
 ---
 
@@ -62,7 +62,7 @@ End with security impact, build status, localization needed.
 
 ## 1. Security
 
-1. **DNS TXT validation** — `SecurityModelValidator` queries ordered `securityModelDomains` (`securitymodels.siikkari.net` → `securitymodels.lutheran.radio` → `securitymodels.lutheranradio.sk`); playback blocked on permanent failure. One `validateSecurityModel() started` per session. No duplicate validation outside `Core/Actors/`.
+1. **DNS TXT validation** — `SecurityModelValidator` queries ordered `securityModelDomains` (`securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk`); playback blocked on permanent failure. One `validateSecurityModel() started` per session. No duplicate validation outside `Core/Actors/`.
 2. **Certificate pinning** — Full DER SHA-256 digest pinning in `CertificateValidator` against `pinnedFingerprintDigests` (sole live `*.siikkari.net` leaf; retired pre-cutover digests are not accepted); SPKI pinning in `Info.plist` for apex `siikkari.net`. Runtime never compares colon-hex strings. Streaming hosts use sole media apex `preferredStreamingDomainSuffixes` (`siikkari.net`).
 3. **Time skew** — Device vs server skew > 5 minutes denies transition-window leniency.
 4. **Security model** — `expectedSecurityModel` is `"dallas"` in `SecurityConfiguration.swift`; stream URLs include the security model query parameter.
@@ -142,6 +142,8 @@ End with security impact, build status, localization needed.
 12. **Explicit-pause switch block** — Widget pause then switch: `[Widget Switch] Blocked — userPaused, no auto-resume`.
 13. **Stream-failure switch** — After decode/network failure (not user pause): `markPlaybackStoppedByStreamFailure()` with intent unchanged (`.shouldBePlaying`); widget switch auto-resumes without extra play tap. See Section 12.3.
 14. **Widget switch delivery** — `SwitchStreamIntent` must reach the main app via App Group + Darwin before §6.10 handler lines: `Found pending action: switch` with non-nil `Pending language: {code}`; then `Executing widget switch action to language:`. If pause/play Darwin works but switch produces zero pending-action logs, treat as extension routing regression (`isRunningInWidget`, `signalWidgetSwitchAction`), not ICY or stream failure.
+15. **Home language vs LA language under lock** — After widget playing-path switch while lock/inactive: home refresh / snapshot language matches destination; soft language ensure may log `language ensure quiet pending` / post-settled retries with `destination≠owned` without ending the activity (`recreation deferred` while request ineligible is correct). Do **not** require owned `contentState` language to match destination for the entire inactive stretch.
+16. **Presentable-window LA language heal** — After a lock-stretch language stall (destination audio + home correct; system-held language prior), unlock into main app **without** changing language: owned LA language (flag/name) must converge to destination (often with playing visual) on the same interactive activity; no `Failed to start Live Activity: visibility` solely from language lag. Re-lock should show destination chrome. Mechanism: ``ensureInteractiveLiveActivityIfNeeded`` → ``ensureAuthoritativeContentOnForegroundIfNeeded`` (soft ensure; eligible recreation only if soft still fails).
 
 ---
 
