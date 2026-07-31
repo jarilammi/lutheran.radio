@@ -240,6 +240,146 @@ final class WidgetDisplayModelsExtensionTests: XCTestCase {
         XCTAssertFalse(fields.currentLanguage.isEmpty, "Factory language is preferredWidgetLanguage()")
     }
 
+    /// Residual live chrome must not paint after simulated reboot (boot-identity distrust).
+    ///
+    /// **Invariant protected:** ``shouldDistrustDurableMirrorPlayPlanning()`` →
+    /// ``resolveFromSnapshot`` ignores residual ``homeWidgetLiveChrome`` even when the App Group
+    /// blob still holds ``.playing`` (dirty power-off never cleared the mirror).
+    ///
+    /// - SeeAlso: ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
+    ///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:distrustLiveChrome:)``.
+    func testProviderResolveIgnoresResidualLiveChromeAfterSimulatedReboot() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+
+        // Seed residual while still on a trusted boot identity (pre-reboot main-app stamp).
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "fi",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "preRebootResidual"
+            )
+        )
+        XCTAssertEqual(SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState, .playing)
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        // Simulate hard power-off: prior boot epoch remains; live-chrome blob survives.
+        defaults.set(1.0, forKey: SharedPlayerManager.recordedSystemBootTimeAppGroupKey)
+        XCTAssertTrue(SharedPlayerManager.hasDeviceRebootedSinceLastRecordedBoot())
+        XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .playing,
+            "Precondition: residual blob still on disk after boot-identity mismatch"
+        )
+
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(
+            fields.visualState,
+            .prePlay,
+            "Reboot distrust must paint factory, not residual .playing"
+        )
+        XCTAssertFalse(fields.hasError)
+        XCTAssertFalse(fields.currentLanguage.isEmpty, "Factory language is preferredWidgetLanguage()")
+    }
+
+    /// Termination sentinel alone also drops residual live chrome for Provider paint.
+    ///
+    /// Force-quit class residual: delivered terminate clears the mirror, but a residual blob can
+    /// remain when `willTerminate` never ran. Seed residual first, then write the sentinel
+    /// without re-clearing via the full terminate helper, by restoring a post-sentinel blob
+    /// with a non-playing visual that the write path still allows under distrust.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/forceStaleLivenessTimestampForTermination()``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``.
+    func testProviderResolveIgnoresResidualLiveChromeAfterTerminationSentinel() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .userPaused,
+                currentLanguage: "sv",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "preTerminateResidual"
+            )
+        )
+        XCTAssertEqual(SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState, .userPaused)
+
+        // Full terminate hygiene clears the mirror; re-seed residual after sentinel to model
+        // force-quit residual (clear never ran) while distrust remains true.
+        SharedPlayerManager.forceStaleLivenessTimestampForTermination()
+        XCTAssertTrue(SharedPlayerManager.hasExplicitTerminationSentinel())
+        XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Delivered terminate clears live chrome"
+        )
+
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .userPaused,
+                currentLanguage: "sv",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "forceQuitClassResidual"
+            )
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .userPaused,
+            "Non-playing residual may remain on disk under distrust"
+        )
+
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(
+            fields.visualState,
+            .prePlay,
+            "Termination distrust must paint factory, not residual .userPaused"
+        )
+    }
+
+    /// Extension must not re-stamp ``.playing`` live chrome while terminate/reboot distrust is true.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/persistHomeWidgetLiveChromeMirror(_:)``,
+    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``.
+    func testExtensionRefusesPlayingLiveChromeStampUnderRebootDistrust() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        defaults.set(1.0, forKey: SharedPlayerManager.recordedSystemBootTimeAppGroupKey)
+        XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "en",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "optimisticToggle"
+            )
+        )
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Extension must not project residual .playing under reboot distrust"
+        )
+    }
+
     /// Protects hasError fall-through: session absent → live chrome hasError paints.
     func testProviderResolveHasErrorFromLiveChromeWhenSessionNil() {
         SharedPlayerManager.clearInMemorySessionSnapshot()

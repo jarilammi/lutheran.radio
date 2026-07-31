@@ -445,7 +445,14 @@ class ViewController: UIViewController {
             }
 
             // Memory-only policy: purge any stale on-disk visual keys and reset to factory .prePlay
-            // before resurrection guards or tuning. Auto-play on first launch remains intact.
+            // before resurrection guards or tuning.
+            //
+            // User-initiated main open: this process started because the human opened main
+            // (icon / open URL / Siri). After factory reset, product policy is open app = radio
+            // (special tuning then play when sticky intent is absent) — not App Group play restore.
+            // Residual post-reboot surprise is orthogonal: discard residual pending + clear residual
+            // NP so pre-reboot mailbox / media cards cannot surprise-attach *before* that user path.
+            // (``discardResidualPendingActionsAndArmMailboxForThisProcess`` via factory reset.)
             await SharedPlayerManager.shared.resetToFactoryDefaultsOnLaunch()
             
             let initialStream = SharedPlayerManager.streamForLanguageCode(languageCode)
@@ -464,24 +471,27 @@ class ViewController: UIViewController {
             backgroundImageController.scheduleDeferredForStreamSwitch(initialStream)
             
             // ─────────────────────────────────────────────────────────────────────────
-            // Cold-launch play guard — MUST run before any tuning sound or play().
+            // User-initiated main-open play guard — MUST run before any tuning sound or play().
             //
-            // Loads in-session visual + intent (memory-only; cold launch is always .prePlay
-            // after ``resetToFactoryDefaultsOnLaunch()`` above).
+            // Loads in-session visual + intent (memory-only; always .prePlay after
+            // ``resetToFactoryDefaultsOnLaunch()`` above on a true cold process).
             //
             // Process isolation: only **this-process** sticky intent blocks auto-start
             // (`.userPaused` / `.cleared` / `.securityLocked`). Prior-process App Group
             // termination liveness (`lastUpdateTime == 0`) is **not** consulted — that
-            // key is widget passive chrome / durable-mirror distrust only. Play status
-            // never survives process death.
+            // key is residual widget passive chrome / durable-mirror distrust only
+            // (post-reboot residual presentation while main is not resident). Play status
+            // never survives process exit.
             //
             // Tuning sound is deliberately *after* this gate so a sticky launch never
             // emits the connection clip.
             //
-            // - Precondition: UITest short-circuit already returned above.
+            // - Precondition: UITest short-circuit already returned above; user (or open URL)
+            //   started this main process.
             // - Postcondition (blocked path): UI reflects loaded visual; no tuning, no play.
             // - SeeAlso: SharedPlayerManager.play (parallel sticky early return),
             //   SharedPlayerManager.hasExplicitTerminationSentinel (presentation only),
+            //   docs/Widget-Presentation-Dataflow.md (user-initiated main open vs residual surprise),
             //   CODING_AGENT.md (SSOT resurrection, currentPlaybackIntent),
             //   RadioPlayerCoordinator.performColdLaunchPlaybackIfAllowed.
             // ─────────────────────────────────────────────────────────────────────────

@@ -294,17 +294,28 @@ extension SharedPlayerManager {
         return abs(current - recorded) > 2.0
     }
 
-    /// Whether Live Activity toggle planning must refuse **play** from the durable App Group
-    /// mirror alone (post-termination sentinel or device reboot since last recorded boot).
+    /// Whether presentation must refuse residual App Group chrome as a live session
+    /// (post-termination sentinel or device reboot since last recorded boot).
     ///
-    /// ActivityKit `ContentState` remains trusted: a real lock-screen glyph is an explicit
-    /// user-facing signal. Stale mirror after dirty power-off must not call
-    /// ``userRequestedPlay()`` without that content signal.
+    /// **Live Activity:** ActivityKit `ContentState` remains trusted; durable toggle mirror alone
+    /// must not call ``userRequestedPlay()`` after dirty power-off.
+    /// **Home widget planning:** residual ``homeWidgetLiveChrome`` / empty factory alone must not
+    /// schedule pending **play** after process exit or reboot (``planHomeWidgetToggle(resolution:…)``).
+    /// **Home widget paint:** Providers ignore residual live chrome via
+    /// ``resolveHomeWidgetChromeFields(..., distrustLiveChrome:)`` so last play/pause glyphs
+    /// do not survive dirty exit / reboot when the App Group blob was not cleared.
+    /// **Extension liveness:** also blocks opening a new interactive `lastUpdateTime` window.
+    /// **Extension write:** refuses stamping ``.playing`` onto ``homeWidgetLiveChrome`` while true.
     ///
     /// - Returns: `true` when ``hasExplicitTerminationSentinel()`` or
     ///   ``hasDeviceRebootedSinceLastRecordedBoot()``.
     /// - SeeAlso: ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)``,
-    ///   ``WidgetIntentExecution/performLiveActivityToggle()``.
+    ///   ``WidgetIntentCoordinators/planHomeWidgetToggle(resolution:distrustDurableMirrorPlay:mainProcessRecentlyActive:)``,
+    ///   ``WidgetIntentExecution/performLiveActivityToggle()``,
+    ///   ``WidgetIntentExecution/performHomeWidgetToggle()``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   ``persistHomeWidgetLiveChromeMirror(_:)``,
+    ///   ``bumpWidgetLivenessTimestamp(policy:minInterval:)``.
     nonisolated static func shouldDistrustDurableMirrorPlayPlanning() -> Bool {
         hasExplicitTerminationSentinel() || hasDeviceRebootedSinceLastRecordedBoot()
     }
@@ -364,8 +375,9 @@ extension SharedPlayerManager {
         language: String? = nil
     ) -> String? {
         persistOptimisticWidgetSnapshot(visualState, language: language)
-        // Also bump liveness from the widget action itself so isAppRunning() flips true
-        // without requiring main-app processing (prevents "tap_to_open" after widget play).
+        // Refresh liveness only when main is already recently active and not post-term/reboot
+        // (``bumpWidgetLivenessTimestamp`` extension honesty gate). Never open a new 60 s
+        // interactive session from extension alone after process exit.
         Self.bumpWidgetLivenessTimestamp(policy: .immediate)
         let actionId = scheduleWidgetAction(action: action)
         notifyMainApp(action: action)
@@ -497,12 +509,122 @@ extension SharedPlayerManager {
         return (action, parameter, actionId)
     }
 
-    /// Returns a pending widget action only if younger than `maxAge` seconds.
-    /// Expired actions are cleared automatically.
+    /// Whether the main process may execute App Group pending commands this runtime.
+    ///
+    /// Starts **false** in the main app so SceneDelegate / Darwin / launch-burst drains that
+    /// race ahead of cold-launch factory reset cannot honor residual pre-process mailbox
+    /// entries (post-reboot / post-quit leftovers). Armed only after
+    /// ``discardResidualPendingActionsAndArmMailboxForThisProcess()`` (factory reset path)
+    /// or privacy clear / test isolation that intentionally opens the mailbox again.
+    ///
+    /// Widget-extension processes start armed (they write and contract-test-read; they do not
+    /// attach the engine).
+    ///
+    /// - SeeAlso: ``getPendingActionIfFresh(maxAge:)``, ``resetToFactoryDefaultsOnLaunch()``,
+    ///   ``discardResidualPendingActionsAndArmMailboxForThisProcess()``.
+    // SAFETY: Process-local gate flipped only from main cold-launch / privacy / test isolation
+    // paths; concurrent drains that observe a mid-flip still either refuse (unarmed) or honor
+    // post-arm writes — residual pre-arm entries are cleared first.
+    #if LUTHERAN_MAIN_APP
+    nonisolated(unsafe) static var pendingActionMailboxAcceptingExecution = false
+    #else
+    nonisolated(unsafe) static var pendingActionMailboxAcceptingExecution = true
+    #endif
+
+    /// Drops every pending-action mailbox key without requiring a matching `actionId`.
+    ///
+    /// Used for cold-launch residual hygiene and privacy clear. Distinct from
+    /// ``clearPendingAction(actionId:)`` which is race-safe for single-command completion.
+    ///
+    /// - Postcondition: `pendingAction`, `pendingActionId`, `pendingActionTime`, and
+    ///   `pendingLanguage` are absent from the App Group (when available).
+    /// - SeeAlso: ``discardResidualPendingActionsAndArmMailboxForThisProcess()``,
+    ///   ``getPendingActionIfFresh(maxAge:)``.
+    nonisolated static func clearPendingActionMailbox() {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        defaults.removeObject(forKey: "pendingAction")
+        defaults.removeObject(forKey: "pendingActionId")
+        defaults.removeObject(forKey: "pendingActionTime")
+        defaults.removeObject(forKey: "pendingLanguage")
+        #if DEBUG
+        print("[SharedPlayerManager] Cleared pending-action mailbox (unconditional)")
+        #endif
+    }
+
+    /// Cold-launch / process-start hygiene: drop residual pending commands and allow future
+    /// this-process drains to honor new mailbox writes.
+    ///
+    /// Call from ``resetToFactoryDefaultsOnLaunch()`` **before** special tuning / cold auto-play
+    /// so SceneDelegate become-active and the launch drain burst cannot execute pre-reboot or
+    /// pre-quit leftovers. After this returns, only pending written while the mailbox is armed
+    /// (this process lifetime, after arm) is executable via ``getPendingActionIfFresh(maxAge:)``.
+    ///
+    /// - Postcondition: mailbox empty; ``pendingActionMailboxAcceptingExecution`` is `true`.
+    /// - SeeAlso: ``getPendingActionIfFresh(maxAge:)``, ViewController cold-launch Task,
+    ///   ``RadioPlayerCoordinator/checkForPendingWidgetActions()``.
+    nonisolated static func discardResidualPendingActionsAndArmMailboxForThisProcess() {
+        clearPendingActionMailbox()
+        // SAFETY: Process-local arm flip on nonisolated(unsafe) storage; concurrent drains that
+        // observe mid-flip either refuse (unarmed) or honor post-arm writes after residual clear.
+        unsafe pendingActionMailboxAcceptingExecution = true
+        #if DEBUG
+        print("[SharedPlayerManager] Pending mailbox armed for this process (residual discarded)")
+        #endif
+    }
+
+    /// Returns a pending widget action only if it is safe to execute in this process.
+    ///
+    /// **Freshness / honesty gates (any failure clears the mailbox entry and returns `nil`):**
+    /// 1. Main process not yet armed after cold start
+    ///    (``pendingActionMailboxAcceptingExecution``) — drops residual without execute so
+    ///    early SceneDelegate / Darwin drains cannot race special tuning.
+    /// 2. Pending wall-clock time is **before** the current device boot epoch — cross-reboot
+    ///    residual even when wall-clock age is still under `maxAge`.
+    /// 3. Explicit termination liveness sentinel still present — clean-quit residual must not
+    ///    fire until a later this-boot write after liveness is refreshed (mailbox should already
+    ///    be empty after factory arm; this is defense-in-depth).
+    /// 4. Age ≥ `maxAge` seconds (default 30).
+    ///
+    /// - Parameter maxAge: Maximum age in seconds for an executable pending command.
+    /// - Returns: Fresh this-boot pending command, or `nil` when absent / discarded.
+    /// - SeeAlso: ``discardResidualPendingActionsAndArmMailboxForThisProcess()``,
+    ///   ``hasDeviceRebootedSinceLastRecordedBoot()``, ``hasExplicitTerminationSentinel()``,
+    ///   ``RadioPlayerCoordinator/checkForPendingWidgetActions()``.
     nonisolated func getPendingActionIfFresh(maxAge: TimeInterval = 30) -> (action: String, parameter: String?, actionId: String)? {
         guard let pending = getPendingAction() else { return nil }
 
+        // Cold-launch race: refuse (and drop) residual until factory arm. Extension processes
+        // start armed and only contract-test-read the mailbox.
+        // SAFETY: Read of process-local nonisolated(unsafe) arm flag; false negatives only delay
+        // drain until next become-active / Darwin wake after arm.
+        if unsafe !Self.pendingActionMailboxAcceptingExecution {
+            #if DEBUG
+            print("[SharedPlayerManager] Pending action discarded — mailbox not armed this process (cold-launch residual hygiene)")
+            #endif
+            Self.clearPendingActionMailbox()
+            return nil
+        }
+
         let pendingTime = sharedDefaults?.double(forKey: "pendingActionTime") ?? 0
+        let currentBoot = Self.currentSystemBootTimeIntervalSince1970()
+        // Pending written before this boot (App Group survives reboot; wall-clock age alone is insufficient).
+        if pendingTime > 0, pendingTime < currentBoot - 2.0 {
+            #if DEBUG
+            print("[SharedPlayerManager] Pending action discarded — pre-boot residual (pendingTime=\(pendingTime), boot=\(currentBoot))")
+            #endif
+            clearPendingAction(actionId: pending.actionId)
+            return nil
+        }
+
+        // Clean-quit residual: termination sentinel still marks presentation distrust.
+        if Self.hasExplicitTerminationSentinel() {
+            #if DEBUG
+            print("[SharedPlayerManager] Pending action discarded — termination sentinel still present")
+            #endif
+            clearPendingAction(actionId: pending.actionId)
+            return nil
+        }
+
         let actionAge = Date().timeIntervalSince1970 - pendingTime
 
         guard actionAge < maxAge else {

@@ -85,6 +85,9 @@ internal func displayLanguageName(for code: String) -> String {
 /// - Disagreeing fields → **fresher** `updatedAt` wins (main settle mirror can heal stale
 ///   extension-session ``.prePlay`` after switch hold)
 /// - Only one source → that source; neither → factory ``.prePlay``
+/// - Termination sentinel or device reboot (``shouldDistrustDurableMirrorPlayPlanning()``) →
+///   treat residual live chrome as **absent** even if the App Group blob remains (dirty exit
+///   / power-off must not paint last play/pause glyphs)
 ///
 /// Interactive vs passive chrome still comes from liveness (`lastUpdateTime` /
 /// ``WidgetLivenessPresentation``) — live chrome alone is **not** proof the main app is interactive.
@@ -93,7 +96,8 @@ internal func displayLanguageName(for code: String) -> String {
 ///   ``SharedPlayerManager/loadPersistedWidgetState()``,
 ///   ``SharedPlayerManager/loadHomeWidgetLiveChromeMirror()``,
 ///   ``SharedPlayerManager/loadHomeWidgetStreamMetadataMirror()``,
-///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:)``,
+///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
+///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:distrustLiveChrome:)``,
 ///   ``WidgetProviderPresentationAssembly``,
 ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6 Provider read order),
 ///   docs/Widget-Functionality-Roadmap.md.
@@ -109,7 +113,9 @@ enum WidgetProviderSnapshotResolver {
     ///
     /// **Chrome resolution (visual / language / hasError):** pure
     /// ``resolveHomeWidgetChromeFields`` — session vs ``homeWidgetLiveChrome`` by field agreement
-    /// and wall-clock freshness (not rigid session-first). Language falls through to
+    /// and wall-clock freshness (not rigid session-first). When
+    /// ``shouldDistrustDurableMirrorPlayPlanning()`` is true, residual live chrome is ignored
+    /// (factory when session is also empty). Language falls through to
     /// ``preferredWidgetLanguage()`` when both sources leave language empty.
     ///
     /// **Program metadata:** session `streamMetadata` → ``loadHomeWidgetStreamMetadataMirror()``
@@ -117,12 +123,15 @@ enum WidgetProviderSnapshotResolver {
     ///
     /// **Must never:** invent ``.playing`` when the winning source holds ``.prePlay`` (switch hold);
     /// treat live chrome as interactive-app proof (liveness still drives passive `tap_to_open`);
+    /// paint residual live chrome after termination sentinel or device reboot;
     /// read LA durable mirrors or retired on-disk visual keys for home chrome.
     ///
     /// - Returns: Snapshot fields for Provider presentation assembly; factory defaults when both
-    ///   session and live-chrome mirrors are absent (program-metadata mirror may still populate title).
+    ///   session and live-chrome mirrors are absent or live chrome is distrusted
+    ///   (program-metadata mirror may still populate title).
     /// - SeeAlso: docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6.1–§6.5),
-    ///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:)``,
+    ///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:distrustLiveChrome:)``,
+    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
     ///   ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
     ///   ``persistHomeWidgetStreamMetadataMirror`` (program-title peer).
     nonisolated static func resolveFromSnapshot() -> WidgetProviderSnapshotFields {
@@ -133,15 +142,18 @@ enum WidgetProviderSnapshotResolver {
         let mirroredMetadata = SharedPlayerManager.loadHomeWidgetStreamMetadataMirror()
         // Live chrome + session: pure freshness selection so main-app settle on the App Group
         // mirror can heal a stale extension-session Connecting hold without rigid session-first.
+        // Post-termination / reboot: ignore residual live chrome so passive factory paint wins.
         let liveChrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
         let session = SharedPlayerManager.loadPersistedWidgetState()
+        let distrustLiveChrome = SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning()
 
         let chrome = resolveHomeWidgetChromeFields(
             sessionVisual: session?.visualState,
             sessionLanguage: session?.currentLanguage,
             sessionHasError: session?.hasError,
             sessionUpdatedAt: session?.updatedAt,
-            liveChrome: liveChrome
+            liveChrome: liveChrome,
+            distrustLiveChrome: distrustLiveChrome
         )
 
         let language = chrome.currentLanguage ?? SharedPlayerManager.preferredWidgetLanguage()

@@ -161,13 +161,17 @@ Leaf views (`WidgetMetadataRegion`, play/pause buttons) must not re-derive canon
 
 ## Open Issues (Tracked Outside Tier Backlog)
 
-### Force-quit liveness window (accepted)
+### Force-quit liveness window (accepted residual; mitigations shipped)
 
-**Status:** Documented, no code change planned
+**Status:** Documented platform limit + presentation mitigations
 
-After abrupt force-quit, `lastUpdateTime` may remain non-zero for up to **60 seconds**, so widgets can briefly show interactive chrome instead of "tap_to_open". Termination notification paths write sentinel `0` immediately; force-quit cannot. Documented in `LutheranRadioWidget.swift` (via ``WidgetLivenessPresentation``), `Widget-Presentation-Dataflow.md`, and `SharedPlayerManager` App Group / presentation notes. Main-app play is unaffected by this key (process isolation).
+After abrupt force-quit (app-switcher card dismiss), `applicationWillTerminate` is often **not** delivered, so `lastUpdateTime` may remain non-zero for up to **60 seconds** and interactive chrome can briefly appear instead of `tap_to_open`. Observed-termination paths write sentinel `0` immediately; force-quit cannot. That short window is an accepted platform residual when no reboot identity change applies.
 
-**SeeAlso:** `forceStaleLivenessTimestampForTermination()`, `isMainAppProcessRecentlyActive()`.
+**Shipped presentation honesty (mechanism names):** extension ``bumpWidgetLivenessTimestamp`` does not reopen a full interactive session when main is not recently active or ``shouldDistrustDurableMirrorPlayPlanning()`` is true; reboot boot-identity mismatch distrusts residual live-chrome paint and residual-only home **play** planning; factory reset / process-start clear residual system Now Playing before user-initiated main open may re-publish after attach.
+
+**User-initiated main open vs residual reboot surprise:** passive home chrome after quit / reboot does **not** mean “radio is still live,” and it does **not** cancel open-app = radio when the human starts main. Product policy: after ``resetToFactoryDefaultsOnLaunch()``, special tuning then stream when sticky pause is absent — icon, Siri, and passive `widgetURL` opens. Residual App Group / OS media while the main process is not resident must not invent a multi-minute live session. See [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md). Main-app `play()` is never gated by `lastUpdateTime == 0` (process isolation / OI-1).
+
+**SeeAlso:** `forceStaleLivenessTimestampForTermination()`, `isMainAppProcessRecentlyActive()`, ``shouldDistrustDurableMirrorPlayPlanning()``, ``resolveHomeWidgetChromeFields``, ``planHomeWidgetToggle``, ``clearSystemNowPlayingMetadataSynchronously()``.
 
 ### Widget extension cannot observe `PlayerEvent` (permanent)
 

@@ -4,13 +4,15 @@
 //
 //  Created by Jari Lammi on 24.7.2026.
 //
-//  Cold-launch factory reset and Now Playing / language hygiene contracts.
+//  Cold-launch factory reset, Now Playing / language hygiene, and the product split
+//  between **user-initiated main open** vs **residual post-reboot surprise**.
 //
 //  Shared collectors: `Lutheran RadioTests/Support/PlayerEventTestSupport.swift`.
 //  Isolation: ``prepareSharedPlayerManagerEventTestIsolation`` /
 //  ``tearDownSharedPlayerManagerEventTestIsolation``.
 //
 //  - SeeAlso: ``SharedPlayerManager``, ``PlayerEvent``,
+//    docs/Widget-Presentation-Dataflow.md (Cold launch vs passive widget open),
 //    docs/Event-Driven-Refactor-Roadmap.md,
 //    CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
 //
@@ -24,17 +26,33 @@ import WidgetSurface
 ///
 /// Protects purge-only visual-state disk cleanup, termination / language SSOT rules,
 /// Live Activity durable mirror clear completeness (visual + language App Group keys),
-/// and Live Activity language tracking independent of privacy-gated preferred widget
-/// language. Emission and media-surface suites are separate files.
+/// Live Activity language tracking independent of privacy-gated preferred widget language,
+/// and the **two distinct cold-start stories** documented in
+/// docs/Widget-Presentation-Dataflow.md:
+///
+/// 1. **User-initiated main open** — icon, Siri open, or `lutheranradio://open` starts a new
+///    main process. After ``resetToFactoryDefaultsOnLaunch()``, product policy is “open = radio”
+///    (special tuning then ``play()`` when sticky intent is absent). That path is **user-driven**:
+///    the human brought the main app to the foreground.
+/// 2. **Residual post-reboot / dirty-exit surprise** — App Group liveness, live chrome, pending
+///    mailbox, or OS Now Playing left over after force-quit or power cycle must **not** look like
+///    a live session or attach audio **without** that main-open path. Extension refuse / passive
+///    chrome / residual clear are honesty for (2); they must not invent sticky pause that cancels (1).
+///
+/// Emission and media-surface suites are separate files.
 ///
 /// - SeeAlso: ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
 ///   ``SharedPlayerManager/teardownNowPlayingSession()``,
+///   ``SharedPlayerManager/clearSystemNowPlayingMetadataSynchronously()``,
 ///   ``SharedPlayerManager/forceStaleLivenessTimestampForTermination()``,
 ///   ``SharedPlayerManager/clearAllLocalState()``,
 ///   ``SharedPlayerManager/preferredWidgetLanguage()``,
 ///   ``SharedPlayerManager/mainAppLiveActivityLanguageCode()``,
 ///   ``SharedPlayerManager/clearLiveActivityToggleVisualStateMirror()``,
 ///   ``SharedPlayerManager/clearLiveActivityLanguageMirror()``,
+///   ``SharedPlayerManager/discardResidualPendingActionsAndArmMailboxForThisProcess()``,
+///   ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)``,
+///   docs/Widget-Presentation-Dataflow.md,
 ///   docs/Event-Driven-Refactor-Roadmap.md,
 ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
 final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
@@ -73,6 +91,70 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
         await MainActor.run {
             XCTAssertNil(MPNowPlayingInfoCenter.default().nowPlayingInfo)
             XCTAssertEqual(MPNowPlayingInfoCenter.default().playbackState, .stopped)
+        }
+    }
+
+    /// Synchronous OS Now Playing clear used at process start and observed termination.
+    ///
+    /// **Invariant protected:** ``clearSystemNowPlayingMetadataSynchronously()`` nils
+    /// `nowPlayingInfo` and sets `.stopped` without requiring the SharedPlayerManager actor.
+    /// AppDelegate uses this on `didFinishLaunching` so residual reboot cards wipe before
+    /// scene attach; termination uses the same helper when async teardown cannot complete.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/clearSystemNowPlayingMetadataSynchronously()``,
+    ///   AppDelegate.application(_:didFinishLaunchingWithOptions:),
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testClearSystemNowPlayingMetadataSynchronouslyClearsResidualCard() async {
+        await MainActor.run {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+                MPMediaItemPropertyTitle: "Pre-reboot residual LIVE"
+            ]
+            MPNowPlayingInfoCenter.default().playbackState = .playing
+
+            SharedPlayerManager.clearSystemNowPlayingMetadataSynchronously()
+
+            XCTAssertNil(MPNowPlayingInfoCenter.default().nowPlayingInfo)
+            XCTAssertEqual(MPNowPlayingInfoCenter.default().playbackState, .stopped)
+        }
+    }
+
+    /// Residual OS Now Playing from dirty exit must clear before user-initiated main open
+    /// can re-publish via ``updateNowPlayingInfo()``.
+    ///
+    /// **Invariant protected:** Dirty force-quit / reboot skip observed terminate clear, so a
+    /// pre-exit media card can survive. ``resetToFactoryDefaultsOnLaunch()`` →
+    /// ``performSessionAndWidgetTeardown`` → ``teardownNowPlayingSession()`` phase 1 leaves
+    /// `nowPlayingInfo == nil` and `playbackState == .stopped` **before** special tuning on
+    /// user-initiated main open. A **new** card may appear only after intentional attach —
+    /// not as leftover residual “radio is still on.”
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
+    ///   ``SharedPlayerManager/teardownNowPlayingSession()``,
+    ///   ViewController cold-launch Task, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Widget-Presentation-Dataflow.md (residual post-reboot surprise).
+    func testFactoryResetClearsResidualSystemNowPlayingBeforeUserInitiatedMainOpen() async {
+        await MainActor.run {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+                MPMediaItemPropertyTitle: "Dirty-exit residual LIVE"
+            ]
+            MPNowPlayingInfoCenter.default().playbackState = .playing
+        }
+
+        await manager.resetToFactoryDefaultsOnLaunch()
+
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .prePlay, "Factory reset must land .prePlay before user-initiated open play")
+
+        await MainActor.run {
+            XCTAssertNil(
+                MPNowPlayingInfoCenter.default().nowPlayingInfo,
+                "Residual OS Now Playing must clear on factory reset before special tuning"
+            )
+            XCTAssertEqual(
+                MPNowPlayingInfoCenter.default().playbackState,
+                .stopped,
+                "Residual playbackState must be .stopped until attach after user-initiated open"
+            )
         }
     }
 
@@ -218,6 +300,103 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
         )
     }
 
+    // MARK: - User-initiated main open vs residual reboot surprise
+    //
+    // Two different “cold start” stories (do not conflate in assertions or product language):
+    //
+    // | Story | Who chose radio? | Expected audio / chrome |
+    // |-------|------------------|-------------------------|
+    // | **User-initiated main open** | Human opened main (icon, Siri, `lutheranradio://open`) | Special tuning + stream after factory reset when sticky intent is absent |
+    // | **Residual post-reboot surprise** | Nobody — dirty power-off left App Group / OS media | Passive home, refuse residual-only play, clear residual NP/pending; **no** multi-minute “still playing” without a resident main process |
+    //
+    // Reboot then **icon open** is still user-initiated main open (row 1). Residual keys must
+    // not cancel that eligibility. Residual keys also must not present row-1 behavior while
+    // main is not resident (row 2). See docs/Widget-Presentation-Dataflow.md.
+
+    /// User-initiated main open stays eligible after factory reset (“open app = radio”).
+    ///
+    /// **Invariant protected:** After ``resetToFactoryDefaultsOnLaunch()`` the new process has
+    /// ``.prePlay`` + active ``PlaybackIntent`` + ``shouldAutoPlayOrResume``. That is the
+    /// precondition for the `ViewController` cold-launch Task (special tuning then
+    /// ``play()``) when the **user** starts main — icon, Siri, or passive-widget open URL.
+    ///
+    /// Residual post-reboot honesty (passive home, NP clear, pending discard, durable-mirror
+    /// distrust while main is not resident) must **not** leave sticky pause, empty intent, or a
+    /// stuck reboot-distrust gate that would cancel this **user-driven** path once factory reset
+    /// has realigned boot identity.
+    ///
+    /// **Not covered here:** surprise attach without main open (pending residual, extension
+    /// inventing play, residual OS media card). Those are separate tests in this suite and in
+    /// extension contract suites.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
+    ///   ``PlayerVisualState/shouldAutoPlayOrResume``, ViewController cold-launch Task,
+    ///   docs/Widget-Presentation-Dataflow.md (User-initiated main open vs residual surprise).
+    func testUserInitiatedMainOpenRemainsEligibleAfterFactoryReset() async {
+        await manager.resetToFactoryDefaultsOnLaunch()
+
+        let visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertEqual(visual, .prePlay)
+        XCTAssertTrue(
+            visual.shouldAutoPlayOrResume,
+            "User-initiated main open: factory .prePlay must stay auto-play eligible"
+        )
+        XCTAssertTrue(
+            intent.isActivePlaybackIntent,
+            "User-initiated main open: factory reset must not invent sticky pause that blocks special tuning + play"
+        )
+        XCTAssertFalse(
+            SharedPlayerManager.hasDeviceRebootedSinceLastRecordedBoot(),
+            "Factory reset realigns boot identity so *this* open is not stuck in false-reboot distrust"
+        )
+        XCTAssertFalse(
+            SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning(),
+            "After factory realign, user-initiated open must not remain in durable-mirror distrust"
+        )
+    }
+
+    /// Residual pre-reboot heartbeat must not look like a live main session after power cycle.
+    ///
+    /// **Invariant protected (residual surprise, not user open):** When
+    /// ``hasDeviceRebootedSinceLastRecordedBoot()`` is true, ``isMainAppProcessRecentlyActive()``
+    /// is false even if wall-clock `lastUpdateTime` is still inside the 60 s window. That forces
+    /// passive home chrome **without** the user having opened main. This is the opposite of
+    /// user-initiated main open: residual App Group alone must not advertise “still playing.”
+    ///
+    /// Main-app profile (``LUTHERAN_MAIN_APP``) must match extension passive-chrome honesty.
+    /// When the user later opens the app, factory reset realigns boot identity (see
+    /// ``testUserInitiatedMainOpenRemainsEligibleAfterFactoryReset``).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/isMainAppProcessRecentlyActive()``,
+    ///   ``SharedPlayerManager/hasDeviceRebootedSinceLastRecordedBoot()``,
+    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
+    ///   docs/Widget-Presentation-Dataflow.md.
+    func testResidualRebootHeartbeatDoesNotImplyLiveMainSession() {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        let residual = Date().timeIntervalSince1970 - 10
+        defaults.set(residual, forKey: "lastUpdateTime")
+        XCTAssertTrue(
+            SharedPlayerManager.isMainAppProcessRecentlyActive(),
+            "Precondition: residual heartbeat is inside the 60 s window on a trusted boot"
+        )
+
+        // Prior boot epoch left across hard power-off (main never opened after reboot).
+        defaults.set(1.0, forKey: SharedPlayerManager.recordedSystemBootTimeAppGroupKey)
+        XCTAssertTrue(SharedPlayerManager.hasDeviceRebootedSinceLastRecordedBoot())
+        XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+        XCTAssertFalse(
+            SharedPlayerManager.isMainAppProcessRecentlyActive(),
+            "Residual post-reboot surprise: boot-identity mismatch must force passive chrome without user open"
+        )
+    }
+
     // MARK: - Live Activity durable mirror clear completeness
 
     /// Prior-process termination liveness must not block this-process `play()` when intent is active.
@@ -273,8 +452,133 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
         )
     }
 
+    // MARK: - Residual pending-action cold-launch hygiene
+
+    /// Main process starts with the pending mailbox unarmed so early SceneDelegate / Darwin
+    /// drains cannot execute leftover App Group commands before factory reset + special tuning.
+    ///
+    /// **Invariant protected:** While ``pendingActionMailboxAcceptingExecution`` is false,
+    /// ``getPendingActionIfFresh(maxAge:)`` drops residual keys and returns `nil`.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/discardResidualPendingActionsAndArmMailboxForThisProcess()``,
+    ///   ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)``.
+    func testUnarmedPendingMailboxDiscardsResidualWithoutReturning() {
+        // SAFETY: Test-only flip of process-local nonisolated(unsafe) arm flag.
+        unsafe SharedPlayerManager.pendingActionMailboxAcceptingExecution = false
+        defer {
+            SharedPlayerManager.discardResidualPendingActionsAndArmMailboxForThisProcess()
+        }
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        defaults.set("play", forKey: "pendingAction")
+        defaults.set(UUID().uuidString, forKey: "pendingActionId")
+        defaults.set(Date().timeIntervalSince1970, forKey: "pendingActionTime")
+
+        XCTAssertNil(
+            manager.getPendingActionIfFresh(),
+            "Unarmed main mailbox must not honor residual pending"
+        )
+        XCTAssertNil(defaults.object(forKey: "pendingAction"), "Residual pending must be cleared")
+        XCTAssertFalse(unsafe SharedPlayerManager.pendingActionMailboxAcceptingExecution)
+    }
+
+    /// Factory reset discards residual pending and arms this-process drains **before**
+    /// special tuning on user-initiated main open.
+    ///
+    /// **Invariant protected:** Pre-reboot / pre-quit `pendingAction*` must not surprise-attach
+    /// when the user opens main. ``resetToFactoryDefaultsOnLaunch()`` → empty mailbox +
+    /// ``pendingActionMailboxAcceptingExecution == true``; only a **new** this-boot schedule
+    /// is honor-able after arm.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
+    ///   ``SharedPlayerManager/scheduleWidgetAction(action:parameter:)``,
+    ///   docs/Widget-Presentation-Dataflow.md (residual post-reboot surprise).
+    func testFactoryResetDiscardsResidualPendingAndArmsMailbox() async {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        // SAFETY: Test-only flip of process-local nonisolated(unsafe) arm flag.
+        unsafe SharedPlayerManager.pendingActionMailboxAcceptingExecution = false
+        defaults.set("play", forKey: "pendingAction")
+        defaults.set(UUID().uuidString, forKey: "pendingActionId")
+        defaults.set(Date().timeIntervalSince1970 - 5, forKey: "pendingActionTime")
+
+        await manager.resetToFactoryDefaultsOnLaunch()
+
+        XCTAssertTrue(
+            unsafe SharedPlayerManager.pendingActionMailboxAcceptingExecution,
+            "Factory reset must arm pending drains for this process"
+        )
+        XCTAssertNil(defaults.object(forKey: "pendingAction"), "Residual pending must be dropped on factory reset")
+        XCTAssertNil(manager.getPendingActionIfFresh())
+
+        let actionId = manager.scheduleWidgetAction(action: "play")
+        XCTAssertNotNil(actionId)
+        let fresh = manager.getPendingActionIfFresh()
+        XCTAssertEqual(fresh?.action, "play")
+        XCTAssertEqual(fresh?.actionId, actionId)
+    }
+
+    /// Pending wall-clock time before the current boot epoch is never executable (reboot residual).
+    ///
+    /// **Invariant protected:** Even when the mailbox is armed and age < 30 s wall-clock,
+    /// ``getPendingActionIfFresh(maxAge:)`` discards entries with `pendingActionTime` before
+    /// ``currentSystemBootTimeIntervalSince1970()``.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)``,
+    ///   ``SharedPlayerManager/currentSystemBootTimeIntervalSince1970()``.
+    func testPendingActionWrittenBeforeCurrentBootIsDiscarded() {
+        SharedPlayerManager.discardResidualPendingActionsAndArmMailboxForThisProcess()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        let boot = SharedPlayerManager.currentSystemBootTimeIntervalSince1970()
+        defaults.set("pause", forKey: "pendingAction")
+        defaults.set(UUID().uuidString, forKey: "pendingActionId")
+        // Simulate pre-reboot write that still looks "fresh" by wall-clock age alone.
+        defaults.set(boot - 60, forKey: "pendingActionTime")
+
+        XCTAssertNil(
+            manager.getPendingActionIfFresh(maxAge: 30),
+            "Pre-boot pending must not execute after reboot"
+        )
+        XCTAssertNil(defaults.object(forKey: "pendingAction"))
+    }
+
+    /// Termination sentinel residual pending must not execute even when mailbox is armed.
+    ///
+    /// **Invariant protected:** ``hasExplicitTerminationSentinel()`` →
+    /// ``getPendingActionIfFresh(maxAge:)`` clears without returning.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/forceStaleLivenessTimestampForTermination()``,
+    ///   ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)``.
+    func testPendingActionDiscardedWhileTerminationSentinelPresent() {
+        SharedPlayerManager.discardResidualPendingActionsAndArmMailboxForThisProcess()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+        SharedPlayerManager.forceStaleLivenessTimestampForTermination()
+        XCTAssertTrue(SharedPlayerManager.hasExplicitTerminationSentinel())
+
+        let actionId = manager.scheduleWidgetAction(action: "play")
+        XCTAssertNotNil(actionId)
+
+        XCTAssertNil(
+            manager.getPendingActionIfFresh(),
+            "Termination sentinel residual must not execute pending play"
+        )
+        XCTAssertNil(
+            UserDefaults(suiteName: "group.radio.lutheran.shared")?.object(forKey: "pendingAction")
+        )
+    }
+
     /// Termination hygiene must clear both durable LA mirrors so a cold extension cannot
-    /// plan play/pause or stamp language chrome against a dead Lock Screen surface.
+    /// plan play/pause or stamp language chrome against a Lock Screen surface without a live engine.
     ///
     /// **Invariant protected:** ``forceStaleLivenessTimestampForTermination()`` (called from
     /// ``performSessionTeardownSynchronouslyForTermination()`` and session teardown with

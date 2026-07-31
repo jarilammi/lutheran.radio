@@ -4,45 +4,55 @@
 //
 //  Created by Jari Lammi on 26.10.2024.
 //
+//  Purpose: UIScene lifecycle host — window ownership, `lutheranradio://` deep links,
+//  foreground/background handoff to SharedPlayerManager + RadioLiveActivityManager, and
+//  thin scheduling of pending-action drain (coordinator owns execute).
+//
+//  - SeeAlso: ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
+//    ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)``,
+//    ``SharedPlayerManager/discardResidualPendingActionsAndArmMailboxForThisProcess()``,
+//    ``SharedPlayerManager/performSessionTeardownSynchronouslyForTermination()``,
+//    ViewController cold-launch Task, docs/Widget-Presentation-Dataflow.md, CODING_AGENT.md.
+//
 
 import UIKit
-import WidgetSurface
 
-/// - Article: Scene Lifecycle and Widget Integration
+/// Scene lifecycle, window setup, and `lutheranradio://` deep-link entry for widget / Live Activity handoff.
 ///
-/// `SceneDelegate` manages iOS scene transitions, window setup, and URL scheme handling for widget actions in the Lutheran Radio app.
+/// **Responsibilities:**
+/// - Foreground/background: liveness heartbeat, state save, Live Activity ensure/update paths
+/// - Pending-action **scheduling** only: calls ``ViewController/checkForPendingWidgetActions()``
+///   (thin shim → ``RadioPlayerCoordinator/checkForPendingWidgetActions()``). Execution honesty
+///   lives in ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)`` (unarmed cold start,
+///   pre-boot residual, termination sentinel, max age).
+/// - Deep links: `widget-action` URLs (actionId dedup) first; other hosts via ``handleURLScheme(_:from:)``
+/// - Termination-adjacent cleanup: ``sceneDidDisconnect`` mirrors
+///   ``SharedPlayerManager/performSessionTeardownSynchronouslyForTermination()``
 ///
-/// Core Responsibilities:
-/// - **Lifecycle Events**: Handles foreground/background transitions with state saves via `SharedPlayerManager.swift`; checks pending widget actions on active.
-/// - **Widget Communication**: Processes `lutheranradio://` schemes (e.g., play/pause/switch, "open") from widgets and Live Activities, delegating to public methods in `ViewController.swift`.
-/// - **URL Handling**: Single entry point for deep links. Widget-action URLs are parsed and dispatched first for actionId deduplication; everything else flows through `handleURLScheme`. Uses `rootViewController(in:)` + `ParsedWidgetAction` (the extracted helpers) to avoid duplication and respect scene window context.
-/// - **Privacy Note**: No external data in schemes; all actions local to app state.
+/// **`lutheranradio://open` honesty:** ``ViewController/handleOpenFromLiveActivity()`` only runs
+/// the resurrection / state-sync check and does **not** invent a new play intent. Cold-launch
+/// auto-play (special tuning + ``play()`` when sticky intent is absent) is owned by the
+/// ``ViewController`` viewDidLoad Task — orthogonal to this open handler.
 ///
-/// The extraction of `ParsedWidgetAction` and `rootViewController(in:)` centralizes the previously repeated VC lookup and query parsing. All "open" handling for Live Activity taps correctly surfaces the app without forcing playback (see resurrection check).
+/// **Privacy:** Scheme payloads are local action tokens only (no external personal data).
 ///
-/// For related background features, see `RadioLiveActivityManager.swift` (including deferred
-/// interactive Live Activity ensure on become-active after ineligible recreation / failed request,
-/// and owned-surface soft language/playing ensure via
-/// ``RadioLiveActivityManager/ensureAuthoritativeContentOnForegroundIfNeeded()``).
-/// Ensures seamless widget-to-app handoff without tracking.
-/// - SeeAlso: `ViewController.handleOpenFromLiveActivity`, `ViewController.handleWidgetAction`,
-///   ``RadioPlayerCoordinator/checkForPendingWidgetActions()`` (pending-action drain SSOT; VC is thin shim),
+/// - SeeAlso: ``ViewController/handleOpenFromLiveActivity()``, ``ViewController/handleWidgetAction(action:parameter:actionId:)``,
+///   ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
 ///   ``RadioLiveActivityManager/ensureInteractiveLiveActivityIfNeeded()``,
-///   ``RadioLiveActivityManager/ensureAuthoritativeContentOnForegroundIfNeeded()``,
-///   `SharedPlayerManager` (pending mailbox)
+///   ``RadioLiveActivityManager/handleAppDidEnterForeground()``,
+///   ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)``,
+///   docs/Widget-Presentation-Dataflow.md
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// The main window for the app's user interface.
     var window: UIWindow?
 
-    /// Called when the scene connects to the session.
+    /// Configures the window and root ``ViewController`` programmatically (no Main storyboard).
+    ///
     /// - Parameters:
     ///   - scene: The scene connecting to the session.
     ///   - session: The session the scene is connecting to.
-    ///   - connectionOptions: Options for the connection.
+    ///   - connectionOptions: May include launch URL contexts handled after the root is attached.
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
-        // Use this method to configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
-        // Since we have removed Main.storyboard, we must create the window and root ViewController
-        // programmatically. (The old storyboard-based automatic setup no longer applies.)
         guard let windowScene = scene as? UIWindowScene else { return }
 
         let window = UIWindow(windowScene: windowScene)
@@ -51,53 +61,56 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.window = window
         window.makeKeyAndVisible()
 
-        // Handle any URLs that were used to launch the app (after root is attached)
+        // Launch URLs after root is attached so ``rootViewController(in:)`` resolves.
         if let urlContext = connectionOptions.urlContexts.first {
             handleURLScheme(urlContext.url, from: scene)
         }
     }
 
-    /// Called when the scene disconnects.
+    /// Observable termination-adjacent surface: same synchronous session teardown as
+    /// `applicationWillTerminate` (liveness sentinel, LA end, widget refresh cancel, Now Playing clear).
     ///
-    /// This is one of the observable termination surfaces. We treat disconnect as a signal
-    /// that this scene (and potentially the process) is going away, so we perform the same
-    /// conservative widget/LA cleanup as applicationWillTerminate.
-    ///
-    /// - Cleanup Invariant: stale liveness + cancel pending + (LA end is also driven via the
-    ///   shared notification observer, but we call the marker here for belt-and-suspenders).
-    /// - Note: Not every disconnect is a full quit (multi-window, temporary), but forcing stale
-    ///   liveness is harmless: the next foreground will bump it again via recordWidgetLiveness.
+    /// - Important: Force-quit and reboot often **do not** deliver this callback. Dirty-exit
+    ///   honesty relies on residual aging, reboot distrust, and cold-launch factory hygiene —
+    ///   not disconnect alone.
+    /// - Note: Not every disconnect is a full process quit (multi-window / temporary). Writing
+    ///   the termination liveness sentinel is still safe: the next live foreground bumps
+    ///   ``SharedPlayerManager/recordWidgetLiveness()`` again.
+    /// - SeeAlso: ``SharedPlayerManager/performSessionTeardownSynchronouslyForTermination()``,
+    ///   AppDelegate.applicationWillTerminate
     func sceneDidDisconnect(_ scene: UIScene) {
-        // Conservative quit cleanup for widget + LA surfaces (see AppDelegate.applicationWillTerminate
-        // for the full rationale and invariant).
         SharedPlayerManager.performSessionTeardownSynchronouslyForTermination()
 
         window?.rootViewController = nil
         window = nil
     }
 
-    /// Called when the scene becomes active.
+    /// Becomes active: drain pending widget commands (when honest), then refresh privacy gate,
+    /// liveness, snapshot, and Live Activity ensure.
+    ///
+    /// Pending drain is intentional **before** the async liveness Task so in-session widget
+    /// taps are processed promptly. Residual pre-process / pre-boot commands are refused by
+    /// ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)`` until cold-launch factory arms
+    /// the mailbox (before special tuning).
+    ///
     /// - Parameter scene: The scene that became active.
+    /// - SeeAlso: ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
+    ///   ``SharedPlayerManager/discardResidualPendingActionsAndArmMailboxForThisProcess()``
     func sceneDidBecomeActive(_ scene: UIScene) {
-        // Called when the scene has moved from an inactive state to an active state.
-        // Use this method to restart any tasks that were paused (or not yet started) when the scene was inactive.
-
         #if DEBUG
         print("[SceneDelegate] sceneDidBecomeActive — unlock/active cycle")
         #endif
-        
-        // Check for pending widget actions when app becomes active
+
+        // Coordinator drain via VC shim. Honesty gates: unarmed mailbox, pre-boot time,
+        // termination sentinel, maxAge — not SceneDelegate policy.
         if let viewController = window?.rootViewController as? ViewController {
             viewController.checkForPendingWidgetActions()
         }
-        
-        // Privacy: refresh the hasActiveLutheranWidgets flag (single source for write gating)
-        // *before* the liveness/save so that if a widget was (re)added while backgrounded, writes resume.
-        // Save current state when becoming active (in case widget needs fresh data)
-        // → non-blocking / fire-and-forget. The save paths now consult the refreshed flag.
-        // Live Activity: pending ensure after deferred recreation / failed request restores a
-        // missing card; when ownership is already non-nil, the same ensure path soft-reconciles
-        // language/visual chrome (eligible-only recreation only if soft ensure still fails).
+
+        // Privacy gate refresh before liveness/save so a widget re-added while backgrounded
+        // can receive writes again. Fire-and-forget; save paths consult the refreshed flag.
+        // LA ensure restores a missing card after deferred recreation / failed request, or
+        // soft-reconciles language/visual when ownership is already non-nil.
         Task { @MainActor in
             await WidgetRefreshManager.shared.refreshHasActiveWidgets()
             await SharedPlayerManager.shared.recordWidgetLiveness()
@@ -106,18 +119,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    /// Called when the scene will resign active state.
+    /// Resign active (lock, interruption, etc.): session/widget hygiene only when **not**
+    /// actively playing so background audio + lock-screen LA controls stay intact.
+    ///
     /// - Parameter scene: The scene that will resign active.
+    /// - SeeAlso: ``SharedPlayerManager/performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``
     func sceneWillResignActive(_ scene: UIScene) {
-        // Called when the scene will move from an active state to an inactive state.
-        // This may occur due to temporary interruptions (ex. an incoming phone call) or device lock.
-
         #if DEBUG
         print("[SceneDelegate] sceneWillResignActive — lock/inactive cycle begin")
         #endif
 
-        // Session hygiene when not actively playing: end stale LA surfaces and push passive widget state.
-        // Skipped during background audio so lock-screen playback and LA controls remain intact.
         Task {
             let manager = SharedPlayerManager.shared
             let isActivelyPlaying = await manager.currentVisualState.isActivelyPlaying
@@ -137,53 +148,47 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    /// Called when the scene enters the foreground.
+    /// Entering foreground: second pending-drain opportunity + Live Activity foreground push.
+    ///
     /// - Parameter scene: The scene entering the foreground.
+    /// - SeeAlso: ``RadioLiveActivityManager/handleAppDidEnterForeground()``
     func sceneWillEnterForeground(_ scene: UIScene) {
-        // Called as the scene transitions from the background to the foreground.
-        // Use this method to undo the changes made on entering the background.
         if let viewController = window?.rootViewController as? ViewController {
             viewController.checkForPendingWidgetActions()
         }
 
-        // Live Activity lifecycle (parallel to widget state): push latest visual + metadata
-        // on return to foreground so Dynamic Island / Lock Screen buttons reflect current
-        // PlayerVisualState immediately. See RadioLiveActivityManager.
+        // Push latest visual + metadata so Dynamic Island / Lock Screen controls match
+        // current PlayerVisualState immediately.
         RadioLiveActivityManager.shared.handleAppDidEnterForeground()
     }
 
-    /// Called when the scene enters the background.
+    /// Entering background: keep widget liveness/snapshot fresh; auto-start LA when playing.
+    ///
     /// - Parameter scene: The scene entering the background.
+    /// - SeeAlso: ``RadioLiveActivityManager/handleAppWillEnterBackground()``
     func sceneDidEnterBackground(_ scene: UIScene) {
-        // Called as the scene transitions from the foreground to the background.
-        // Use this method to save data, release shared resources, and store enough scene-specific state information
-        // to restore the scene back to its current state.
-        
-        // Save current state for widget sharing — non-blocking / fire-and-forget
         Task {
             await SharedPlayerManager.shared.recordWidgetLiveness()
             await SharedPlayerManager.shared.saveCurrentState()
         }
 
-        // Live Activity: give manager chance to start (if audio playing) when entering background.
-        // This is the documented auto-start path. Manager owns the Activity request.
+        // Documented auto-start path when audio is playing. Manager owns the Activity request.
         RadioLiveActivityManager.shared.handleAppWillEnterBackground()
-        
+
         #if DEBUG
         print("[SceneDelegate] Saved state for widget on background + forwarded LA background handling")
         #endif
     }
 
-    /// Called when the app is opened via URL scheme from widgets or Live Activities.
+    /// Opened via `lutheranradio://` from widgets, Control Center, or Live Activities.
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         guard let url = URLContexts.first?.url,
               url.scheme == "lutheranradio" else {
             return
         }
 
-        // Widget-action URLs are special: they carry an `actionId` for deduplication
-        // and are processed immediately (bypassing the general handler). This path
-        // is used by certain widget-to-app signaling flows.
+        // `widget-action` URLs carry actionId for deduplication and are dispatched first
+        // (not via the general host switch).
         if let action = ParsedWidgetAction.from(url) {
             if let viewController = rootViewController(in: scene) {
                 if action.action == "switch", let languageCode = action.parameter {
@@ -198,23 +203,22 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             return
         }
 
-        // Simple deep links (including "open" from tapping Live Activities or widgets)
-        // go through the unified handler, which will surface the app and/or perform
-        // the requested playback control. See handleOpenFromLiveActivity for the
-        // "open" resurrection path that respects .userPaused / .securityLocked.
+        // Simple deep links (`play` / `pause` / `toggle` / `open` / `switch`).
+        // `open` → resurrection check only on the handler; cold auto-play may still run
+        // from ViewController's launch Task when sticky intent is absent.
         handleURLScheme(url, from: scene)
     }
 
-    /// Handles `lutheranradio://` deep links for playback control and foregrounding.
+    /// Dispatches `lutheranradio://` hosts for playback control and foregrounding.
     ///
-    /// This is the common path after any `widget-action` special cases. Callers
-    /// may pass the originating `scene` so that the root ViewController can be
-    /// resolved reliably even during early lifecycle or open events.
+    /// Common path after `widget-action` special cases. Prefer the originating `scene` for
+    /// root VC lookup during early lifecycle or open events.
     ///
     /// - Parameters:
     ///   - url: The deep link URL.
     ///   - scene: Optional `UIScene` from the calling context (preferred for VC lookup).
-    /// - SeeAlso: `ParsedWidgetAction`, `rootViewController(in:)`, `ViewController.handleOpenFromLiveActivity`
+    /// - SeeAlso: ``ParsedWidgetAction``, ``rootViewController(in:)``,
+    ///   ``ViewController/handleOpenFromLiveActivity()``
     private func handleURLScheme(_ url: URL, from scene: UIScene? = nil) {
         guard url.scheme == "lutheranradio" else {
             #if DEBUG
@@ -239,7 +243,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             #if DEBUG
             print("[SceneDelegate] Handling play action from widget")
             #endif
-            // Routes (via VC + coordinator shim) to userRequestedPlay() — the designation.
+            // VC + coordinator shim → ``SharedPlayerManager/userRequestedPlay()``.
             viewController.handlePlayAction()
 
         case "pause":
@@ -258,10 +262,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             #if DEBUG
             print("[SceneDelegate] Handling open from Live Activity or widget tap")
             #endif
+            // Surfaces the app + resurrection check; does not itself request play.
             viewController.handleOpenFromLiveActivity()
 
         case "switch":
-            // Expected format: lutheranradio://switch?language=en (or ?param=...)
+            // Expected: lutheranradio://switch?language=en (or ?param=...)
             if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
                let queryItems = components.queryItems,
                let languageItem = queryItems.first(where: { $0.name == "language" || $0.name == "param" }),
@@ -286,20 +291,19 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     // MARK: - Extracted URL Helpers
 
-    /// Parsed representation of a `lutheranradio://widget-action` URL.
+    /// Parsed `lutheranradio://widget-action` URL (action, actionId, optional parameter).
     ///
-    /// These carry the action name, a unique `actionId` (for dedup), and an optional
-    /// parameter (e.g. language code for switches). They are handled with priority
-    /// in `openURLContexts` because they come from the widget extension process.
+    /// Handled with priority in ``scene(_:openURLContexts:)`` because extension signaling
+    /// needs actionId deduplication before the simple host switch.
     ///
-    /// - SeeAlso: `SceneDelegate.scene(_:openURLContexts:)`, `ViewController.handleWidgetAction`
+    /// - SeeAlso: ``scene(_:openURLContexts:)``, ``ViewController/handleWidgetAction(action:parameter:actionId:)``
     private struct ParsedWidgetAction {
         let action: String
         let actionId: String
         let parameter: String?
 
-        /// Parses the required fields from a widget-action URL.
-        /// Returns nil if host or mandatory query items are missing.
+        /// Parses required fields from a widget-action URL.
+        /// - Returns: `nil` if host or mandatory query items are missing.
         static func from(_ url: URL) -> ParsedWidgetAction? {
             guard url.host == "widget-action",
                   let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
@@ -312,18 +316,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    /// Resolves the root `ViewController` that receives widget/URL scheme commands.
+    /// Resolves the root ``ViewController`` that receives widget/URL scheme commands.
     ///
-    /// When a `UIScene` is supplied (typical during `openURLContexts` and launch),
-    /// its window is preferred. This avoids races where the delegate's stored
-    /// `window` has not yet been updated for the active scene.
+    /// Prefers the supplied scene's window (avoids races when `self.window` is stale during
+    /// early open events). Falls back to ``window``.
     ///
-    /// Falls back to `self.window`.
-    ///
-    /// - Parameter scene: The scene associated with the current URL or lifecycle event.
-    /// - Returns: The root ViewController if it is the expected type.
-    /// - Note: Single extraction point for all VC lookups in this delegate.
-    /// - SeeAlso: `handleURLScheme(_:from:)`
+    /// - Parameter scene: Scene associated with the current URL or lifecycle event.
+    /// - Returns: Root ViewController when it is the expected type.
+    /// - SeeAlso: ``handleURLScheme(_:from:)``
     private func rootViewController(in scene: UIScene? = nil) -> ViewController? {
         if let windowScene = scene as? UIWindowScene,
            let vc = windowScene.windows.first?.rootViewController as? ViewController {
@@ -332,3 +332,4 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         return window?.rootViewController as? ViewController
     }
 }
+

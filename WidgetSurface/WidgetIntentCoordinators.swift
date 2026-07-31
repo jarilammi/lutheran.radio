@@ -133,16 +133,22 @@ public struct LiveActivityToggleVisualResolution: Sendable, Equatable {
 /// the home/control bool matrices in test helpers or extension bodies.
 public enum WidgetIntentCoordinators {
 
-    /// Plans home-widget toggle from the persisted visual state SSOT read.
+    /// Plans home-widget toggle from a single visual state (pure visual matrix).
     ///
     /// Matrix (pure visual; connecting cancel uses actor pipeline on lock-screen / remotes):
     /// - ``PlayerVisualState/plansMediaToggleAsPause`` (``.playing``) → pause / `.userPaused`
     /// - ``PlayerVisualState/blocksPlannedPlay`` (``.thermalPaused``) → `"none"` / keep thermal
     /// - otherwise → play / ``PlayerVisualState/optimisticVisualAfterPlayPlan``
     ///
-    /// - Parameter visualState: ``SharedPlayerManager/loadPersistedVisualStateDirect()`` in production.
+    /// Prefer ``planHomeWidgetToggle(resolution:distrustDurableMirrorPlay:mainProcessRecentlyActive:)``
+    /// at production call sites so empty process-local session does not invent **play** after
+    /// main process exit / reboot while residual ``homeWidgetLiveChrome`` still paints.
+    ///
+    /// - Parameter visualState: Effective visual (from session + live-chrome resolve, or a direct test matrix).
     /// - Returns: Pending action + optimistic target visual state.
-    /// - SeeAlso: ``planLiveActivityToggle(from:)``, ``PlayerVisualState/blocksPlannedPlay``
+    /// - SeeAlso: ``planHomeWidgetToggle(resolution:distrustDurableMirrorPlay:mainProcessRecentlyActive:)``,
+    ///   ``planLiveActivityToggle(from:)``, ``PlayerVisualState/blocksPlannedPlay``,
+    ///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:)``
     public static func planHomeWidgetToggle(from visualState: PlayerVisualState) -> WidgetToggleActionPlan {
         if visualState.plansMediaToggleAsPause {
             return WidgetToggleActionPlan(action: .pause, targetVisualState: .userPaused)
@@ -154,6 +160,58 @@ public enum WidgetIntentCoordinators {
             action: .play,
             targetVisualState: visualState.optimisticVisualAfterPlayPlan
         )
+    }
+
+    /// Plans home-widget toggle from Provider-aligned chrome resolve + process-liveness honesty.
+    ///
+    /// Uses the same visual the Provider would paint (``resolveHomeWidgetChromeFields``), not
+    /// bare empty-session ``.prePlay``. After main process exit or reboot:
+    /// - Residual live chrome ``.playing`` still plans **pause** (glyph honesty while any
+    ///   residual interactive window remains).
+    /// - Residual live chrome / factory alone must **not** invent **play** when main cannot
+    ///   service audio (``mainProcessRecentlyActive == false``) or when
+    ///   ``distrustDurableMirrorPlay`` is true (termination sentinel / boot-identity mismatch).
+    /// - Process-local **session** source remains trusted for this-process optimistic continuity.
+    ///
+    /// - Parameters:
+    ///   - resolution: Output of ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:)``.
+    ///   - distrustDurableMirrorPlay: Wire from
+    ///     ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()`` (termination
+    ///     sentinel or device reboot). Aligns home with LA durable-mirror play distrust.
+    ///   - mainProcessRecentlyActive: Wire from
+    ///     ``SharedPlayerManager/isMainAppProcessRecentlyActive()``. When `false`, residual
+    ///     App Group chrome and empty factory must not schedule pending play.
+    /// - Returns: Pending action + optimistic target visual, or refuse (``.none``) when play
+    ///   would be synthesized only from residual chrome / factory after process exit or reboot.
+    /// - Important: Default arguments preserve the pure visual matrix for unit matrices that
+    ///   only pass a resolution without honesty flags. Production
+    ///   ``WidgetIntentExecution/performHomeWidgetToggle()`` must pass live flags.
+    /// - SeeAlso: ``planHomeWidgetToggle(from:)``,
+    ///   ``planLiveActivityToggle(resolution:distrustDurableMirrorPlay:isConnectingPlayback:)``,
+    ///   ``HomeWidgetChromePaintSource``, docs/Widget-Presentation-Dataflow.md
+    public static func planHomeWidgetToggle(
+        resolution: HomeWidgetResolvedChrome,
+        distrustDurableMirrorPlay: Bool = false,
+        mainProcessRecentlyActive: Bool = true
+    ) -> WidgetToggleActionPlan {
+        let plan = planHomeWidgetToggle(from: resolution.visualState)
+        // Residual App Group chrome and empty factory are not live-engine proof. After main
+        // process exit / reboot, refuse play so we never open a multi-minute optimistic "playing"
+        // session without a resident process. Pause from residual `.playing` remains allowed for
+        // glyph honesty (same spirit as LA durable-mirror distrust refusing play, not pause).
+        let residualOrFactory =
+            resolution.source == .liveChrome || resolution.source == .factory
+        let mainCannotServiceAudio =
+            !mainProcessRecentlyActive || distrustDurableMirrorPlay
+        if mainCannotServiceAudio,
+           residualOrFactory,
+           plan.action == .play {
+            return WidgetToggleActionPlan(
+                action: .none,
+                targetVisualState: resolution.visualState
+            )
+        }
+        return plan
     }
 
     /// Plans Control-widget `SetValueIntent` toggle (`true` = play, `false` = pause).

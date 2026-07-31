@@ -25,7 +25,7 @@
 
 OI-1 correctly made visual / playback chrome **memory-only** for privacy and cold-launch honesty:
 
-- No durable restore of “was playing” across process death.
+- No durable restore of “was playing” across process exit.
 - Retired keys (`persistedWidgetState`, `playerVisualState`, `isPlaying`, bare `currentLanguage`, …) are purge-only.
 
 The incomplete half of that contract is live **cross-process paint**:
@@ -68,7 +68,7 @@ Give home and Control **Providers** a **privacy-gated, short-lived, extension-re
    `homeWidgetStreamMetadata` is privacy-gated, cleared on gate close, and read by `WidgetProviderSnapshotResolver`. Live chrome must match that privacy class.
 
 2. **OI-1 remains for cold launch.**  
-   Mirror is **session live chrome**, not cold-launch resurrection. After process death / terminate sentinel / privacy clear, Providers show factory passive or `.prePlay` defaults.
+   Mirror is **session live chrome**, not cold-launch resurrection. After process exit / terminate sentinel / privacy clear, Providers show factory passive or `.prePlay` defaults.
 
 3. **Main app remains authority; extension may optimistic-stamp.**  
    Extension intent paths may write the mirror early (same as today’s optimistic session snapshot + instant feedback). Main-app sticky pause, setPlaying, switch hold, and soft-resume settle **overwrite** with authoritative values when the privacy gate is open.
@@ -92,7 +92,7 @@ Give home and Control **Providers** a **privacy-gated, short-lived, extension-re
 | **Suite** | App Group | `group.radio.lutheran.shared` |
 | **Storage type** | `Data` (JSON) | Codable struct |
 | **Gate** | Privacy | Write only when `hasActiveWidgets \|\| isWidgetProcess()` |
-| **Cold launch** | None | Key absent or ignored when process is dead / sentinel passive path |
+| **Cold launch** | None | Key absent or ignored when process is not resident / sentinel passive path |
 
 #### Payload: `HomeWidgetLiveChrome`
 
@@ -304,15 +304,17 @@ return WidgetProviderSnapshotFields(
 
 Rigid session-first left home yellow Connecting when extension session held switch-hold ``.prePlay`` while main had already stamped a newer ``homeWidgetLiveChrome`` ``.playing``. Freshness comparison preserves same-process optimistic continuity (agree → session; fresher session pause still beats staler residual playing mirror) while allowing main settle to heal stale extension session.
 
-### 6.3 Passive / termination interaction
+### 6.3 Passive / termination / reboot interaction
 
 | Condition | Provider behavior |
 |-----------|-------------------|
 | `lastUpdateTime == 0` (termination sentinel) or liveness aged out | Existing passive `tap_to_open` via `WidgetLivenessPresentation` — **do not** treat live chrome as interactive proof of a live app |
-| Live chrome present but process dead | Liveness still wins for **interactive vs passive** chrome; mirror may be cleared on terminate path (recommended) so passive path does not flash last playing glyph |
+| `shouldDistrustDurableMirrorPlayPlanning()` (termination sentinel **or** device reboot boot-identity mismatch) | ``resolveHomeWidgetChromeFields(..., distrustLiveChrome: true)`` treats residual ``homeWidgetLiveChrome`` as **absent** even if the App Group blob remains (force-quit and power cycle often never run observed-terminate clear). Empty session → factory paint (``.prePlay`` + ``preferredWidgetLanguage()``). Process-local session still wins when present. |
+| Live chrome present but main process not recently active (no reboot, residual 60 s window) | Liveness still wins for **interactive vs passive** chrome; residual mirror may still supply visual fields until aged out or cleared |
 | No live chrome, no session | `.prePlay` + `preferredWidgetLanguage()` |
+| Extension write under distrust | ``persistHomeWidgetLiveChromeMirror`` refuses stamping ``.playing`` (must not re-project residual “still playing” after terminate/reboot) |
 
-**Recommended terminate hygiene:** `forceStaleLivenessTimestampForTermination` / sync termination teardown also `clearHomeWidgetLiveChromeMirror()` (with metadata residual policy already in place). Prefer explicit clear over “stale mirror + passive overlay” so passive UI cannot briefly show pause/play of a dead process before liveness check.
+**Recommended terminate hygiene:** `forceStaleLivenessTimestampForTermination` / sync termination teardown also `clearHomeWidgetLiveChromeMirror()` (with metadata residual policy already in place). Prefer explicit clear over “stale mirror + passive overlay”. **Reboot / force-quit residual:** when clear never ran, paint distrust above is the safety net so Providers do not flash last play/pause glyphs.
 
 ### 6.4 Control Center Provider
 

@@ -225,6 +225,10 @@ public struct HomeWidgetResolvedChrome: Equatable, Sendable {
 /// 4. Both present and disagree → source with **greater** `updatedAt` wins; **ties prefer session**.
 /// 5. Session missing `sessionUpdatedAt` is treated as older than any positive mirror stamp so a
 ///    main-app settle mirror can still heal an untimestamped residual session.
+/// 6. When ``distrustLiveChrome`` is true (termination sentinel or device reboot boot-identity
+///    mismatch at the call site), the App Group mirror is treated as **absent** even if still on
+///    disk — residual play/pause glyphs must not paint after dirty process exit / power-off.
+///    Process-local session remains usable for same-process optimistic continuity.
 ///
 /// Program metadata is **not** resolved here (session → ``homeWidgetStreamMetadata`` peer).
 /// Liveness still owns interactive vs passive — this selection is paint fields only.
@@ -235,19 +239,26 @@ public struct HomeWidgetResolvedChrome: Equatable, Sendable {
 ///   - sessionHasError: Process-local permanent-error flag when session exists.
 ///   - sessionUpdatedAt: Session last-write epoch seconds (`lastLanguageChangeTime`), if known.
 ///   - liveChrome: Privacy-gated App Group mirror, if present and well-formed.
+///   - distrustLiveChrome: When `true`, ignore ``liveChrome`` for paint (wire from
+///     ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()`` at membership-exception
+///     call sites). Default `false` preserves pure freshness matrices.
 /// - Returns: Paint fields + which source won.
 /// - SeeAlso: ``HomeWidgetLiveChrome``, ``HomeWidgetResolvedChrome``,
-///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6.1–§6.2),
+///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6.1–§6.3),
 ///   CODING_AGENT.md (Single Source of Truth Principles).
 public func resolveHomeWidgetChromeFields(
     sessionVisual: PlayerVisualState?,
     sessionLanguage: String?,
     sessionHasError: Bool?,
     sessionUpdatedAt: TimeInterval?,
-    liveChrome: HomeWidgetLiveChrome?
+    liveChrome: HomeWidgetLiveChrome?,
+    distrustLiveChrome: Bool = false
 ) -> HomeWidgetResolvedChrome {
+    // Post-termination / reboot: residual App Group chrome is not a live session. Treat as
+    // absent so Providers land factory (or process-local session only), never last play/pause.
+    let effectiveLiveChrome = distrustLiveChrome ? nil : liveChrome
     let sessionPresent = sessionVisual != nil
-    let mirrorPresent = liveChrome != nil
+    let mirrorPresent = effectiveLiveChrome != nil
 
     if !sessionPresent && !mirrorPresent {
         return HomeWidgetResolvedChrome(
@@ -268,7 +279,7 @@ public func resolveHomeWidgetChromeFields(
         )
     }
 
-    if !sessionPresent, let liveChrome {
+    if !sessionPresent, let liveChrome = effectiveLiveChrome {
         return HomeWidgetResolvedChrome(
             visualState: liveChrome.visualState,
             currentLanguage: normalizedChromeLanguage(liveChrome.currentLanguage),
@@ -278,7 +289,7 @@ public func resolveHomeWidgetChromeFields(
     }
 
     // Both present.
-    guard let sVisual = sessionVisual, let mirror = liveChrome else {
+    guard let sVisual = sessionVisual, let mirror = effectiveLiveChrome else {
         // Unreachable when sessionPresent && mirrorPresent; factory is a safe fallback.
         return HomeWidgetResolvedChrome(
             visualState: .prePlay,

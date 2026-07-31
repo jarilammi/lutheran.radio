@@ -30,17 +30,22 @@ extension SharedPlayerManager {
 
     /// Writes the short-lived instant-feedback keys used by widget providers for optimistic UI.
     ///
-    /// Also refreshes ``lastUpdateTime`` so providers treat the extension process as recently active
-    /// for the interactive chrome window.
+    /// Attempts to refresh ``lastUpdateTime`` via ``bumpWidgetLivenessTimestamp(policy:minInterval:)``
+    /// so interactive chrome stays current **when main is already recently active**. Extension
+    /// bumps are honesty-gated (no new 60 s interactive session after main process exit / reboot /
+    /// termination sentinel); instant-feedback language keys still write when the privacy gate
+    /// allows so short optimistic language paint can proceed without resurrecting liveness.
     ///
     /// - Parameter language: Language code shown during the optimistic window (must match the
     ///   widget timeline language when possible).
     /// - Precondition: Home-widget privacy gate open (`hasActiveWidgets`) **or** call is from a
     ///   widget/extension process (intent execution is proof a surface exists).
     /// - Postcondition: On success, `isInstantFeedback` / `instantFeedbackTime` /
-    ///   `instantFeedbackLanguage` and a fresh `lastUpdateTime` are present in the App Group.
-    ///   When suppressed, **no** keys are written (residuals are cleared only via privacy clear
-    ///   or ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()`` when the gate closes).
+    ///   `instantFeedbackLanguage` are present. `lastUpdateTime` is refreshed only when
+    ///   ``bumpWidgetLivenessTimestamp(policy:minInterval:)`` allows (main process rules or
+    ///   extension refresh-of-open-window rules). When privacy-suppressed, **no** keys are written
+    ///   (residuals cleared only via privacy clear or
+    ///   ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()`` when the gate closes).
     /// - SeeAlso: ``bumpWidgetLivenessTimestamp(policy:minInterval:)``,
     ///   ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
     ///   ``loadSharedState()``, ``signalWidgetSwitchAction(visualState:language:)``,
@@ -49,8 +54,9 @@ extension SharedPlayerManager {
         // Privacy gate (write suppression: no widgets configured).
         //
         // Bypass in widget process for the same reason as persistWidgetSnapshot: the executing
-        // intent is proof a widget exists; we must allow the instantFeedbackLanguage + liveness
-        // so loadSharedState + providers see fresh optimistic state without main-app roundtrip.
+        // intent is proof a widget exists; we must allow the instantFeedbackLanguage (and a
+        // liveness *refresh* when main was already in-window) so loadSharedState + providers
+        // see optimistic language without a main-app roundtrip.
         guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
             if !Self.isWidgetProcess() {
                 Self.refreshHasActiveWidgetsStatus()
@@ -62,8 +68,7 @@ extension SharedPlayerManager {
         }
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         let now = Date().timeIntervalSince1970
-        // Liveness via the same privacy-gated helper (gate already passed above; immediate
-        // stamp so interactive chrome is current after an extension action).
+        // May no-op under extension honesty gate; instant-feedback keys still write below.
         Self.bumpWidgetLivenessTimestamp(policy: .immediate)
         defaults.set(true, forKey: "isInstantFeedback")
         defaults.set(now, forKey: "instantFeedbackTime")
@@ -136,29 +141,57 @@ extension SharedPlayerManager {
     /// must use this helper rather than writing `lastUpdateTime` directly so residual signals
     /// cannot reappear after privacy clear or with no home widgets.
     ///
+    /// **Extension honesty (main not recently active / reboot):** When ``isWidgetProcess()`` is
+    /// true, a bump is allowed only when the interactive window is **already** open
+    /// (``isMainAppProcessRecentlyActive()`` before the write) **and**
+    /// ``shouldDistrustDurableMirrorPlayPlanning()`` is false. Extension intents must not:
+    /// - open a new 60 s interactive chrome session after main is no longer resident / stale heartbeat
+    /// - clear a termination sentinel (`lastUpdateTime == 0`) by writing a positive timestamp
+    /// - re-open interactive chrome after device reboot (boot-identity mismatch)
+    ///
+    /// Main-app bumps are unchanged (still privacy-gated only). Liveness remains a *presentation*
+    /// heuristic — never a `play()` / cold-launch gate.
+    ///
     /// - Parameters:
     ///   - policy: ``.throttled`` (default) respects `minInterval`; ``.immediate`` always stamps when allowed.
     ///   - minInterval: Minimum seconds between throttled writes (default 30). Ignored for `.immediate`.
     /// - SeeAlso: ``WidgetLivenessWritePolicy``, ``forceStaleLivenessTimestampForTermination()``,
-    ///   ``isMainAppProcessRecentlyActive()``,
+    ///   ``isMainAppProcessRecentlyActive()``, ``shouldDistrustDurableMirrorPlayPlanning()``,
     ///   ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
-    ///   ``events``, docs/Event-Driven-Refactor-Roadmap.md.
+    ///   ``events``, docs/Event-Driven-Refactor-Roadmap.md,
+    ///   docs/Widget-Presentation-Dataflow.md.
     nonisolated static func bumpWidgetLivenessTimestamp(
         policy: WidgetLivenessWritePolicy = .throttled,
         minInterval: TimeInterval = 30
     ) {
         // Privacy gate: suppress liveness timestamp (and thus "app was recently running" signal) when no widgets installed.
         //
-        // Bypass when in widget process: widget intent (play/pause) must bump lastUpdateTime so that
-        // isAppRunning() (used by all widget sizes to decide between controls vs "tap_to_open") returns
-        // true immediately. Without this, tapping play on a widget could leave the widget stuck showing
-        // the tap prompt even while audio plays.
+        // Widget-process bypass remains for privacy only (intent proves a surface exists). It does
+        // **not** authorize resurrecting interactive chrome when main is not resident or post-reboot.
         guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
             #if DEBUG
             print("[SharedPlayerManager] Suppressing liveness timestamp bump (no active widgets — write suppression)")
             #endif
             return
         }
+
+        // Extension: refresh an already-open interactive window only. Never invent a fresh 60 s
+        // "main is live" session from App Intent alone after process exit, termination sentinel, or reboot.
+        if Self.isWidgetProcess() {
+            if Self.shouldDistrustDurableMirrorPlayPlanning() {
+                #if DEBUG
+                print("[SharedPlayerManager] Suppressing extension liveness bump (termination sentinel or reboot distrust)")
+                #endif
+                return
+            }
+            if !Self.isMainAppProcessRecentlyActive() {
+                #if DEBUG
+                print("[SharedPlayerManager] Suppressing extension liveness bump (main not recently active — no interactive resurrection)")
+                #endif
+                return
+            }
+        }
+
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         let now = Date().timeIntervalSince1970
         if policy == .throttled,
@@ -199,31 +232,42 @@ extension SharedPlayerManager {
     ///   Subsequent widget renders (system timelines or explicit) immediately see false and
     ///   render the stable passive "tap to open" surface.
     /// - Force-quit (no notification delivered) relies on natural aging + absence of further
-    ///   main-process bumps/reloads. Worst case 60 s of "active" presentation.
-    /// - Widget/App Intent processes may bump via the `isWidgetProcess()` bypass inside
-    ///   `bumpWidgetLivenessTimestamp` only for their own optimistic feedback; they do not
-    ///   keep the main app alive.
+    ///   main-process bumps/reloads. Worst case 60 s of residual "active" presentation unless
+    ///   extension honesty gates apply (below).
+    /// - Widget/App Intent processes may **refresh** `lastUpdateTime` only while the 60 s
+    ///   interactive window is already open **and** termination/reboot distrust is false
+    ///   (see ``bumpWidgetLivenessTimestamp(policy:minInterval:)``). They must not open a new
+    ///   interactive session after main process exit, clear a termination sentinel, or re-open chrome
+    ///   after device reboot. They do not keep the main app alive.
     /// - The passive path only launches the app via Apple-approved mechanisms (widgetURL,
     ///   Live Activity tap "open", or AppIntent surfaces marked `.openAppWhenRun`). No
-    ///   implicit play, no reload side-effects, no resurrection.
+    ///   implicit play from the passive branch, no reload side-effects, no on-disk play
+    ///   resurrection (cold-launch auto-play in the main UI is a separate product path).
     ///
     /// - Important: This is a *presentation heuristic only*. Never use for playback intent,
     ///   resurrection guards, or security decisions. Those use `PersistedWidgetState`,
     ///   `currentPlaybackIntent`, and `PlayerVisualState` directly.
-    /// - Returns: `false` for missing key, explicit termination sentinel (0), or stale (>60 s).
+    /// - Returns: `false` for missing key, explicit termination sentinel (0), stale (>60 s),
+    ///   or device reboot since the last recorded healthy boot identity (residual pre-reboot
+    ///   timestamps must not keep interactive chrome after hard power-off).
     /// - Note: 60 s matches the original widget `isAppRunning` window; keep in sync.
     /// - SeeAlso: ``bumpWidgetLivenessTimestamp(policy:minInterval:)``,
-    ///   ``forceStaleLivenessTimestampForTermination()``, `LutheranRadioWidget.swift`
-    ///   (the `if !isAppRunning()` branches and `widgetURL`), `WidgetRefreshManager`,
-    ///   CODING_AGENT.md (Single Source of Truth Principles + cross-target shared files),
-    ///   docs/Widget-Presentation-Dataflow.md (App Termination section).
+    ///   ``forceStaleLivenessTimestampForTermination()``,
+    ///   ``hasDeviceRebootedSinceLastRecordedBoot()``,
+    ///   `LutheranRadioWidget.swift` (the `if !isAppRunning()` branches and `widgetURL`),
+    ///   `WidgetRefreshManager`, CODING_AGENT.md (Single Source of Truth Principles +
+    ///   cross-target shared files), docs/Widget-Presentation-Dataflow.md (App Termination).
     ///
-    /// AGENT NOTE: Any change to the 60 s constant, sentinel value, or the decision here
-    /// must also update the widget view branches, the termination call sites, and this doc.
+    /// AGENT NOTE: Any change to the 60 s constant, sentinel value, reboot distrust, or the
+    /// decision here must also update the widget view branches, the termination call sites,
+    /// extension liveness honesty tests, and this doc.
     nonisolated static func isMainAppProcessRecentlyActive() -> Bool {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return false }
         guard let lastUpdate = defaults.object(forKey: "lastUpdateTime") as? Double else { return false }
         if lastUpdate == 0 { return false } // explicit termination sentinel written on quit paths
+        // Residual App Group heartbeat can survive hard power-off; boot identity is the
+        // presentation signal that this process generation did not write it on this boot.
+        if hasDeviceRebootedSinceLastRecordedBoot() { return false }
         return Date().timeIntervalSince1970 - lastUpdate < 60
     }
 
@@ -264,7 +308,7 @@ extension SharedPlayerManager {
     ///
     /// Also clears short-lived instant-feedback keys so no "just acted" optimistic state
     /// survives the quit visually, and clears durable LA mirrors so extension planning cannot
-    /// invent play from a dead surface.
+    /// invent play from residual chrome after process exit.
     ///
     /// This heuristic is separate from the `PlayerEvent` emission model and from main-app
     /// playback decisions. Event subscribers learn about termination via process lifetime;
@@ -291,17 +335,17 @@ extension SharedPlayerManager {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         defaults.set(0.0, forKey: "lastUpdateTime")
         // Clear optimistic transients so the widget does not flash a stale "just played" state
-        // on its next render after the main process has died.
+        // on its next render after the main process has exited.
         defaults.removeObject(forKey: "isInstantFeedback")
         defaults.removeObject(forKey: "instantFeedbackTime")
         defaults.removeObject(forKey: "instantFeedbackLanguage")
         // Visual state is memory-only; no on-disk snapshot to preserve across termination.
         // LA ends on termination — drop durable toggle visual + language mirrors so a cold
-        // extension cannot plan pause/play or stamp language chrome from a dead surface.
+        // extension cannot plan pause/play or stamp language chrome from residual LA mirrors.
         clearLiveActivityToggleVisualStateMirror()
         clearLiveActivityLanguageMirror()
         // Home live chrome is session-scoped only (OI-1): clear so passive post-terminate
-        // Providers do not briefly flash last playing/pause glyphs from a dead process.
+        // Providers do not briefly flash last playing/pause glyphs from the exited process.
         clearHomeWidgetLiveChromeMirror()
         #if DEBUG
         print("[SharedPlayerManager] Forced stale lastUpdateTime (0) + cleared instant feedback for post-termination passive widget state")

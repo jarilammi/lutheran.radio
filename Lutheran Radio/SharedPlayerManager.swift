@@ -194,8 +194,18 @@ import WidgetKit
 /// hard blocker on auto-resume / restore / recovery paths. It is **this-process only**.
 /// Prior-process App Group termination liveness (`lastUpdateTime == 0` via
 /// ``hasExplicitTerminationSentinel()``) is **not** a play gate — it drives widget passive
-/// chrome and durable LA mirror distrust only. Cold launch factory-resets visual + intent;
-/// play status never survives process death.
+/// chrome and durable LA / home-chrome distrust only. Cold launch factory-resets visual +
+/// intent; prior-process play status never survives (OI-1).
+///
+/// **User-initiated main open vs residual reboot surprise** (do not conflate):
+/// - **User-initiated main open:** human starts main (icon, Siri, `lutheranradio://open`).
+///   After factory reset, special tuning then ``play()`` when sticky intent is absent —
+///   product “open app = radio.” Reboot then icon open still counts as user-initiated.
+/// - **Residual post-reboot surprise:** dirty exit left App Group / OS media while the main
+///   process is no longer resident. Passive chrome, residual-play refuse, NP/pending clear —
+///   not a live session and not extension-owned attach. Passive chrome is **not** a promise
+///   of silent main open.
+/// See docs/Widget-Presentation-Dataflow.md (User-initiated main open vs residual surprise).
 ///
 /// Widgets and Live Activities may perform optimistic UI, persist snapshots, schedule
 /// pending actions, and post Darwin notifications — zero player side effects from extension
@@ -221,7 +231,7 @@ import WidgetKit
 /// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
 /// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
 /// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()` then visual/intent re-check | (unchanged or forced .userPaused) | Restore does not start audio; engine resume only when still allowed. Sticky intent only — no prior-process App Group play gate. |
-/// | cold launch     | New process after quit / terminate                | `resetToFactoryDefaultsOnLaunch()` then cold-play path          | .prePlay → .playing (when allowed) | Factory reset clears play status; termination sentinel remains widget passive chrome only; does **not** block main-app cold auto-play |
+/// | cold launch     | **User-initiated** main open after quit / terminate / reboot (icon, open URL, Siri) | `resetToFactoryDefaultsOnLaunch()` then special tuning + cold-play path | .prePlay → .playing (when allowed) | Factory reset clears prior play status (OI-1); termination liveness remains widget passive chrome only; product “open app = radio” when sticky pause absent — **not** residual App Group play restore; residual reboot chrome alone (main process not resident) is a different honesty contract |
 ///
 /// ### App Group Keys & Memory-Only Visual Policy (group.radio.lutheran.shared)
 ///
@@ -256,20 +266,20 @@ import WidgetKit
 /// | isPlaying               | Bool                  | (Retired — purged on launch, never written)                  | (none) | Retired playback bool. In-session playback chrome is derived only from the memory snapshot (`visualState.isActivelyPlaying`) and short-lived instant-feedback keys — never from this App Group bool. | Purged only |
 /// | currentLanguage         | String (languageCode) | (Retired — purged on launch, never written)                  | (none) | Retired bare language key. Language SSOT is in-process `PersistedWidgetState.currentLanguage` plus ``preferredWidgetLanguage()`` (snapshot → `bestInitialLanguageCode()` when widgets active → hard `"en"` when not). | Purged only |
 /// | hasError                | Bool                  | (Inside in-process snapshot only; retired App Group bool purged) | `loadSharedState` (from `PersistedWidgetState.hasError`), widgets   | Permanent error flag for UI chrome. Lives inside the in-process session snapshot. Retired standalone App Group bool is purged only. | In-session snapshot; set on security or unrecoverable network failures |
-/// | lastUpdateTime          | Double (epoch)        | ``bumpWidgetLivenessTimestamp(policy:minInterval:)`` (canonical; ``WidgetLivenessWritePolicy``), `performActualSave` / `saveCombinedWidgetState` when home widgets active, widget-process optimistic handlers; terminate writes sentinel `0` | Widget providers (`isMainAppProcessRecentlyActive` 60 s check); ``hasExplicitTerminationSentinel()`` for presentation / LA mirror distrust | Liveness heartbeat + termination passive-chrome marker. **Never** a main-app play gate. | Kept only while home/Control widgets are relevant; removed by privacy clear and when ``WidgetRefreshManager/hasActiveLutheranWidgets`` closes; terminate sets `0` |
+/// | lastUpdateTime          | Double (epoch)        | ``bumpWidgetLivenessTimestamp(policy:minInterval:)`` (canonical; ``WidgetLivenessWritePolicy``), `performActualSave` / `saveCombinedWidgetState` when home widgets active; extension may **refresh** only while interactive window already open and ``shouldDistrustDurableMirrorPlayPlanning()`` is false; terminate writes sentinel `0` | Widget providers (`isMainAppProcessRecentlyActive` 60 s check); ``hasExplicitTerminationSentinel()`` for presentation / LA mirror distrust / extension liveness honesty | Liveness heartbeat + termination passive-chrome marker. **Never** a main-app play gate. Extension must not open a new 60 s interactive session after main process exit or reboot. | Kept only while home/Control widgets are relevant; removed by privacy clear and when ``WidgetRefreshManager/hasActiveLutheranWidgets`` closes; terminate sets `0` |
 /// | lastUserPauseTime | Double (epoch) | (Retired — purged on launch, never written) | (none) | Was App Group pause barrier. Recovery uses in-actor ``lastUserPauseTimestamp`` / ``wasRecentlyUserPaused(within:)`` only. | Purged only |
 /// | isInstantFeedback       | Bool                  | Widget handlers (`writeInstantFeedback` / switch path)       | `loadSharedState` (checked first)                                    | Signals that a widget action just occurred (optimistic UI)   | Short-lived; cleared after 15s, next authoritative save, privacy clear, or when the home-widget privacy gate closes |
 /// | instantFeedbackTime     | Double (epoch)        | Widget handlers                                              | `loadSharedState`                                                    | Timestamp for the instant feedback validity window           | Same lifetime as `isInstantFeedback` |
 /// | instantFeedbackLanguage | String                | Widget handlers                                              | `loadSharedState`                                                    | Language to show during the optimistic widget update         | Same lifetime as `isInstantFeedback` |
-/// | pendingAction           | String ("play","pause","switch") | Widget intent handlers, Control Center, some ViewController paths | `getPendingAction()`, SceneDelegate, widget providers          | One-shot command from extension process to main app          | Cleared by `clearPendingAction(actionId:)` after processing |
-/// | pendingActionId         | String (UUID)         | Same writers as pendingAction                                | `getPendingAction()`, `clearPendingAction()`                         | Deduplication token to handle rapid repeated taps            | Prevents double-processing on race conditions |
-/// | pendingActionTime       | Double (epoch)        | Same writers as pendingAction                                | Widget providers (staleness checks)                                  | Freshness timestamp for pending actions                      | Used to ignore very old pending actions |
-/// | pendingLanguage         | String                | `scheduleWidgetAction` (only for "switch")                   | `getPendingAction()`, widget providers                               | Parameter for stream switch actions                          | Only meaningful when `pendingAction == "switch"` |
+/// | pendingAction           | String ("play","pause","switch") | Widget intent handlers, Control Center, some ViewController paths | ``getPendingActionIfFresh(maxAge:)`` (SceneDelegate / Darwin / launch burst → coordinator drain); raw ``getPendingAction()`` for presence only | One-shot command from extension process to main app | Cleared by ``clearPendingAction(actionId:)``, ``clearPendingActionMailbox()``, cold-launch residual discard, privacy clear; **not** executed until main mailbox armed this process |
+/// | pendingActionId         | String (UUID)         | Same writers as pendingAction                                | ``getPendingAction()``, ``clearPendingAction(actionId:)`` | Deduplication token to handle rapid repeated taps | Prevents double-processing on race conditions |
+/// | pendingActionTime       | Double (epoch)        | Same writers as pendingAction                                | ``getPendingActionIfFresh(maxAge:)`` (age + pre-boot discard) | Freshness timestamp; also compared to current boot epoch | Age >30s or `pendingTime` before this boot → discard without execute |
+/// | pendingLanguage         | String                | `scheduleWidgetAction` (only for "switch")                   | ``getPendingAction()``, widget providers | Parameter for stream switch actions | Only meaningful when `pendingAction == "switch"` |
 /// | liveActivityToggleVisualState | String (case name) | `RadioLiveActivityManager` on every ContentState push; optimistic LA toggle | ``loadLiveActivityToggleVisualStateMirror()`` + ``WidgetIntentExecution/performLiveActivityToggle()`` | Durable cross-process LA play/pause plan signal when extension memory snapshot is empty | Cleared on LA end, termination, **factory reset**, privacy clear; **not** gated by home-widget `hasActiveWidgets` |
 /// | liveActivityCurrentLanguage | String (languageCode) | `RadioLiveActivityManager` on every ContentState push; optimistic LA paths | ``loadLiveActivityLanguageMirror()`` + ``languageForLiveActivityOrWidgetOptimistic()`` | Durable LA language chrome / optimistic intent language when extension has no session snapshot and home-widget writes are suppressed | Same lifecycle as visual mirror; **not** gated by `hasActiveWidgets` |
 /// | homeWidgetStreamMetadata | Data (JSON ``StreamProgramMetadata``) | ``persistHomeWidgetStreamMetadataMirror(_:)`` via ``persistStreamMetadataForWidgets()`` / ``savePersistedWidgetState`` / privacy-gate open re-stamp | ``loadHomeWidgetStreamMetadataMirror()`` + ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` | Privacy-gated **program title/speaker** for home/Control Providers (extension cannot read main-app session RAM) | Written only while ``hasActiveWidgets`` (or widget-process bypass); cleared on gate close, privacy clear, ICY clear / language hygiene |
-/// | homeWidgetLiveChrome | Data (JSON ``HomeWidgetLiveChrome``) | ``persistHomeWidgetLiveChromeMirror(_:)`` / ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)`` via ``savePersistedWidgetState`` / ``persistWidgetSnapshot`` (sticky early pause, ``setPlaying``, switch hold, ``saveCombinedWidgetState``, ``performActualSave``) + ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()`` + extension optimistic (``persistOptimisticWidgetSnapshot`` / ``signalWidgetSwitchAction`` reasons `optimisticToggle` / `optimisticSwitch`) | ``loadHomeWidgetLiveChromeMirror()`` + ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` via ``resolveHomeWidgetChromeFields`` (agreement → session; disagreement → fresher `updatedAt`; neither → factory) | Privacy-gated **visual + language + hasError** for home/Control Providers (extension cannot read main-app session RAM) | Written only while ``hasActiveWidgets`` (or widget-process bypass); cleared on gate close, privacy clear, factory residual hygiene, terminate residual hygiene; session-scoped only (OI-1); identity skip on identical visual/language/hasError |
-/// | recordedSystemBootTime  | Double (epoch of boot) | ``recordCurrentSystemBootTime()`` on LA mirror write + factory reset | ``hasDeviceRebootedSinceLastRecordedBoot()`` / ``shouldDistrustDurableMirrorPlayPlanning()`` | Boot identity for post-reboot LA toggle hygiene | Lets lock-screen planning refuse durable-mirror-alone **play** after hard power-off |
+/// | homeWidgetLiveChrome | Data (JSON ``HomeWidgetLiveChrome``) | ``persistHomeWidgetLiveChromeMirror(_:)`` / ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)`` via ``savePersistedWidgetState`` / ``persistWidgetSnapshot`` (sticky early pause, ``setPlaying``, switch hold, ``saveCombinedWidgetState``, ``performActualSave``) + ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()`` + extension optimistic (``persistOptimisticWidgetSnapshot`` / ``signalWidgetSwitchAction`` reasons `optimisticToggle` / `optimisticSwitch`); extension refuses ``.playing`` when ``shouldDistrustDurableMirrorPlayPlanning()`` | ``loadHomeWidgetLiveChromeMirror()`` + ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` via ``resolveHomeWidgetChromeFields`` (agreement → session; disagreement → fresher `updatedAt`; neither → factory; ``distrustLiveChrome`` ignores residual after terminate/reboot) | Privacy-gated **visual + language + hasError** for home/Control Providers (extension cannot read main-app session RAM) | Written only while ``hasActiveWidgets`` (or widget-process bypass); cleared on gate close, privacy clear, factory residual hygiene, terminate residual hygiene; session-scoped only (OI-1); identity skip on identical visual/language/hasError; paint distrust after dirty exit / reboot |
+/// | recordedSystemBootTime  | Double (epoch of boot) | ``recordCurrentSystemBootTime()`` on LA mirror write + factory reset | ``hasDeviceRebootedSinceLastRecordedBoot()`` / ``shouldDistrustDurableMirrorPlayPlanning()`` (LA + home toggle play plan + extension liveness honesty + home live-chrome paint distrust) | Boot identity for post-reboot presentation hygiene | Refuses residual-chrome-alone **play** (LA durable mirror / home live chrome or factory), extension `lastUpdateTime` resurrection, and residual live-chrome **paint** after hard power-off |
 /// | preferredVolume         | Float                 | (Retired — purged on launch, never written)                  | (none) | Was UIKit App Group volume preference. User-facing level is system volume (`MPVolumeView`); engine relative gain defaults to 1.0. | Purged only |
 ///
 /// **Key invariants**:
@@ -285,8 +295,11 @@ import WidgetKit
 /// - Live Activity language chrome rides ``ContentState.currentLanguage`` (main-app stream
 ///   attach language). Durable ``liveActivityCurrentLanguage`` mirrors that code for
 ///   extension-hosted optimistic paths when ActivityKit activities are briefly empty.
-/// - After termination sentinel or device reboot, durable mirror alone must not plan **play**
-///   (``shouldDistrustDurableMirrorPlayPlanning()`` + ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)``).
+/// - After termination sentinel or device reboot, residual App Group chrome alone must not plan **play**
+///   (``shouldDistrustDurableMirrorPlayPlanning()`` + ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)``
+///   for LA durable mirror; ``WidgetIntentCoordinators/planHomeWidgetToggle(resolution:distrustDurableMirrorPlay:mainProcessRecentlyActive:)``
+///   for home live chrome / empty factory after process exit) and home Providers must not paint residual
+///   ``homeWidgetLiveChrome`` (``resolveHomeWidgetChromeFields`` with ``distrustLiveChrome``).
 
 #if LUTHERAN_MAIN_APP
 /// Suppresses Darwin notify echoes when the main app posts a pause notification to itself
@@ -1052,22 +1065,39 @@ actor SharedPlayerManager {
     /// snapshot, resets `currentVisualState` to `.prePlay`, and clears parsed stream metadata.
     /// Playback intent is reset to `.shouldBePlaying` unless `.securityLocked` (same-process only).
     ///
-    /// Auto-play on first launch / after tuning remains intact because intent returns to
-    /// `.shouldBePlaying` and visual is `.prePlay`. In-session thermal sanitization and sticky
-    /// pause/lock semantics continue to apply until the process ends.
+    /// **User-initiated main open:** After this reset, intent is `.shouldBePlaying` and visual is
+    /// `.prePlay`, so the `ViewController` cold-launch Task may play special tuning then
+    /// ``play()`` when security and other gates allow. That is product policy for when the
+    /// **user starts main** (icon, Siri, `lutheranradio://open`) — open app = radio — **not**
+    /// restoration of a prior process’s play state (OI-1).
+    ///
+    /// **Residual post-reboot surprise (orthogonal):** While the main process is not yet
+    /// resident again, residual liveness / live chrome / pending / OS Now Playing must not
+    /// present a live session. This method runs only once main has launched; it realigns boot
+    /// identity, clears residual NP and pending, and leaves auto-play eligibility for the
+    /// **user-initiated** open that just started main. In-session thermal sanitization and
+    /// sticky pause/lock continue until this process ends.
     ///
     /// - Precondition: Safe to call from main-app launch (`ViewController` cold-launch Task) and tests.
     /// - Postcondition: `loadPersistedWidgetState()` returns `nil`; widgets show safe defaults;
     ///   system Now Playing metadata cleared (main app); durable LA toggle visual + language
-    ///   mirrors cleared; recorded boot identity aligned to this boot.
+    ///   mirrors cleared; recorded boot identity aligned to this boot; residual App Group
+    ///   pending-action mailbox discarded and this-process drain armed
+    ///   (``discardResidualPendingActionsAndArmMailboxForThisProcess()``).
     ///
     /// - SeeAlso: ``ensureVisualStateLoaded()``, ``loadPersistedWidgetState()``,
     ///   ``clearPersistedVisualStateKeysFromDisk()``, ``clearLiveActivityToggleVisualStateMirror()``,
     ///   ``clearLiveActivityLanguageMirror()``,
-    ///   ViewController.viewDidLoad, docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md (SSOT principles).
+    ///   ``discardResidualPendingActionsAndArmMailboxForThisProcess()``,
+    ///   ViewController.viewDidLoad, docs/Widget-Presentation-Dataflow.md (User-initiated main
+    ///   open vs residual surprise), docs/Event-Driven-Refactor-Roadmap.md (OI-1), CODING_AGENT.md
+    ///   (SSOT principles).
     ///
     /// AGENT NOTE: Any new launch path that could observe stale App Group visual keys must call
     /// this (or rely on `init()` + this explicit await) before `refreshVisualStateFromPersistence`.
+    /// Residual pending must be discarded **before** special tuning on user-initiated main open.
+    /// Residual OS Now Playing is also cleared here (phase 1) **before** special tuning; process
+    /// start also wipes via ``clearSystemNowPlayingMetadataSynchronously()`` in AppDelegate.
     func resetToFactoryDefaultsOnLaunch() async {
         #if LUTHERAN_MAIN_APP
         await performSessionAndWidgetTeardown(
@@ -1086,6 +1116,7 @@ actor SharedPlayerManager {
         // Home live chrome residual hygiene (OI-1; same privacy class as metadata clear paths).
         Self.clearHomeWidgetLiveChromeMirror()
         Self.recordCurrentSystemBootTime()
+        Self.discardResidualPendingActionsAndArmMailboxForThisProcess()
         currentVisualState = .prePlay
         currentStreamMetadata = nil
         hasLoadedVisualStateFromPersistence = false
@@ -1116,6 +1147,18 @@ actor SharedPlayerManager {
     /// Live Activity dismissal, liveness sentinel, and immediate widget timeline reload. Widget IPC runs
     /// only after the teardown gate is released so MediaRemoteUI launch watchdog windows stay safe.
     ///
+    /// **Order (important for residual media honesty):**
+    /// 1. Optional factory App Group / memory purge + boot identity + pending-mailbox arm.
+    /// 2. **System Now Playing phase-1 clear** (before Live Activity IPC) so a post-reboot residual
+    ///    media card does not outlive process start while ActivityKit end is awaited.
+    /// 3. Optional Live Activity end (awaited while the process is alive).
+    /// 4. Optional widget timeline reload after the teardown gate is released.
+    ///
+    /// Cold launch also clears residual Now Playing at
+    /// `AppDelegate.application(_:didFinishLaunchingWithOptions:)` so the earliest process-start
+    /// wipe runs before scene attach; this orchestration remains the SSOT clear on factory reset
+    /// **before** special tuning / ``play()`` can re-publish via ``updateNowPlayingInfo()``.
+    ///
     /// - Parameters:
     ///   - includeFactoryReset: When `true`, purges on-disk visual keys, drops the in-memory session
     ///     snapshot, resets visual state to `.prePlay` (preserving `.securityLocked` intent), clears
@@ -1132,13 +1175,16 @@ actor SharedPlayerManager {
     ///   Factory reset also clears ``liveActivityToggleVisualStateAppGroupKey``,
     ///   ``liveActivityCurrentLanguageAppGroupKey``, and ``homeWidgetLiveChromeAppGroupKey``.
     ///
-    /// - SeeAlso: ``teardownNowPlayingSession()``, ``resetToFactoryDefaultsOnLaunch()``,
+    /// - SeeAlso: ``teardownNowPlayingSession()``, ``clearSystemNowPlayingMetadataSynchronously()``,
+    ///   ``resetToFactoryDefaultsOnLaunch()``,
     ///   ``clearAllLocalState()``, ``performPostStopWidgetHygiene()``,
     ///   ``clearLiveActivityToggleVisualStateMirror()``, ``clearLiveActivityLanguageMirror()``,
     ///   ``clearHomeWidgetLiveChromeMirror()``,
     ///   ``performSessionTeardownSynchronouslyForTermination()``,
     ///   `WidgetRefreshManager.refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`,
+    ///   AppDelegate.application(_:didFinishLaunchingWithOptions:),
     ///   docs/Event-Driven-Refactor-Roadmap.md,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md, CODING_AGENT.md.
     func performSessionAndWidgetTeardown(
         includeFactoryReset: Bool = false,
@@ -1172,6 +1218,10 @@ actor SharedPlayerManager {
             // Align boot identity after reset so same-boot post-reset planning does not
             // treat the process as "rebooted" solely because mirror was cleared.
             Self.recordCurrentSystemBootTime()
+            // Residual pending play/pause/switch from a prior process (or pre-reboot App Group)
+            // must not execute via SceneDelegate / Darwin / launch burst before special tuning.
+            // Drop mailbox + arm so only this-process, post-arm writes are drainable.
+            Self.discardResidualPendingActionsAndArmMailboxForThisProcess()
             currentVisualState = .prePlay
             currentStreamMetadata = nil
             hasLoadedVisualStateFromPersistence = false
@@ -1180,6 +1230,13 @@ actor SharedPlayerManager {
                 updatePlaybackIntent(to: .shouldBePlaying)
             }
         }
+
+        // System Now Playing is OS-owned and can retain a pre-reboot card when force-quit
+        // or power cycle skipped observed terminate. Clear phase 1 **before** Live Activity
+        // IPC so residual media chrome is not visible for the duration of ActivityKit end on
+        // cold launch / privacy clear. Phase 2 (AV detach) remains deferred inside
+        // ``teardownNowPlayingSession()``.
+        await teardownNowPlayingSession()
 
         // Await ActivityKit end while the process is still alive so cold-launch /
         // privacy-clear teardown cannot race residual reaping or a later start.
@@ -1193,8 +1250,6 @@ actor SharedPlayerManager {
         case .immediate:
             await RadioLiveActivityManager.shared.endActivityAsync(dismissalPolicy: .immediate)
         }
-
-        await teardownNowPlayingSession()
 
         if refreshWidgets {
             let visual = widgetVisualState ?? currentVisualState

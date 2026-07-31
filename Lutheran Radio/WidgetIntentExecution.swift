@@ -42,18 +42,45 @@ enum WidgetIntentExecution {
 
     /// Full home-widget toggle path used by ``WidgetToggleRadioIntent/perform()``.
     ///
-    /// Resolves the optimistic plan from the persisted visual snapshot, picks language
-    /// for the optimistic write, then runs ``executeOptimisticToggle(plan:language:)``.
+    /// Resolves paint-aligned visual state via ``resolveHomeWidgetChromeFields`` (process-local
+    /// session + privacy-gated ``homeWidgetLiveChrome``), then plans with main-process liveness
+    /// and post-termination / reboot play distrust so an empty extension session never invents
+    /// **play** after main process exit. When ``shouldDistrustDurableMirrorPlayPlanning()`` is
+    /// true, residual live chrome is ignored for resolve (same as Providers) so planning matches
+    /// factory / non-playing paint after dirty exit or reboot.
     ///
-    /// - SeeAlso: ``WidgetIntentCoordinators/planHomeWidgetToggle(from:)``,
-    ///   ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``.
+    /// **Why not bare ``loadPersistedVisualStateDirect()``:** after dirty kill / reboot the
+    /// in-process session is empty (OI-1) and that helper returns factory ``.prePlay``, which
+    /// always planned play. While main is live, Providers paint residual live chrome and planning
+    /// must match that resolve path.
+    ///
+    /// - SeeAlso: ``WidgetIntentCoordinators/planHomeWidgetToggle(resolution:distrustDurableMirrorPlay:mainProcessRecentlyActive:)``,
+    ///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:distrustLiveChrome:)``,
+    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
+    ///   ``SharedPlayerManager/isMainAppProcessRecentlyActive()``,
+    ///   ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``,
+    ///   docs/Widget-Presentation-Dataflow.md.
     static func performHomeWidgetToggle() async {
-        let visualState = SharedPlayerManager.loadPersistedVisualStateDirect()
-        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: visualState)
-        // Thermal refuse keeps chrome authoritative — no optimistic flip, no pending drain.
+        let session = SharedPlayerManager.loadPersistedWidgetState()
+        let liveChrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        let distrust = SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning()
+        let resolution = resolveHomeWidgetChromeFields(
+            sessionVisual: session?.visualState,
+            sessionLanguage: session?.currentLanguage,
+            sessionHasError: session?.hasError,
+            sessionUpdatedAt: session?.updatedAt,
+            liveChrome: liveChrome,
+            distrustLiveChrome: distrust
+        )
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: resolution,
+            distrustDurableMirrorPlay: distrust,
+            mainProcessRecentlyActive: SharedPlayerManager.isMainAppProcessRecentlyActive()
+        )
+        // Thermal refuse + post-exit residual-play refuse: no optimistic flip, no pending drain.
         guard plan.shouldExecutePendingAction else { return }
         let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
-            persistedLanguage: SharedPlayerManager.loadPersistedWidgetState()?.currentLanguage,
+            persistedLanguage: resolution.currentLanguage ?? session?.currentLanguage,
             preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
         )
         await executeOptimisticToggle(plan: plan, language: language)

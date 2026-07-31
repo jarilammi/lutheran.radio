@@ -74,14 +74,16 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 
 ## App Termination & Passive Widget / Live Activity Lifecycle
 
-**Core rule (Cleanup Invariant)**: Widget and Live Activity surfaces are **active / updating only while the main app process is running** (foreground or background audio). Once the main process has quit (normal termination or force-quit), they must transition to a stable passive or last-known state and must not receive further pings, timeline reloads driven from the dead process, or Activity updates.
+**Core rule (Cleanup Invariant)**: Widget and Live Activity surfaces are **active / updating only while the main app process is running** (foreground or background audio). Once the main process is no longer resident (observed termination, force-quit from the app switcher, or device reboot), those surfaces must settle into a stable passive or factory presentation. They must not receive further pings, timeline reloads driven from a non-resident process, or Activity updates that imply a live engine that no longer exists.
+
+**Scope note:** The Cleanup Invariant governs **widget / Live Activity presentation honesty** when the main process cannot service audio. It does **not** mean “opening the main app is silent.” **User-initiated main open** (icon / open URL → special tuning + stream) is a separate main-app product policy; **residual post-reboot surprise** (residual chrome that implies a live session after process exit) is honesty under this invariant. See [Cold launch vs passive widget open](#cold-launch-vs-passive-widget-open).
 
 ### How Termination Achieves Passive State
-- **Liveness heuristic (SSOT)**: `SharedPlayerManager.isMainAppProcessRecentlyActive()` (backed by the `lastUpdateTime` key + explicit `0` sentinel). Widget family views delegate the passive-branch decision to ``WidgetLivenessPresentation/shouldShowPassiveTapToOpen(isMainAppRecentlyActive:)`` (`WidgetSurface/WidgetLivenessPresentation.swift`) to render either full interactive controls + status + metadata or the "tap_to_open" prompt. **Liveness owns interactive vs passive** — privacy-gated live chrome (below) is never proof the main app is still interactive.
-- **Process isolation**: the termination sentinel is **presentation / extension only**. Main-app cold launch, `play()`, resurrection, and restore use in-process sticky intent after ``resetToFactoryDefaultsOnLaunch()`` — never `lastUpdateTime == 0` as a play gate. Play status does not survive process death (OI-1).
+- **Liveness heuristic (SSOT)**: `SharedPlayerManager.isMainAppProcessRecentlyActive()` (backed by the `lastUpdateTime` key + explicit `0` sentinel). Widget family views delegate the passive-branch decision to ``WidgetLivenessPresentation/shouldShowPassiveTapToOpen(isMainAppRecentlyActive:)`` (`WidgetSurface/WidgetLivenessPresentation.swift`) to render either full interactive controls + status + metadata or the "tap_to_open" prompt. **Liveness owns interactive vs passive** — privacy-gated live chrome (below) is never proof the main app is still interactive. After a device reboot, boot-identity mismatch also makes the process not “recently active,” so residual pre-reboot heartbeats cannot reopen interactive chrome.
+- **Process isolation**: the termination sentinel is **presentation / extension only**. Main-app cold launch, `play()`, resurrection, and restore use in-process sticky intent after ``resetToFactoryDefaultsOnLaunch()`` — never `lastUpdateTime == 0` as a play gate. Prior-process play status does not survive into the next process (OI-1 memory-only visual policy).
 - **On observed termination** (AppDelegate `applicationWillTerminate`, SceneDelegate `sceneDidDisconnect`, `UIApplication.willTerminateNotification`):
-  - `SharedPlayerManager.forceStaleLivenessTimestampForTermination()` writes the sentinel `0`, clears instant-feedback transients, clears durable LA mirrors, and **explicitly clears** privacy-gated ``homeWidgetLiveChrome`` (session-scoped only). Prefer explicit clear over “stale mirror + passive overlay” so passive Providers cannot briefly flash last play/pause glyphs from a dead process. Any subsequent Provider run immediately sees the passive path and factory visual defaults when session + live chrome are absent.
-  - `RadioLiveActivityManager.handleAppWillTerminate()` **sweeps all** system-held Live Activities (not only the local `currentActivity` ref), pushes a final coherent `.userPaused` ContentState that **preserves last-known language chrome** (and program metadata when available), ends with `.immediate` dismissal, and **waits** (bounded run-loop pump + detached ActivityKit work) so process death cannot race an unfinished unstructured `Task`.
+  - `SharedPlayerManager.forceStaleLivenessTimestampForTermination()` writes the sentinel `0`, clears instant-feedback transients, clears durable LA mirrors, and **explicitly clears** privacy-gated ``homeWidgetLiveChrome`` (session-scoped only). Prefer explicit clear over “stale mirror + passive overlay” so passive Providers cannot briefly flash last play/pause glyphs from a process that has already exited. Any subsequent Provider run immediately sees the passive path and factory visual defaults when session + live chrome are absent.
+  - `RadioLiveActivityManager.handleAppWillTerminate()` **sweeps all** system-held Live Activities (not only the local `currentActivity` ref), pushes a final coherent `.userPaused` ContentState that **preserves last-known language chrome** (and program metadata when available), ends with `.immediate` dismissal, and **waits** (bounded run-loop pump + detached ActivityKit work) so process exit cannot race an unfinished unstructured `Task`.
   - `WidgetRefreshManager.cancelPendingRefresh()` drops in-flight debounced work.
   - While the main process is alive, ``WidgetRefreshManager`` also identity-coalesces identical connecting / sticky chrome (`shouldCoalesceIdenticalNonPlayingRefresh`) so attach-path and dual-path storms do not spam `reloadTimelines` for unchanged language/visual. Language changes always reload (and mark the candidate **immediate** for regress gates). Stale debounced targets that regress a newer snapshot are discarded (`refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)`). Execute-time **memory SSOT authority** (`refreshWouldRegressMemoryAuthority(executing:memory:isImmediate:)`) additionally discards targets that reverse ``SharedPlayerManager/currentVisualState`` (residual sticky after intentional Connecting; premature ``.playing`` during switch/connect hold; non-immediate post-audible Connecting after audible play).
   - **Home soft-resume refresh authority:** Event-path Connecting (``.prePlay``) is **not** immediate (`refreshUsesImmediateDelivery`); it defers behind the ``.prePlay`` → ``.playing`` coalesce window so same-stream soft-resume schedules a single authoritative ``.playing`` home reload instead of painting Connecting after audio is already live. Sticky pause/lock and ``.cleared`` remain immediate. Independently, ``setUserIntentToPlay`` / play connecting chrome skip when ``DirectStreamingPlayer/PlaybackAttachState/canSoftResumeSameStream`` is true so gapless resume retains sticky visual until engine ``setPlaying()`` (no intermediate Connecting stamp). True attach / stream-switch still get Connecting until audible start. Dual-path architecture and privacy write suppression are unchanged. **Main-app in-process chrome** follows the same soft-resume intermediate and paints from visual SSOT (see **Main-App Chrome Authority** below) — orthogonal to WidgetKit reload timing.
@@ -89,22 +91,74 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
   - **Sticky pause home refresh authority:** On ``stop()`` / sticky user-pause lock, when the home-widget privacy gate allows writes, ``SharedPlayerManager`` writes an early sticky ``.userPaused`` session snapshot (`persistEarlyStickyUserPausedSnapshotIfPrivacyAllows`) **before** soft silence and the deferred authoritative ``saveCurrentState()``. That keeps non-carried events (`streamDidStop`, `playbackIntentChanged`, `streamDidPause`) and the regress gate from re-reading lagging ``.playing``. Separately, ``refreshWouldRegressPersistedSnapshot`` is **directional**: non-immediate / adaptive-debounced ``.userPaused`` still discards when the session snapshot has already advanced to ``.playing`` (soft-resume reverse race), but **immediate** sticky-pause / teardown urgency does **not** discard ``.userPaused`` solely because the snapshot still lags on ``.playing`` (forward stop). Privacy write suppression with zero widgets is unchanged (early sticky is a no-op when the gate is closed).
   - **Home multi-surface refresh authority (connecting advance + bounded deferral):** When memory SSOT advances sticky → Connecting (``.prePlay``) on true attach, residual disk-derived sticky refreshes **discard** (memory authority) and Connecting may execute against a lagging sticky session snapshot (disk regress no longer treats Connecting as always stale vs sticky). Attach-path status storms that re-enter non-immediate Connecting **hold a single coalesce deadline** (do not reset the window on every callback) so first honest Connecting paint is not starved by multi-second “awaiting possible .playing follow-up” storms. Never invent home ``.playing`` during switch/connect hold to track main-app race-lead green.
   - Attach-path status / label saves identity-skip sticky Connecting snapshot re-persists (`shouldSkipForceWidgetSaveOnStableStatus`, `shouldSkipIdenticalStickyConnectingSnapshotWrite`) so `readyToPlay` wait storms do not re-emit ``.persistedWidgetStateDidUpdate`` for unchanged language + ``.prePlay``.
-- **After force-quit** (notification not delivered): no further main-process saves or `reloadTimelines` occur. The 60 s window is the worst-case staleness for the heuristic; after that widgets naturally render passive. The snapshot (`PersistedWidgetState`) is deliberately left behind (last-known visual + language + metadata). Any Live Activity residual is **reaped on next cold launch** by `RadioLiveActivityManager.observeExistingActivities()` (final paused frame + immediate end — never re-adopted as interactive `.playing` without a live engine). When deferred observe finds this-process ``currentActivity`` already set (start raced ahead of post-init yield), full ``endActivity`` is not used for the owned surface; **sibling** system residuals (other activity ids) are still ended so ownership cannot leave a second residual interactive.
-- **Passive presentation**:
-  - Widgets show icon + localized "tap_to_open" + `widgetURL(URL(string: "lutheranradio://open"))`. Tapping performs a clean, Apple-approved launch with no side-effect playback.
+- **After force-quit or reboot** (termination notification not delivered): no further main-process saves or `reloadTimelines` occur from the exited process. Residual App Group values may remain until the next main cold launch or until Providers apply presentation distrust:
+  - **Liveness:** worst-case interactive chrome for up to the 60 s `lastUpdateTime` window when no reboot identity change applies; extension ``bumpWidgetLivenessTimestamp`` must not reopen a full interactive session after main is no longer recently active or when ``shouldDistrustDurableMirrorPlayPlanning()`` is true.
+  - **Live chrome paint:** ``resolveHomeWidgetChromeFields(..., distrustLiveChrome:)`` ignores residual ``homeWidgetLiveChrome`` under termination sentinel or reboot boot-identity mismatch (factory / non-playing when session is empty).
+  - **Home toggle planning:** after reboot or termination distrust, residual chrome or empty session alone must not plan **play**; planning prefers refuse / passive honesty over a false multi-minute “live session” without a main process.
+  - **Live Activity residual:** reaped on next cold launch by `RadioLiveActivityManager.observeExistingActivities()` (final paused frame + immediate end — never re-adopted as interactive `.playing` without a live engine). When deferred observe finds this-process ``currentActivity`` already set (start raced ahead of post-init yield), full ``endActivity`` is not used for the owned surface; **sibling** system residuals (other activity ids) are still ended so ownership cannot leave a second residual interactive.
+  - **System Now Playing residual:** OS-owned `MPNowPlayingInfoCenter` can retain a pre-exit media card when terminate cleanup never ran; process-start clears via ``clearSystemNowPlayingMetadataSynchronously()`` and factory-session teardown before user-initiated main open may re-publish after attach (see [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md)).
+- **Passive presentation (widget extension only):**
+  - Widgets show icon + localized `tap_to_open` + `widgetURL(URL(string: "lutheranradio://open"))`.
+  - The extension does **not** attach audio, play special tuning, or call ``SharedPlayerManager/play()``. A passive tap only requests an Apple-approved main-app launch (open URL).
+  - Once the **main** process starts, cold-launch product policy applies (special tuning + stream when auto-play is allowed). Passive chrome is not a promise of a silent main-app open — see the next subsection.
   - Live Activity is removed from the Dynamic Island / Lock Screen (no lingering interactive surface after a delivered terminate path, or after residual reaping on relaunch).
-- **Launch paths that remain allowed** (and are the *only* allowed paths):
-  - Widget "tap to open" area (`widgetURL`).
+- **Launch paths that remain allowed** (and are the *only* allowed paths for bringing the main process back):
+  - Widget "tap to open" area (`widgetURL`) — launches main; user-initiated main-open play may follow.
   - Standard Live Activity tap-to-launch (while the LA is still present, before termination cleanup).
   - App Intents explicitly marked with `.openAppWhenRun` (if introduced in future).
-  - Home screen / app icon / Siri / URL scheme "open".
-- **Forbidden after quit**: any code path in widget views, providers, or LA that would implicitly call `reloadTimelines`, start network, schedule timers, or post Darwin notifications whose only purpose is to keep a dead process resident.
+  - Home screen / app icon / Siri / URL scheme "open" — same main-process cold-launch policy as `widgetURL`.
+- **Forbidden after the main process has exited**: any code path in widget views, providers, or LA that would implicitly call `reloadTimelines`, start network, schedule timers, or post Darwin notifications whose only purpose is to keep a non-resident process “alive” as a presentation fiction, or that would re-open multi-minute interactive chrome solely from residual App Group state after reboot / termination distrust.
+
+### Cold launch vs passive widget open
+
+These are **different contracts**. Agents and contributors must not collapse them — especially **user-initiated main open** vs **residual post-reboot surprise**.
+
+| Concern | Who chose radio? | Contract | Mechanisms |
+|---------|------------------|----------|------------|
+| **Widget / LA while main is not servicing audio** | Nobody (or residual only) | Passive or factory presentation; no false multi-minute “still playing” session | Liveness (`isMainAppProcessRecentlyActive`, termination sentinel), ``shouldDistrustDurableMirrorPlayPlanning()``, ``resolveHomeWidgetChromeFields(distrustLiveChrome:)``, home toggle planning that refuses residual-only **play**, extension liveness bump honesty |
+| **User-initiated main open** | Human started main (icon, Siri, `lutheranradio://open`, other open-only launch) | After factory reset, when this-process sticky pause is absent: special tuning clip, then ``SharedPlayerManager/play()`` (security still runs before attach). Product language: **open app = radio** | `ViewController` cold-launch Task, ``resetToFactoryDefaultsOnLaunch()``, ``playSpecialTuningSound``, cold-play path; **not** prior-process App Group play restore (OI-1) |
+| **Residual post-reboot / dirty-exit surprise** | Nobody — force-quit or power cycle left App Group / OS media while main is not resident | Must **not** present a live session or attach stream without user-initiated main open (or an explicit this-boot play intent after arm) | Same passive/distrust paths as row 1; residual NP clear; ``discardResidualPendingActionsAndArmMailboxForThisProcess()`` before special tuning |
+| **Extension alone** | n/a | Never owns real `AVPlayer` attach | Intent optimistic UI + pending mailbox + Darwin notify; audio only after main drains |
+
+#### User-initiated main open (intentional cold play)
+
+Opening the **main** process after a cold start is expected to start radio (special tuning, then stream) when sticky intent does not block. That is a **user-driven** product choice: the human brought the app to the foreground.
+
+Examples (all user-initiated main open):
+
+- Home-screen / app-icon launch  
+- Passive home-widget `widgetURL` (`lutheranradio://open`) — user tapped open chrome  
+- Siri / URL-scheme open that creates a new main process without an in-process sticky pause  
+- Reboot, **then** the user opens the app — still user-initiated; factory reset realigns boot identity so this open is not stuck in residual distrust  
+
+#### Residual post-reboot surprise (unintended “cold play” fiction)
+
+After force-quit or power cycle, residual keys can make radio **appear** to still be live or can re-launch main via system media without a clear “start radio” choice. Honesty for that case is **presentation + residual clear**, not silent icon open:
+
+| Residual vector | Honesty mechanism |
+|-----------------|-------------------|
+| Fresh-looking `lastUpdateTime` across reboot | Boot-identity mismatch → not recently active → passive home |
+| Residual `homeWidgetLiveChrome` / empty session play plan | Distrust live chrome paint; home toggle refuses residual-only **play** |
+| Leftover App Group `pendingAction*` | Discard + arm mailbox only for this-boot writes **before** special tuning |
+| OS Now Playing card after dirty exit | Sync clear at process start + factory teardown before any re-publish |
+
+If the user later opens main, that open is **user-initiated** again (table row 2). Residual honesty must not invent sticky pause that cancels “open = radio.”
+
+#### What main-open cold play is not
+
+- **Not** restoration of the previous process’s play state from App Group (OI-1 forbids on-disk visual/playback resurrection).
+- **Not** performed by the widget extension; hearing special tuning proves the **main** cold-launch path ran after a user (or system open-URL) started main.
+- **Not** gated by `lastUpdateTime == 0` (termination liveness remains presentation-only).
+- **Not** the same as residual chrome that still looks interactive after reboot while the main process is not resident.
+
+**SeeAlso:** ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``, resurrection table cold-launch row in `SharedPlayerManager.swift`, ``WidgetLivenessPresentation``, ``shouldDistrustDurableMirrorPlayPlanning()``, [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) (Now Playing residual + re-publish after intentional attach), [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) (OI-1).
 
 ### Why This Design Is Conservative
-- Prefer explicit shutdown + passive UI over optimistic "keep the surfaces alive".
+- Prefer explicit shutdown + passive **widget/LA** UI over optimistic "keep the surfaces alive" without a live engine.
+- Prefer honest separation of residual post-reboot surprise from user-initiated main open (do not document passive chrome as if it cancelled “open = radio,” and do not document open auto-play as if residual chrome were a live session).
 - No new parallel state; extends the existing `PersistedWidgetState` + `lastUpdateTime` + LA ownership SSOTs.
-- The widget extension process may still be invoked by the system (15 min timelines, user adding the widget, etc.); when invoked it safely falls back and renders the passive branch.
-- Background audio (`UIBackgroundModes = audio`) intentionally keeps liveness + LA alive while the *process* is still resident for audio. Termination (user force-quit or system kill) is the trigger for passive transition.
+- The widget extension process may still be invoked by the system (15 min timelines, user adding the widget, etc.); when invoked it safely falls back and renders the passive branch when main is not recently active.
+- Background audio (`UIBackgroundModes = audio`) intentionally keeps liveness + LA alive while the *process* is still resident for audio. Observed termination, force-quit, or reboot (process no longer resident) is the trigger for passive transition.
 
 ## Live Activity Event-Driven Update Model (Decoupled In-Memory Path)
 
@@ -114,10 +168,10 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 
 | Concern                        | Single Source of Truth                  | Write Path                                      | Read for Live Activity / Provider       | Disk I/O on hot path? |
 |--------------------------------|-----------------------------------------|-------------------------------------------------|-----------------------------------------|-----------------------|
-| Widgets + Control widgets (visual / language / hasError) | In-process `PersistedWidgetState` session snapshot + privacy-gated App Group ``homeWidgetLiveChrome`` | `persistWidgetSnapshot` / ``savePersistedWidgetState`` → ``stampHomeWidgetLiveChromeFromSession`` (sticky early pause, ``setPlaying``, switch hold, ``performActualSave``); extension optimistic via ``persistOptimisticWidgetSnapshot`` / ``signalWidgetSwitchAction``; gate-open re-stamp | ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` via pure ``resolveHomeWidgetChromeFields``: **agreement → session; disagreement → fresher `updatedAt`; neither → factory** | Session is memory-only (OI-1); live chrome is privacy-gated App Group (session-scoped; cleared on terminate / gate close / privacy clear / factory residual). Fresher main mirror heals stale extension-session switch-hold ``.prePlay``. |
+| Widgets + Control widgets (visual / language / hasError) | In-process `PersistedWidgetState` session snapshot + privacy-gated App Group ``homeWidgetLiveChrome`` | `persistWidgetSnapshot` / ``savePersistedWidgetState`` → ``stampHomeWidgetLiveChromeFromSession`` (sticky early pause, ``setPlaying``, switch hold, ``performActualSave``); extension optimistic via ``persistOptimisticWidgetSnapshot`` / ``signalWidgetSwitchAction``; gate-open re-stamp; extension refuses ``.playing`` stamp when ``shouldDistrustDurableMirrorPlayPlanning()`` | ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` via pure ``resolveHomeWidgetChromeFields``: **agreement → session; disagreement → fresher `updatedAt`; neither → factory; terminate/reboot distrust → ignore residual live chrome** | Session is memory-only (OI-1); live chrome is privacy-gated App Group (session-scoped; cleared on terminate / gate close / privacy clear / factory residual). Fresher main mirror heals stale extension-session switch-hold ``.prePlay``. After force-quit or reboot when terminate cleanup did not run, residual blob must not paint play/pause under distrust. |
 | Widgets + Control widgets (program title/speaker) | In-process session `streamMetadata` + privacy-gated App Group ``homeWidgetStreamMetadata`` | ICY via ``persistStreamMetadataForWidgets()`` / privacy-gate open re-stamp; snapshot saves when gate open | Resolver: session metadata → ``loadHomeWidgetStreamMetadataMirror()`` (unchanged single-concern peer) | Program metadata mirror is privacy-gated App Group |
-| Widget passive chrome after quit | Liveness (`lastUpdateTime` + sentinel `0`) | `bumpWidgetLivenessTimestamp`, `forceStaleLivenessTimestampForTermination` (also clears live chrome + LA mirrors + instant feedback) | `isMainAppProcessRecentlyActive` / ``WidgetLivenessPresentation`` — **not** live chrome | Yes (providers) |
-| App relaunch / main-app play   | In-process visual + `PlaybackIntent` after ``resetToFactoryDefaultsOnLaunch()`` | Factory reset + sticky intent SSOT; **not** termination sentinel | Cold-launch / `play()` / resurrection | No prior-process play gate |
+| Widget passive chrome after quit | Liveness (`lastUpdateTime` + sentinel `0`) + reboot boot-identity distrust | `bumpWidgetLivenessTimestamp` (extension honesty gates), `forceStaleLivenessTimestampForTermination` (also clears live chrome + LA mirrors + instant feedback) | `isMainAppProcessRecentlyActive` / ``WidgetLivenessPresentation`` — **not** live chrome | Yes (providers) |
+| App relaunch / main-app play   | In-process visual + `PlaybackIntent` after ``resetToFactoryDefaultsOnLaunch()`` | Factory reset + sticky intent SSOT; **user-initiated main open** (special tuning then ``play()`` when allowed); **not** termination sentinel; **not** prior-process disk play restore; residual reboot chrome while main is not resident is a separate honesty path | Cold-launch Task / `play()` / this-process resurrection | No prior-process play gate; open = radio when sticky pause absent |
 | Live Activity (transient UI)   | In-memory `currentVisualState` + `currentStreamMetadata` + stream language (`liveActivityLanguageCodeForContentPush` — attach via `mainAppLiveActivityLanguageCode` / `selectedStream`, or destination language while `streamSwitchConnectingLanguageCode` is stamped: Connecting hold **or** sticky-paused stamp without hold) | None for LA itself. Visual/metadata/language mutations + direct notify; durable LA language App Group mirror warmed on push | `await manager.currentVisualState` / `currentStreamMetadata` + language for `ContentState.currentLanguage` | **No** (in-memory compare + conditional `Activity.update`) |
 
 ### How Event-Driven Updates Work
@@ -195,13 +249,14 @@ See `RadioLiveActivityManager.swift` (``beginObservingActivityEvents(_:)``, ``ac
 ```text
 // Visual / language / hasError — pure resolveHomeWidgetChromeFields
 // agreement → session; disagreement → greater updatedAt (tie → session); neither → factory
+// shouldDistrustDurableMirrorPlayPlanning() → distrustLiveChrome (ignore residual mirror)
 session + homeWidgetLiveChrome → preferredWidgetLanguage() when language empty
 
 // Program metadata (unchanged; separate key)
 session.streamMetadata → homeWidgetStreamMetadata → nil
 ```
 
-When chrome fields agree, session wins (same-process optimistic continuity). When they disagree, the **fresher** wall-clock stamp wins so main-app settle on ``homeWidgetLiveChrome`` can heal a stale extension-session switch-hold ``.prePlay`` without inventing mid-hold ``.playing`` when the mirror still holds Connecting. Main-app settle after drain must stamp the mirror so extension cold wakes and warm extension processes both converge.
+When chrome fields agree, session wins (same-process optimistic continuity). When they disagree, the **fresher** wall-clock stamp wins so main-app settle on ``homeWidgetLiveChrome`` can heal a stale extension-session switch-hold ``.prePlay`` without inventing mid-hold ``.playing`` when the mirror still holds Connecting. Main-app settle after drain must stamp the mirror so extension cold wakes and warm extension processes both converge. After termination sentinel or device reboot, residual live chrome is treated as absent for paint even if the App Group blob remains (force-quit and power cycle often never run observed-terminate clear).
 
 **Writers (mechanism names):**
 
@@ -209,13 +264,13 @@ When chrome fields agree, session wins (same-process optimistic continuity). Whe
 |------|---------------------|
 | ``savePersistedWidgetState`` / ``persistWidgetSnapshot`` (gate open) | Yes — ``stampHomeWidgetLiveChromeFromSession`` (identity skip) |
 | Sticky early pause, ``setPlaying``, switch hold, paused switch, ``performActualSave`` | Yes (project honesty; soft-resume holds prior ``.userPaused``, no intermediate Connecting) |
-| Extension optimistic toggle / switch | Yes (widget-process bypass; same pure planners) |
+| Extension optimistic toggle / switch | Yes (widget-process bypass; same pure planners); **no** ``.playing`` stamp when ``shouldDistrustDurableMirrorPlayPlanning()`` |
 | ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded`` | Once on gate false→true |
 | ICY / ``persistStreamMetadataForWidgets`` | **No** (metadata only) |
 | LA ContentState push | **No** (different gate class; not home privacy) |
 | ``bumpWidgetLivenessTimestamp`` alone | **No** (liveness ≠ chrome) |
 
-**Must never:** invent ``.playing`` when the mirror holds ``.prePlay`` (switch hold); treat live chrome as interactive-app proof; read LA durable mirrors or retired on-disk visual keys for home chrome; restore play chrome across cold launch (OI-1).
+**Must never:** invent ``.playing`` when the mirror holds ``.prePlay`` (switch hold); treat live chrome as interactive-app proof; paint residual live chrome after terminate/reboot distrust; read LA durable mirrors or retired on-disk visual keys for home chrome; restore play chrome across cold launch (OI-1).
 
 **Canonical mechanism SSOT:** [`docs/Home-Live-Chrome-App-Group-Mirror-Design.md`](Home-Live-Chrome-App-Group-Mirror-Design.md) (§5 writers, §6 Provider order, §6.3 passive/termination, §7 privacy clear). App Group table row in `SharedPlayerManager.swift`.
 
@@ -224,8 +279,9 @@ When chrome fields agree, session wins (same-process optimistic continuity). Whe
 - **PersistedWidgetState is never bypassed** for in-process session display or liveness derivation. Providers resolve via ``WidgetProviderSnapshotResolver`` (``resolveHomeWidgetChromeFields`` freshness for visual/language/hasError; session → program-metadata mirror for titles).
 - Live Activity visual state can be (and is) derived from in-memory SPM values without requiring a `UserDefaults` write in the common path.
 - An `Activity.update` is sent only when `(visualState, streamMetadata)` differs from the last pushed value.
-- Termination cleanup (`handleAppWillTerminate` with waited system end, `forceStaleLivenessTimestampForTermination` including ``clearHomeWidgetLiveChromeMirror()``, cold-launch residual reaping in `observeExistingActivities`) must remain correct: no interactive LA after process death on delivered paths; no resurrected home play chrome (OI-1); residuals reaped on relaunch.
-- Widget observable behavior (timeline entries, "tap_to_open" after quit, program title in snapshots) remains privacy-gated; live chrome is session-scoped only.
+- Termination cleanup (`handleAppWillTerminate` with waited system end, `forceStaleLivenessTimestampForTermination` including ``clearHomeWidgetLiveChromeMirror()``, cold-launch residual reaping in `observeExistingActivities`) must remain correct: no interactive LA after process exit on delivered paths; no resurrected home play chrome from App Group (OI-1); residuals reaped or distrust-painted on relaunch / reboot.
+- Widget observable behavior (timeline entries, `tap_to_open` when main is not recently active, program title in snapshots) remains privacy-gated; live chrome is session-scoped only.
+- Documentation must keep residual post-reboot surprise distinct from user-initiated main open (Cleanup Invariant ≠ silent icon/`widgetURL` open; residual chrome ≠ live radio).
 
 ### Background Playing Considerations
 

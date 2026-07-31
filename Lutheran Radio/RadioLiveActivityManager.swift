@@ -3112,7 +3112,7 @@ class RadioLiveActivityManager: ObservableObject {
     /// 2. Pushes a final coherent `.userPaused` ContentState that preserves last-known
     ///    language chrome (and program metadata when available).
     /// 3. On termination, **waits** for ActivityKit `update` + `end` via detached work
-    ///    + run-loop pumping so the system accepts dismissal before process death.
+    ///    + run-loop pumping so the system accepts dismissal before process exit.
     ///
     /// While the main process remains alive (privacy clear, cold-launch hygiene), prefer
     /// ``endActivityAsync(dismissalPolicy:)`` so callers can `await` completion. The
@@ -3303,7 +3303,7 @@ class RadioLiveActivityManager: ObservableObject {
 
         guard !activities.isEmpty else { return nil }
 
-        // Cold-launch reaping: local tracking is empty after process death. Seed final
+        // Cold-launch reaping: local tracking is empty after process exit. Seed final
         // language/metadata from residual system ContentState so the dismiss frame keeps
         // the stream chrome the user last saw (visual still forced to .userPaused).
         let residualChrome = Self.seedFinalEndChromeFromResidualActivities(activities)
@@ -3350,7 +3350,7 @@ class RadioLiveActivityManager: ObservableObject {
     /// system-held activity for this attribute type.
     ///
     /// - Important: Relying solely on `currentActivity` leaves orphans when the local
-    ///   reference was cleared (or never set after process death) while ActivityKit still
+    ///   reference was cleared (or never set after process exit) while ActivityKit still
     ///   shows Dynamic Island / Lock Screen chrome.
     private func collectActivitiesToEnd() -> [Activity<LutheranRadioLiveActivityAttributes>] {
         var byId: [String: Activity<LutheranRadioLiveActivityAttributes>] = [:]
@@ -3513,9 +3513,9 @@ class RadioLiveActivityManager: ObservableObject {
     
     // MARK: - Privacy-Safe Helper Methods
     
-    /// Runs once after singleton init to handle Live Activities that survived process death.
+    /// Runs once after singleton init to handle Live Activities that survived process exit.
     ///
-    /// ## Process-death residual reaping (not adoption)
+    /// ## Process-exit residual reaping (not adoption)
     /// Earlier behavior re-attached `Activity.activities.first` as `currentActivity` and
     /// resumed attribute-events observation. That left Dynamic Island / Lock Screen showing
     /// a stale interactive ContentState (often `.playing`) after force-quit or a missed
@@ -4686,7 +4686,7 @@ extension RadioLiveActivityManager {
     ///
     /// Ends every system-held Live Activity with `.immediate` dismissal and **waits**
     /// (bounded) for ActivityKit to accept the final `.userPaused` ContentState + end.
-    /// Without the wait, process death races the unstructured end Task and Dynamic Island
+    /// Without the wait, process exit races the unstructured end Task and Dynamic Island
     /// / Lock Screen keep a stale interactive frame (often still `.playing`).
     ///
     /// Force-quit and OOM still bypass this callback; residual surfaces are reaped on the

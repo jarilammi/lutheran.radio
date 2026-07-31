@@ -34,7 +34,10 @@ public enum WidgetLivenessPresentation {
     /// Whether family views should render the passive `tap_to_open` launch surface.
     ///
     /// Post-termination sentinel (`lastUpdateTime == 0`) yields `true` immediately via the SSOT check.
-    /// Force-quit may leave a sub-60 s window where interactive chrome still appears (accepted; no code change planned).
+    /// Device reboot (boot-identity mismatch) also yields passive chrome even when a residual
+    /// pre-reboot `lastUpdateTime` is still inside the 60 s wall-clock window.
+    /// Force-quit without reboot may leave a sub-60 s residual interactive window until the
+    /// heartbeat ages (extension must not re-open a new window after it expires).
     ///
     /// - Parameter isMainAppRecentlyActive: Result of ``SharedPlayerManager/isMainAppProcessRecentlyActive()``.
     /// - Returns: `true` when only the passive branch should render.

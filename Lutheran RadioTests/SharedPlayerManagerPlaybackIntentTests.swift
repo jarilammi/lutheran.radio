@@ -250,14 +250,19 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
     }
 
     /// Re-asserting a closed privacy gate must not re-run residual liveness / instant-feedback
-    /// clear (edge-only true→false). Widget-process bypass may re-seed keys while main still
-    /// sees configs:0; repeated `set(false)` must leave those seeds intact until a real open→close.
+    /// clear (edge-only true→false). Widget-process bypass may re-seed **instant feedback** and
+    /// **refresh** an already-open interactive liveness window while main still sees configs:0;
+    /// repeated `set(false)` must leave those seeds intact until a real open→close.
+    ///
+    /// Extension honesty: simulated widget process cannot invent a new `lastUpdateTime` when
+    /// main was not recently active — seed a fresh heartbeat first, then refresh.
     ///
     /// **Invariant protected:** ``WidgetRefreshManager/setHasActiveLutheranWidgets(false)`` while
     /// already false is residual-clear no-op; true→false still clears.
     ///
     /// - SeeAlso: ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
     ///   ``SharedPlayerManager/writeInstantFeedback(language:)``,
+    ///   ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``,
     ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``.
     func testReassertingPrivacyGateClosedDoesNotClearLivenessOrInstantFeedbackResiduals() async {
         let suite = "group.radio.lutheran.shared"
@@ -270,12 +275,27 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
             WidgetRefreshManager.setHasActiveLutheranWidgets(false)
         }
 
+        // Seed an already-open interactive window (main-process style write while gate open path
+        // is not required — direct App Group seed models residual heartbeat after main was live).
+        let seedTime = Date().timeIntervalSince1970 - 5
+        defaults.set(seedTime, forKey: "lastUpdateTime")
+        SharedPlayerManager.recordCurrentSystemBootTime()
+        XCTAssertTrue(
+            SharedPlayerManager.isMainAppProcessRecentlyActive(),
+            "Seeded heartbeat must open the interactive window before extension refresh"
+        )
+
         SharedPlayerManager._test_setSimulateWidgetProcessContext(true)
         defer { SharedPlayerManager._test_setSimulateWidgetProcessContext(false) }
 
         SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
         SharedPlayerManager.writeInstantFeedback(language: "fi")
         XCTAssertNotNil(defaults.object(forKey: "lastUpdateTime"))
+        XCTAssertGreaterThan(
+            defaults.double(forKey: "lastUpdateTime"),
+            seedTime,
+            "Extension may refresh an already-open interactive window"
+        )
         XCTAssertEqual(defaults.bool(forKey: "isInstantFeedback"), true)
         XCTAssertEqual(defaults.string(forKey: "instantFeedbackLanguage"), "fi")
 
@@ -286,7 +306,7 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
 
         XCTAssertNotNil(
             defaults.object(forKey: "lastUpdateTime"),
-            "Re-asserting closed gate must not wipe extension-seeded lastUpdateTime"
+            "Re-asserting closed gate must not wipe extension-refreshed lastUpdateTime"
         )
         XCTAssertEqual(
             defaults.bool(forKey: "isInstantFeedback"),

@@ -230,6 +230,57 @@ struct WidgetSurfaceTests {
         #expect(resolved.source == .liveChrome)
     }
 
+    /// Residual App Group chrome must not paint after terminate/reboot distrust (blob may remain).
+    ///
+    /// **Invariant protected:** ``resolveHomeWidgetChromeFields`` with ``distrustLiveChrome`` treats
+    /// residual mirror as absent so Providers land factory (or process-local session only).
+    ///
+    /// - SeeAlso: ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:distrustLiveChrome:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6.3).
+    @Test func resolveHomeWidgetChromeFieldsDistrustIgnoresResidualMirrorPlaying() {
+        let residual = HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: "fi",
+            hasError: false,
+            updatedAt: 9_999,
+            stampReason: "preRebootResidual"
+        )
+        let resolved = resolveHomeWidgetChromeFields(
+            sessionVisual: nil,
+            sessionLanguage: nil,
+            sessionHasError: nil,
+            sessionUpdatedAt: nil,
+            liveChrome: residual,
+            distrustLiveChrome: true
+        )
+        #expect(resolved.visualState == .prePlay)
+        #expect(resolved.currentLanguage == nil)
+        #expect(resolved.hasError == false)
+        #expect(resolved.source == .factory)
+    }
+
+    /// Distrust does not drop process-local session (same-process optimistic continuity).
+    @Test func resolveHomeWidgetChromeFieldsDistrustKeepsSessionWhenPresent() {
+        let residual = HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: "sv",
+            hasError: false,
+            updatedAt: 9_999,
+            stampReason: "staleMirror"
+        )
+        let resolved = resolveHomeWidgetChromeFields(
+            sessionVisual: .userPaused,
+            sessionLanguage: "de",
+            sessionHasError: false,
+            sessionUpdatedAt: 100,
+            liveChrome: residual,
+            distrustLiveChrome: true
+        )
+        #expect(resolved.visualState == .userPaused)
+        #expect(resolved.currentLanguage == "de")
+        #expect(resolved.source == .session)
+    }
+
     // MARK: - Intent coordinators
 
     @Test func planHomeWidgetTogglePlayingIsPause() {
@@ -273,6 +324,196 @@ struct WidgetSurfaceTests {
         #expect(security.action == .play)
         #expect(security.targetVisualState == .prePlay)
         #expect(security.shouldExecutePendingAction)
+    }
+
+    /// Residual live chrome `.playing` with empty session must plan pause (Provider-aligned).
+    @Test func planHomeWidgetToggleResolutionLiveChromePlayingIsPause() {
+        let resolution = HomeWidgetResolvedChrome(
+            visualState: .playing,
+            currentLanguage: "fi",
+            hasError: false,
+            source: .liveChrome
+        )
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: resolution,
+            distrustDurableMirrorPlay: false,
+            mainProcessRecentlyActive: true
+        )
+        #expect(plan.action == .pause)
+        #expect(plan.targetVisualState == .userPaused)
+    }
+
+    /// After reboot distrust, residual live chrome / factory alone must not invent play.
+    @Test func planHomeWidgetToggleRefusesPlayFromResidualChromeWhenDistrusted() {
+        let residualPaused = HomeWidgetResolvedChrome(
+            visualState: .userPaused,
+            currentLanguage: "en",
+            hasError: false,
+            source: .liveChrome
+        )
+        let refused = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: residualPaused,
+            distrustDurableMirrorPlay: true,
+            mainProcessRecentlyActive: false
+        )
+        #expect(refused.action == .none)
+        #expect(refused.targetVisualState == .userPaused)
+        #expect(!refused.shouldExecutePendingAction)
+
+        let factory = HomeWidgetResolvedChrome(
+            visualState: .prePlay,
+            currentLanguage: nil,
+            hasError: false,
+            source: .factory
+        )
+        let factoryRefused = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: factory,
+            distrustDurableMirrorPlay: true,
+            mainProcessRecentlyActive: false
+        )
+        #expect(factoryRefused.action == .none)
+        #expect(factoryRefused.targetVisualState == .prePlay)
+    }
+
+    /// Main not recently active refuses residual/factory play even without reboot distrust.
+    @Test func planHomeWidgetToggleRefusesPlayWhenMainNotRecentlyActive() {
+        let residual = HomeWidgetResolvedChrome(
+            visualState: .userPaused,
+            currentLanguage: "sv",
+            hasError: false,
+            source: .liveChrome
+        )
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: residual,
+            distrustDurableMirrorPlay: false,
+            mainProcessRecentlyActive: false
+        )
+        #expect(plan.action == .none)
+        #expect(!plan.shouldExecutePendingAction)
+    }
+
+    /// Process-local session remains trusted while main is live (optimistic continuity).
+    @Test func planHomeWidgetToggleSessionSourcePlayWhileMainActive() {
+        let session = HomeWidgetResolvedChrome(
+            visualState: .userPaused,
+            currentLanguage: "de",
+            hasError: false,
+            source: .session
+        )
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: session,
+            distrustDurableMirrorPlay: false,
+            mainProcessRecentlyActive: true
+        )
+        #expect(plan.action == .play)
+        #expect(plan.targetVisualState == .playing)
+    }
+
+    /// Residual `.playing` still plans pause under distrust (glyph honesty; not play resurrection).
+    ///
+    /// Defense-in-depth when resolution source remains ``.liveChrome``. Production reboot path
+    /// drops the mirror in ``resolveHomeWidgetChromeFields`` first (see chained test below).
+    @Test func planHomeWidgetToggleResidualPlayingStillPausesUnderDistrust() {
+        let resolution = HomeWidgetResolvedChrome(
+            visualState: .playing,
+            currentLanguage: "nb",
+            hasError: false,
+            source: .liveChrome
+        )
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: resolution,
+            distrustDurableMirrorPlay: true,
+            mainProcessRecentlyActive: false
+        )
+        #expect(plan.action == .pause)
+        #expect(plan.targetVisualState == .userPaused)
+    }
+
+    /// Production composition: reboot distrust resolve → factory → plan refuses play.
+    ///
+    /// **Invariant protected:** Same signal that sets ``distrustLiveChrome`` also sets
+    /// ``distrustDurableMirrorPlay``. Residual ``.playing`` on disk does not reach the planner
+    /// as ``.liveChrome`` after distrust — factory ``.prePlay`` refuses pending play.
+    ///
+    /// - SeeAlso: ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:distrustLiveChrome:)``,
+    ///   ``WidgetIntentCoordinators/planHomeWidgetToggle(resolution:distrustDurableMirrorPlay:mainProcessRecentlyActive:)``.
+    @Test func resolveThenPlanHomeWidgetToggleRefusesPlayUnderRebootDistrustChain() {
+        let residual = HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: "fi",
+            hasError: false,
+            updatedAt: 9_999,
+            stampReason: "preRebootResidual"
+        )
+        let resolved = resolveHomeWidgetChromeFields(
+            sessionVisual: nil,
+            sessionLanguage: nil,
+            sessionHasError: nil,
+            sessionUpdatedAt: nil,
+            liveChrome: residual,
+            distrustLiveChrome: true
+        )
+        #expect(resolved.source == .factory)
+        #expect(resolved.visualState == .prePlay)
+
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: resolved,
+            distrustDurableMirrorPlay: true,
+            mainProcessRecentlyActive: false
+        )
+        #expect(plan.action == .none)
+        #expect(!plan.shouldExecutePendingAction)
+        #expect(plan.targetVisualState == .prePlay)
+    }
+
+    /// Trusted boot, main not recently active: residual chrome still resolves; play refused, pause kept.
+    @Test func resolveThenPlanHomeWidgetToggleMainNotRecentlyActiveTrustedBootMatrix() {
+        let residualPaused = HomeWidgetLiveChrome(
+            visualState: .userPaused,
+            currentLanguage: "sv",
+            hasError: false,
+            updatedAt: 500,
+            stampReason: "stalePaused"
+        )
+        let pausedResolve = resolveHomeWidgetChromeFields(
+            sessionVisual: nil,
+            sessionLanguage: nil,
+            sessionHasError: nil,
+            sessionUpdatedAt: nil,
+            liveChrome: residualPaused,
+            distrustLiveChrome: false
+        )
+        #expect(pausedResolve.source == .liveChrome)
+        let refusePlay = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: pausedResolve,
+            distrustDurableMirrorPlay: false,
+            mainProcessRecentlyActive: false
+        )
+        #expect(refusePlay.action == .none)
+
+        let residualPlaying = HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: "de",
+            hasError: false,
+            updatedAt: 500,
+            stampReason: "stalePlaying"
+        )
+        let playingResolve = resolveHomeWidgetChromeFields(
+            sessionVisual: nil,
+            sessionLanguage: nil,
+            sessionHasError: nil,
+            sessionUpdatedAt: nil,
+            liveChrome: residualPlaying,
+            distrustLiveChrome: false
+        )
+        #expect(playingResolve.source == .liveChrome)
+        let planPause = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: playingResolve,
+            distrustDurableMirrorPlay: false,
+            mainProcessRecentlyActive: false
+        )
+        #expect(planPause.action == .pause)
+        #expect(planPause.targetVisualState == .userPaused)
     }
 
     @Test func planLiveActivityToggleConnectingCancelsAsPause() {

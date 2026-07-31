@@ -192,6 +192,262 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         XCTAssertEqual(snapshot?.currentLanguage, "en")
     }
 
+    /// Empty session + residual live chrome `.playing` plans pause (not factory `.prePlay` play).
+    ///
+    /// **Invariant protected:** After dirty process exit the extension session is empty (OI-1)
+    /// while privacy-gated ``homeWidgetLiveChrome`` may still paint the last visual. Planning
+    /// must use the same resolve path as Providers, not bare ``loadPersistedVisualStateDirect()``.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/performHomeWidgetToggle()``,
+    ///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:)``,
+    ///   ``SharedPlayerManager/loadHomeWidgetLiveChromeMirror()``.
+    func testPerformHomeWidgetToggleEmptySessionUsesResidualLiveChromePlayingAsPause() async {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+        // Residual interactive window so main is "recently active" without a session snapshot.
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        defaults.set(Date().timeIntervalSince1970 - 5, forKey: "lastUpdateTime")
+        XCTAssertTrue(SharedPlayerManager.isMainAppProcessRecentlyActive())
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "fi",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "testResidual"
+            )
+        )
+        XCTAssertEqual(SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState, .playing)
+        XCTAssertEqual(
+            SharedPlayerManager.loadPersistedVisualStateDirect(),
+            .prePlay,
+            "Empty session still reports factory .prePlay via loadPersistedVisualStateDirect"
+        )
+
+        await WidgetIntentExecution.performHomeWidgetToggle()
+
+        let snapshot = SharedPlayerManager.loadPersistedWidgetState()
+        XCTAssertEqual(
+            snapshot?.visualState,
+            .userPaused,
+            "Residual live chrome .playing must plan pause, not invent play from empty-session .prePlay"
+        )
+        XCTAssertEqual(snapshot?.currentLanguage, "fi")
+    }
+
+    /// Reboot distrust + residual live chrome alone must not invent optimistic play.
+    ///
+    /// **Invariant protected:** ``shouldDistrustDurableMirrorPlayPlanning()`` + residual
+    /// ``homeWidgetLiveChrome`` / empty factory refuse pending play after dirty exit / reboot.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/performHomeWidgetToggle()``,
+    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``.
+    func testPerformHomeWidgetToggleRefusesPlayAfterSimulatedRebootResidualChrome() async {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        // Prior boot epoch left across hard power-off.
+        defaults.set(1.0, forKey: SharedPlayerManager.recordedSystemBootTimeAppGroupKey)
+        XCTAssertTrue(SharedPlayerManager.hasDeviceRebootedSinceLastRecordedBoot())
+        XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+        XCTAssertFalse(SharedPlayerManager.isMainAppProcessRecentlyActive())
+
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .userPaused,
+                currentLanguage: "sv",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "testResidual"
+            )
+        )
+
+        await WidgetIntentExecution.performHomeWidgetToggle()
+
+        XCTAssertNil(
+            SharedPlayerManager.loadPersistedWidgetState(),
+            "Refuse must not write an optimistic session snapshot after reboot residual-chrome play"
+        )
+        // Residual chrome left unchanged (no optimistic flip to .playing).
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .userPaused
+        )
+    }
+
+    /// Residual ``.playing`` blob under reboot distrust must not plan play *or* invent an
+    /// optimistic pause session — Provider resolve ignores the mirror first, then planning
+    /// sees factory ``.prePlay`` and refuses.
+    ///
+    /// **Invariant protected:** Production wires ``distrustLiveChrome`` and
+    /// ``distrustDurableMirrorPlay`` from the same
+    /// ``shouldDistrustDurableMirrorPlayPlanning()`` signal. Pure planner pause-from-residual
+    /// ``.playing`` remains defense-in-depth when resolution source is still ``.liveChrome``;
+    /// after reboot the resolve path drops the mirror so perform lands refuse.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/performHomeWidgetToggle()``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:distrustLiveChrome:)``.
+    func testPerformHomeWidgetToggleRefusesAfterRebootDespiteResidualPlayingBlob() async {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        // Seed residual while boot identity is still trusted (pre-power-off stamp).
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "fi",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "preRebootPlaying"
+            )
+        )
+        XCTAssertEqual(SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState, .playing)
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        defaults.set(1.0, forKey: SharedPlayerManager.recordedSystemBootTimeAppGroupKey)
+        XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+        XCTAssertFalse(SharedPlayerManager.isMainAppProcessRecentlyActive())
+
+        await WidgetIntentExecution.performHomeWidgetToggle()
+
+        XCTAssertNil(
+            SharedPlayerManager.loadPersistedWidgetState(),
+            "Reboot distrust + ignored residual .playing must refuse — no optimistic session"
+        )
+        // Blob may remain on disk; paint/plan must not resurrect it.
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .playing,
+            "Refuse path must not rewrite residual blob"
+        )
+    }
+
+    /// Termination sentinel alone (clean observed quit) must refuse empty-session play.
+    ///
+    /// **Invariant protected:** ``hasExplicitTerminationSentinel()`` →
+    /// ``shouldDistrustDurableMirrorPlayPlanning()`` → home toggle refuse without reboot.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/forceStaleLivenessTimestampForTermination()``,
+    ///   ``WidgetIntentExecution/performHomeWidgetToggle()``.
+    func testPerformHomeWidgetToggleRefusesPlayAfterTerminationSentinel() async {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+        SharedPlayerManager.forceStaleLivenessTimestampForTermination()
+
+        XCTAssertTrue(SharedPlayerManager.hasExplicitTerminationSentinel())
+        XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+        XCTAssertFalse(SharedPlayerManager.isMainAppProcessRecentlyActive())
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+
+        await WidgetIntentExecution.performHomeWidgetToggle()
+
+        XCTAssertNil(
+            SharedPlayerManager.loadPersistedWidgetState(),
+            "Termination sentinel must refuse factory .prePlay play invention"
+        )
+    }
+
+    /// Main not recently active without reboot/sentinel: residual non-playing chrome must not invent play.
+    ///
+    /// **Invariant protected:** ``mainProcessRecentlyActive == false`` alone refuses residual
+    /// / factory play even when boot identity is trusted (stale 60 s window expired / missing).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/isMainAppProcessRecentlyActive()``,
+    ///   ``WidgetIntentExecution/performHomeWidgetToggle()``.
+    func testPerformHomeWidgetToggleRefusesPlayWhenMainNotRecentlyActiveTrustedBoot() async {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        // Outside the 60 s interactive window; no termination sentinel.
+        defaults.set(Date().timeIntervalSince1970 - 120, forKey: "lastUpdateTime")
+        XCTAssertFalse(SharedPlayerManager.isMainAppProcessRecentlyActive())
+        XCTAssertFalse(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .userPaused,
+                currentLanguage: "de",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970 - 120,
+                stampReason: "staleResidual"
+            )
+        )
+
+        await WidgetIntentExecution.performHomeWidgetToggle()
+
+        XCTAssertNil(
+            SharedPlayerManager.loadPersistedWidgetState(),
+            "Main not recently active + residual pause must refuse play (no reboot required)"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .userPaused
+        )
+    }
+
+    /// Main not recently active without reboot: residual ``.playing`` still plans pause (glyph honesty).
+    ///
+    /// Unlike reboot distrust, trusted-boot resolve still paints residual live chrome, so
+    /// ``.playing`` → pause remains available while main is not recently active.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/performHomeWidgetToggle()``,
+    ///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:distrustLiveChrome:)``.
+    func testPerformHomeWidgetTogglePausesResidualPlayingWhenMainNotRecentlyActiveTrustedBoot() async {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        defaults.set(Date().timeIntervalSince1970 - 120, forKey: "lastUpdateTime")
+        XCTAssertFalse(SharedPlayerManager.isMainAppProcessRecentlyActive())
+        XCTAssertFalse(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "nb",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970 - 90,
+                stampReason: "stalePlayingResidual"
+            )
+        )
+
+        await WidgetIntentExecution.performHomeWidgetToggle()
+
+        let snapshot = SharedPlayerManager.loadPersistedWidgetState()
+        XCTAssertEqual(
+            snapshot?.visualState,
+            .userPaused,
+            "Trusted-boot residual .playing must still plan pause for glyph honesty"
+        )
+        XCTAssertEqual(snapshot?.currentLanguage, "nb")
+    }
+
     // MARK: - Home live chrome optimistic stamps (extension profile)
 
     /// Protects design §5.3: home toggle → pause stamps privacy-gated ``homeWidgetLiveChrome``
@@ -564,6 +820,141 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
 
         XCTAssertTrue(SharedPlayerManager.hasExplicitTerminationSentinel())
         XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+    }
+
+    // MARK: - Extension liveness honesty (main not recently active / reboot)
+
+    /// Extension must not open a new 60 s interactive chrome window when main is not
+    /// recently active (stale / missing `lastUpdateTime`).
+    ///
+    /// **Invariant protected:** ``bumpWidgetLivenessTimestamp(policy:minInterval:)`` in the
+    /// widget process returns without writing when ``isMainAppProcessRecentlyActive()`` is
+    /// false before the call. Instant-feedback language keys may still write.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``,
+    ///   ``SharedPlayerManager/writeInstantFeedback(language:)``,
+    ///   ``SharedPlayerManager/isMainAppProcessRecentlyActive()``.
+    func testExtensionLivenessBumpDoesNotResurrectWhenMainNotRecentlyActive() {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        XCTAssertFalse(SharedPlayerManager.isMainAppProcessRecentlyActive())
+        XCTAssertFalse(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+
+        SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
+        SharedPlayerManager.writeInstantFeedback(language: "fi")
+
+        XCTAssertNil(
+            defaults.object(forKey: "lastUpdateTime"),
+            "Extension must not invent lastUpdateTime when main was not recently active"
+        )
+        XCTAssertFalse(SharedPlayerManager.isMainAppProcessRecentlyActive())
+        XCTAssertEqual(
+            defaults.string(forKey: "instantFeedbackLanguage"),
+            "fi",
+            "Instant-feedback language may still write without resurrecting interactive liveness"
+        )
+    }
+
+    /// Termination sentinel must not be cleared by an extension liveness bump.
+    ///
+    /// **Invariant protected:** When ``hasExplicitTerminationSentinel()`` is true,
+    /// ``shouldDistrustDurableMirrorPlayPlanning()`` blocks extension `lastUpdateTime` writes.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/forceStaleLivenessTimestampForTermination()``,
+    ///   ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``.
+    func testExtensionLivenessBumpDoesNotClearTerminationSentinel() {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+        SharedPlayerManager.forceStaleLivenessTimestampForTermination()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        XCTAssertTrue(SharedPlayerManager.hasExplicitTerminationSentinel())
+        XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+
+        SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
+        SharedPlayerManager.writeInstantFeedback(language: "sv")
+
+        XCTAssertEqual(
+            defaults.double(forKey: "lastUpdateTime"),
+            0,
+            "Extension must leave termination sentinel (0) intact"
+        )
+        XCTAssertFalse(SharedPlayerManager.isMainAppProcessRecentlyActive())
+        XCTAssertEqual(defaults.string(forKey: "instantFeedbackLanguage"), "sv")
+    }
+
+    /// Simulated reboot (stale boot identity) must not allow extension to open interactive chrome.
+    ///
+    /// **Invariant protected:** ``hasDeviceRebootedSinceLastRecordedBoot()`` →
+    /// ``shouldDistrustDurableMirrorPlayPlanning()`` suppresses extension liveness stamps even
+    /// when a residual positive `lastUpdateTime` would otherwise still be inside the 60 s window.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/recordCurrentSystemBootTime()``,
+    ///   ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``.
+    func testExtensionLivenessBumpDoesNotResurrectAfterSimulatedReboot() {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        // Residual pre-reboot heartbeat that would still look "fresh" by wall clock alone.
+        let residual = Date().timeIntervalSince1970 - 10
+        defaults.set(residual, forKey: "lastUpdateTime")
+        // Prior boot epoch left across hard power-off.
+        defaults.set(1.0, forKey: SharedPlayerManager.recordedSystemBootTimeAppGroupKey)
+
+        XCTAssertTrue(SharedPlayerManager.hasDeviceRebootedSinceLastRecordedBoot())
+        XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+        // Residual wall-clock heartbeat must not keep interactive chrome after reboot.
+        XCTAssertFalse(
+            SharedPlayerManager.isMainAppProcessRecentlyActive(),
+            "Boot-identity mismatch must force passive home chrome even with residual lastUpdateTime"
+        )
+
+        SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
+
+        XCTAssertEqual(
+            defaults.double(forKey: "lastUpdateTime"),
+            residual,
+            "Extension must not refresh lastUpdateTime after reboot distrust"
+        )
+        XCTAssertFalse(SharedPlayerManager.isMainAppProcessRecentlyActive())
+    }
+
+    /// When main is already recently active on this boot, extension may refresh the heartbeat.
+    ///
+    /// **Invariant protected:** Extension refresh path remains available for in-window
+    /// optimistic actions while the main process liveness window is open.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``.
+    func testExtensionLivenessBumpRefreshesWhenMainAlreadyRecentlyActive() {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        let seed = Date().timeIntervalSince1970 - 20
+        defaults.set(seed, forKey: "lastUpdateTime")
+        XCTAssertTrue(SharedPlayerManager.isMainAppProcessRecentlyActive())
+        XCTAssertFalse(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+
+        SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
+
+        let after = defaults.double(forKey: "lastUpdateTime")
+        XCTAssertGreaterThan(after, seed, "Extension may refresh an already-open interactive window")
+        XCTAssertTrue(SharedPlayerManager.isMainAppProcessRecentlyActive())
     }
 
     // MARK: - LiveActivitySwitchStreamIntent contract (symmetric to home switch + LA toggle)

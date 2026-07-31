@@ -49,6 +49,113 @@ final class WidgetIntentCoordinatorTests: XCTestCase {
         }
     }
 
+    /// Provider-aligned residual live chrome `.playing` plans pause (not empty-session play).
+    ///
+    /// **Invariant protected:** After process exit the extension session is empty (OI-1);
+    /// planning must follow residual ``homeWidgetLiveChrome`` the same way Providers paint.
+    func testPlanHomeWidgetToggleResolutionUsesLiveChromePlayingAsPause() {
+        let resolution = HomeWidgetResolvedChrome(
+            visualState: .playing,
+            currentLanguage: "fi",
+            hasError: false,
+            source: .liveChrome
+        )
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: resolution,
+            mainProcessRecentlyActive: true
+        )
+        XCTAssertEqual(plan.action, .pause)
+        XCTAssertEqual(plan.targetVisualState, .userPaused)
+    }
+
+    /// Reboot / termination distrust refuses play invented from residual chrome or factory.
+    ///
+    /// **Invariant protected:** Aligns home with LA durable-mirror play distrust — residual
+    /// App Group alone must not schedule pending play after dirty exit / reboot.
+    func testPlanHomeWidgetToggleRefusesPlayFromResidualWhenDistrusted() {
+        let residual = HomeWidgetResolvedChrome(
+            visualState: .userPaused,
+            currentLanguage: "en",
+            hasError: false,
+            source: .liveChrome
+        )
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: residual,
+            distrustDurableMirrorPlay: true,
+            mainProcessRecentlyActive: false
+        )
+        XCTAssertEqual(plan.action, .none)
+        XCTAssertFalse(plan.shouldExecutePendingAction)
+
+        let factory = HomeWidgetResolvedChrome(
+            visualState: .prePlay,
+            currentLanguage: nil,
+            hasError: false,
+            source: .factory
+        )
+        let factoryPlan = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: factory,
+            distrustDurableMirrorPlay: true,
+            mainProcessRecentlyActive: false
+        )
+        XCTAssertEqual(factoryPlan.action, .none)
+    }
+
+    /// Session source still plans play when main is recently active (this-process optimistic).
+    func testPlanHomeWidgetToggleSessionSourcePlayWhenMainActive() {
+        let resolution = HomeWidgetResolvedChrome(
+            visualState: .userPaused,
+            currentLanguage: "sv",
+            hasError: false,
+            source: .session
+        )
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: resolution,
+            distrustDurableMirrorPlay: false,
+            mainProcessRecentlyActive: true
+        )
+        XCTAssertEqual(plan.action, .play)
+        XCTAssertEqual(plan.targetVisualState, .playing)
+    }
+
+    /// Residual live chrome ``.playing`` still plans pause under distrust (glyph honesty).
+    ///
+    /// Defense-in-depth for the pure planner when resolve still reports ``.liveChrome``.
+    /// Production reboot resolve drops the mirror first (factory refuse) — covered under
+    /// extension perform contracts.
+    func testPlanHomeWidgetToggleResidualPlayingStillPausesUnderDistrust() {
+        let resolution = HomeWidgetResolvedChrome(
+            visualState: .playing,
+            currentLanguage: "nb",
+            hasError: false,
+            source: .liveChrome
+        )
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: resolution,
+            distrustDurableMirrorPlay: true,
+            mainProcessRecentlyActive: false
+        )
+        XCTAssertEqual(plan.action, .pause)
+        XCTAssertEqual(plan.targetVisualState, .userPaused)
+    }
+
+    /// Main not recently active alone (no reboot distrust) refuses residual non-playing play.
+    func testPlanHomeWidgetToggleRefusesPlayWhenMainNotRecentlyActive() {
+        let residual = HomeWidgetResolvedChrome(
+            visualState: .userPaused,
+            currentLanguage: "de",
+            hasError: false,
+            source: .liveChrome
+        )
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(
+            resolution: residual,
+            distrustDurableMirrorPlay: false,
+            mainProcessRecentlyActive: false
+        )
+        XCTAssertEqual(plan.action, .none)
+        XCTAssertFalse(plan.shouldExecutePendingAction)
+    }
+
     // MARK: - Control widget toggle
 
     /// Control-widget bool: `true` → play/`.playing`, `false` → pause/`.userPaused`.

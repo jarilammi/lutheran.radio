@@ -1478,7 +1478,8 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
     /// **Contracts protected:**
     /// - Optional factory reset purges on-disk visual keys and restores `.prePlay`.
     /// - `staleLiveness` writes the termination sentinel (`lastUpdateTime == 0`).
-    /// - Phase-1 Now Playing metadata is cleared before widget refresh runs.
+    /// - Phase-1 Now Playing metadata is cleared (orchestration order: NP clear before
+    ///   Live Activity end and before post-teardown widget refresh).
     /// - The session-teardown gate is released when orchestration completes.
     /// - The terminal `refreshIfNeeded(..., immediate: true)` passes guards after teardown.
     ///

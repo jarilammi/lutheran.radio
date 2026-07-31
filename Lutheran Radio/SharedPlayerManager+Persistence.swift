@@ -580,13 +580,28 @@ extension SharedPlayerManager {
     /// - Precondition: Home-widget privacy gate open **or** widget-process bypass (intent proof).
     /// - Postcondition: When allowed, App Group holds JSON for `chrome` (or key removed when `nil`
     ///   / empty language). When the gate is closed on the main app, **no** key is written.
+    ///   Extension process under ``shouldDistrustDurableMirrorPlayPlanning()`` refuses to stamp
+    ///   ``.playing`` (must not re-project residual “still playing” chrome after terminate/reboot).
     /// - SeeAlso: ``loadHomeWidgetLiveChromeMirror()``, ``clearHomeWidgetLiveChromeMirror()``,
+    ///   ``shouldDistrustDurableMirrorPlayPlanning()``,
     ///   ``persistHomeWidgetStreamMetadataMirror(_:)`` (privacy-class peer),
     ///   ``HomeWidgetLiveChrome``, docs/Home-Live-Chrome-App-Group-Mirror-Design.md.
     nonisolated static func persistHomeWidgetLiveChromeMirror(_ chrome: HomeWidgetLiveChrome?) {
         guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
             #if DEBUG
             print("[SharedPlayerManager] Suppressing home-widget live-chrome mirror write (no active widgets — privacy mode)")
+            #endif
+            return
+        }
+        // Extension must not re-stamp residual “playing” chrome after terminate/reboot while
+        // Provider paint already treats the mirror as absent. Main-app stamps remain allowed
+        // (live process on this boot after factory / recorded boot identity).
+        if let chrome,
+           chrome.visualState == .playing,
+           Self.isWidgetProcess(),
+           Self.shouldDistrustDurableMirrorPlayPlanning() {
+            #if DEBUG
+            print("[SharedPlayerManager] Suppressing extension home-widget live-chrome .playing stamp under terminate/reboot distrust")
             #endif
             return
         }

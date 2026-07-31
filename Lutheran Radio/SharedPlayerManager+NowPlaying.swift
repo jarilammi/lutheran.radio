@@ -688,29 +688,45 @@ extension SharedPlayerManager {
     /// media card) and detaches the secured AVPlayer item without blocking cold launch.
     ///
     /// `MPNowPlayingInfoCenter` persists at the OS level across relaunch and reboot unless
-    /// explicitly cleared — independent of the memory-only widget/visual policy.
+    /// explicitly cleared — independent of the memory-only widget/visual policy. Dirty
+    /// force-quit / power-off skip ``clearSystemNowPlayingMetadataSynchronously()``; residual
+    /// cards are wiped on next process start (``AppDelegate`` launch) and again here during
+    /// ``resetToFactoryDefaultsOnLaunch()`` **before** special tuning / ``play()`` re-publish.
     ///
-    /// Phase 1 (awaited, lightweight): nil `nowPlayingInfo`, stop playback state, cancel
-    /// pending widget reloads, and set the cross-process teardown gate.
+    /// Phase 1 (awaited, lightweight, **always applied** even when re-entrant): nil
+    /// `nowPlayingInfo`, stop playback state, cancel pending widget reloads. Metadata clear
+    /// is idempotent and must not be skipped solely because phase 2 is already in flight.
     ///
-    /// Phase 2 (detached): pause + item detach (+ optional audio-session deactivation on
-    /// device only). Returns before phase 2 completes so MediaRemoteUI's launch watchdog
-    /// is not tripped by synchronous main-thread AVFoundation work during factory reset.
+    /// Phase 2 (detached, **skipped when re-entrant**): pause + item detach (+ optional
+    /// audio-session deactivation on device only). Returns before phase 2 completes so
+    /// MediaRemoteUI's launch watchdog is not tripped by synchronous main-thread
+    /// AVFoundation work during factory reset.
     ///
     /// - Precondition: Main-app target only. Call during cold-launch factory reset, privacy
     ///   clear, or process termination — **not** while intentionally backgrounding live playback.
     /// - Postcondition: `nowPlayingInfo == nil`, `playbackState == .stopped`; player detach
-    ///   scheduled (or skipped when debounced / re-entrant).
-    /// - SeeAlso: ``resetToFactoryDefaultsOnLaunch()``, ``SharedPlayerManager/clearAllLocalState()``,
+    ///   scheduled once (or skipped when re-entrant while phase 2 already scheduled).
+    /// - SeeAlso: ``resetToFactoryDefaultsOnLaunch()``, ``clearSystemNowPlayingMetadataSynchronously()``,
+    ///   ``SharedPlayerManager/clearAllLocalState()``,
     ///   ``DirectStreamingPlayer/teardownSystemMediaSession()``, `WidgetRefreshManager.isSessionTeardownInProgress`,
+    ///   AppDelegate.application(_:didFinishLaunchingWithOptions:),
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md.
     func teardownNowPlayingSession() async {
         guard !isRunningInWidget() else { return }
 
-        if isTeardownInProgress {
+        // Phase 1 is always applied: residual OS Now Playing must clear even when a concurrent
+        // teardown already holds the re-entrancy lock for phase 2 scheduling.
+        let shouldSchedulePhase2 = !isTeardownInProgress
+        if !shouldSchedulePhase2 {
             #if DEBUG
-            print("[SessionTeardown] LOCK held — skipped re-entrant teardownNowPlayingSession")
+            print("[SessionTeardown] LOCK held — phase 1 metadata clear only (skip re-entrant phase 2)")
             #endif
+            await MainActor.run {
+                WidgetRefreshManager.shared.cancelPendingRefresh()
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+                MPNowPlayingInfoCenter.default().playbackState = .stopped
+            }
             return
         }
 
@@ -798,13 +814,22 @@ extension SharedPlayerManager {
 
     /// Best-effort synchronous clear of system Now Playing metadata.
     ///
-    /// Used on `applicationWillTerminate` / `sceneDidDisconnect` where async deactivation
-    /// may not complete before the process exits. The metadata clear is the critical privacy step;
-    /// AVPlayer detach is intentionally omitted here to avoid main-thread MediaRemoteUI watchdog
-    /// pressure during process exit.
+    /// Used when async actor teardown cannot be awaited:
+    /// - `applicationWillTerminate` / `sceneDidDisconnect` (process may exit immediately)
+    /// - `application(_:didFinishLaunchingWithOptions:)` (earliest process-start wipe of residual
+    ///   OS media cards after dirty exit / reboot, before scene attach and cold auto-play)
     ///
-    /// - SeeAlso: ``teardownNowPlayingSession()``, AppDelegate.applicationWillTerminate,
-    ///   SceneDelegate.sceneDidDisconnect, docs/Event-Driven-Refactor-Roadmap.md.
+    /// The metadata clear is the critical privacy / honesty step; AVPlayer detach is intentionally
+    /// omitted here to avoid main-thread MediaRemoteUI watchdog pressure. Full session teardown
+    /// (``teardownNowPlayingSession()``) still runs on factory reset before special tuning.
+    ///
+    /// - Precondition: Caller is on the main actor (UIKit lifecycle entry points).
+    /// - Postcondition: `nowPlayingInfo == nil`, `playbackState == .stopped`.
+    /// - SeeAlso: ``teardownNowPlayingSession()``, ``resetToFactoryDefaultsOnLaunch()``,
+    ///   AppDelegate.application(_:didFinishLaunchingWithOptions:),
+    ///   AppDelegate.applicationWillTerminate, SceneDelegate.sceneDidDisconnect,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func clearSystemNowPlayingMetadataSynchronously() {
         MainActor.assumeIsolated {
             WidgetRefreshManager.shared.cancelPendingRefresh()

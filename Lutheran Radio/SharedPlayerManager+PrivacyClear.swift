@@ -62,11 +62,13 @@ extension SharedPlayerManager {
         // gate closes without a full clear as well).
         clearHomeWidgetLivenessAndInstantFeedbackResiduals()
 
-        // Pending intent keys (these can leak "I just interacted")
-        defaults.removeObject(forKey: "pendingAction")
-        defaults.removeObject(forKey: "pendingActionId")
-        defaults.removeObject(forKey: "pendingActionTime")
-        defaults.removeObject(forKey: "pendingLanguage")
+        // Pending intent keys (these can leak "I just interacted").
+        // Unconditional mailbox clear + re-arm so mid-session privacy clear does not leave the
+        // main process stuck refusing legitimate later widget intents.
+        clearPendingActionMailbox()
+        // SAFETY: Process-local re-arm of nonisolated(unsafe) gate after mailbox clear; same
+        // contract as ``discardResidualPendingActionsAndArmMailboxForThisProcess()``.
+        unsafe pendingActionMailboxAcceptingExecution = true
 
         // Live Activity toggle visual + language mirrors (cross-process signals; privacy clear ends LA).
         defaults.removeObject(forKey: liveActivityToggleVisualStateAppGroupKey)

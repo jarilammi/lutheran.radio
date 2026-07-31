@@ -26,6 +26,26 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     ///   - launchOptions: Launch options provided to the app.
     /// - Returns: A Boolean indicating whether the app launched successfully.
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // Residual system Now Playing can survive dirty process exit and device reboot
+        // (`MPNowPlayingInfoCenter` is OS-owned, not App Group). Clear metadata as early as
+        // possible on process start — before scene attach, residual remote taps, and the
+        // ViewController cold-launch Task that later re-publishes under intentional auto-play.
+        // Factory reset repeats phase-1 clear via ``teardownNowPlayingSession()`` before special
+        // tuning / ``play()``; this earliest wipe shrinks the post-reboot stale-card window.
+        //
+        // - Precondition: Main thread (UIApplication launch).
+        // - Postcondition: `nowPlayingInfo == nil`, `playbackState == .stopped` until a later
+        //   intentional ``updateNowPlayingInfo()`` after audible start.
+        // - SeeAlso: ``SharedPlayerManager/clearSystemNowPlayingMetadataSynchronously()``,
+        //   ``SharedPlayerManager/teardownNowPlayingSession()``,
+        //   ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
+        //   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+        SharedPlayerManager.clearSystemNowPlayingMetadataSynchronously()
+
+        #if DEBUG
+        print("[AppDelegate] didFinishLaunching — residual system Now Playing metadata cleared")
+        #endif
+
         return true
     }
 
@@ -115,9 +135,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         //    appearance after quit.
         // 2. End every system-held Live Activity (final .userPaused + language-preserving
         //    ContentState, immediate dismissal, bounded wait so ActivityKit accepts end
-        //    before process death — not a fire-and-forget Task).
+        //    before process exit — not a fire-and-forget Task).
         // 3. Cancel pending widget refreshes so no in-flight debounced reload can execute
-        //    after the process is dead.
+        //    after the process has exited.
         //
         // Cleanup Invariant: After this returns (when delivered), no path originating from the
         // (now-exiting) main process may cause WidgetCenter.reloadTimelines, Activity.update,
