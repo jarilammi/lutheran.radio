@@ -43,7 +43,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUNDLE_ID="radio.lutheran.Lutheran-Radio"
+BUNDLE_ID="radio.lutheran.LutheranRadio"
 APP_GROUP="group.radio.lutheran.shared"
 
 usage() {
