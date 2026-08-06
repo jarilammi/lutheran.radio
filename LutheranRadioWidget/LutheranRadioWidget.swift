@@ -758,6 +758,16 @@ private func makePreviewEntry(
     )
 }
 
+/// Projects a preview `SimpleEntry` into the narrow inputs `SmallWidgetView` consumes at runtime.
+private func smallWidgetView(from entry: SimpleEntry) -> SmallWidgetView {
+    SmallWidgetView(
+        statusPresentation: entry.statusPresentation,
+        controlPresentation: entry.controlPresentation,
+        currentLanguageCode: entry.currentLanguageCode,
+        availableStreams: entry.availableStreams
+    )
+}
+
 /// Projects a preview `SimpleEntry` into the narrow inputs `MediumWidgetView` consumes at runtime.
 private func mediumWidgetView(from entry: SimpleEntry) -> MediumWidgetView {
     MediumWidgetView(
@@ -869,6 +879,69 @@ private func largeWidgetView(from entry: SimpleEntry) -> LargeWidgetView {
 #Preview("10. securityLocked + nil (placeholder)", traits: .sizeThatFitsLayout) {
     largeWidgetView(from: makePreviewEntry(
         visualState: .securityLocked,
+        programTitle: nil,
+        speaker: nil
+    ))
+}
+
+// Small family: interactive playing (narrow inputs; flag grid + control)
+#Preview("11. small playing (interactive)", traits: .sizeThatFitsLayout) {
+    smallWidgetView(from: makePreviewEntry(
+        visualState: .playing,
+        currentLanguageCode: "en",
+        programTitle: "Daily Chapel",
+        speaker: nil
+    ))
+}
+
+// Passive `tap_to_open`: direct chrome when liveness is not recently active
+// (``WidgetLivenessPresentation/shouldShowPassiveTapToOpen``). Family views take
+// this branch at runtime; canvas previews construct chrome explicitly so App Group
+// heartbeat state cannot hide the axis.
+#Preview("12. passive tap_to_open small", traits: .sizeThatFitsLayout) {
+    WidgetPassiveTapToOpenChrome(style: .small)
+        .padding()
+}
+
+#Preview("13. passive tap_to_open medium", traits: .sizeThatFitsLayout) {
+    WidgetPassiveTapToOpenChrome(style: .medium)
+        .padding()
+}
+
+// Non-English playing: flag + localized language name on medium
+#Preview("14. playing fi + metadata", traits: .sizeThatFitsLayout) {
+    mediumWidgetView(from: makePreviewEntry(
+        visualState: .playing,
+        currentLanguageCode: "fi",
+        programTitle: "Aamuhartaus",
+        speaker: "Puhuja"
+    ))
+}
+
+// Non-English paused: subdued chrome with Swedish station identity
+#Preview("15. userPaused sv + title", traits: .sizeThatFitsLayout) {
+    largeWidgetView(from: makePreviewEntry(
+        visualState: .userPaused,
+        currentLanguageCode: "sv",
+        programTitle: "Kvällsbön",
+        speaker: nil
+    ))
+}
+
+// Small family non-English: selected flag honesty for a non-en stream
+#Preview("16. small playing et", traits: .sizeThatFitsLayout) {
+    smallWidgetView(from: makePreviewEntry(
+        visualState: .playing,
+        currentLanguageCode: "et",
+        programTitle: nil,
+        speaker: nil
+    ))
+}
+
+// Cleared: post privacy-reset confirmation chrome (distinct blue status)
+#Preview("17. cleared + nil (privacy reset)", traits: .sizeThatFitsLayout) {
+    mediumWidgetView(from: makePreviewEntry(
+        visualState: .cleared,
         programTitle: nil,
         speaker: nil
     ))

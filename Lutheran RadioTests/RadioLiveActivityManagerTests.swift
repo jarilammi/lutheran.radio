@@ -708,6 +708,24 @@ class RadioLiveActivityManagerTests: XCTestCase {
             ),
             "Matched language must not schedule soft pushes"
         )
+        // Empty destination must not schedule soft pushes even when the ensure gate is true.
+        XCTAssertFalse(
+            manager._test_shouldRunLanguageContentEnsureSoftPushes(
+                needsLanguageEnsure: true,
+                destinationLanguage: "",
+                quietPendingDestination: nil,
+                isRequestEligible: false
+            ),
+            "Empty destination must not schedule language soft pushes"
+        )
+        XCTAssertNil(
+            manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
+                languageStillMismatches: true,
+                isRequestEligible: false,
+                destinationLanguage: ""
+            ),
+            "Empty destination must not enter language quiet"
+        )
 
         // Instance seam: optimistic stream-switch re-arms quiet when destination changes.
         manager._test_setLanguageEnsureQuietPendingDestination("fi")
@@ -794,6 +812,17 @@ class RadioLiveActivityManagerTests: XCTestCase {
             ),
             "Matched owned language must not schedule settled push"
         )
+        // Missing owned language with destination stamped → settle still needed.
+        XCTAssertTrue(
+            manager._test_shouldPushSettledLanguageAcceptance(
+                destinationLanguage: "de",
+                ownedContentLanguage: nil,
+                isStreamSwitchHoldActive: false,
+                settledAcceptanceConsumedDestination: nil,
+                isRequestEligible: false
+            ),
+            "Missing owned language must allow settled language acceptance"
+        )
         // Empty destination → no-op.
         XCTAssertFalse(
             manager._test_shouldPushSettledLanguageAcceptance(
@@ -830,6 +859,30 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 ownedOrSystemLanguage: "sv"
             ),
             "Still-lagging same destination must keep settled consume"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearLanguageSettledAcceptanceConsume(
+                settledAcceptanceConsumedDestination: nil,
+                destinationLanguage: "de",
+                ownedOrSystemLanguage: "de"
+            ),
+            "No settle consume marker must not clear"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearLanguageSettledAcceptanceConsume(
+                settledAcceptanceConsumedDestination: "de",
+                destinationLanguage: "",
+                ownedOrSystemLanguage: "de"
+            ),
+            "Empty destination must not clear settle consume via convergence"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearLanguageSettledAcceptanceConsume(
+                settledAcceptanceConsumedDestination: "de",
+                destinationLanguage: "de",
+                ownedOrSystemLanguage: nil
+            ),
+            "Missing owned language must keep settle consume for same destination"
         )
 
         // Instance seam: optimistic stream-switch to a new language clears settle consume.
@@ -1099,6 +1152,20 @@ class RadioLiveActivityManagerTests: XCTestCase {
             ),
             "No consume marker must not clear"
         )
+        XCTAssertFalse(
+            manager._test_shouldClearPlayingSettledAcceptanceConsume(
+                settledAcceptanceConsumed: true,
+                ownedOrSystemVisual: nil
+            ),
+            "Missing owned visual must keep settled playing consume"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearPlayingSettledAcceptanceConsume(
+                settledAcceptanceConsumed: true,
+                ownedOrSystemVisual: .userPaused
+            ),
+            "Owned pause must keep settled playing consume until .playing"
+        )
 
         // Instance seam: optimistic toggle / stream-switch re-open settled playing consume.
         manager._test_setPlayingSettledAcceptanceConsumed(true)
@@ -1196,6 +1263,27 @@ class RadioLiveActivityManagerTests: XCTestCase {
             ),
             "Still-stalled Connecting must not clear playing quiet"
         )
+        XCTAssertFalse(
+            manager._test_shouldClearPlayingEnsureQuietPending(
+                quietPending: true,
+                ownedOrSystemVisual: .userPaused
+            ),
+            "Owned pause must not clear playing quiet (settle / ensure still own quiet clear)"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearPlayingEnsureQuietPending(
+                quietPending: true,
+                ownedOrSystemVisual: nil
+            ),
+            "Missing owned visual must not clear playing quiet"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearPlayingEnsureQuietPending(
+                quietPending: false,
+                ownedOrSystemVisual: .playing
+            ),
+            "No playing quiet is a no-op clear"
+        )
 
         // Instance seam: optimistic toggle / stream-switch re-arm playing quiet.
         manager._test_setPlayingEnsureQuietPending(true)
@@ -1292,6 +1380,18 @@ class RadioLiveActivityManagerTests: XCTestCase {
             ),
             "Matched visual is not a playing stall deferral case"
         )
+        // Non-playing candidate (Connecting honesty) is outside playing-repair quiet deferral.
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantPlayingPushWhileQuiet(
+                candidateVisual: .prePlay,
+                ownedContentVisual: .userPaused,
+                ownedContentLanguage: "fi",
+                candidateLanguage: "fi",
+                quietPending: true,
+                isRequestEligible: false
+            ),
+            "Connecting candidate must still push while playing quiet (not a playing-repair thrash)"
+        )
     }
 
     /// Language-only status re-pushes defer while quiet; visual mutations still push.
@@ -1366,6 +1466,18 @@ class RadioLiveActivityManagerTests: XCTestCase {
             ),
             "No quiet pending must not defer"
         )
+        // Matched owned language is not a language-stall deferral (suppress handles no-op).
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantLanguagePushWhileQuiet(
+                candidateLanguage: "fi",
+                ownedContentLanguage: "fi",
+                ownedContentVisual: .prePlay,
+                candidateVisual: .prePlay,
+                quietPendingDestination: "fi",
+                isRequestEligible: false
+            ),
+            "Matched owned language must not defer under language quiet"
+        )
 
         // Clear quiet when owned / system language matches destination, or destination moves.
         XCTAssertTrue(
@@ -1399,6 +1511,24 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 ownedOrSystemLanguage: "fi"
             ),
             "No quiet is a no-op clear"
+        )
+        // Missing owned language while still quiet for same destination must keep quiet.
+        XCTAssertFalse(
+            manager._test_shouldClearLanguageEnsureQuietPending(
+                quietPendingDestination: "fi",
+                destinationLanguage: "fi",
+                ownedOrSystemLanguage: nil
+            ),
+            "Missing owned language must keep language quiet for same destination"
+        )
+        // Destination change clears quiet even when owned is still missing.
+        XCTAssertTrue(
+            manager._test_shouldClearLanguageEnsureQuietPending(
+                quietPendingDestination: "fi",
+                destinationLanguage: "sv",
+                ownedOrSystemLanguage: nil
+            ),
+            "Destination change must clear prior quiet even without owned language"
         )
     }
 
@@ -2141,6 +2271,20 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 isRequestEligible: false
             ),
             "Playing quiet pending must force consume even inside the debounce window"
+        )
+        // Dual quiet (both axes exhausted while locked) must still force the owned-surface path.
+        XCTAssertTrue(
+            manager._test_shouldInvokeOwnedSurfaceForegroundEnsure(
+                hasCurrentActivity: true,
+                lastOwnedSurfaceForegroundEnsureAt: recent,
+                now: now,
+                languageEnsureQuietPending: true,
+                playingEnsureQuietPending: true,
+                pendingInteractiveLiveActivityEnsure: false,
+                contentEnsureStillNeeded: false,
+                isRequestEligible: false
+            ),
+            "Dual language + playing quiet must force owned-surface foreground ensure"
         )
         XCTAssertTrue(
             manager._test_shouldInvokeOwnedSurfaceForegroundEnsure(
