@@ -322,9 +322,8 @@ extension RadioPlayerCoordinator {
             }
         }
 
-        // Pause barrier is in-actor only (``recordUserPauseTimestamp`` → ``wasRecentlyUserPaused``).
+        // Sticky pause is applied by the media-transport pause path (``PlaybackIntent/userPaused``).
         // App Group `lastUserPauseTime` is retired (no readers); residual keys are purged on launch.
-        await SharedPlayerManager.shared.recordUserPauseTimestamp()
         await SharedPlayerManager.shared.submitMediaTransportCommandAndWait(.pause)
         // Visual SSOT is SharedPlayerManager; push chrome after mailbox pause completes.
         let newState = await SharedPlayerManager.shared.currentVisualState

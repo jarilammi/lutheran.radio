@@ -406,7 +406,6 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         // Reachability SSOT is DirectStreamingPlayer.hasInternetConnection (engine path monitor).
         // Caller (VC cold-launch path) gates on that flag before invoking this; we drive play only.
 
-        streamingPlayer.cancelPendingSSLProtection()
         streamingPlayer.resetTransientErrors()
 
         // ONE central call — play() waits on TuningSoundCoordinator until the special clip finishes.

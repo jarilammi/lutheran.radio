@@ -23,8 +23,8 @@
 //  - Playback stop on failure uses ``stop()`` (PlaybackControl domain) and status
 //    delivery via ``safeOnStatusChange`` (StatusCallbackDelivery domain) — never
 //    re-implements soft/hard stop or status hops here.
-//  - Adaptive SSL *handshake* timers remain in `+SSLProtection.swift` (different
-//    domain: connect-time handshake budget, not periodic pin revalidation).
+//  - This is the only remaining engine-side *certificate* timer. Connect readiness is
+//    AVPlayer item status + resource-loader timeouts — not a separate handshake budget.
 //
 //  Security invariant:
 //  - Validation always goes through ``CertificateValidator/validateServerCertificate(for:)``
@@ -41,12 +41,11 @@
 //
 //  AGENT NOTE: Members used across files are `internal` (Swift `private` is file-scoped).
 //  Prefer this domain over re-implementing periodic HEAD revalidation in attach/play
-//  paths. Do not mix play/stop entry surgery or SSL handshake timers into this peel.
+//  paths. Do not mix play/stop entry surgery into this peel.
 //
 //  - SeeAlso: DirectStreamingPlayer.swift (isolation map, ``certificateValidationTimer``),
 //    DirectStreamingPlayer+PlaybackControl.swift (``stop()``),
 //    DirectStreamingPlayer+StatusCallbackDelivery.swift (``safeOnStatusChange``),
-//    DirectStreamingPlayer+SSLProtection.swift (handshake timers — distinct),
 //    DirectStreamingPlayer+DeinitHygiene.swift (calls ``stopPeriodicCertificateValidation()``),
 //    Core/Security/CertificateValidator.swift,
 //    Core/Configuration/SecurityConfiguration.swift

@@ -668,7 +668,8 @@ extension SharedPlayerManager {
     ///   reaches zero and not cancelled).
     /// - Postcondition: `currentVisualState == .userPaused`, `currentPlaybackIntent == .sleepTimer`,
     ///   player is stopped, snapshot persisted, notifications posted.
-    /// - Note: Does not set `lastUserPauseTimestamp` (contrast with `stop()` / `markAsUserPaused`).
+    /// - Note: Uses ``PlaybackIntent/sleepTimer`` (not sticky ``.userPaused``) so resume rules
+    ///   differ from explicit ``stop()`` / ``markAsUserPaused()`` pause paths.
     ///
     /// - SeeAlso: ``RadioPlayerCoordinator/sleepTimerStateDidChange(_:)``,
     ///   ``PlaybackIntent/sleepTimer``, ``currentVisualState``, ``saveCurrentState()``,

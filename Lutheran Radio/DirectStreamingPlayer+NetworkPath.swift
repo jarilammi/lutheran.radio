@@ -16,8 +16,8 @@
 //  - Host chrome (cellular expensive-path prompt, SPM stop/reconnect) **observes** via
 //    ``DirectStreamingPlayer/onNetworkPathChange`` — never a second free-running monitor
 //    or HTTP probe timer on ViewController.
-//  - Short-lived SSL cellular probes in `+SSLProtection` are separate and may use
-//    `networkMonitor?.currentPath` between path-handler samples.
+//  - Do not reintroduce short-lived parallel path probes for connect-time heuristics; the
+//    free-running sample + ``onNetworkPathChange`` is the only path SSOT.
 //  - Stored flags (`hasInternetConnection`, `networkMonitor`, `onNetworkPathChange`,
 //    `pathMonitor`) live on the façade class body (extensions cannot declare stored state).
 //
@@ -25,7 +25,7 @@
 //  file-scoped). Prefer this domain file over re-implementing path monitoring in call sites.
 //  UITestMode / `isTesting` must continue to skip monitor start so reconnect cannot auto-play.
 //
-//  - SeeAlso: DirectStreamingPlayer.swift, DirectStreamingPlayer+SSLProtection.swift,
+//  - SeeAlso: DirectStreamingPlayer.swift,
 //    ViewController path observation, CellularPermissionManager,
 //    CODING_AGENT.md (Single Source of Truth Principles).
 //
@@ -134,8 +134,7 @@ extension DirectStreamingPlayer {
     /// Starts the **sole** production `NWPathMonitor` for process reachability.
     ///
     /// Ownership story (do not reintroduce a host-side monitor):
-    /// 1. This method is the only free-running path-monitor start in the main app
-    ///    (aside from short-lived SSL cellular detection in `+SSLProtection`).
+    /// 1. This method is the only free-running path-monitor start in the main app.
     /// 2. ``hasInternetConnection`` is updated here and is the authoritative flag for
     ///    streaming retries, cold-launch guards, and host mirrors.
     /// 3. ``onNetworkPathChange`` publishes the same sample to host chrome (cellular

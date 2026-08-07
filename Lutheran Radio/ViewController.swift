@@ -261,7 +261,6 @@ class ViewController: UIViewController {
     nonisolated let streamingPlayer: DirectStreamingPlayer
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
 
-    private let appLaunchTime = Date()
     // Playback authority (do not reintroduce a host-local `isPlaying` bool):
     // - Engine rate reality → ``DirectStreamingPlayer/isPlaying``
     // - Visual / sticky intent → ``SharedPlayerManager`` / ``PlayerVisualState``
@@ -564,7 +563,6 @@ class ViewController: UIViewController {
             print("[ViewController] Starting initial stream playback after tuning (single source)")
             #endif
             
-            self.streamingPlayer.cancelPendingSSLProtection()
             self.streamingPlayer.resetTransientErrors()
             
             // ONE central call — play() waits on TuningSoundCoordinator until the special clip finishes.

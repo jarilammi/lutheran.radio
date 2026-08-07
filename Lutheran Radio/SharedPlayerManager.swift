@@ -158,17 +158,17 @@ import WidgetKit
 ///   blocker. Post-clear the *visual* is the dedicated .cleared (blue "Cleared" pill);
 ///   post-clear launches use .prePlay because we remove the snapshot.)
 ///
-/// **Cold-Launch Grace Period** (defined in this actor):
-/// - `initializationSettlingPeriod = 5.0` seconds (see `Constants`)
-/// - Total window = 25 seconds (see `Constants.coldLaunchWindow`)
+/// **Cold-launch play gates** (defined in this actor; no wall-clock grace window):
 /// - `initialPlaybackHasRun` one-shot guard prevents duplicate automatic first-play attempts.
 /// - `hasCompletedTrueColdLaunchPlay` records whether the app's first cold-launch play has run
-///   (DEBUG classification only; does not drive resurrection guards).
-/// - The window only relaxes resurrection protection for `.prePlay`; `.userPaused` is
-///   *never* bypassed, even inside the window (enforced at the top of `play()`).
+///   (DEBUG / attach classification only; does not drive sticky resurrection guards).
+/// - Sticky `.userPaused` / `.securityLocked` / `.cleared` is *never* bypassed
+///   (enforced at the top of `play()` via ``PlaybackPlayDecision``).
+/// - User-initiated main open after factory reset uses special tuning + one cold `play()`;
+///   cold play is not time-bounded (no process-age grace window).
 ///
-/// Cold-launch special casing is minimal; the one-shot and window logic are
-/// subordinate to `currentPlaybackIntent`.
+/// Cold-launch special casing is minimal; the one-shot is subordinate to
+/// `currentPlaybackIntent`.
 ///
 /// **Key Transition Methods**:
 /// - `resetToPrePlayForNewStream()` — **only** place that intentionally sets `.prePlay`
@@ -221,10 +221,10 @@ import WidgetKit
 ///
 /// | From State      | Trigger / Event                                   | Guard / Condition                                              | To State        | Resurrection Behavior / Notes |
 /// |-----------------|---------------------------------------------------|-----------------------------------------------------------------|-----------------|-------------------------------|
-/// | .prePlay        | Cold launch first play                            | Security valid + inside 25s window (or first time)              | .prePlay (Connecting) → .playing | `.playing` only after engine soft-resume / readyToPlay kick (`setPlaying`); sets `initialPlaybackHasRun = true` when prePlay path proceeds |
+/// | .prePlay        | Cold launch first play                            | Security valid + prePlay one-shot (`initialPlaybackHasRun`) + non-sticky intent | .prePlay (Connecting) → .playing | `.playing` only after engine soft-resume / readyToPlay kick (`setPlaying`); sets `initialPlaybackHasRun = true` when prePlay path proceeds |
 /// | .userPaused     | Explicit user play (button, widget, Siri, etc.)   | `userRequestedPlay()` → `setUserIntentToPlay()` first           | .prePlay (Connecting) → .playing | Intent `.shouldBePlaying` immediately; chrome stays Connecting until engine `setPlaying` |
 /// | .playing        | User taps pause/stop (any surface)                | `stop()` or `markAsUserPaused()` at top of method               | .userPaused     | Immediate sticky lock; authoritative snapshot via `saveCurrentState()` / `performActualSave` |
-/// | .playing        | Second explicit play / double-fire (same language)| `userRequestedPlay()` / `play()` — engine already audible       | .playing (unchanged) | **No-op** (optional surface reaffirm): never `setStreamAndPlay` / item rebuild; independent of cold-launch `resurrectionProtectionRelaxed` |
+/// | .playing        | Second explicit play / double-fire (same language)| `userRequestedPlay()` / `play()` — engine already audible       | .playing (unchanged) | **No-op** (optional surface reaffirm): never `setStreamAndPlay` / item rebuild; engine-truth idempotency only |
 /// | .playing        | User-initiated stream/language switch             | `resetToPrePlayForNewStream(connectingLanguageCode:)` (chrome + clear ICY + destination language) **before** silent engine stop, then `play()` | .prePlay → .playing | Hold prePlay through attach; never advertise `.playing` mid teardown; never prior-language chrome with Connecting; engine `setPlaying` after readyToPlay |
 /// | .playing        | Mid-session stall / ICY drop / item transient     | `canProceedWithPlayback()` then secured `recreatePlayerItem()` / rate kick (attach generation) | .playing        | Engine-internal; does not call `play()`. Sticky pause blocks admission. |
 /// | .playing        | Host technical recovery (network reconnect, route)| `canProceedWithPlayback()` then permitted raw `play()`          | .playing / .prePlay → .playing | Not explicit user play; still process-local sticky only. |
@@ -251,8 +251,8 @@ import WidgetKit
 /// `hasError`, bare `currentLanguage`, `lastUserPauseTime`, `preferredVolume`) are **purged** on
 /// launch and read paths and never written. ``clearPersistedVisualStateKeysFromDisk()`` is the
 /// sole purge entry point (upgrade hygiene for App Group leftovers). Visual state is never
-/// restored from disk. Pause recovery uses in-actor ``lastUserPauseTimestamp``; volume uses
-/// system output (`MPVolumeView`).
+/// restored from disk. Explicit pause recovery is sticky ``PlaybackIntent`` (``.userPaused`` /
+/// ``canProceedWithPlayback()``); volume uses system output (`MPVolumeView`).
 ///
 /// This is the authoritative shared state model. All values are anonymous. No PII, no listening history.
 ///
@@ -267,7 +267,7 @@ import WidgetKit
 /// | currentLanguage         | String (languageCode) | (Retired — purged on launch, never written)                  | (none) | Retired bare language key. Language SSOT is in-process `PersistedWidgetState.currentLanguage` plus ``preferredWidgetLanguage()`` (snapshot → `bestInitialLanguageCode()` when widgets active → hard `"en"` when not). | Purged only |
 /// | hasError                | Bool                  | (Inside in-process snapshot only; retired App Group bool purged) | `loadSharedState` (from `PersistedWidgetState.hasError`), widgets   | Permanent error flag for UI chrome. Lives inside the in-process session snapshot. Retired standalone App Group bool is purged only. | In-session snapshot; set on security or unrecoverable network failures |
 /// | lastUpdateTime          | Double (epoch)        | ``bumpWidgetLivenessTimestamp(policy:minInterval:)`` (canonical; ``WidgetLivenessWritePolicy``), `performActualSave` / `saveCombinedWidgetState` when home widgets active; extension may **refresh** only while interactive window already open and ``shouldDistrustDurableMirrorPlayPlanning()`` is false; terminate writes sentinel `0` | Widget providers (`isMainAppProcessRecentlyActive` 60 s check); ``hasExplicitTerminationSentinel()`` for presentation / LA mirror distrust / extension liveness honesty | Liveness heartbeat + termination passive-chrome marker. **Never** a main-app play gate. Extension must not open a new 60 s interactive session after main process exit or reboot. | Kept only while home/Control widgets are relevant; removed by privacy clear and when ``WidgetRefreshManager/hasActiveLutheranWidgets`` closes; terminate sets `0` |
-/// | lastUserPauseTime | Double (epoch) | (Retired — purged on launch, never written) | (none) | Was App Group pause barrier. Recovery uses in-actor ``lastUserPauseTimestamp`` / ``wasRecentlyUserPaused(within:)`` only. | Purged only |
+/// | lastUserPauseTime | Double (epoch) | (Retired — purged on launch, never written) | (none) | Was App Group pause barrier. Pause recovery is sticky ``PlaybackIntent`` (``.userPaused``) / ``canProceedWithPlayback()`` only — no wall-clock or residual timestamp gate. | Purged only |
 /// | isInstantFeedback       | Bool                  | Widget handlers (`writeInstantFeedback` / switch path)       | `loadSharedState` (checked first)                                    | Signals that a widget action just occurred (optimistic UI)   | Short-lived; cleared after 15s, next authoritative save, privacy clear, or when the home-widget privacy gate closes |
 /// | instantFeedbackTime     | Double (epoch)        | Widget handlers                                              | `loadSharedState`                                                    | Timestamp for the instant feedback validity window           | Same lifetime as `isInstantFeedback` |
 /// | instantFeedbackLanguage | String                | Widget handlers                                              | `loadSharedState`                                                    | Language to show during the optimistic widget update         | Same lifetime as `isInstantFeedback` |
@@ -372,31 +372,19 @@ actor SharedPlayerManager {
     static let shared = SharedPlayerManager()
     
     // MARK: - Cold Launch & Resurrection Guards
-    internal let appLaunchTime = Date()
 
-    /// Timing constants and thresholds used by resurrection, cold-launch, and optimistic
-    /// feedback logic. Centralised so the rationale for each value is documented in one place.
+    /// Timing constants used by optimistic widget feedback.
+    /// Centralised so the rationale for each value is documented in one place.
+    ///
+    /// - Note: There is no wall-clock cold-launch grace window and no recent-pause time barrier.
+    ///   Automatic first play is gated by factory reset, sticky intent, and the
+    ///   `initialPlaybackHasRun` one-shot only. Explicit pause blocks recovery via sticky
+    ///   ``PlaybackIntent`` (``.userPaused``) / ``canProceedWithPlayback()``.
     internal struct Constants {
-        /// Grace period immediately after launch during which .prePlay is allowed to start
-        /// playback even without an explicit user intent yet (first-launch auto-play).
-        /// Combined with the additional window below yields the documented 25 s cold-launch
-        /// opportunity.
-        static let initializationSettlingPeriod: TimeInterval = 5.0
-
-        /// Total wall time from process launch within which the one-shot cold-launch play
-        /// is permitted (and resurrection protection is relaxed for non-sticky states).
-        /// After this the normal sticky .userPaused / .securityLocked / .cleared rules apply
-        /// even on first launch if the user has not tapped play.
-        static let coldLaunchWindow: TimeInterval = 25.0
-
         /// How long a widget's optimistic "instant feedback" state (written before the main
         /// app processes the Darwin notification) is trusted by loadSharedState and providers.
         /// After this the authoritative snapshot (or player) is used.
         static let instantFeedbackTimeout: TimeInterval = 15.0
-
-        /// Default interval used by `wasRecentlyUserPaused` to suppress immediate resurrection
-        /// after an explicit pause (in-actor barrier only; no App Group pause-time key).
-        static let recentUserPauseBarrier: TimeInterval = 8.0
     }
 
     // MARK: - UI Test Isolation (launch argument driven)
@@ -479,21 +467,10 @@ actor SharedPlayerManager {
     // The ViewController cold-launch guard + the early return in `play()` are the
     // two primary choke points; engine methods in DirectStreamingPlayer provide defense-in-depth.
 
-    internal let initializationSettlingPeriod: TimeInterval = Constants.initializationSettlingPeriod
     internal var initialPlaybackHasRun = false
     /// True after the first true cold-launch `play()` proceeds (not stream-switch or resume).
     internal var hasCompletedTrueColdLaunchPlay = false
 
-    /// Set only by explicit user play surfaces (`userRequestedPlay`, `setUserIntentToPlay`).
-    /// Process-local bookkeeping that an explicit play gesture occurred this lifetime.
-    /// Not a play gate (termination liveness is presentation-only; sticky intent is the SSOT).
-    internal var hasProcessedExplicitUserPlayRequest = false
-    
-    // MARK: - Recent user pause (in-actor barrier for recovery paths)
-    /// Authoritative timestamp for `wasRecentlyUserPaused(within:)`.
-    /// In-process only — retired App Group `lastUserPauseTime` is purged and never written.
-    internal var lastUserPauseTimestamp: TimeInterval = 0
-    
     #if LUTHERAN_MAIN_APP
     // MARK: - Sleep Timer (main app only; implementation in SharedPlayerManager+SleepTimer.swift)
     // SwiftUI (PlaybackControlsView) presents the options dialog. All scheduling, cancellation,
@@ -1120,7 +1097,6 @@ actor SharedPlayerManager {
         currentVisualState = .prePlay
         currentStreamMetadata = nil
         hasLoadedVisualStateFromPersistence = false
-        lastUserPauseTimestamp = 0
         if playbackIntent != .securityLocked {
             updatePlaybackIntent(to: .shouldBePlaying)
         }
@@ -1225,7 +1201,6 @@ actor SharedPlayerManager {
             currentVisualState = .prePlay
             currentStreamMetadata = nil
             hasLoadedVisualStateFromPersistence = false
-            lastUserPauseTimestamp = 0
             if playbackIntent != .securityLocked {
                 updatePlaybackIntent(to: .shouldBePlaying)
             }

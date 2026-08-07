@@ -236,7 +236,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // | Metadata | DirectStreamingPlayer+Metadata.swift | ICY StreamTitle push delegate |
     // | Audio interruption | DirectStreamingPlayer+AudioSessionInterruption.swift | AVAudioSession interruption / route |
     // | Resource loader | DirectStreamingPlayer+ResourceLoader.swift | AVAssetResourceLoaderDelegate + Icecast + load timeout |
-    // | SSL protection | DirectStreamingPlayer+SSLProtection.swift | Adaptive handshake timers |
     // | Error classification | DirectStreamingPlayer+StreamErrorClassification.swift | StreamErrorType.from |
     // | Visual state bridge | DirectStreamingPlayer+PlayerVisualState.swift | Thin façade → SPM setUserPaused / publish playing (not SSOT storage) |
     // | Widget stub | DirectStreamingPlayer+WidgetStub.swift | Extension-only type surface (`#if !LUTHERAN_MAIN_APP`) |
@@ -254,7 +253,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // Isolation notes (long-term cleanup, not this split):
     // - MainActor owns attach generation, soft-pause, observer setup, recovery gates.
     // - nonisolated stop entry may hop to MainActor for generation bump / teardown guard.
-    // - connectionQueue isolates SSL ConnectionInfo dictionary.
     // - @unchecked Sendable documents historical engine sharing; prefer MainActor hops for new work.
     // - Deinit hygiene helpers live in `+DeinitHygiene.swift`; Swift `deinit` itself remains
     //   on this primary type body (language requirement) and only sets `isDeallocating` then
@@ -319,9 +317,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // - ``certificateValidationTimer`` remains on this class (stored state).
     // - Cadence = ``SecurityConfiguration/certificateValidationCacheDuration`` (not DNS model cache).
     // - Validation policy stays in Core `CertificateValidator`; this engine only schedules + reacts.
-    // - SSL handshake timers remain in `+SSLProtection.swift` (distinct domain).
+    // - No adaptive connect-time handshake budget lives on this engine — readiness is AVPlayer
+    //   item status + resource-loader timeouts; TLS trust is Core pin + ATS SPKI only.
 
-    var isSSLHandshakeComplete = false
     /// Periodic Core pin revalidation timer storage (lifecycle: `+PeriodicCertificateValidation.swift`).
     var certificateValidationTimer: Timer?
     var hasStartedPlaying = false
@@ -434,22 +432,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     let audioSession: AVAudioSession
     let pathMonitor: NetworkPathMonitoring
     
-    // MARK: - Enhanced SSL Protection with Connection Tracking
-    /// Per-connection info for SSL handshake protection.
-    /// - Note: Migrated from `Timer` to `Task<Void, Never>` for Swift 6 Sendable compliance and better cancellation.
-    ///   Invariant: `task` fires once after delay, marks `isHandshakeComplete = true` unless cancelled.
-    struct ConnectionInfo: Sendable {
-        let id: UUID
-        let startTime: Date
-        let task: Task<Void, Never>
-        var isHandshakeComplete: Bool = false
-    }
-    
-    // Dictionary to track multiple connections
-    var activeConnections: [UUID: ConnectionInfo] = [:]
-    let connectionQueue = DispatchQueue(label: "ssl.connections", qos: .userInitiated)
-
-
     // MARK: - Stream catalog / server selection (domain files)
     // Stream, availableStreams, language helpers → DirectStreamingPlayer+StreamCatalog.swift
     // Server, PingResult, selectOptimalServer, urlWithOptimalServer → DirectStreamingPlayer+ServerSelection.swift
@@ -900,7 +882,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // MARK: - Periodic certificate validation (see DirectStreamingPlayer+PeriodicCertificateValidation.swift)
     // startPeriodicValidation / stopPeriodicCertificateValidation — Core pin HEAD cadence
     // via CertificateValidator; timer storage (certificateValidationTimer) stays on this class.
-    // Distinct from SSL handshake timers in +SSLProtection.swift.
+    // Connect readiness is AVPlayer item status + resource-loader timeouts — not a separate
+    // handshake-budget Task. TLS trust remains Core pin + ATS SPKI only.
 
     // MARK: - Playback control (see DirectStreamingPlayer+PlaybackControl.swift)
     // Public play / stop entry surface: play(), createAndStartPlayer(for:attachGeneration:),
