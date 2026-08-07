@@ -164,24 +164,11 @@ extension DirectStreamingPlayer {
         bufferingTimer?.invalidate()
         bufferingTimer = nil
     }
-    
-    // FIXED: Remove the cancelPendingSSLProtection method that relied on shared connectionStartTime
-    func cancelPendingSSLProtection() {
-        clearSSLProtectionTimer()
-        #if DEBUG
-        print("[DirectStreamingPlayer] [Manual Cancel] Cancelled pending SSL protection")
-        #endif
-    }
-    
-    // FIXED: Update clearSSLProtectionTimer to remove debug reference
-    func clearSSLProtectionTimer() {
-        clearAllSSLProtectionTimers()
-        isSSLHandshakeComplete = true
-        
-        #if DEBUG
-        print("[DirectStreamingPlayer] SSL protection timer cleared")
-        #endif
-    }
+
+    // NOTE: Adaptive connect-time handshake budget (`+SSLProtection`, `cancelPendingSSLProtection`,
+    // `clearSSLProtectionTimer`) was removed — setup had zero callers; teardown was no-op on an
+    // always-empty map. Connect readiness is AVPlayer item status + resource-loader timeouts.
+    // TLS trust remains Core pin + ATS SPKI (`+PeriodicCertificateValidation`, StreamingSessionDelegate).
     
     // NOTE: getCurrentMetadataForLiveActivity was removed (2026-06).
     // Live Activity now sources metadata exclusively via SharedPlayerManager

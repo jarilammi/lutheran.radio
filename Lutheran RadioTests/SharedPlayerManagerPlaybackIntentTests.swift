@@ -38,11 +38,9 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
 
         let intent = await manager.currentPlaybackIntent
         let visual = await manager.currentVisualState
-        let recentlyPaused = await manager.wasRecentlyUserPaused()
 
         XCTAssertEqual(intent, .userPaused)
         XCTAssertEqual(visual, .userPaused)
-        XCTAssertTrue(recentlyPaused)
     }
 
     /// Sticky `.userPaused` after stop must block the engine attach gate so an in-flight

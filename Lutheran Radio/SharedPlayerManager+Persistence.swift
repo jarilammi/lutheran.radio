@@ -57,8 +57,8 @@ extension SharedPlayerManager {
     /// factory `.prePlay` via ``resetToFactoryDefaultsOnLaunch()`` / ``init()``.
     ///
     /// Keys cleared: `persistedWidgetState`, `playerVisualState`, `isPlaying`, `playing`,
-    /// `hasError`, bare `currentLanguage`, retired `lastUserPauseTime` (pause barrier is
-    /// in-actor only), retired `preferredVolume` (system volume is SSOT).
+    /// `hasError`, bare `currentLanguage`, retired `lastUserPauseTime` (pause recovery is
+    /// sticky ``PlaybackIntent`` only), retired `preferredVolume` (system volume is SSOT).
     ///
     /// Does **not** touch security caches, liveness (`lastUpdateTime`), pending-action keys,
     /// instant-feedback keys, or durable Live Activity mirrors
@@ -69,7 +69,7 @@ extension SharedPlayerManager {
     /// ``updateInMemorySessionSnapshot``, and ``removeAllLocalPlaybackKeys()``.
     ///
     /// - SeeAlso: ``resetToFactoryDefaultsOnLaunch()``, ``removeAllLocalPlaybackKeys()``,
-    ///   ``preferredWidgetLanguage()``, ``wasRecentlyUserPaused(within:)``,
+    ///   ``preferredWidgetLanguage()``, ``canProceedWithPlayback()``,
     ///   docs/Event-Driven-Refactor-Roadmap.md (OI-1),
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     nonisolated static func clearPersistedVisualStateKeysFromDisk() {

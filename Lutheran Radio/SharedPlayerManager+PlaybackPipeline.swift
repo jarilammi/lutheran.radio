@@ -62,36 +62,6 @@ extension SharedPlayerManager {
         return currentPlaybackIntent == .shouldBePlaying
     }
 
-    /// Returns whether the user paused within the given interval (default 8 s).
-    ///
-    /// Reads the in-actor ``lastUserPauseTimestamp`` only. Retired App Group
-    /// `lastUserPauseTime` is never consulted (purged on launch; no writers).
-    ///
-    /// - Parameter interval: Maximum age in seconds for a pause to count as "recent".
-    /// - Returns: `true` when an in-session pause was recorded within `interval`.
-    /// - SeeAlso: ``recordUserPauseTimestamp()``, ``Constants/recentUserPauseBarrier``
-    func wasRecentlyUserPaused(within interval: TimeInterval = Constants.recentUserPauseBarrier) async -> Bool {
-        // For true cold-launch or first recovery before any pause has been recorded,
-        // treat as "not recently paused".
-        guard lastUserPauseTimestamp > 0 else { return false }
-        return Date().timeIntervalSince1970 - lastUserPauseTimestamp < interval
-    }
-
-    /// Records an explicit user pause into the in-actor recovery barrier.
-    ///
-    /// Call from main-app pause surfaces (widget drain, coordinator, stop paths that
-    /// already set intent elsewhere). Does **not** write App Group keys — the former
-    /// `lastUserPauseTime` disk signal is retired with no remaining readers.
-    ///
-    /// - SeeAlso: ``wasRecentlyUserPaused(within:)``, `RadioPlayerCoordinator.handleWidgetPauseAction()`
-    nonisolated func recordUserPauseTimestamp() async {
-        await _recordUserPauseTimestampInternal()
-    }
-    
-    internal func _recordUserPauseTimestampInternal() async {
-        lastUserPauseTimestamp = Date().timeIntervalSince1970
-    }
-
     /// Single internal entry point for all playback intent transitions.
     ///
     /// This is the **only** place that mutates the private `playbackIntent` backing
@@ -197,10 +167,10 @@ extension SharedPlayerManager {
     /// ``PlaybackPlayDecision``. After any edit to pure tables or phase side effects here,
     /// re-verify:
     ///   1. widget resume after .userPaused reaches the engine when signaled
-    ///   2. cold launch still allowed exactly once via the one-shot + relaxed window
-    ///   3. explicit .userPaused remains sticky even inside 25s window
+    ///   2. cold launch still allowed exactly once via the prePlay one-shot (`initialPlaybackHasRun`)
+    ///   3. explicit .userPaused remains sticky (never bypassed for automatic play)
     ///   4. pause during validation / attach never leaves play proceeding to audible start
-    ///   5. second play while already audible is a no-op even when resurrection is relaxed
+    ///   5. second play while already audible is always a no-op (engine-truth idempotency)
     ///   6. stream-switch hold-prePlay is retained until engine ``setPlaying()``
     /// Cross-update the resurrection table, userRequestedPlay doc, and
     /// coordinator architecture comment.
@@ -298,21 +268,6 @@ extension SharedPlayerManager {
             hasCompletedTrueColdLaunchPlay: hasCompletedTrueColdLaunchPlay
         )
         let isTrueColdLaunchPlay = playClassification == .trueColdLaunch
-        let resurrectionProtectionRelaxed = !initialPlaybackHasRun ||
-            Date().timeIntervalSince(appLaunchTime) < Constants.coldLaunchWindow
-
-        #if DEBUG
-        if resurrectionProtectionRelaxed {
-            switch playClassification {
-            case .trueColdLaunch:
-                print("[SharedPlayerManager] Cold-launch first play – resurrection protection relaxed")
-            case .streamSwitch:
-                print("[SharedPlayerManager] Stream-switch play – resurrection protection relaxed")
-            case .resume:
-                print("[SharedPlayerManager] Resume play – resurrection protection relaxed")
-            }
-        }
-        #endif
 
         let alreadyAudible = await shouldNoOpPlayWhileAlreadyAudible()
         // Process isolation: early gates use only in-process sticky intent / pipeline / engine
@@ -340,7 +295,7 @@ extension SharedPlayerManager {
         switch earlyDecision.outcome {
         case .blockStickyPauseOrLock:
             #if DEBUG
-            print("[SharedPlayerManager] play() blocked — explicit \(currentPlaybackIntent) (resurrection bypass ignored)")
+            print("[SharedPlayerManager] play() blocked — sticky \(currentPlaybackIntent) (explicit play required)")
             #endif
             clearPlaybackStartPipeline()
             return nil
@@ -612,7 +567,7 @@ extension SharedPlayerManager {
     /// 2. Idempotent no-op while Connecting (start pipeline already active).
     /// 3. Idempotent no-op while already audibly playing the selected language — **before**
     ///    ``setUserIntentToPlay()`` so chrome is never forced through Connecting and the
-    ///    secured item is never rebuilt (holds even inside the cold-launch relaxed window).
+    ///    secured item is never rebuilt (engine-truth; no wall-clock bypass).
     /// 4. (Main-app only) `configureNowPlayingControlsIfNeeded()`
     /// 5. `setUserIntentToPlay()` — sticky pause/clear → Connecting ``.prePlay`` (skipped when
     ///    same-stream soft-pause resume is available), then
@@ -691,8 +646,7 @@ extension SharedPlayerManager {
             #endif
             return
         }
-        
-        hasProcessedExplicitUserPlayRequest = true
+
         #if LUTHERAN_MAIN_APP
         await configureNowPlayingControlsIfNeeded()
         #endif
@@ -708,9 +662,9 @@ extension SharedPlayerManager {
     /// false). Soft-paused same-stream resume is **not** a no-op: soft silence has rate 0, so
     /// `isActuallyPlaying` is false and the caller proceeds to soft-resume.
     ///
-    /// **Invariant:** This check must **not** depend on cold-launch `resurrectionProtectionRelaxed`.
-    /// The relaxed window exists so first play / recovery may proceed despite prior sticky
-    /// snapshots; it must never authorize tearing down a live secured item for a redundant play.
+    /// **Invariant:** Engine-truth only — never gate on wall-clock “cold launch grace” or a
+    /// resurrected prior-process snapshot. A redundant play must never tear down a live
+    /// secured item.
     ///
     /// - Returns: `true` when the caller should return without `setStreamAndPlay` / intent thrash.
     /// - Precondition: Sticky pause/lock and stream-switch hold are handled separately
@@ -723,7 +677,7 @@ extension SharedPlayerManager {
     ///
     /// AGENT NOTE: Single source of truth for play-while-already-playing idempotency.
     /// Both ``userRequestedPlay()`` (before ``setUserIntentToPlay()``) and ``play()`` must
-    /// consult this helper. Do not re-introduce a visual-only skip gated on the cold-launch window.
+    /// consult this helper. Do not re-introduce a visual-only skip or a process-age timer.
     internal func shouldNoOpPlayWhileAlreadyAudible() async -> Bool {
         if currentPlaybackIntent.isStickyPauseOrLock {
             return false
@@ -763,7 +717,7 @@ extension SharedPlayerManager {
     /// Called from DirectStreamingPlayer user-action stop paths and certain
     /// coordinator surfaces. The visual + intent mutations here are the SSOT.
     ///
-    /// - Postcondition: visual = .userPaused, intent = .userPaused, timestamp set,
+    /// - Postcondition: visual = .userPaused, intent = .userPaused,
     ///   persisted, and `streamDidPause` emitted.
     ///
     /// - SeeAlso: ``setUserPaused()``, ``stop()``, ``emit(_:)``, `PlayerEvent.streamDidPause`,
@@ -794,10 +748,6 @@ extension SharedPlayerManager {
         applyVisualState(.userPaused)
         
         updatePlaybackIntent(to: .userPaused)
-        
-        // Record authoritative pause timestamp for recovery paths.
-        // This lets wasRecentlyUserPaused() return correct answers without raw UD reads.
-        lastUserPauseTimestamp = Date().timeIntervalSince1970
 
         // Privacy-gated early sticky snapshot so home refresh sees .userPaused before
         // deferred save (same race as ``stop()``).
@@ -938,9 +888,6 @@ extension SharedPlayerManager {
         applyVisualState(.userPaused)
 
         updatePlaybackIntent(to: .userPaused)
-
-        // Record authoritative pause timestamp (used by recovery query).
-        lastUserPauseTimestamp = Date().timeIntervalSince1970
 
         // Early sticky session snapshot (privacy-gated) so home refresh derivation and
         // regress checks see .userPaused before soft silence / deferred saveCurrentState.
@@ -1146,7 +1093,6 @@ extension SharedPlayerManager {
         // Use the canonical clear helper (which now also emits .metadataDidUpdate(nil)).
         // Distinct from language-change: no NowPlayingInfo or widget persist here.
         _clearIcyMetadataStash()
-        lastUserPauseTimestamp = 0
 
         #if DEBUG
         print("[SharedPlayerManager] resetStateToClearedForPrivacy — in-memory SSOT reset to .cleared (blue) + .cleared intent (no persist; .cleared blocks recovery until explicit play)")
@@ -1168,8 +1114,6 @@ extension SharedPlayerManager {
     ///   docs/Widget-Presentation-Dataflow.md (home soft-resume refresh authority).
     func setUserIntentToPlay() async {
         ensureVisualStateLoaded()
-
-        hasProcessedExplicitUserPlayRequest = true
 
         #if LUTHERAN_MAIN_APP
         await cancelSleepTimer(restorePlaybackIntent: false)
@@ -1232,7 +1176,7 @@ extension SharedPlayerManager {
     ///
     /// Grey `.userPaused` visual supports error UI; `playbackIntent` stays unchanged (typically
     /// `.shouldBePlaying`) so language switches can auto-resume without an extra play tap.
-    /// Does not bump `lastUserPauseTimestamp` — stream failure is not a sticky user pause.
+    /// Does not set sticky ``PlaybackIntent/userPaused`` — stream failure is not an explicit user pause.
     ///
     /// Emission of the classified `streamDidFail` occurs here after the mutation. This is the
     /// existing surface that DirectStreamingPlayer calls (passing the value it classified via
@@ -1301,9 +1245,6 @@ extension SharedPlayerManager {
         applyVisualState(.userPaused)
         
         updatePlaybackIntent(to: .userPaused)
-        
-        // Record authoritative pause timestamp.
-        lastUserPauseTimestamp = Date().timeIntervalSince1970
 
         // Privacy-gated early sticky snapshot so home refresh sees .userPaused before
         // deferred save (same race as ``stop()``).
@@ -1621,10 +1562,7 @@ extension SharedPlayerManager {
         applyVisualState(.userPaused)
         
         updatePlaybackIntent(to: .userPaused)
-        
-        // Record authoritative pause timestamp for recovery paths.
-        lastUserPauseTimestamp = Date().timeIntervalSince1970
-        
+
         scheduleWidgetAction(action: "pause")
         notifyMainApp(action: "pause")
         

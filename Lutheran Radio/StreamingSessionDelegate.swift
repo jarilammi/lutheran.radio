@@ -50,9 +50,6 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
     /// The original hostname for SSL validation (used in certificate pinning).
     var originalHostname: String?
     
-    /// Timestamp when the connection started (for debugging/performance tracking).
-    private let connectionStartTime = Date()
-    
     /// Initializes the delegate with the given loading request.
     ///
     /// - Parameter loadingRequest: The AVAssetResourceLoadingRequest to fulfill.

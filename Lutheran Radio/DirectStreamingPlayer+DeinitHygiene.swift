@@ -23,8 +23,6 @@
 //    (``teardownThermalAndEnergyObservers()``).
 //  - Audio interruption observer removal remains in `+AudioSessionInterruption.swift`
 //    (``removeAudioSessionObservers()``).
-//  - SSL handshake timer clear remains in `+SSLProtection.swift`
-//    (``clearAllSSLProtectionTimers()``).
 //  - Periodic certificate validation timer clear remains in
 //    `+PeriodicCertificateValidation.swift` (``stopPeriodicCertificateValidation()``).
 //  - Network monitor cancel uses façade-stored `networkMonitor` (setup lives in
@@ -38,8 +36,10 @@
 //    and observer paths short-circuit rather than re-entering async teardown.
 //  - Order matters: cancel work items → synchronous stop → invalidate observations →
 //    clear callbacks → cancel path monitor → clear metadata/server maps → thermal +
-//    interruption + SSL handshake timers + periodic certificate validation timer.
+//    interruption + periodic certificate validation timer.
 //    Do not reorder without re-auditing retain cycles and AVPlayer observer detach.
+//  - No adaptive connect-time handshake budget remains on the engine (former
+//    `+SSLProtection` setup had zero callers; do not reintroduce).
 //
 //  AGENT NOTE: Members used across files are `internal` (Swift `private` is file-scoped).
 //  Prefer this domain over re-implementing deallocation sequences in privacy clear or
@@ -50,7 +50,6 @@
 //    DirectStreamingPlayer+PlaybackControl.swift (``stopSynchronously()``),
 //    DirectStreamingPlayer+ThermalProtection.swift,
 //    DirectStreamingPlayer+AudioSessionInterruption.swift,
-//    DirectStreamingPlayer+SSLProtection.swift,
 //    DirectStreamingPlayer+PeriodicCertificateValidation.swift,
 //    DirectStreamingPlayer+NetworkPath.swift,
 //    CODING_AGENT.md (Single Source of Truth Principles).
@@ -83,12 +82,11 @@ extension DirectStreamingPlayer {
     /// - Precondition: ``isDeallocating`` is already `true` (set by façade `deinit`).
     /// - Postcondition: Pending work items cancelled; player stopped via
     ///   ``stopSynchronously()``; observations invalidated; callbacks cleared; network
-    ///   monitor cancelled; thermal/interruption/SSL/periodic-cert timers torn down.
+    ///   monitor cancelled; thermal/interruption/periodic-cert timers torn down.
     /// - Important: Must remain fully synchronous — Swift `deinit` cannot await.
     /// - SeeAlso: Façade `deinit` on ``DirectStreamingPlayer``, ``clearCallbacks()``,
     ///   ``stopSynchronously()``, ``teardownThermalAndEnergyObservers()``,
-    ///   ``removeAudioSessionObservers()``, ``clearAllSSLProtectionTimers()``,
-    ///   ``stopPeriodicCertificateValidation()``.
+    ///   ``removeAudioSessionObservers()``, ``stopPeriodicCertificateValidation()``.
     func performDeinitCleanup() {
         // Cancel pending work items that exist
         serverSelectionWorkItem?.cancel()
@@ -121,9 +119,8 @@ extension DirectStreamingPlayer {
         // Thermal + Low Power Mode observers: +ThermalProtection.swift
         teardownThermalAndEnergyObservers()
 
-        // Interruption/route observers + SSL handshake timers + periodic Core pin timer
+        // Interruption/route observers + periodic Core pin timer
         removeAudioSessionObservers()
-        clearAllSSLProtectionTimers()
         stopPeriodicCertificateValidation()
 
         #if DEBUG

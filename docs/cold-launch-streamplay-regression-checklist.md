@@ -97,15 +97,14 @@ End with security impact, build status, localization needed.
 
 1. **Model before item** — `Stream model updated (no player item)` before secured `AVPlayerItem` attach.
 2. **Single secured item** — One item per cold launch; reuse via `setStream` / `startPlayback`.
-3. **Optimistic playing visual** — `Visual state set to .playing before setStreamAndPlay` before first `status_playing` / ICY.
-4. **Play-path label** — DEBUG: `cold-launch first play, proceeding` (not resume/switch mislabels).
-5. **Resurrection window** — `Cold-launch first play – resurrection protection relaxed` on first true cold launch only.
-6. **Startup safety net** — At most once on cold-launch first attach (`initialPlaybackRetryCount == 0`); not on resume or soft-pause resume.
-7. **Tuning coordination** — `Tuning sound finished playing, success: true` then `Tuning sound wait completed` before attach.
-8. **DNS on launch** — Security model validation completes; failure blocks playback.
-9. **ICY arrival** — `LIVE ICY [ensured after re-attach]:` for launched language.
-10. **Background image** — One `Processing image for {lang}` per cold launch; duplicate cache-key races coalesce.
-11. **Post-clear cold launch (first play after privacy clear)** — After `clearAllLocalState`, next launch lands on `.prePlay` visual + non-sticky intent (no leaked `.userPaused`); early `status_connecting` does not produce grey paused or yellow flash; the post-tuning guard passes with "post-clear cold launch — allowing..." label; identifying writes (snapshot, lastUpdateTime, etc.) occur only after the guard as part of the successful post-clear play (not in pre-guard setup). `resetStateToClearedForPrivacy` now uses `.prePlay` visual. The privacy-clear unit test asserts the new visual + blocker intent.
+3. **Playing visual timing** — `.playing` is applied via deferred ``setPlaying()`` after soft-resume success or engine ready-to-play (not an early pre-`setStreamAndPlay` optimistic paint).
+4. **Play-path label** — DEBUG: `cold-launch first play, proceeding` (not resume/switch mislabels). First automatic play is gated by factory reset + sticky intent + prePlay one-shot only (no wall-clock “resurrection relaxed” window).
+5. **Startup safety net** — At most once on cold-launch first attach (`initialPlaybackRetryCount == 0`); not on resume or soft-pause resume.
+6. **Tuning coordination** — `Tuning sound finished playing, success: true` then `Tuning sound wait completed` before attach.
+7. **DNS on launch** — Security model validation completes; failure blocks playback.
+8. **ICY arrival** — `LIVE ICY [ensured after re-attach]:` for launched language.
+9. **Background image** — One `Processing image for {lang}` per cold launch; duplicate cache-key races coalesce.
+10. **Post-clear cold launch (first play after privacy clear)** — After `clearAllLocalState`, next launch lands on `.prePlay` visual + non-sticky intent (no leaked `.userPaused`); early `status_connecting` does not produce grey paused or yellow flash; the post-tuning guard passes with "post-clear cold launch — allowing..." label; identifying writes (snapshot, lastUpdateTime, etc.) occur only after the guard as part of the successful post-clear play (not in pre-guard setup). In-session privacy clear uses ``resetStateToClearedForPrivacy`` (`.cleared` visual + sticky `.cleared` intent); the following cold launch is factory `.prePlay`. The privacy-clear unit test asserts cleared visual + blocker intent.
     The language reseed (selector needle + initialStream for the post-clear auto-play) now uses the centralized `DirectStreamingPlayer.bestInitialLanguageCode()` (walks `Locale.preferredLanguages` for a supported stream) + `indexForLanguageCode` / `streamForLanguageCode` helpers. This replaces the previous duplicated fragile `Locale.current.language.languageCode ?? "en"` paths (which often produced English even on fi/sv/etc. devices). Post-clear reseed in `resetLanguageSelectorToInitialLocale` and the VC/coordinator initial calc now respect the user's actual preferences while preserving the no-snapshot privacy guarantee and the "writes only after successful post-clear play" rule. `preferredWidgetLanguage` now uses `bestInitialLanguageCode` for its no-snapshot fallback when `hasActiveWidgets` is true (widget configured, writes allowed); it still hard-defaults to "en" (with write suppression) when the flag is false (no widgets or post-clear forced-false). This prevents "en" poisoning of the snapshot for normal widget users while keeping the privacy no-signal property for cleared/high-risk cases.
 
 ---
@@ -207,7 +206,7 @@ End with security impact, build status, localization needed.
 2. Zero `first cold-launch play call` on resume or stream-switch paths.
 3. Zero startup safety-net scheduling on resume or soft-pause resume.
 4. Zero `cold-launch:` hyphen-prefix in attach DEBUG strings.
-5. Zero `Legacy timer` in SSL protection DEBUG.
+5. Zero adaptive connect-time handshake-budget DEBUG (`SSL Protection`, `SSL Timeout`, `Cancelled pending SSL protection`) — domain removed; connect readiness is AVPlayer item status + resource-loader timeouts; TLS trust is Core pin + ATS SPKI only.
 6. Widget reload spam absent on manual pause (snapshot skip dominates).
 7. No duplicate `Processing image for {lang}` for same cache key in one phase.
 
@@ -239,7 +238,6 @@ xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
 [DirectStreamingPlayer] Stream model updated and secured AVPlayerItem prepared for …
 [ViewController] Tuning sound finished playing, success: true
 [TuningSoundCoordinator] Tuning sound wait completed
-[SharedPlayerManager] Visual state set to .playing before setStreamAndPlay
 [DirectStreamingPlayer] LIVE ICY [ensured after re-attach]: …
 [SharedPlayerManager] Rehydrating stream metadata from soft-pause stash
 [ViewController] Executing widget switch action to language: …
@@ -250,7 +248,7 @@ xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
 [SharedPlayerManager] performActualSave: snapshot unchanged — skipping persist
 [ViewController] post-clear cold launch — allowing initial playback and state creation
 [RadioPlayerCoordinator] post-clear cold launch — allowing initial playback (intent will be cleared by play())
-[SharedPlayerManager] resetStateToClearedForPrivacy — in-memory SSOT reset to .prePlay + .cleared intent (no persist; .cleared blocks recovery until explicit play)
+[SharedPlayerManager] resetStateToClearedForPrivacy — in-memory SSOT reset to .cleared (blue) + .cleared intent (no persist; .cleared blocks recovery until explicit play)
 ```
 
 ### 12.3 Stream-failure switch verification (manual `manual-streamplay-session.log`)
@@ -278,7 +276,6 @@ Session: cold launch → play sv → wait for item failed / `status_stream_unava
 ### 12.5 Play-path DEBUG labels
 
 ```
-[SharedPlayerManager] Cold-launch first play – resurrection protection relaxed
 SharedPlayerManager.play() – cold-launch first play, proceeding
 SharedPlayerManager.play() – resume play, proceeding
 SharedPlayerManager.play() – stream-switch play, proceeding

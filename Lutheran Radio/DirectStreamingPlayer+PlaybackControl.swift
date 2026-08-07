@@ -285,7 +285,6 @@ extension DirectStreamingPlayer {
         currentLoadingDelegate = nil
         
         removeAudioSessionObservers()
-        clearAllSSLProtectionTimers()
         retryWorkItem?.cancel()
         fallbackWorkItem?.cancel()
         fallbackWorkItem = nil
@@ -382,8 +381,6 @@ extension DirectStreamingPlayer {
         if !usesSoftPause {
             activatePlaybackTeardownGuardFromStop()
         }
-        clearSSLProtectionTimer()
-        isSSLHandshakeComplete = true
         hasStartedPlaying = false
         isDeferringFirstPlayKick = false
         
