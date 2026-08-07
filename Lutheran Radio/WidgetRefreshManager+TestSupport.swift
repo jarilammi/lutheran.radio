@@ -53,10 +53,10 @@ extension WidgetRefreshManager {
         ///
         /// Covers immediate event-path `.prePlay` storms and sticky pause/lock duplicates.
         case coalescedIdenticalNonPlaying
-        /// Delayed refresh discarded because persisted snapshot already advanced past the target.
+        /// Execute-time home wake discarded on the session-lag leg (soft-resume reverse race, etc.).
         case discardedStaleDebouncedRegress
-        /// Refresh discarded because in-process memory visual SSOT already advanced past the target
-        /// (or holds Connecting while a premature ``.playing`` was requested).
+        /// Execute-time home wake discarded on the memory-lag leg (residual sticky, mid-hold
+        /// premature ``.playing``, post-audible Connecting).
         case discardedMemoryAuthorityRegress
         /// ``performRefresh`` reached the execution point (timeline reload skipped under observation).
         case refreshExecuted
