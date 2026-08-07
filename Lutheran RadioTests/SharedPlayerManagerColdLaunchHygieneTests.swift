@@ -223,7 +223,7 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
         )
         XCTAssertNil(
             defaults?.object(forKey: "lastUserPauseTime"),
-            "Retired lastUserPauseTime must be purged (in-actor pause barrier only)"
+            "Retired lastUserPauseTime must be purged (sticky PlaybackIntent is pause recovery SSOT)"
         )
         XCTAssertNil(
             defaults?.object(forKey: "preferredVolume"),

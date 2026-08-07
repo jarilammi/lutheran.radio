@@ -233,11 +233,11 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
     /// Second ``userRequestedPlay()`` while chrome is already authoritative `.playing` must
     /// no-op: no Connecting thrash, no sticky re-plan, visual stays `.playing`.
     ///
-    /// Why: Cold-launch `resurrectionProtectionRelaxed` used to disable the visual already-
-    /// playing skip, so an explicit play while audio was live rebuilt the secured item.
-    /// Idempotency is engine-aware in production and independent of that window; under
-    /// UITestMode, chrome `.playing` is the stand-in (no real AVPlayer rate). Soft-paused
-    /// resume remains a separate path and is not covered here.
+    /// Why: A historical cold-launch wall-clock bypass used to disable the already-playing
+    /// skip, so an explicit play while audio was live rebuilt the secured item. Idempotency
+    /// is engine-aware in production with no process-age timer; under UITestMode, chrome
+    /// `.playing` is the stand-in (no real AVPlayer rate). Soft-paused resume remains a
+    /// separate path and is not covered here.
     ///
     /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``, ``SharedPlayerManager/setPlaying()``,
     ///   ``SharedPlayerManager/play()``, CODING_AGENT.md (Single Source of Truth Principles).
