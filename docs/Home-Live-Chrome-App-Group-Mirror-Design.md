@@ -1,11 +1,12 @@
 # Home Live Chrome App Group Mirror — Design Spec
 
-**Status:** Design / partial — **PR1 + PR2 + PR3 + PR4 shipped**; **session-vs-mirror freshness heal** on Provider paint (pure ``resolveHomeWidgetChromeFields``: agreement → session; disagreement → fresher `updatedAt`); **privacy-gate residual clear is true→false edge only** (re-asserting closed gate does not wipe extension-stamped mirrors). Device eyes-on success criteria (§14) remain open before Status → **Implemented**. Optional refresh simplification is PR5 (blocked on eyes-on).  
-**Date:** 2026-07-30  
+**Status:** **Implemented** (2026-08-07) · PR1–PR4 shipped · Provider paint via ``resolveHomeWidgetChromeFields`` (agreement → session; disagreement → fresher `updatedAt`) · privacy residual clear true→false edge only · device eyes-on §10.3 / §14 **passed** · PR5 optional **not started** (unblocked; not required for Implemented). Details: §6, §7.2, §11.  
+**Date:** 2026-07-30 (inventory polish 2026-08-06; eyes-on absorb 2026-08-07)  
+
 **Audience:** Implementers and reviewers of home/Control widget cross-process chrome  
 **Canonical permanent rules:** [`CODING_AGENT.md`](../CODING_AGENT.md) (always take precedence)  
 
-**How this document advances:** This file is the **committed mechanism SSOT**. Implementation sessions may use a **local, gitignored living brief** for cluster sequencing — that brief must never be committed or cited from product code. Temporary untracked notes and device logs are allowed locally; useful truth is absorbed into this design (mechanism language only) in the **same PR as the code** that ships each slice. See §16.
+**How this document advances:** This file is the **committed mechanism SSOT**. Temporary untracked notes and device logs may exist locally for capture; they are never committed or cited from product code. Useful truth is absorbed here (mechanism language only) in the **same change as the code** (or as a docs-only absorb when validation status changes). See §16.
 
 **Related permanent docs (do not regress):**
 
@@ -152,12 +153,13 @@ struct HomeWidgetLiveChrome: Codable, Equatable, Sendable {
 
 ---
 
-## 4. API surface (proposed)
+## 4. API surface (shipped)
 
-All names are mechanism-oriented. Placement (as shipped in PR1):
+All names are mechanism-oriented. Placement:
 
-- Payload type + identity skip: `WidgetSurface/HomeWidgetLiveChrome.swift` (presentation-only)
+- Payload type + identity skip + pure resolution: `WidgetSurface/HomeWidgetLiveChrome.swift` (presentation-only) — ``HomeWidgetLiveChrome``, ``shouldSkipIdenticalHomeWidgetLiveChromeWrite``, ``resolveHomeWidgetChromeFields``
 - Persist / load / clear / stamp convenience: `SharedPlayerManager+Persistence.swift` (membership-exception SPM, next to program-metadata mirror)
+- Provider paint: ``WidgetProviderSnapshotResolver/resolveFromSnapshot`` (membership-exception `WidgetDisplayModels.swift`)
 
 ```text
 homeWidgetLiveChromeAppGroupKey: String  // "homeWidgetLiveChrome"
@@ -165,28 +167,32 @@ homeWidgetLiveChromeAppGroupKey: String  // "homeWidgetLiveChrome"
 persistHomeWidgetLiveChromeMirror(_ chrome: HomeWidgetLiveChrome?)
   // Pre: hasActiveWidgets || isWidgetProcess()
   // Post: App Group holds JSON; no-op when gate closed (main app); nil / empty language removes key
+  // Extension process refuses .playing stamps when shouldDistrustDurableMirrorPlayPlanning()
 
 loadHomeWidgetLiveChromeMirror() -> HomeWidgetLiveChrome?
   // Returns nil if missing / decode fail / unknown visual token / empty language
 
 clearHomeWidgetLiveChromeMirror()
-  // Gate close, privacy clear, factory residual, terminate hygiene
+  // Gate true→false edge, privacy clear, factory residual, terminate hygiene
 
-// Convenience writers (main app; stamp call sites land in PR2)
 stampHomeWidgetLiveChromeFromSession(
   visualState: PlayerVisualState,
   language: String,
   hasError: Bool,
   reason: String?
 )
-  // Builds chrome + updatedAt = now; calls persist if gate open
+  // Builds chrome + updatedAt = now; identity-skip then persist if gate open
+  // Wired from sticky pause, setPlaying, switch hold, save projection, extension optimistic paths
 
-// Identity skip (pure; WidgetSurface)
 shouldSkipIdenticalHomeWidgetLiveChromeWrite(
   existing: HomeWidgetLiveChrome?,
   candidate: HomeWidgetLiveChrome
 ) -> Bool
   // Skip when visual + language + hasError match (ignore stampReason / updatedAt)
+
+resolveHomeWidgetChromeFields(...) -> HomeWidgetResolvedChrome
+  // agreement → session; disagreement → fresher updatedAt; neither → factory
+  // distrustLiveChrome ignores residual mirror (terminate sentinel / reboot boot-identity)
 ```
 
 **Do not** add a second visual SSOT on the actor. Mirror is a **cross-process projection** of session visual + language already decided by SPM.
@@ -256,7 +262,7 @@ When `hasActiveLutheranWidgets` opens:
 
 ## 6. Provider read order
 
-### 6.1 Target algorithm (`WidgetProviderSnapshotResolver.resolveFromSnapshot`)
+### 6.1 Shipped algorithm (`WidgetProviderSnapshotResolver.resolveFromSnapshot`)
 
 ```text
 let mirroredMetadata = loadHomeWidgetStreamMetadataMirror()
@@ -270,7 +276,7 @@ let session = loadPersistedWidgetState()  // process-local; may be nil in extens
 //  2. Only one source → that source
 //  3. Both agree on chrome fields → prefer session (same-process optimistic continuity)
 //  4. Both disagree → greater updatedAt wins; ties prefer session
-//  5. Session missing updatedAt treated as older than any stamped mirror (heal residual)
+//  5. Session missing updatedAt treated as older than any stamped mirror
 
 let chrome = resolveHomeWidgetChromeFields(
   sessionVisual: session?.visualState,
@@ -299,10 +305,10 @@ return WidgetProviderSnapshotFields(
 | Main app (rare Provider host) | Authoritative in-process | Redundant projection | Usually agree after save projection |
 | Extension after **own** optimistic intent | Fresh optimistic write | Same tick if intent also stamped mirror | **Agreement → session** |
 | Extension after **main-only** transition | Often **nil** | **Authoritative paint source** | Mirror-only |
-| Extension **warm** after main settle | Stale optimistic (e.g. switch-hold ``.prePlay``) | Newer main ``.playing`` / sticky pause | **Fresher `updatedAt` wins** (P0 heal) |
+| Extension **warm** after main settle | Stale optimistic (e.g. switch-hold ``.prePlay``) | Newer main ``.playing`` / sticky pause | **Fresher `updatedAt` wins** |
 | Extension cold wake after terminate | nil | Should be **cleared** → factory / passive | Factory / passive |
 
-Rigid session-first left home yellow Connecting when extension session held switch-hold ``.prePlay`` while main had already stamped a newer ``homeWidgetLiveChrome`` ``.playing``. Freshness comparison preserves same-process optimistic continuity (agree → session; fresher session pause still beats staler residual playing mirror) while allowing main settle to heal stale extension session.
+Rigid session-first left home yellow Connecting when extension session held switch-hold ``.prePlay`` while main had already stamped a newer ``homeWidgetLiveChrome`` ``.playing``. Freshness comparison preserves same-process optimistic continuity (agree → session; fresher session pause still beats staler residual playing mirror) while allowing a fresher main mirror to replace a stale extension session.
 
 ### 6.3 Passive / termination / reboot interaction
 
@@ -352,14 +358,18 @@ Legend: **W** = may write · **C** = must clear · **—** = no-op · **R** = ma
 
 ### 7.2 Clear helper ownership
 
-| Helper | Must include live chrome clear? |
-|--------|----------------------------------|
-| `clearHomeWidgetLivenessAndInstantFeedbackResiduals()` | **Yes** — rename or extend docs to “home residual clear”; include live chrome + metadata (metadata already paired on gate close) |
-| `removeAllLocalPlaybackKeys()` / privacy clear | **Yes** |
-| `WidgetRefreshManager` gate **true→false edge only** | **Yes** (same site as metadata / liveness residual clear). Re-asserting `false` while already closed is a residual-clear **no-op** so WidgetCenter lag (`configs: 0` while widgets still exist) cannot wipe extension-stamped live chrome / metadata under widget-process bypass. Main-app write suppression while closed remains in force. |
-| `resetToFactoryDefaultsOnLaunch()` | **Yes** (belt-and-suspenders) |
-| Termination sync teardown | **Yes** (recommended) |
-| Core security cache / DNS keys | **Never** |
+Live chrome is **not** folded into the liveness residual helper. Gate close runs **sibling** clears at one edge site.
+
+| Helper / site | Clears live chrome? | Notes |
+|---------------|---------------------|--------|
+| `clearHomeWidgetLivenessAndInstantFeedbackResiduals()` | **No** | Only `lastUpdateTime` + instant-feedback triple (`isInstantFeedback` / time / language). Name is honest — do not extend this helper to own mirrors. |
+| `clearHomeWidgetStreamMetadataMirror()` | **No** (metadata only) | Sibling of live-chrome clear; same privacy class. |
+| `clearHomeWidgetLiveChromeMirror()` | **Yes** (this key only) | Dedicated clear for ``homeWidgetLiveChrome``. |
+| `WidgetRefreshManager.setHasActiveLutheranWidgets` **true→false edge** | **Yes** (orchestration) | Calls liveness residual clear **+** metadata mirror clear **+** live-chrome clear as three siblings. Re-asserting `false` while already closed is residual-clear **no-op** so WidgetCenter lag (`configs: 0` while widgets still exist) cannot wipe extension-stamped mirrors under widget-process bypass. Main-app write suppression while closed remains in force. |
+| `removeAllLocalPlaybackKeys()` / privacy clear | **Yes** | Includes ``clearHomeWidgetLiveChromeMirror()`` with other home residuals. |
+| `resetToFactoryDefaultsOnLaunch()` | **Yes** | Belt-and-suspenders residual reap. |
+| Termination sync teardown (`forceStaleLivenessTimestampForTermination` path) | **Yes** | Explicit live-chrome clear (prefer clear over stale mirror + passive overlay). |
+| Core security cache / DNS keys | **Never** | Untouched by home residual paths. |
 
 **Edge semantics (must hold):**
 
@@ -385,26 +395,24 @@ Full privacy clear, factory residual, and terminate paths clear independently of
 
 ## 8. Interaction with `WidgetRefreshManager`
 
-### 8.1 Phase 1 (ship mirror; freeze further authority layers)
+### 8.1 Current refresh policy (mirror shipped)
 
 - Keep existing refresh dual-path and coalesce as-is **except** where a bug blocks reloads entirely.
-- Ensure every **authoritative mirror stamp** is followed by a refresh schedule path that can wake WidgetKit (event path and/or existing save path). Early sticky pause already aims at this; setPlaying already emits.
-- **Do not** add more execute-time memory-authority cases until Providers paint from the mirror.
+- Every **authoritative mirror stamp** is followed by a refresh schedule path that can wake WidgetKit (event path and/or existing save path). Early sticky pause and ``setPlaying`` already emit / schedule as required.
+- Providers paint from session + ``homeWidgetLiveChrome`` (``resolveHomeWidgetChromeFields``); do **not** add execute-time memory-authority layers for paint blame while optional simplification remains a separate change.
 
-### 8.2 Phase 2 (optional simplification — separate PR)
+### 8.2 Optional refresh simplification (PR5 — not started; unblocked)
 
-After device eyes-on proves paint:
+Device eyes-on has proven paint (§14 / §10.3). A **separate** change may simplify authority layers. PR5 is **not** required for Status → Implemented. Do not mix with mirror paint fixes (regression blame isolation).
 
 | Candidate simplification | Condition |
 |--------------------------|-----------|
 | Drop or narrow `refreshWouldRegressMemoryAuthority` | Provider no longer depends on main-process candidate visual matching extension paint |
 | Soften directional disk regress | “Disk” session lag is less critical if mirror is the extension SSOT |
-| Keep soft-resume non-immediate Connecting | Still valuable for **not scheduling** useless Connecting reloads when soft-resume will setPlaying soon |
+| Keep soft-resume non-immediate Connecting | Still valuable for **not scheduling** useless Connecting reloads when soft-resume settles to ``setPlaying`` soon |
 | Keep identical non-playing coalesce | Battery; still valid |
 
-Phase 2 is optional and must not ship in the same PR as the mirror if it clouds regression blame.
-
-### 8.3 What refresh logs mean after ship
+### 8.3 What refresh logs mean
 
 | Log | Means |
 |-----|--------|
@@ -428,7 +436,9 @@ These product rules stay **source** of what is stamped; the mirror only **projec
 
 ---
 
-## 10. Testing plan (when implementing)
+## 10. Testing plan (regression + eyes-on)
+
+Unit and integration cases below protect the shipped mirror. Device eyes-on (§10.3 / §14) **passed** 2026-08-07; Status → **Implemented**.
 
 ### 10.1 Pure / unit (no WidgetCenter IPC)
 
@@ -441,7 +451,7 @@ These product rules stay **source** of what is stamped; the mirror only **projec
 | Provider resolution: freshness + agreement → factory | Pure ``resolveHomeWidgetChromeFields`` table |
 | Provider resolution: nil session + mirror playing | paints playing |
 | Provider resolution: fresher session pause + staler mirror playing | session wins |
-| Provider resolution: stale session prePlay + fresher mirror playing | **mirror wins** (P0 heal) |
+| Provider resolution: stale session prePlay + fresher mirror playing | **mirror wins** (fresher ``updatedAt``) |
 | Clear on gate close / privacy clear / factory | Key absent |
 | Soft-resume path does not stamp Connecting when skip policy true | Mirror remains userPaused until setPlaying helper |
 | Switch hold stamps prePlay + dest language | Pure stamp helper |
@@ -456,33 +466,46 @@ These product rules stay **source** of what is stamped; the mirror only **projec
 
 ### 10.3 Device eyes-on matrix (manual)
 
-Manual checklist for §14 success criteria. **Do not commit device logs**; absorb failures into this design or product source using mechanism names only. Trust **Provider DEBUG** `creating entry: visualState=…` (or on-device paint), not main-process “refresh executed … visualState” scheduler labels.
+Self-contained manual checklist for §14. **Do not commit device logs**; absorb failures into this design or product source using mechanism names only. Trust **Provider DEBUG** `creating entry: visualState=…` (or on-device paint), not main-process “refresh executed … visualState” scheduler labels.
 
-| Step | Home chrome expectation |
-|------|-------------------------|
-| Cold launch, widgets installed, not playing | prePlay / tap affordance |
-| Play from main | Connecting then playing (true attach) |
-| Pause from home | First durable paint paused (no long playing flash) |
-| Soft resume from home | No long post-audible Connecting; settles playing |
-| Switch stream while playing | Dest flag + Connecting, then playing |
-| Switch while paused | Dest flag + paused |
-| Remove all widgets | Residual clear; re-add shows honest defaults then re-stamp if playing |
-| Privacy clear | Factory / en default per product |
-| Force quit while playing | Passive / factory — **not** resurrected playing (OI-1) |
+**Product fact:** on cold launch the main app **auto-plays** when sticky intent allows (special tuning → stream). Validation does **not** require a silent open after install. OI-1 is **widget / App Group residual honesty** (no prior-process play resurrection), not “main stays silent after open.”
+
+**Required sequence (passed 2026-08-07 on physical device):**
+
+1. Install ≥1 home widget; cold-launch a **new** main process under Xcode Debug; wait until audio is playing; background the app.
+2. Pause from the **home widget** (app stays backgrounded).
+3. Soft-resume play from home; wait until audible (app stays backgrounded).
+4. Switch stream language from home **while playing**.
+5. Open the app and run **in-app privacy clear**; confirm live chrome residual is gone (home factory/defaults — not residual playing). Next open may auto-play as product.
+
+| Step | Required? | Home chrome expectation |
+|------|-----------|-------------------------|
+| Cold launch with widgets (new process; product auto-plays) → background | **Required** | Brief Connecting / ``prePlay``, then home settles **playing** for **this** process without reopening the app; not stuck factory while audio is live |
+| Pause from home | **Required** | First durable paint ``userPaused`` (no long residual ``playing`` flash) |
+| Soft resume from home | **Required** | Settles ``playing``; no long post-audible Connecting while soft-resume same-stream is already audible |
+| Switch stream while playing | **Required** | Destination flag + Connecting / ``prePlay``, then ``playing`` after attach settle — never destination + ``playing`` mid-hold |
+| Privacy clear | **Required** | ``clearHomeWidgetLiveChromeMirror`` (and siblings); home factory/defaults — not residual playing |
+| Residual honesty when session + live chrome absent or distrust applies | Regression | Factory ``prePlay`` / passive ``tap_to_open`` — **not** prior-process playing residual |
+| Play from main (true first attach, if exercised separately from cold-launch auto-play) | Regression | Connecting then playing |
+| Switch stream while paused | Optional | Destination flag + ``userPaused`` (no false auto-play / Connecting storm) |
+| Remove all home/Control widgets, then re-add while main still playing | Optional | Gate true→false residual clear; false→true re-stamp of current visual |
+| Force quit while playing | Optional visual residual | Passive / factory — **not** resurrected **prior-process** playing (OI-1); relaunch tracks **new** session if product auto-plays |
 
 ---
 
-## 11. Implementation plan (suggested PR stack)
+## 11. Delivery status
 
-| PR | Scope | Risk |
-|----|-------|------|
-| **PR1** | Types + persist/load/clear + SSOT table + privacy/gate clear wiring + pure tests | Low — no paint change yet if Provider not switched |
-| **PR2** | Main-app stamp call sites (sticky, setPlaying, switch, save projection) + gate open re-stamp | Medium — write volume; identity skip |
-| **PR3** | Extension optimistic stamp + Provider resolution order | Medium — user-visible |
-| **PR4** | Terminate clear + dataflow/roadmap/README mechanism docs | Low |
-| **PR5 (optional later)** | Simplify refresh authority layers | Medium — only after device proof |
+| Slice | Scope | Status |
+|-------|--------|--------|
+| **PR1** | Types + persist/load/clear + App Group SSOT row + privacy/gate clear + pure tests | **Shipped** (2026-07-30) |
+| **PR2** | Main-app stamps (sticky pause, ``setPlaying``, switch hold, save projection) + gate-open re-stamp | **Shipped** (2026-07-30) |
+| **PR3** | Extension optimistic stamps + Provider paint via ``resolveHomeWidgetChromeFields`` (agreement → session; disagreement → fresher ``updatedAt``) | **Shipped** (2026-07-30) |
+| **PR4** | Terminate residual clear + sibling permanent docs (presentation dataflow, widget roadmap, event-driven OI-1 note, README pointer) | **Shipped** (2026-07-30) |
+| **PR5 (optional)** | Simplify ``WidgetRefreshManager`` authority / coalesce layers (§8.2) | **Not started** — unblocked after device eyes-on; **not** required for Implemented |
 
-Do **not** mix LA lock-stretch acceptance work into PR1–4.
+Required delivery for this design is **PR1–PR4 + §14 eyes-on**. PR5 is an optional follow-on only.
+
+Do **not** mix Live Activity lock-stretch acceptance work into home live-chrome paint fixes.
 
 ---
 
@@ -498,19 +521,25 @@ Do **not** mix LA lock-stretch acceptance work into PR1–4.
 
 ---
 
-## 13. Documentation updates required at ship time
+## 13. Documentation surfaces (mechanism SSOT)
 
-| Surface | Update |
-|---------|--------|
-| `SharedPlayerManager.swift` App Group table | New row + invariants |
-| `WidgetDisplayModels.swift` / resolver `///` | Read order + SeeAlso |
-| `docs/Widget-Presentation-Dataflow.md` | Cross-process live chrome section; correct “reload alone carries paint” implication |
-| `docs/Widget-Functionality-Roadmap.md` | Freshness stack lists live chrome mirror |
-| `docs/Event-Driven-Refactor-Roadmap.md` | OI-1 note: memory-only **session** + privacy-gated **live projection** for extension paint |
-| README SSOT index | One-line pointer |
-| This design doc | Mark **Implemented** + date + commit when done |
+Authoritative surfaces for the shipped mirror. Keep them aligned when writers, Provider order, privacy clear, or eyes-on status change. Prefer mechanism names only; never cite temporary notes or untracked paths.
 
-Do **not** cite local living prompts in product comments or permanent docs.
+| Surface | Role |
+|---------|------|
+| This design doc | Mechanism SSOT (keys, writers, Provider order, privacy, §10.3 eyes-on checklist, delivery status). Status → **Implemented** (2026-08-07) after §14 / required §10.3 sequence. |
+| `SharedPlayerManager` App Group SSOT table | ``homeWidgetLiveChrome`` row + lifetime / clear invariants |
+| ``WidgetProviderSnapshotResolver`` / related `///` | Read path via ``resolveHomeWidgetChromeFields``; SeeAlso to this design |
+| [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md) | Cross-process live chrome; ``reloadTimelines`` is wake-only |
+| [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) | Freshness stack includes live chrome beside program-metadata mirror |
+| [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) | OI-1: memory-only **session** + privacy-gated **live projection** |
+| README SSOT index | One-line pointer to this design |
+
+| Status (2026-08-07) | Note |
+|---------------------|------|
+| Ship-time inventory (PR4 + polish) | **Done** — product `///` / App Group table / sibling permanent docs describe the shipped mirror |
+| Eyes-on absorb | **Done** — this design Implemented; siblings that still claimed eyes-on open updated |
+| Ongoing | On paint or privacy behavior change: update this design + the surfaces above **in the same change** as the code |
 
 ---
 
@@ -518,14 +547,14 @@ Do **not** cite local living prompts in product comments or permanent docs.
 
 Design is **successfully implemented** when:
 
-1. With home widgets installed and main app playing in background, home chrome tracks **pause / soft-resume / switch / playing** without requiring the user to open the app for “heal.”
+1. With home widgets installed and main app playing in background, home chrome tracks **pause / soft-resume / switch / playing** without requiring the user to open the app for a visual update.
 2. Extension process cold-wake after a main-app stamp paints from **mirror**, not factory `.prePlay`, while liveness still says interactive.
 3. Removing widgets or privacy clear leaves **no** live visual/language residual in App Group.
-4. Force-quit / cold launch does **not** restore playing chrome (OI-1).
+4. Force-quit / cold launch does **not** restore **prior-process** playing chrome (OI-1). Product may **auto-play** on open of a **new** process; home must track that session, not resurrect App Group residual from the previous process.
 5. Stream-switch hold never shows destination `.playing` before attach settle.
 6. Gates green; no Core changes; no localization keys required (visual/lang codes only).
 
-**Eyes-on status (2026-07-30):** Not started. PR3 paint path + PR4 permanent docs are on disk; run the §10.3 matrix on a physical device (or interactive simulator with real WidgetKit) before flipping Status → **Implemented**. Prefer Provider-side paint evidence over main-app refresh logs (§8.3).
+**Eyes-on status (2026-08-07):** **Passed** on physical device using the **required sequence in §10.3** (cold-launch auto-play → background → home pause → soft resume → switch while playing → privacy residual clear). On-device home paint confirmed; main-process mechanism lines consistent (privacy-gate re-stamp, identical live-chrome identity skip, soft-resume hold of ``userPaused`` until authoritative ``playing``, switch hold ``prePlay`` + destination language, ``clearHomeWidgetLiveChromeMirror``). Prefer Provider-side `creating entry` or on-device paint over main-app refresh logs (§8.3). Optional §10.3 rows (paused switch, remove/re-add widgets, force-quit residual) were not required for this pass. PR5 remains optional and separate.
 
 ---
 
@@ -539,54 +568,52 @@ Design is **successfully implemented** when:
 | Provider order | **``resolveHomeWidgetChromeFields``**: agreement → session; disagreement → fresher `updatedAt`; neither → factory (+ metadata mirror unchanged) |
 | Soft-resume | Project hold; no false Connecting stamp |
 | Switch | Project Connecting + dest language |
-| Refresh policy | Ship mirror first; optional later simplify |
+| Refresh policy | Mirror shipped; optional PR5 simplify unblocked after eyes-on (not started; not required for Implemented) |
 | Instant feedback | Keep for now; not primary visual SSOT |
 
 ---
 
 ## 16. Work protocol and document advancement
 
-Implementation is **not** tracked by cluster IDs in this file. Session sequencing may live in a **local gitignored living brief** on the implementer’s machine. That brief is never committed and never cited from product source, PR bodies, or permanent docs.
+This file is the **committed mechanism SSOT**. Implementers may keep private scratch notes or device captures on disk; those are never committed and never cited from product source, PR bodies, or permanent docs. Useful truth is absorbed here (or into sibling permanent docs / product ``///``) using **mechanism names only**.
 
 | Layer | Role | Git |
 |-------|------|-----|
-| **This design** | Mechanism SSOT (keys, writers, Provider order, privacy, success criteria) | **Committed** — update when decisions ship |
-| **Local living brief** | One-cluster sessions, status board, device-log absorb | **Never commit** |
-| **Temporary notes / logs** | Scratch, captures | **Never commit**; absorb useful truth upward |
+| **This design** | Mechanism SSOT (keys, writers, Provider order, privacy, success criteria, eyes-on checklist) | **Committed** — update when decisions ship or validation status changes |
+| **Temporary notes / logs** | Private scratch, device captures | **Never commit**; absorb useful truth upward in mechanism language |
 
 ### When to edit this design
 
-| Change type | Update this file? | Same PR as code? |
-|-------------|-------------------|------------------|
+| Change type | Update this file? | Same change as code? |
+|-------------|-------------------|----------------------|
 | Ship a key, API, or Provider order | **Yes** — present tense “what ships” | **Yes** |
 | Decision flip (e.g. three keys vs one blob) | **Yes** — record the new decision; drop obsolete rows | **Yes** |
-| Mark slice done | **Yes** — fill implementation progress below | **Yes** |
-| All required slices + device eyes-on pass | **Yes** — Status → **Implemented** + date | Prefer dedicated docs commit or last PR |
-| Session cluster open/close theater | **No** | — |
-| Temporary log paths or living-brief names | **No** | — |
+| Mark slice done / validation status | **Yes** — update implementation history below | **Yes** (or docs-only when status-only) |
+| All required slices + device eyes-on pass | **Yes** — Status → **Implemented** + date | Prefer dedicated docs change or last product change |
+| Temporary log paths or private note filenames | **No** | — |
 
-### Implementation progress (fill as PRs land)
+### Implementation history
 
 | Slice (design §11) | Status | Ship commit / date | Mechanism note |
 |--------------------|--------|--------------------|----------------|
-| PR1 — types + persist/load/clear + SSOT + pure tests | **Shipped** (partial product) | 2026-07-30 | ``HomeWidgetLiveChrome`` (stable visual tokens) + ``homeWidgetLiveChrome`` App Group key; ``persistHomeWidgetLiveChromeMirror`` / ``loadHomeWidgetLiveChromeMirror`` / ``clearHomeWidgetLiveChromeMirror`` / ``stampHomeWidgetLiveChromeFromSession`` (privacy gate = ``hasActiveWidgets`` \|\| ``isWidgetProcess()``); clear on gate close, ``removeAllLocalPlaybackKeys``, factory residual, ``forceStaleLivenessTimestampForTermination``; SSOT table row; pure tests. **No** Provider read-order change yet — key may exist with no user-visible paint change. |
-| PR2 — main-app stamps + gate open re-stamp | **Shipped** (partial product) | 2026-07-30 | Main-app projection via ``savePersistedWidgetState`` / ``persistWidgetSnapshot`` → ``stampHomeWidgetLiveChromeFromSession`` (identity skip); sticky early pause, ``setPlaying``, switch hold (``resetToPrePlayForNewStream`` / ``saveCurrentState``), paused switch (``saveCombinedWidgetState``), ``performActualSave``; soft-resume holds prior ``.userPaused`` (no intermediate Connecting stamp); ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded`` wired from ``setHasActiveLutheranWidgets`` false→true (peer of program-metadata re-stamp). Unit tests in ``SharedPlayerManagerMediaSurfaceTests``. **No** Provider read-order change yet. |
-| PR3 — extension optimistic + Provider resolution | **Shipped** (partial product — paint path on; freshness heal added; device eyes-on still open) | 2026-07-30 | Extension optimistic stamps via ``persistOptimisticWidgetSnapshot`` / ``signalWidgetSwitchAction`` → ``persistWidgetSnapshot`` → ``stampHomeWidgetLiveChromeFromSession`` (reasons ``optimisticToggle`` / ``optimisticSwitch``; widget-process bypass; identity skip). Pure planners unchanged. Provider paint via pure ``resolveHomeWidgetChromeFields``: **agreement → session; disagreement → fresher `updatedAt`** (heals stale extension-session switch-hold ``.prePlay`` when main stamped newer ``.playing``); neither → factory. Program metadata still session → ``homeWidgetStreamMetadata``. Liveness still owns interactive vs passive. Tests: pure WidgetSurface freshness table + extension ``WidgetDisplayModelsExtensionTests`` + main ``SharedPlayerManagerMediaSurfaceTests``. Status remains design/partial until §14 device eyes-on. |
+| PR1 — types + persist/load/clear + SSOT + pure tests | **Shipped** | 2026-07-30 | ``HomeWidgetLiveChrome`` (stable visual tokens) + ``homeWidgetLiveChrome`` App Group key; ``persistHomeWidgetLiveChromeMirror`` / ``loadHomeWidgetLiveChromeMirror`` / ``clearHomeWidgetLiveChromeMirror`` / ``stampHomeWidgetLiveChromeFromSession`` (privacy gate = ``hasActiveWidgets`` \|\| ``isWidgetProcess()``); clear on gate close, ``removeAllLocalPlaybackKeys``, factory residual, ``forceStaleLivenessTimestampForTermination``; SSOT table row; pure tests. At this slice: **no** Provider read-order change yet — key may exist with no user-visible paint change. |
+| PR2 — main-app stamps + gate open re-stamp | **Shipped** | 2026-07-30 | Main-app projection via ``savePersistedWidgetState`` / ``persistWidgetSnapshot`` → ``stampHomeWidgetLiveChromeFromSession`` (identity skip); sticky early pause, ``setPlaying``, switch hold (``resetToPrePlayForNewStream`` / ``saveCurrentState``), paused switch (``saveCombinedWidgetState``), ``performActualSave``; soft-resume holds prior ``.userPaused`` (no intermediate Connecting stamp); ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded`` wired from ``setHasActiveLutheranWidgets`` false→true (peer of program-metadata re-stamp). Unit tests in ``SharedPlayerManagerMediaSurfaceTests``. At this slice: **no** Provider read-order change yet. |
+| PR3 — extension optimistic + Provider resolution | **Shipped** | 2026-07-30 | Extension optimistic stamps via ``persistOptimisticWidgetSnapshot`` / ``signalWidgetSwitchAction`` → ``persistWidgetSnapshot`` → ``stampHomeWidgetLiveChromeFromSession`` (reasons ``optimisticToggle`` / ``optimisticSwitch``; widget-process bypass; identity skip). Pure planners unchanged. Provider paint via pure ``resolveHomeWidgetChromeFields``: **agreement → session; disagreement → fresher `updatedAt`** (fresher main mirror replaces stale extension-session switch-hold ``.prePlay``); neither → factory. Program metadata still session → ``homeWidgetStreamMetadata``. Liveness still owns interactive vs passive. Tests: pure WidgetSurface freshness table + extension ``WidgetDisplayModelsExtensionTests`` + main ``SharedPlayerManagerMediaSurfaceTests``. |
 | PR4 — terminate clear + permanent sibling docs | **Shipped** | 2026-07-30 | Terminate residual: ``clearHomeWidgetLiveChromeMirror`` already on ``forceStaleLivenessTimestampForTermination`` (PR1; verified vs §6.3 / §7 — no residual gap). Permanent sibling docs (mechanism names only): ``docs/Widget-Presentation-Dataflow.md`` (cross-process live chrome section; Provider order; reload is wake-only; terminate clear note), ``docs/Widget-Functionality-Roadmap.md`` (freshness stack + writers table + update log), ``docs/Event-Driven-Refactor-Roadmap.md`` (OI-1 memory-only session + privacy-gated live projection), README SSOT index pointer. App Group table / resolver ``///`` already accurate after PR3 (no rewrite). No paint behavior change; no Core touch. |
 | Privacy-gate residual clear true→false edge only | **Shipped** | 2026-07-30 | ``setHasActiveLutheranWidgets`` residual clear (liveness + instant feedback + ``homeWidgetStreamMetadata`` + ``homeWidgetLiveChrome``) runs only on previous-true → new-false. Re-asserting closed gate is residual no-op (WidgetCenter configs:0 lag must not wipe extension-stamped mirrors). false→true re-stamp edge unchanged. Full privacy / factory / terminate clear paths unchanged. Tests: ``testReassertingPrivacyGateClosedDoesNotClearLiveChromeOrMetadataMirrors``, ``testReassertingPrivacyGateClosedDoesNotClearLivenessOrInstantFeedbackResiduals`` + existing true→false / false→true coverage. |
-| Device eyes-on (success criteria §14) | Not started | — | Paint path + permanent docs + edge residual clear shipped; run §10.3 manual matrix before Status → Implemented |
-| PR5 — optional refresh simplification | Blocked on eyes-on | — | Only after §14 paint proof; do not mix with mirror blame |
+| Device eyes-on (success criteria §14) | **Passed** | 2026-08-07 | Physical device; required §10.3 sequence: cold-launch auto-play → background → home pause → soft resume → switch while playing → privacy residual clear. On-device paint + main mechanism consistency (gate re-stamp, identity skip, soft-resume hold, switch ``prePlay`` + destination language, ``clearHomeWidgetLiveChromeMirror``). Docs absorb only; Status → **Implemented**. |
+| PR5 — optional refresh simplification | **Not started** (unblocked; not required for Implemented) | — | Separate change only; do not mix with mirror paint blame |
 
 ### Temporary files (explicit allow / deny)
 
-**Allow (local only):** device logs, untracked scratch notes, local living brief.
+**Allow (local only):** device logs, untracked scratch notes.
 
-**Deny:** `git add` of those paths; `SeeAlso` or README links to untracked paths; product comments that name living briefs or session filenames.
+**Deny:** `git add` of those paths; `SeeAlso` or README links to untracked paths; product comments that name temporary filenames or private capture labels.
 
-**Rule of thumb:** If a future contributor needs the fact after a clean clone, it must live in **this design**, **product source**, or another **committed** permanent doc — not only in a temporary file.
+**Rule of thumb:** If a future contributor needs the fact after a clean clone, it must live in **this design**, **product source**, or another **committed** permanent doc — not only in a temporary file. The §10.3 checklist and §14 success criteria are complete without external session notes.
 
 ---
 
 **Security impact: none** (privacy-gated like ``homeWidgetStreamMetadata``; no Core touch)  
-**Build status: green when PR1–PR4 gates pass**  
+**Build status: green (PR1–PR4 product gates already green; docs-only status update)**  
 **Localization needed: no**
