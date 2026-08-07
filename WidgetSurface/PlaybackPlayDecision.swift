@@ -238,8 +238,8 @@ public enum PlaybackPlayDecision {
     ///
     /// - Parameter inputs: Actor-gathered snapshot (see ``PlaybackPlayDecisionInputs``).
     /// - Returns: Outcome plus optional one-shot flag mutations for the actor to apply.
-    /// - Important: Sticky pause always wins over cold-launch relaxed resurrection.
-    ///   Already-audible is independent of the cold-launch window (passed in as a bool).
+    /// - Important: Sticky pause always wins over automatic cold-launch play.
+    ///   Already-audible is engine-truth from the actor (passed in as a bool).
     ///   Prior-process App Group liveness is never consulted.
     /// - SeeAlso: SharedPlayerManager.resetToFactoryDefaultsOnLaunch(),
     ///   SharedPlayerManager.hasExplicitTerminationSentinel() (widget presentation only).
