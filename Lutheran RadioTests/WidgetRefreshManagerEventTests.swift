@@ -1127,9 +1127,10 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         )
     }
 
-    /// Pure policy: in-process memory visual SSOT beats lagging disk-derived refresh targets.
+    /// Pure policy: memory-lag leg of execute-time home wake discard.
     ///
-    /// - SeeAlso: ``WidgetRefreshManager/refreshWouldRegressMemoryAuthority(executing:memory:isImmediate:)``.
+    /// - SeeAlso: ``WidgetRefreshManager/refreshWouldRegressMemoryAuthority(executing:memory:isImmediate:)``,
+    ///   ``WidgetRefreshManager/refreshWouldDiscardHomeWake(executing:memory:session:isImmediate:)``.
     func testRefreshWouldRegressMemoryAuthorityPolicy() {
         // Sticky memory: never reverse with connecting or playing.
         XCTAssertTrue(
@@ -1190,6 +1191,76 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
                 memory: .playing
             )
         )
+    }
+
+    /// Pure policy: ``refreshWouldDiscardHomeWake`` composes memory lag then session lag.
+    ///
+    /// Protects the PR5 execute-time SSOT: unified discard matches sequential helper
+    /// application (`memoryLeg || sessionLeg`). Unique memory cases, unique session cases
+    /// (soft-resume reverse-race pause), and overlap cases must agree.
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/refreshWouldDiscardHomeWake(executing:memory:session:isImmediate:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§8 PR5).
+    func testRefreshWouldDiscardHomeWakeComposesMemoryThenSession() {
+        struct Case {
+            let requested: PlayerVisualState
+            let memory: PlayerVisualState
+            let session: PlayerVisualState?
+            let isImmediate: Bool
+            let label: String
+        }
+
+        let cases: [Case] = [
+            // Memory-unique: residual sticky vs Connecting memory.
+            Case(requested: .userPaused, memory: .prePlay, session: .userPaused, isImmediate: true, label: "residual sticky vs Connecting memory"),
+            // Memory-unique: premature playing during hold.
+            Case(requested: .playing, memory: .prePlay, session: .prePlay, isImmediate: true, label: "premature playing during hold"),
+            // Memory-unique: sticky lock vs connecting.
+            Case(requested: .prePlay, memory: .userPaused, session: .userPaused, isImmediate: false, label: "connecting vs sticky memory"),
+            // Session-unique: non-immediate pause after soft-resume (memory already playing).
+            Case(requested: .userPaused, memory: .playing, session: .playing, isImmediate: false, label: "session soft-resume reverse pause"),
+            // Session allows immediate sticky pause vs lagging playing; memory playing allows pause.
+            Case(requested: .userPaused, memory: .playing, session: .playing, isImmediate: true, label: "immediate sticky vs lagging playing"),
+            // Overlap: non-immediate connecting after audible.
+            Case(requested: .prePlay, memory: .playing, session: .playing, isImmediate: false, label: "non-immediate connecting after play"),
+            // Immediate language Connecting may advance lagging playing (both legs allow).
+            Case(requested: .prePlay, memory: .playing, session: .playing, isImmediate: true, label: "immediate language Connecting"),
+            // Nil session: memory-only composition.
+            Case(requested: .playing, memory: .prePlay, session: nil, isImmediate: true, label: "nil session premature playing"),
+            Case(requested: .playing, memory: .playing, session: nil, isImmediate: false, label: "nil session matching playing"),
+            // Forward Connecting after sticky session lag (memory already prePlay).
+            Case(requested: .prePlay, memory: .prePlay, session: .userPaused, isImmediate: true, label: "forward Connecting vs sticky session"),
+        ]
+
+        for c in cases {
+            let memoryLeg = WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: c.requested,
+                memory: c.memory,
+                isImmediate: c.isImmediate
+            )
+            let sessionLeg: Bool
+            if let session = c.session {
+                sessionLeg = WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                    executing: c.requested,
+                    persisted: session,
+                    isImmediate: c.isImmediate
+                )
+            } else {
+                sessionLeg = false
+            }
+            let expected = memoryLeg || sessionLeg
+            let actual = WidgetRefreshManager.refreshWouldDiscardHomeWake(
+                executing: c.requested,
+                memory: c.memory,
+                session: c.session,
+                isImmediate: c.isImmediate
+            )
+            XCTAssertEqual(
+                actual,
+                expected,
+                "Composition mismatch for \(c.label): memory=\(memoryLeg) session=\(sessionLeg) unified=\(actual)"
+            )
+        }
     }
 
     /// After sticky pause locks and the early sticky session snapshot is written, non-carried

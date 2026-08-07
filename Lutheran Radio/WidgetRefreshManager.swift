@@ -44,8 +44,10 @@
 //   (connecting `.prePlay`/`.cleared` + sticky pause/lock) so attach-path and dual-path
 //   storms do not re-issue `reloadTimelines` for unchanged language/visual. Attach-path
 //   Connecting deferral holds a single coalesce deadline (does not reset on each status
-//   callback). Execute-time memory SSOT authority blocks residual sticky after intentional
-//   Connecting and mid-switch premature `.playing` without inventing playing during hold.
+//   callback). Execute-time home **wake** discard (``refreshWouldDiscardHomeWake`` —
+//   memory lag then session lag) blocks residual sticky after intentional Connecting and
+//   mid-switch premature `.playing` without inventing playing during hold. Reload is
+//   wake-only; Provider paint is session + privacy-gated ``homeWidgetLiveChrome``.
 // - Main-app mutation-path reloads are driven by the `PlayerEvent` observer;
 //   imperative callers remain for lifecycle, teardown, extension optimistic,
 //   and optional media-surface coordination only (non-forcing dual path).
@@ -60,6 +62,7 @@
 //   & Comment Standards),
 //   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 consumers + dual-path inventory),
 //   docs/Widget-Functionality-Roadmap.md (refresh inventory),
+//   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§8 wake-discard / PR5),
 //   docs/Live-Activity-Stacking-and-Media-Surfaces.md (widget refresh quiet path),
 //   <doc:Architecture>, README.md.
 
@@ -655,45 +658,44 @@ final class WidgetRefreshManager: @unchecked Sendable {
         }
     }
 
-    /// Pure policy: whether a deferred/debounced refresh target would reverse a more advanced
-    /// persisted widget snapshot.
+    /// Pure policy: session-lag leg of execute-time home **wake** discard.
     ///
-    /// Intentional when a delayed intermediate (connecting chrome) loses a race to a newer
-    /// snapshot, or a delayed sticky pause loses to a soft-resume that already persisted
-    /// ``.playing``. Timeline reload alone cannot invent snapshot fields — discarding a
-    /// regressing target avoids a useless `reloadTimelines` that would re-read the newer
-    /// snapshot and paint the same chrome again. Dual-path architecture is unchanged.
+    /// Used by ``refreshWouldDiscardHomeWake(executing:memory:session:isImmediate:)`` after the
+    /// memory leg. Intentional when a delayed intermediate (connecting chrome) loses a race to a
+    /// newer session snapshot, or a delayed sticky pause loses to a soft-resume that already
+    /// persisted ``.playing``. `reloadTimelines` is wake-only — discarding avoids a useless wake
+    /// and hostile ``lastKnownState`` bookkeeping. Provider paint remains session +
+    /// ``homeWidgetLiveChrome``. Dual-path architecture is unchanged.
     ///
     /// **Directionality (sticky pause vs lagging ``.playing``):**
     /// - **Non-immediate** (adaptive debounce / delayed work): ``.userPaused`` / ``.thermalPaused``
-    ///   against persisted ``.playing`` is a regress — late pause lost the soft-resume race.
-    /// - **Immediate** (sticky pause / teardown urgency): same pair is **not** a regress —
+    ///   against session ``.playing`` is a discard — late pause lost the soft-resume race.
+    /// - **Immediate** (sticky pause / teardown urgency): same pair is **not** a discard —
     ///   forward stop may still see a lagging session snapshot until the early sticky write
-    ///   (or authoritative save) lands. Discarding would drop the honest pause paint and
-    ///   allow a non-carried follow-up to reload ``.playing``.
+    ///   (or authoritative save) lands. Discarding would drop the honest pause wake.
     ///
     /// **Directionality (connecting advance / stream-switch hold):**
-    /// - **Non-immediate** ``.prePlay`` / ``.cleared`` against persisted ``.playing`` is a regress
+    /// - **Non-immediate** ``.prePlay`` / ``.cleared`` against session ``.playing`` is a discard
     ///   (late connecting after soft-resume / audible play already accepted).
     /// - **Immediate** language-change / switch-optimistic Connecting against lagging
-    ///   ``.playing`` is **not** a regress — destination first paint must not wait for the
+    ///   ``.playing`` is **not** a discard — destination first wake must not wait for the
     ///   prior-language playing snapshot to clear.
-    /// - Connecting against a lagging sticky ``.userPaused`` snapshot is **not** a regress
+    /// - Connecting against a lagging sticky ``.userPaused`` session is **not** a discard
     ///   (forward attach after pause). Reverse races (in-flight Connecting after sticky lock)
-    ///   are blocked by ``refreshWouldRegressMemoryAuthority(executing:memory:)`` when memory
-    ///   SSOT is already sticky. Playing against sticky disk remains a regress.
+    ///   are blocked by the memory leg when memory is already sticky. Playing against sticky
+    ///   session remains a discard.
     ///
     /// - Parameters:
-    ///   - requested: Visual the delayed/debounced work would load.
-    ///   - persisted: Authoritative ``PersistedWidgetState/visualState`` at execute time.
+    ///   - requested: Visual the delayed/debounced work would schedule.
+    ///   - persisted: In-process session ``PersistedWidgetState/visualState`` at execute time.
     ///   - isImmediate: `true` when the refresh bypassed adaptive debounce (sticky pause,
     ///     teardown, permanent-error, language-change urgency, or explicit `immediate: true`).
-    /// - Returns: `true` when the refresh must be discarded.
-    /// - SeeAlso: ``performRefreshIfNotStale(for:)``,
-    ///   ``refreshWouldRegressMemoryAuthority(executing:memory:)``,
+    /// - Returns: `true` when the session leg requires discard.
+    /// - SeeAlso: ``refreshWouldDiscardHomeWake(executing:memory:session:isImmediate:)``,
+    ///   ``refreshWouldRegressMemoryAuthority(executing:memory:isImmediate:)``,
     ///   ``refreshUsesImmediateDelivery(for:hasError:)``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
-    ///   docs/Widget-Presentation-Dataflow.md (home refresh authority).
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§8),
+    ///   docs/Widget-Presentation-Dataflow.md (home wake discard).
     static func refreshWouldRegressPersistedSnapshot(
         executing requested: PlayerVisualState,
         persisted: PlayerVisualState,
@@ -703,7 +705,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
         switch persisted {
         case .playing:
             // Delayed connecting after play accepted is stale (soft-resume residual).
-            // Immediate language-change / switch optimistic Connecting is forward hold paint.
+            // Immediate language-change / switch optimistic Connecting is forward hold wake.
             if requested == .prePlay || requested == .cleared {
                 return !isImmediate
             }
@@ -715,9 +717,9 @@ final class WidgetRefreshManager: @unchecked Sendable {
             }
             return false
         case .userPaused, .thermalPaused:
-            // Playing must never reverse sticky via a lagging snapshot path.
-            // Connecting may advance sticky disk (forward attach after pause / early sticky lag).
-            // Reverse connecting-after-pause is blocked by memory authority when sticky is locked.
+            // Playing must never reverse sticky via a lagging session path.
+            // Connecting may advance sticky session (forward attach after pause / early sticky lag).
+            // Reverse connecting-after-pause is blocked by the memory leg when sticky is locked.
             if requested == .playing {
                 return true
             }
@@ -731,28 +733,30 @@ final class WidgetRefreshManager: @unchecked Sendable {
         }
     }
 
-    /// Pure policy: whether a home refresh target would reverse in-process memory visual SSOT.
+    /// Pure policy: memory-lag leg of execute-time home **wake** discard.
     ///
-    /// Complements ``refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)`` when
-    /// the session snapshot lags ``SharedPlayerManager/currentVisualState`` (apply before save,
-    /// early sticky, stream-switch hold). Timeline reload cannot invent engine state — discarding
-    /// a regressing target avoids multi-surface lag and mid-switch ``.playing`` flashes.
+    /// Used by ``refreshWouldDiscardHomeWake(executing:memory:session:isImmediate:)`` first.
+    /// Complements the session leg when the session snapshot lags
+    /// ``SharedPlayerManager/currentVisualState`` (apply before save, early sticky, stream-switch
+    /// hold). Discarding avoids mid-switch premature ``.playing`` wakes and residual sticky
+    /// storms. Provider paint remains session + ``homeWidgetLiveChrome``.
     ///
-    /// **Authority table (memory wins over lagging disk-derived requests):**
+    /// **Memory lag table:**
     /// 1. Sticky pause / thermal / security lock — never lose to connecting or playing.
     /// 2. Connecting / stream-switch hold (``.prePlay`` / ``.cleared``) — never lose to lagging
     ///    sticky, and never accept premature ``.playing`` until memory advances via ``setPlaying()``.
     /// 3. Authoritative ``.playing`` — discard non-immediate late connecting (post-audible prePlay);
-    ///    immediate language-change Connecting may still advance (switch hold first paint).
+    ///    immediate language-change Connecting may still advance (switch hold first wake).
     ///
     /// - Parameters:
-    ///   - requested: Visual the refresh would load into WidgetCenter.
+    ///   - requested: Visual the refresh would schedule into WidgetCenter.
     ///   - memory: ``SharedPlayerManager/currentVisualState`` (or extension optimistic force-set).
-    ///   - isImmediate: Language-change / sticky / teardown urgency — same meaning as disk regress.
-    /// - Returns: `true` when the refresh must be discarded.
-    /// - SeeAlso: ``performRefreshIfNotStale(for:)``,
+    ///   - isImmediate: Language-change / sticky / teardown urgency — same meaning as session leg.
+    /// - Returns: `true` when the memory leg requires discard.
+    /// - SeeAlso: ``refreshWouldDiscardHomeWake(executing:memory:session:isImmediate:)``,
     ///   ``refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``,
-    ///   docs/Widget-Presentation-Dataflow.md (home refresh authority).
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§8),
+    ///   docs/Widget-Presentation-Dataflow.md (home wake discard).
     static func refreshWouldRegressMemoryAuthority(
         executing requested: PlayerVisualState,
         memory: PlayerVisualState,
@@ -761,20 +765,20 @@ final class WidgetRefreshManager: @unchecked Sendable {
         if requested == memory { return false }
         switch memory {
         case .userPaused, .thermalPaused:
-            // Sticky memory lock: never paint connecting or playing that reverses it.
+            // Sticky memory lock: never schedule connecting or playing that reverses it.
             // ``setPlaying()`` / ``applyVisualState(.prePlay)`` advance memory before events.
             return requested == .prePlay || requested == .cleared || requested == .playing
         case .securityLocked:
             return requested != .securityLocked
         case .prePlay, .cleared:
-            // Connecting / switch hold: do not re-paint lagging sticky, and do not invent
+            // Connecting / switch hold: do not re-schedule lagging sticky, and do not invent
             // mid-hold playing until memory advances to authoritative playing.
             return requested == .userPaused
                 || requested == .thermalPaused
                 || requested == .playing
         case .playing:
             // Audible memory: non-immediate late connecting is post-audible prePlay residual.
-            // Immediate language-change Connecting is forward switch hold (destination first paint).
+            // Immediate language-change Connecting is forward switch hold (destination first wake).
             if requested == .prePlay || requested == .cleared {
                 return !isImmediate
             }
@@ -784,19 +788,52 @@ final class WidgetRefreshManager: @unchecked Sendable {
         }
     }
 
-    /// Returns true if executing `requested` would regress the persisted widget snapshot.
-    private func refreshWouldRegress(
+    /// Pure policy: whether a scheduled home WidgetKit wake should be discarded.
+    ///
+    /// Compose **memory lag first**, then optional **session lag** — identical to the historical
+    /// sequential checks in ``performRefreshIfNotStale(for:)``. `WidgetCenter.reloadTimelines` is
+    /// wake-only; Providers re-read session + privacy-gated ``homeWidgetLiveChrome``. This gate
+    /// only discards useless or bookkeeping-hostile wake candidates (residual sticky, premature
+    /// mid-hold ``.playing``, soft-resume reverse-race pause, post-audible Connecting).
+    ///
+    /// - Parameters:
+    ///   - requested: Visual the refresh candidate would schedule.
+    ///   - memory: ``SharedPlayerManager/currentVisualState`` (or extension optimistic force-set).
+    ///   - session: In-process session snapshot visual when present; `nil` skips the session leg.
+    ///   - isImmediate: Sticky / teardown / language-change / explicit urgency (same as helper legs).
+    /// - Returns: `true` when the wake must be discarded.
+    /// - Important: Soft-resume non-immediate Connecting deferral and
+    ///   ``shouldCoalesceIdenticalNonPlayingRefresh`` are separate schedule-time policies; this
+    ///   function is execute-time only.
+    /// - SeeAlso: ``refreshWouldRegressMemoryAuthority(executing:memory:isImmediate:)``,
+    ///   ``refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``,
+    ///   ``performRefreshIfNotStale(for:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§8 PR5),
+    ///   docs/Widget-Presentation-Dataflow.md (home wake discard).
+    static func refreshWouldDiscardHomeWake(
         executing requested: PlayerVisualState,
-        persisted: PlayerVisualState,
-        isImmediate: Bool
+        memory: PlayerVisualState,
+        session: PlayerVisualState?,
+        isImmediate: Bool = false
     ) -> Bool {
-        Self.refreshWouldRegressPersistedSnapshot(
+        if refreshWouldRegressMemoryAuthority(
             executing: requested,
-            persisted: persisted,
+            memory: memory,
             isImmediate: isImmediate
-        )
+        ) {
+            return true
+        }
+        if let session,
+           refreshWouldRegressPersistedSnapshot(
+               executing: requested,
+               persisted: session,
+               isImmediate: isImmediate
+           ) {
+            return true
+        }
+        return false
     }
-    
+
     private func cancelCoalescedPrePlayRefresh() {
         coalescedPrePlayWorkItem?.cancel()
         coalescedPrePlayWorkItem = nil
@@ -855,31 +892,33 @@ final class WidgetRefreshManager: @unchecked Sendable {
     }
     
     private func performRefreshIfNotStale(for state: WidgetState) async {
-        // Memory SSOT authority (main app + extension optimistic force-set): blocks multi-surface
-        // lag (residual sticky after intentional Connecting) and mid-switch playing flashes while
-        // stream-switch hold keeps memory at ``.prePlay``.
+        // Execute-time home wake discard (main app + extension optimistic force-set): memory lag
+        // then session lag. Blocks residual sticky after intentional Connecting and mid-switch
+        // premature ``.playing`` while hold keeps memory at ``.prePlay``. Reload is wake-only;
+        // Providers paint session + ``homeWidgetLiveChrome``.
         let memoryVisual = await SharedPlayerManager.shared.currentVisualState
-        if Self.refreshWouldRegressMemoryAuthority(
+        let sessionVisual = SharedPlayerManager.loadPersistedWidgetState()?.visualState
+        let isImmediate = state.isImmediateDelivery
+        if Self.refreshWouldDiscardHomeWake(
             executing: state.visualState,
             memory: memoryVisual,
-            isImmediate: state.isImmediateDelivery
+            session: sessionVisual,
+            isImmediate: isImmediate
         ) {
             #if DEBUG
-            print("[WidgetRefreshManager] Widget refresh discarded: memory authority \(state.debugVisualStateLabel) vs memory \(debugLabel(for: memoryVisual))")
-            recordDebounceOutcome(.discardedMemoryAuthorityRegress)
-            #endif
-            return
-        }
-
-        if let combined = SharedPlayerManager.loadPersistedWidgetState(),
-           refreshWouldRegress(
-               executing: state.visualState,
-               persisted: combined.visualState,
-               isImmediate: state.isImmediateDelivery
-           ) {
-            #if DEBUG
-            print("[WidgetRefreshManager] Widget refresh discarded: stale debounced \(state.debugVisualStateLabel) vs persisted \(debugLabel(for: combined.visualState))")
-            recordDebounceOutcome(.discardedStaleDebouncedRegress)
+            // Preserve leg-specific outcomes for triage / existing white-box tests (composition
+            // is memory-first, same as the pure unified policy).
+            if Self.refreshWouldRegressMemoryAuthority(
+                executing: state.visualState,
+                memory: memoryVisual,
+                isImmediate: isImmediate
+            ) {
+                print("[WidgetRefreshManager] Widget refresh discarded: memory lag \(state.debugVisualStateLabel) vs memory \(debugLabel(for: memoryVisual))")
+                recordDebounceOutcome(.discardedMemoryAuthorityRegress)
+            } else if let sessionVisual {
+                print("[WidgetRefreshManager] Widget refresh discarded: session lag \(state.debugVisualStateLabel) vs session \(debugLabel(for: sessionVisual))")
+                recordDebounceOutcome(.discardedStaleDebouncedRegress)
+            }
             #endif
             return
         }

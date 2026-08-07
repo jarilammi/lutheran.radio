@@ -1,7 +1,7 @@
 # Home Live Chrome App Group Mirror — Design Spec
 
-**Status:** **Implemented** (2026-08-07) · PR1–PR4 shipped · Provider paint via ``resolveHomeWidgetChromeFields`` (agreement → session; disagreement → fresher `updatedAt`) · privacy residual clear true→false edge only · device eyes-on §10.3 / §14 **passed** · PR5 optional **not started** (unblocked; not required for Implemented). Details: §6, §7.2, §11.  
-**Date:** 2026-07-30 (inventory polish 2026-08-06; eyes-on absorb 2026-08-07)  
+**Status:** **Implemented** (2026-08-07) · PR1–PR4 shipped · Provider paint via ``resolveHomeWidgetChromeFields`` (agreement → session; disagreement → fresher `updatedAt`) · privacy residual clear true→false edge only · device eyes-on §10.3 / §14 **passed** · PR5 wake-discard unification **shipped** (optional follow-on; not required for Implemented). Details: §6, §7.2, §8, §11.  
+**Date:** 2026-07-30 (inventory polish 2026-08-06; eyes-on absorb 2026-08-07; PR5 2026-08-07)  
 
 **Audience:** Implementers and reviewers of home/Control widget cross-process chrome  
 **Canonical permanent rules:** [`CODING_AGENT.md`](../CODING_AGENT.md) (always take precedence)  
@@ -397,20 +397,50 @@ Full privacy clear, factory residual, and terminate paths clear independently of
 
 ### 8.1 Current refresh policy (mirror shipped)
 
-- Keep existing refresh dual-path and coalesce as-is **except** where a bug blocks reloads entirely.
+- Keep dual-path refresh and coalesce as-is **except** where a bug blocks reloads entirely.
 - Every **authoritative mirror stamp** is followed by a refresh schedule path that can wake WidgetKit (event path and/or existing save path). Early sticky pause and ``setPlaying`` already emit / schedule as required.
-- Providers paint from session + ``homeWidgetLiveChrome`` (``resolveHomeWidgetChromeFields``); do **not** add execute-time memory-authority layers for paint blame while optional simplification remains a separate change.
+- Providers paint from session + ``homeWidgetLiveChrome`` (``resolveHomeWidgetChromeFields``).
+- `WidgetCenter.reloadTimelines` is **wake only** — it does not carry visual/language into WidgetKit.
 
-### 8.2 Optional refresh simplification (PR5 — not started; unblocked)
+### 8.2 PR5 — execute-time home wake discard (shipped)
 
-Device eyes-on has proven paint (§14 / §10.3). A **separate** change may simplify authority layers. PR5 is **not** required for Status → Implemented. Do not mix with mirror paint fixes (regression blame isolation).
+**Status:** **Shipped** (2026-08-07). Optional follow-on after Implemented eyes-on; **not** required for Status → Implemented. Does **not** change Provider paint SSOT.
 
-| Candidate simplification | Condition |
-|--------------------------|-----------|
-| Drop or narrow `refreshWouldRegressMemoryAuthority` | Provider no longer depends on main-process candidate visual matching extension paint |
-| Soften directional disk regress | “Disk” session lag is less critical if mirror is the extension SSOT |
-| Keep soft-resume non-immediate Connecting | Still valuable for **not scheduling** useless Connecting reloads when soft-resume settles to ``setPlaying`` soon |
-| Keep identical non-playing coalesce | Battery; still valid |
+**Problem:** Execute-time gates were framed as “paint authority” (main-process candidate must match extension paint). After live chrome, that framing is obsolete for **paint**. Memory-lag and session-lag tables still have unique, product-critical value for **wake scheduling** and ``lastKnownState`` bookkeeping.
+
+**Shipped simplification (smallest slice):**
+
+| Surface | Role |
+|---------|------|
+| ``refreshWouldDiscardHomeWake(executing:memory:session:isImmediate:)`` | Single pure execute-time SSOT: **memory lag first**, then optional **session lag** |
+| ``refreshWouldRegressMemoryAuthority`` | Memory-lag helper (residual sticky, mid-hold premature ``.playing``, post-audible Connecting) |
+| ``refreshWouldRegressPersistedSnapshot`` | Session-lag helper (soft-resume reverse-race pause; directional sticky) |
+| ``performRefreshIfNotStale`` | Calls the unified function; DEBUG outcomes retain leg-specific cases for triage |
+
+**Memory- and session-lag rules are unchanged:** a home wake is discarded in the same cases as the previous sequential checks; only composition is unified. Soft-resume non-immediate Connecting, identical non-playing coalesce, dual-path ``WidgetRefreshTrigger``, and live chrome stamp/resolve paths are **unchanged**.
+
+**Kept (not dropped in PR5):**
+
+| Gate | Why |
+|------|-----|
+| Memory leg | Mid-hold premature ``.playing``; residual sticky after intentional Connecting |
+| Session leg directional sticky | Soft-resume reverse race (non-immediate pause vs session ``.playing``) — memory does **not** cover this |
+| Soft-resume non-immediate Connecting | Single authoritative ``.playing`` wake after gapless resume |
+| Identical non-playing coalesce | Battery; attach / dual-path storms |
+
+**Rejected (out of scope for PR5; park for later only with new evidence):**
+
+| Idea | Why rejected as first slice |
+|------|-----------------------------|
+| Drop memory authority | Unique mid-hold / residual-sticky wake cases regress |
+| Soften session regress “because mirror is SSOT” | More useless wakes; soft-resume reverse race returns |
+| Read live chrome at execute time | New complexity, not simplification |
+
+**Unit gates:** existing pure + integration authority tests remain green; composition covered by `testRefreshWouldDiscardHomeWakeComposesMemoryThenSession` in `WidgetRefreshManagerEventTests`.
+
+**Eyes-on (device smoke after ship):** same required paint matrix as §10.3 / §14 plus mid-switch no playing flash and soft-resume reverse-race quiet. Trust Provider paint, not main scheduler labels (§8.3).
+
+**Later optional slices (not shipped):** collapse helpers into one table implementation; drop proven-dead branches only with matrix proof; Event Tier 4 call-site deletion is a different roadmap item.
 
 ### 8.3 What refresh logs mean
 
@@ -419,6 +449,7 @@ Device eyes-on has proven paint (§14 / §10.3). A **separate** change may simpl
 | `Widget refresh executed … visualState: X` | Main process scheduled a reload (scheduler label) |
 | Provider DEBUG `creating entry: visualState=Y` | Extension painted Y (trust this for eyes-on) |
 | Success criterion | Y tracks main-app SSOT within one reload after stamp; not that X==Y in the same process |
+| `Widget refresh discarded: memory lag …` / `session lag …` | Execute-time home wake discard (PR5); not Provider paint proof |
 
 ---
 
@@ -501,9 +532,9 @@ Self-contained manual checklist for §14. **Do not commit device logs**; absorb 
 | **PR2** | Main-app stamps (sticky pause, ``setPlaying``, switch hold, save projection) + gate-open re-stamp | **Shipped** (2026-07-30) |
 | **PR3** | Extension optimistic stamps + Provider paint via ``resolveHomeWidgetChromeFields`` (agreement → session; disagreement → fresher ``updatedAt``) | **Shipped** (2026-07-30) |
 | **PR4** | Terminate residual clear + sibling permanent docs (presentation dataflow, widget roadmap, event-driven OI-1 note, README pointer) | **Shipped** (2026-07-30) |
-| **PR5 (optional)** | Simplify ``WidgetRefreshManager`` authority / coalesce layers (§8.2) | **Not started** — unblocked after device eyes-on; **not** required for Implemented |
+| **PR5 (optional)** | Unify execute-time home **wake** discard (§8.2) | **Shipped** (2026-08-07) — ``refreshWouldDiscardHomeWake``; same discard cases as prior sequential checks; **not** required for Implemented |
 
-Required delivery for this design is **PR1–PR4 + §14 eyes-on**. PR5 is an optional follow-on only.
+Required delivery for this design is **PR1–PR4 + §14 eyes-on**. PR5 is an optional follow-on (now shipped).
 
 Do **not** mix Live Activity lock-stretch acceptance work into home live-chrome paint fixes.
 
@@ -554,7 +585,7 @@ Design is **successfully implemented** when:
 5. Stream-switch hold never shows destination `.playing` before attach settle.
 6. Gates green; no Core changes; no localization keys required (visual/lang codes only).
 
-**Eyes-on status (2026-08-07):** **Passed** on physical device using the **required sequence in §10.3** (cold-launch auto-play → background → home pause → soft resume → switch while playing → privacy residual clear). On-device home paint confirmed; main-process mechanism lines consistent (privacy-gate re-stamp, identical live-chrome identity skip, soft-resume hold of ``userPaused`` until authoritative ``playing``, switch hold ``prePlay`` + destination language, ``clearHomeWidgetLiveChromeMirror``). Prefer Provider-side `creating entry` or on-device paint over main-app refresh logs (§8.3). Optional §10.3 rows (paused switch, remove/re-add widgets, force-quit residual) were not required for this pass. PR5 remains optional and separate.
+**Eyes-on status (2026-08-07):** **Passed** on physical device using the **required sequence in §10.3** (cold-launch auto-play → background → home pause → soft resume → switch while playing → privacy residual clear). On-device home paint confirmed; main-process mechanism lines consistent (privacy-gate re-stamp, identical live-chrome identity skip, soft-resume hold of ``userPaused`` until authoritative ``playing``, switch hold ``prePlay`` + destination language, ``clearHomeWidgetLiveChromeMirror``). Prefer Provider-side `creating entry` or on-device paint over main-app refresh logs (§8.3). Optional §10.3 rows (paused switch, remove/re-add widgets, force-quit residual) were not required for this pass. PR5 wake-discard unification is separate and shipped (§8.2).
 
 ---
 
@@ -568,7 +599,7 @@ Design is **successfully implemented** when:
 | Provider order | **``resolveHomeWidgetChromeFields``**: agreement → session; disagreement → fresher `updatedAt`; neither → factory (+ metadata mirror unchanged) |
 | Soft-resume | Project hold; no false Connecting stamp |
 | Switch | Project Connecting + dest language |
-| Refresh policy | Mirror shipped; optional PR5 simplify unblocked after eyes-on (not started; not required for Implemented) |
+| Refresh policy | Mirror shipped; PR5 execute-time wake-discard unification shipped (optional; not required for Implemented) |
 | Instant feedback | Keep for now; not primary visual SSOT |
 
 ---
@@ -602,7 +633,7 @@ This file is the **committed mechanism SSOT**. Implementers may keep private scr
 | PR4 — terminate clear + permanent sibling docs | **Shipped** | 2026-07-30 | Terminate residual: ``clearHomeWidgetLiveChromeMirror`` already on ``forceStaleLivenessTimestampForTermination`` (PR1; verified vs §6.3 / §7 — no residual gap). Permanent sibling docs (mechanism names only): ``docs/Widget-Presentation-Dataflow.md`` (cross-process live chrome section; Provider order; reload is wake-only; terminate clear note), ``docs/Widget-Functionality-Roadmap.md`` (freshness stack + writers table + update log), ``docs/Event-Driven-Refactor-Roadmap.md`` (OI-1 memory-only session + privacy-gated live projection), README SSOT index pointer. App Group table / resolver ``///`` already accurate after PR3 (no rewrite). No paint behavior change; no Core touch. |
 | Privacy-gate residual clear true→false edge only | **Shipped** | 2026-07-30 | ``setHasActiveLutheranWidgets`` residual clear (liveness + instant feedback + ``homeWidgetStreamMetadata`` + ``homeWidgetLiveChrome``) runs only on previous-true → new-false. Re-asserting closed gate is residual no-op (WidgetCenter configs:0 lag must not wipe extension-stamped mirrors). false→true re-stamp edge unchanged. Full privacy / factory / terminate clear paths unchanged. Tests: ``testReassertingPrivacyGateClosedDoesNotClearLiveChromeOrMetadataMirrors``, ``testReassertingPrivacyGateClosedDoesNotClearLivenessOrInstantFeedbackResiduals`` + existing true→false / false→true coverage. |
 | Device eyes-on (success criteria §14) | **Passed** | 2026-08-07 | Physical device; required §10.3 sequence: cold-launch auto-play → background → home pause → soft resume → switch while playing → privacy residual clear. On-device paint + main mechanism consistency (gate re-stamp, identity skip, soft-resume hold, switch ``prePlay`` + destination language, ``clearHomeWidgetLiveChromeMirror``). Docs absorb only; Status → **Implemented**. |
-| PR5 — optional refresh simplification | **Not started** (unblocked; not required for Implemented) | — | Separate change only; do not mix with mirror paint blame |
+| PR5 — execute-time home wake discard unification | **Shipped** | 2026-08-07 | ``refreshWouldDiscardHomeWake`` composes memory lag then session lag (same discard cases as prior sequential checks; only composition unified); ``performRefreshIfNotStale`` single call site; pure helpers retained; wake-only framing in permanent docs; composition test `testRefreshWouldDiscardHomeWakeComposesMemoryThenSession`. Soft-resume Connecting deferral + identical coalesce unchanged. Not required for Implemented; do not mix with paint-blame fixes. |
 
 ### Temporary files (explicit allow / deny)
 
