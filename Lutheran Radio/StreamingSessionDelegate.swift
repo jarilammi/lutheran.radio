@@ -32,9 +32,6 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
     /// The AVAssetResourceLoadingRequest being fulfilled by this delegate.
     internal var loadingRequest: AVAssetResourceLoadingRequest
     
-    /// Tracks the total bytes received during the streaming session.
-    private var bytesReceived = 0
-    
     /// Flag indicating if an HTTP response has been received.
     private var receivedResponse = false
     
@@ -163,7 +160,6 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
     ///   - data: The data chunk received.
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         guard receivedResponse else { return }
-        bytesReceived += data.count
         loadingRequest.dataRequest?.respond(with: data)
     }
     

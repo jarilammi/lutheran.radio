@@ -666,7 +666,7 @@ extension SharedPlayerManager {
     /// resurrected prior-process snapshot. A redundant play must never tear down a live
     /// secured item.
     ///
-    /// - Returns: `true` when the caller should return without `setStreamAndPlay` / intent thrash.
+    /// - Returns: `true` when the caller should return without `attachAndPlay` / intent thrash.
     /// - Precondition: Sticky pause/lock and stream-switch hold are handled separately
     ///   (`false` here so intentional switch attach and pause→play resume stay open).
     /// - SeeAlso: ``userRequestedPlay()``, ``play()``,
@@ -849,7 +849,7 @@ extension SharedPlayerManager {
     ///   language chrome. Post-silence ``refreshAllMediaSurfaces`` remains the engine-complete
     ///   ownership path (suppresses when optimistic content already matches).
     ///
-    /// - Postcondition: visual + intent forced to `.userPaused`, timestamp recorded,
+    /// - Postcondition: visual + intent forced to `.userPaused` (sticky barrier for recovery),
     ///   privacy-gated early sticky session snapshot written when widgets are active,
     ///   durable LA toggle mirror = `.userPaused`, main-app optimistic LA ContentState pushed,
     ///   engine soft silence awaited (main), authoritative ``saveCurrentState()``
@@ -1151,7 +1151,7 @@ extension SharedPlayerManager {
         // Widget language selection while paused relies on optimistic PersistedWidgetState.
         // Explicitly align Direct's model here (before saveCurrentState) so that:
         // - the snapshot written by this resume path carries the user-chosen language, and
-        // - setStreamAndPlay later in play() sees the correct stream even if the switch
+        // - attachAndPlay later in play() sees the correct stream even if the switch
         //   reconciliation was debounced or a prior model value lingered.
         // This upholds the "switch while paused + follow-on play uses preferred-lang alignment"
         // contract documented in handleWidgetSwitch + signalWidgetSwitchAction.
@@ -1221,13 +1221,13 @@ extension SharedPlayerManager {
     }
 
     /// Sets the visual state to `.userPaused` (sticky) and the playback intent
-    /// to `.userPaused`, records the pause timestamp, persists the snapshot, and
-    /// notifies surfaces.
+    /// to `.userPaused`, persists the snapshot, and notifies surfaces.
     ///
     /// This is the canonical surface for recording an explicit user-initiated pause
-    /// (from DirectStreamingPlayer mark paths, remote commands, etc.).
+    /// (from DirectStreamingPlayer mark paths, remote commands, etc.). Sticky
+    /// ``PlaybackIntent/userPaused`` is the recovery barrier (not a wall-clock pause stamp).
     ///
-    /// - Postcondition: visual = .userPaused, intent = .userPaused, timestamp recorded,
+    /// - Postcondition: visual = .userPaused, intent = .userPaused,
     ///   snapshot written, and `streamDidPause` emitted.
     ///
     /// - SeeAlso: ``markAsUserPaused()``, ``stop()``, ``emit(_:)``,

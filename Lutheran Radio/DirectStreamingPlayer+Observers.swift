@@ -262,7 +262,6 @@ extension DirectStreamingPlayer {
                 if item.status == .failed {
                     Task { @MainActor [weak self] in
                         guard let self else { return }
-                        self.lastError = item.error
                         await self.handleItemStatusFailure(item)
                     }
                 }
@@ -406,16 +405,6 @@ extension DirectStreamingPlayer {
                 #endif
             }
         }
-    }
-
-    func removeObservers(for playerItem: AVPlayerItem?) {
-        self.playerItemObservations.forEach { $0.invalidate() }
-        self.playerItemObservations.removeAll()
-    }
-
-    func removeObserversFrom(_ playerItem: AVPlayerItem) {
-        self.playerItemObservations.forEach { $0.invalidate() }
-        self.playerItemObservations.removeAll()
     }
 
     func removeObserversImplementation() {

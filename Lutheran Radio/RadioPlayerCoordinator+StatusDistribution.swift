@@ -44,8 +44,7 @@
 //  - ``beginObservingVisualStateForChrome()`` — **primary** paint from visual SSOT transitions
 //  - ``handleStatusChange(_:reasonKey:)`` — status-path adapter (race lead + errors only)
 //  - ``updateUIForNoInternet()`` — airplane / path-loss chrome
-//  - ``updateNowPlayingInfo(title:)`` / ``saveStateForWidget()`` — thin SPM forwarders
-//    (`title:` re-enters ICY SSOT; prefer engine ``safeOnMetadataChange`` for live StreamTitle)
+//  - ``saveStateForWidget()`` — thin SPM forwarder for host persist
 //  - ``setIsSwitchingStream(_:)`` / ``syncMetadataToViewModel(_:)`` — VM bridge
 //  - ``safeUpdateStatusLabel(text:backgroundColor:textColor:isPermanentError:)``
 //
@@ -195,29 +194,6 @@ extension RadioPlayerCoordinator {
         // Metadata + play/pause glyph now driven by VM for SwiftUI views.
         viewModel?.currentMetadata = nil
         // visualState update will cause the controls to show correct glyph.
-    }
-
-    /// Thin Now Playing refresh (and optional ICY SSOT write) for host call sites.
-    ///
-    /// - Parameter title: When non-`nil`, re-enters ``SharedPlayerManager/didUpdateStreamMetadata(_:)``.
-    ///   **Live ICY must not use this** — the engine already owns that path via
-    ///   ``DirectStreamingPlayer/safeOnMetadataChange(metadata:)``. Prefer `title: nil` (or omit)
-    ///   to refresh system Now Playing from the existing stash after language/visual mutations.
-    /// - SeeAlso: ``SharedPlayerManager/updateNowPlayingInfo()``,
-    ///   ``SharedPlayerManager/didUpdateStreamMetadata(_:)``,
-    ///   ``DirectStreamingPlayer/safeOnMetadataChange(metadata:)``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
-    func updateNowPlayingInfo(title: String? = nil) {
-        #if LUTHERAN_MAIN_APP
-        Task {
-            if let title {
-                // Escape hatch only — not the live StreamTitle path (engine SSOT).
-                await SharedPlayerManager.shared.didUpdateStreamMetadata(title)
-            } else {
-                await SharedPlayerManager.shared.updateNowPlayingInfo()
-            }
-        }
-        #endif
     }
 
     func saveStateForWidget() {

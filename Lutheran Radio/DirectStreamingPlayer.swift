@@ -226,7 +226,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // | Thermal protection | DirectStreamingPlayer+ThermalProtection.swift | Thermal pause/resume + Low Power Mode observation (`setupThermalProtection` / energy) |
     // | Playback control | DirectStreamingPlayer+PlaybackControl.swift | Public play/stop entry (`play`, `createAndStartPlayer`, soft/hard stop paths) |
     // | Secured player item | DirectStreamingPlayer+SecuredPlayerItem.swift | makeSecuredPlayerItem + preparePlayerItem (Core-backed resource loader path) |
-    // | System media session | DirectStreamingPlayer+SystemMediaSession.swift | Privacy/factory-reset hard detach (`teardownSystemMediaSession*`) + session deactivate |
+    // | System media session | DirectStreamingPlayer+SystemMediaSession.swift | Privacy/factory-reset hard detach (`teardownSystemMediaSessionSynchronously`) |
     // | Deinit hygiene | DirectStreamingPlayer+DeinitHygiene.swift | `clearCallbacks` + ordered `performDeinitCleanup` (façade `deinit` stays on primary type) |
     // | Status callback delivery | DirectStreamingPlayer+StatusCallbackDelivery.swift | `safeOnStatusChange` / deliver / invoke + transient KVO suppress + metadata hop |
     // | Periodic certificate validation | DirectStreamingPlayer+PeriodicCertificateValidation.swift | `startPeriodicValidation` / `stopPeriodicCertificateValidation` (Core pin HEAD cadence) |
@@ -288,10 +288,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     //
     // System media session ownership (domain file + façade player/item + soft-pause storage):
     // - Privacy / factory-reset hard detach lives in `+SystemMediaSession.swift`
-    //   (``teardownSystemMediaSessionSynchronously`` / ``teardownSystemMediaSession``).
+    //   (``teardownSystemMediaSessionSynchronously``). SPM privacy paths call
+    //   ``deactivateAudioSessionAsync()`` separately when session deactivation is required.
     // - Complements SPM ``teardownNowPlayingSession()`` (MPNowPlayingInfoCenter clear only).
     // - Playback soft/hard stop remains in `+PlaybackControl.swift`; do not re-home stop here.
-    // - Audio session deactivate is called only via ``deactivateAudioSessionAsync()``.
     //
     // Deinit hygiene ownership (domain file + façade stored teardown flags / maps):
     // - ``clearCallbacks()`` / ``performDeinitCleanup()`` live in `+DeinitHygiene.swift`.
@@ -336,9 +336,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     var wasPlayingBeforeInterruption = false
     var isHandlingInterruption = false
         
-    /// Injectable closure for the current date, used for testing time-dependent logic.
-    internal var currentDate: @Sendable () -> Date = { Date() }
-    
     // Single declaration (no DEBUG/release duplication) for the few members that historically
     // needed relaxed visibility for test/diagnostic inspection. All other state is now declared once.
     internal var networkMonitor: NetworkPathMonitoring?
@@ -361,8 +358,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///
     /// - SeeAlso: ViewController path observation, ``CellularPermissionManager``
     var onNetworkPathChange: (@Sendable (_ isConnected: Bool, _ isExpensive: Bool, _ wasConnected: Bool) -> Void)?
-    var serverFailureCount: [String: Int] = [:]
-    var lastFailedServerName: String?
     /// Active cluster selection used by stream URL construction (see DirectStreamingPlayer+StreamCatalog).
     var currentSelectedServer: Server = servers[0]
     
@@ -414,8 +409,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     // MARK: - Thermal / energy stored state
     // Observers + teardown: +ThermalProtection.swift. Visual `.thermalPaused` SSOT: SharedPlayerManager.
-    /// Detects if the device is in Low Power Mode to throttle non-essential tasks (e.g., retry intervals) and extend battery life during streaming.
-    /// Builds on thermal state handling; queried dynamically in retry/fallback logic.
+    /// Detects if the device is in Low Power Mode to throttle non-essential tasks and extend battery life during streaming.
+    /// Builds on thermal state handling; queried dynamically where energy-sensitive work remains.
     /// Reference: iOS ProcessInfo.isLowPowerModeEnabled (available since iOS 9).
     /// - SeeAlso: ``setupEnergyEfficiencyObservation()``, DirectStreamingPlayer+ThermalProtection.swift
     var isLowEfficiencyMode: Bool {
@@ -424,8 +419,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Token for `ProcessInfo.thermalStateDidChangeNotification` (owned by thermal domain setup/teardown).
     var thermalObserver: NSObjectProtocol?
     
-    // Public accessors for ViewController
-    var lastFailedServer: String? { return lastFailedServerName }
+    // Public accessor for ViewController / host diagnostics
     var selectedServerInfo: Server { return currentSelectedServer }
 
     // MARK: - Injected Dependencies (construction roots)
@@ -438,18 +432,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // Stored selection state stays on the façade (extensions cannot declare stored properties).
 
     var lastServerSelectionTime: Date?
-    let serverSelectionCacheDuration: TimeInterval = 7200 // two hours
+    /// Live throttle for ``selectOptimalServer(completion:)`` is a 10-second wall-clock window
+    /// checked against ``lastServerSelectionTime`` (hardcoded in the server-selection domain).
     var serverSelectionWorkItem: DispatchWorkItem?
-    var retryWorkItem: DispatchWorkItem?
-    var fallbackWorkItem: DispatchWorkItem?
-    /// Work item for pending playback operations that can be cancelled
-    var pendingPlaybackWorkItem: DispatchWorkItem?
     /// Track deallocation state (stop / observer teardown).
     var isDeallocating = false
 
-    // MARK: - Error & Retry State (simple scalars)
-    var lastError: Error?
-    
+    // MARK: - Initial attach recovery budget
     var initialPlaybackRetryCount = 0
     /// Hard cap on secured-item recreates from early-window recovery **and** the startup safety net
     /// for a single attach attempt (cold launch or stream switch). Prevents multi-recreate storms
@@ -872,8 +861,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
 
     // MARK: - System media session (see DirectStreamingPlayer+SystemMediaSession.swift)
-    // Privacy / factory-reset hard detach: teardownSystemMediaSessionSynchronously /
-    // teardownSystemMediaSession. Complements SPM teardownNowPlayingSession (metadata only).
+    // Privacy / factory-reset hard detach: teardownSystemMediaSessionSynchronously.
+    // Complements SPM teardownNowPlayingSession (metadata only).
     // Audio session deactivate: +AudioSession.swift. Playback stop: +PlaybackControl.swift.
 
     // Local clip player (tuning / special sounds): DirectStreamingPlayer+LocalClipPlayer.swift

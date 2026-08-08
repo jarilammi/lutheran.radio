@@ -20,21 +20,6 @@ import WidgetKit
 import Foundation
 import WidgetSurface
 
-// MARK: - Error Helpers
-
-extension AppIntentError {
-    static func widgetSafe(_ message: String) -> Error {
-        #if DEBUG
-        print("[LutheranRadioWidgetControl] Widget-safe error: \(message)")
-        #endif
-        return NSError(domain: "LutheranRadioWidget", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
-    }
-    
-    static func general(_ message: String) -> Error {
-        return NSError(domain: "LutheranRadioWidget", code: -1, userInfo: [NSLocalizedDescriptionKey: message])
-    }
-}
-
 struct NoOpControlConfiguration: ControlConfigurationIntent {
     nonisolated static var title: LocalizedStringResource {
         "lutheran_radio_title"

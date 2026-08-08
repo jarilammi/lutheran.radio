@@ -204,15 +204,6 @@ extension DirectStreamingPlayer {
         await prepareStreamChoice(stream, preparation: .modelOnly)
     }
 
-    /// Legacy name for ``attachAndPlay(to:context:)``. Prefer ``attachAndPlay`` in new code.
-    @MainActor
-    func setStreamAndPlay(to stream: Stream, context: PlaybackAttachContext = .coldLaunch) async {
-        #if DEBUG
-        print("[DirectStreamingPlayer] setStreamAndPlay → attachAndPlay")
-        #endif
-        await attachAndPlay(to: stream, context: context)
-    }
-
     /// Updates the selected stream model and prepares the secured player item (no audible start).
     ///
     /// Internal attach helper used by ``attachAndPlay(to:context:)``. Prefer the canonical
@@ -553,7 +544,7 @@ extension DirectStreamingPlayer {
         return playbackAttachGeneration
     }
 
-    /// Clears the in-flight attach flag. Call from `defer` at the end of ``play()`` / ``setStreamAndPlay``.
+    /// Clears the in-flight attach flag. Call from `defer` at the end of ``play()`` / ``attachAndPlay(to:context:)``.
     @MainActor
     func endInFlightPlaybackAttach() {
         isCurrentlyAttemptingPlayback = false
@@ -732,11 +723,6 @@ extension DirectStreamingPlayer {
     @MainActor
     func test_endInFlightPlaybackAttach() {
         endInFlightPlaybackAttach()
-    }
-
-    /// Test seam: invalidate in-flight attach (same as stop entry).
-    func test_invalidateInFlightPlaybackAttach() {
-        invalidateInFlightPlaybackAttach()
     }
 
     /// Test seam: generation + intent re-check used after awaits on the start path.

@@ -21,9 +21,9 @@
 //  or Core security.
 //
 //  Stored debounce stamps (`streamSwitchWorkItem`, `streamSwitchTask`,
-//  `lastStreamSwitchTime`, `streamSwitchDebounceInterval`, `lastWidgetSwitchTime`)
-//  and selection index remain on the primary type body (extensions cannot declare
-//  stored properties); this file owns the behavior that mutates them.
+//  `lastStreamSwitchTime`, `streamSwitchDebounceInterval`) and selection index
+//  remain on the primary type body (extensions cannot declare stored properties);
+//  this file owns the behavior that mutates them.
 //
 //  Public/entry surfaces on the same type:
 //  - ``handleSwitchToLanguage(_:)`` — SceneDelegate / deep-link / external
@@ -232,8 +232,6 @@ extension RadioPlayerCoordinator {
         //   (see alignment in play() + setUserIntentToPlay).
         // Rapid hammering protection is still provided by the engine (switchToStream silent path)
         // and the blocked/no-auto-resume logic inside switchToStreamFromWidget.
-        lastWidgetSwitchTime = Date()
-
         pendingWidgetSwitchWorkItem?.cancel()
 
         let workItem = DispatchWorkItem { [weak self] in

@@ -24,7 +24,7 @@ final class Lutheran_RadioUITests: XCTestCase {
         //
         // Effects:
         // - Cold-launch auto-play is suppressed in ViewController (clean .prePlay).
-        // - `SharedPlayerManager.play()` short-circuits before SecurityModelValidator or setStreamAndPlay.
+        // - `SharedPlayerManager.play()` short-circuits before SecurityModelValidator or attachAndPlay.
         // - DirectStreamingPlayer skips audio session, eager validation, and all playback engine work.
         // - No DNS, no real AVPlayer, no background audio.
         //

@@ -251,15 +251,12 @@ class ViewController: UIViewController {
     // - SeeAlso: `AirPlayButton`, `VolumeAndAirPlayRow`, `SceneDelegate.scene(_:willConnectTo:)`,
     //   CODING_AGENT.md (launch / MediaRemoteUI watchdog history), <doc:Architecture>
     
-    private var isInitialSetupComplete = false
-    
     // MARK: - Audio and Streaming
     // Streaming engine is shared; orchestration (status chrome, metadata, tuning) is on the coordinator.
     // `internal` so domain extension files (`+AudioSessionObservers`, `+DarwinWidgetNotify`,
     // `+NetworkPathObservation`, `+LayoutHosting`) can call in; Swift `private` is file-scoped
     // and would break cross-file host domains.
     nonisolated let streamingPlayer: DirectStreamingPlayer
-    private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
 
     // Playback authority (do not reintroduce a host-local `isPlaying` bool):
     // - Engine rate reality → ``DirectStreamingPlayer/isPlaying``
@@ -406,7 +403,6 @@ class ViewController: UIViewController {
         )
         
         setupFastWidgetActionChecking()
-        isInitialSetupComplete = true
 
         // Sleep timer observer + preset/cancel + clear-local-state owned by RadioPlayerCoordinator
         // (wireAndInitialSetup + PlayerViewModel closures). Presentation is SwiftUI
@@ -461,7 +457,7 @@ class ViewController: UIViewController {
             // "recently deleted" persisted data (snapshot, lastUpdateTime, language liveness signals).
             self.updateUI(for: .prePlay)  // not the post-clear path (that now uses .cleared)
             
-            // Stream model and UI only; secured AVPlayerItem is created once in setStreamAndPlay after tuning.
+            // Stream model and UI only; secured AVPlayerItem is created once in attachAndPlay after tuning.
             await self.streamingPlayer.prepareStreamChoice(initialStream, preparation: .modelOnly)
             
             // Background deferral state is now owned by BackgroundImageController (cold launch path preserved).
@@ -686,10 +682,6 @@ class ViewController: UIViewController {
         // Single implementation lives in RadioPlayerCoordinator (orchestration owner).
         // VC retains the method for the @objc togglePlayback + public handleTogglePlayback call sites.
         await radioPlayerCoordinator.handleUserTogglePlayback()
-    }
-    
-    private func updateNowPlayingInfo(title: String? = nil) {
-        radioPlayerCoordinator.updateNowPlayingInfo(title: title)
     }
     
     // MARK: - Playback Control Methods

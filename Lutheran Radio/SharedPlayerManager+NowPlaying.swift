@@ -708,7 +708,7 @@ extension SharedPlayerManager {
     ///   scheduled once (or skipped when re-entrant while phase 2 already scheduled).
     /// - SeeAlso: ``resetToFactoryDefaultsOnLaunch()``, ``clearSystemNowPlayingMetadataSynchronously()``,
     ///   ``SharedPlayerManager/clearAllLocalState()``,
-    ///   ``DirectStreamingPlayer/teardownSystemMediaSession()``, `WidgetRefreshManager.isSessionTeardownInProgress`,
+    ///   ``DirectStreamingPlayer/teardownSystemMediaSessionSynchronously()``, `WidgetRefreshManager.isSessionTeardownInProgress`,
     ///   AppDelegate.application(_:didFinishLaunchingWithOptions:),
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md.

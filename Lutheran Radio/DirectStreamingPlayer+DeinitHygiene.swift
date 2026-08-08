@@ -88,9 +88,8 @@ extension DirectStreamingPlayer {
     ///   ``stopSynchronously()``, ``teardownThermalAndEnergyObservers()``,
     ///   ``removeAudioSessionObservers()``, ``stopPeriodicCertificateValidation()``.
     func performDeinitCleanup() {
-        // Cancel pending work items that exist
+        // Cancel pending server-selection work
         serverSelectionWorkItem?.cancel()
-        retryWorkItem?.cancel()
 
         #if DEBUG
         print("[DirectStreamingPlayer] [Deinit] Cancelled pending work items")
@@ -111,10 +110,6 @@ extension DirectStreamingPlayer {
 
         // Clear metadata output
         metadataOutput = nil
-
-        // Clear server failure tracking
-        serverFailureCount.removeAll()
-        lastFailedServerName = nil
 
         // Thermal + Low Power Mode observers: +ThermalProtection.swift
         teardownThermalAndEnergyObservers()

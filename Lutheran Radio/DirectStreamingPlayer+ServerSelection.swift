@@ -106,7 +106,7 @@ extension DirectStreamingPlayer {
     ///   If a new playback entry point is added, guard it with `if isTesting { return … }`.
     ///
     /// - SeeAlso: ``SharedPlayerManager/isRunningInUITestMode``, ViewController.viewDidLoad,
-    ///   ``setupAudioSession()``, `play()`, `setStreamAndPlay(to:context:)`, `startPlayback(context:)`,
+    ///   ``setupAudioSession()``, `play()`, ``attachAndPlay(to:context:)``, `startPlayback(context:)`,
     ///   CODING_AGENT.md (test isolation requirements).
     internal var isTesting: Bool {
         SharedPlayerManager.isRunningInUITestMode
@@ -124,39 +124,15 @@ extension DirectStreamingPlayer {
     // Stored server-selection / deallocation flags live on the façade class body
     // (extensions cannot declare stored properties).
 
-    /// Selects the optimal streaming server based on latency and failures.
+    /// Selects the optimal streaming server by measured latency (lowest RTT wins).
+    ///
     /// - Parameter completion: Handler with selected server.
-    /// - Note: Throttles calls; prefers servers with fewer failures; delays in low-power mode.
+    /// - Note: Throttles repeat calls within a 10-second window (reuses ``currentSelectedServer``);
+    ///   delays the latency probe in Low Power Mode. Selection is latency-only — there is no
+    ///   failure-count map driving prefer/avoid logic.
     /// - Example: `selectOptimalServer { server in print(server.name) }`
-    /// - SeeAlso: `fetchServerIPsAndLatencies(completion:)`
+    /// - SeeAlso: `fetchServerIPsAndLatencies(completion:)`, ``urlWithOptimalServer(for:)``
     func selectOptimalServer(completion: @escaping @Sendable (Server) -> Void) {
-        // If we have a server that failed recently, try the other one first
-        if let lastFailed = lastFailedServerName,
-           let failureCount = serverFailureCount[lastFailed],
-           failureCount > 0 {
-            
-            let workingServers = Self.servers.filter { server in
-                let failCount = serverFailureCount[server.name, default: 0]
-                return failCount == 0 || failCount < failureCount
-            }
-            
-            if let betterServer = workingServers.first {
-                #if DEBUG
-                print("Avoiding recently failed server \(lastFailed), using \(betterServer.name)")
-                #endif
-                currentSelectedServer = betterServer
-                
-                // Fire-and-forget save (no need to block selection)
-                Task {
-                    await SharedPlayerManager.shared.saveCurrentState()
-                }
-                
-                lastServerSelectionTime = Date()
-                completion(betterServer)
-                return
-            }
-        }
-        
         if let last = lastServerSelectionTime,
            Date().timeIntervalSince(last) <= 10.0 {
             #if DEBUG

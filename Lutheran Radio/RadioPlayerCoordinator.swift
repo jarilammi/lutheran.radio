@@ -223,11 +223,10 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     static let sleepTimerPostScheduleUISettleNs: UInt64 = 300_000_000
     static let sleepTimerDeferredVisualSettleNs: UInt64 = 500_000_000
 
-    // Widget switch work item + last-switch stamp (actionId dedup uses processedActionIds below).
+    // Widget switch work item (actionId dedup uses processedActionIds below).
     // `pendingWidgetSwitchWorkItem` / `processedActionIds` are internal so +PendingActions can
     // cancel a deferred switch before mailbox play and bound the dedup set after drain.
-    // `lastWidgetSwitchTime` is owned by +StreamSwitch (widget language entry).
-    var lastWidgetSwitchTime: Date?
+    // Stream-switch debounce stamp is `lastStreamSwitchTime` (owned by +StreamSwitch).
     var pendingWidgetSwitchWorkItem: DispatchWorkItem?
 
     // Widget / extension-hosted play/pause drain debouncing (owned by +PendingActions).
@@ -508,11 +507,11 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
             // isPlaying flag update is performed by the caller (VC) where it was previously mutated
         } else {
             // Route the play/resume case through the designated explicit-play entry point
-            // (`userRequestedPlay`) for consistency with handlePlayAction, handleWidgetPlayAction,
-            // remote toggle, Siri, LA toggle, widget pending reconciliation, etc.
+            // (`userRequestedPlay`) for consistency with handlePlayAction, remote toggle,
+            // Siri, LA toggle, widget pending reconciliation / media-transport mailbox, etc.
             // Immediate .prePlay is preserved (setUserIntentToPlay also establishes .prePlay
             // internally for resume-from-pause/clear cases) so connecting feedback timing is
-            // unchanged. The trailing updateUI + updateNowPlayingInfo still run after the await.
+            // unchanged. Trailing updateUI still runs after the await.
             self.updateUI(for: .prePlay)
             await manager.userRequestedPlay()
         }
@@ -525,8 +524,8 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     // updateUserDefaultsLanguage) live in RadioPlayerCoordinator+StreamSwitch.swift.
 
     // Status / chrome distribution (updateUI, handleStatusChange, RadioPlayerChromeVisualResolver,
-    // setIsSwitchingStream, syncMetadataToViewModel, updateUIForNoInternet, updateNowPlayingInfo,
-    // saveStateForWidget, safeUpdateStatusLabel, thermal VoiceOver) lives in
+    // setIsSwitchingStream, syncMetadataToViewModel, updateUIForNoInternet, saveStateForWidget,
+    // safeUpdateStatusLabel, thermal VoiceOver) lives in
     // RadioPlayerCoordinator+StatusDistribution.swift.
 
     func pausePlayback() {

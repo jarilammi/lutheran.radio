@@ -190,11 +190,10 @@ extension DirectStreamingPlayer {
                 // ── Reconnect case (engine streaming recovery) ──
                 #if DEBUG
                 print("[DirectStreamingPlayer] [Network] Connection restored, previous server: \(self.currentSelectedServer.name)")
-                print("[DirectStreamingPlayer] [Network] Cleared server selection cache + failure counts")
+                print("[DirectStreamingPlayer] [Network] Cleared server selection throttle cache")
                 #endif
 
                 self.lastServerSelectionTime = nil
-                self.serverFailureCount.removeAll()
 
                 // Reset transient security state + revalidate (named reconnect intent).
                 Task {

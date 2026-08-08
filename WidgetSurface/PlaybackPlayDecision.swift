@@ -184,7 +184,7 @@ public enum PlaybackPlayDecision {
     /// - Parameters:
     ///   - classification: From ``classify(holdPrePlayVisualUntilPlayback:hasCompletedTrueColdLaunchPlay:)``.
     ///   - declinedSoftPauseForLanguageChange: Soft-resume declined because attached language ≠ selected.
-    /// - Returns: ``PlaybackAttachContext`` for `attachAndPlay` / `setStreamAndPlay`.
+    /// - Returns: ``PlaybackAttachContext`` for ``DirectStreamingPlayer`` `attachAndPlay`.
     public static func attachContext(
         classification: PlaybackPlayClassification,
         declinedSoftPauseForLanguageChange: Bool

@@ -272,37 +272,10 @@ extension RadioPlayerCoordinator {
 
     // MARK: - Widget play/pause helpers (invoked by drain)
 
-    /// Vestigial shim retained for any remaining direct callers.
-    ///
-    /// Now delegates to `userRequestedPlay()` (the designated explicit-play path).
-    /// Previously performed only `clearUserPausedLockIfNeeded() + play()` (weaker;
-    /// bypassed full `setUserIntentToPlay` double-save + NowPlaying configure).
-    /// Primary widget "play" path is ``checkForPendingWidgetActions()`` → media-transport mailbox.
-    ///
-    /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``,
-    ///   ``checkForPendingWidgetActions()``,
-    ///   CODING_AGENT.md.
-    ///
-    /// AGENT NOTE: Prefer the pending + checkForPending + mailbox route for
-    /// all widget-originated play. If this shim is ever removed, audit call sites
-    /// (currently none outside comments) and update the resurrection table comment.
-    func handleWidgetPlayAction() {
-        #if DEBUG
-        print("[RadioPlayerCoordinator] Widget Play action → routing via designated userRequestedPlay()")
-        #endif
-
-        Task { @MainActor in
-            await SharedPlayerManager.shared.userRequestedPlay()
-            #if DEBUG
-            print("[RadioPlayerCoordinator] Widget Play (via userRequestedPlay) completed")
-            #endif
-        }
-    }
-
     /// Executes a widget/extension-originated pause after main-app pending drain.
     ///
-    /// Clears a stale opposite `"play"` pending (if any still remain), records pause
-    /// timestamps, then runs ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``
+    /// Clears a stale opposite `"play"` pending (if any still remain), then runs
+    /// ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``
     /// with `.pause` so engine silence shares the serial media-transport mailbox with
     /// system Now Playing, headset remotes, and main-hosted Live Activity toggles
     /// (pause preempts an in-flight play). Call sites that already hop to MainActor

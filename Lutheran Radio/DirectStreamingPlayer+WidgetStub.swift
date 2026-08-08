@@ -136,10 +136,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         selectedStream = stream
     }
 
-    func setStreamAndPlay(to stream: Stream, context: PlaybackAttachContext = .coldLaunch) async {
-        await attachAndPlay(to: stream, context: context)
-    }
-
     func stop() {}
 
     func stop(

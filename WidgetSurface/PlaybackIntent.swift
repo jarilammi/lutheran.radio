@@ -109,8 +109,7 @@ public enum StopReason: Sendable {
 /// | ``modelOnly`` | Update `selectedStream` only (no item, no stop) | Cold-launch seed, snapshot alignment before attach |
 /// | ``switchPrep`` | Model + silent stop on language change + recovery budget reset | Orchestrated language switch before play |
 ///
-/// Audible attach is always ``DirectStreamingPlayer/attachAndPlay(to:context:)``
-/// (legacy name: `setStreamAndPlay`).
+/// Audible attach is always ``DirectStreamingPlayer/attachAndPlay(to:context:)``.
 ///
 /// - SeeAlso: ``PlaybackAttachContext``, ``PlaybackPlayDecision``,
 ///   SharedPlayerManager.play(), RadioPlayerCoordinator stream-switch paths.

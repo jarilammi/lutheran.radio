@@ -13,12 +13,13 @@
 //
 //  Ownership (do not invert):
 //  - This domain owns **hard player-item detach** for system media session hygiene:
-//    ``teardownSystemMediaSessionSynchronously()`` and ``teardownSystemMediaSession()``.
+//    ``teardownSystemMediaSessionSynchronously()``.
 //  - Soft-pause / hard-stop *playback* paths remain in `+PlaybackControl.swift`
 //    (``stop`` / ``performActualStop`` / ``stopSynchronously``). Those preserve recovery
 //    affordances; this domain is the privacy / factory-reset detach that nils the item.
-//  - Audio session deactivate remains in `+AudioSession.swift` — async teardown calls
-//    ``deactivateAudioSessionAsync()`` only; never `setCategory` / `setActive` here.
+//  - Audio session deactivate remains in `+AudioSession.swift` via
+//    ``deactivateAudioSessionAsync()`` — call sites (e.g. SPM privacy teardown) invoke
+//    deactivate separately after this detach when needed. Never `setCategory` / `setActive` here.
 //  - Now Playing *metadata* clear (`MPNowPlayingInfoCenter`) remains on
 //    ``SharedPlayerManager`` (`teardownNowPlayingSession` / clear helpers). This domain
 //    only detaches the engine item so MediaRemote has no live player binding.
@@ -29,8 +30,6 @@
 //  - No-op under UITestMode / `isTesting` (privacy teardown must not touch AVFoundation
 //    under the XCTest host isolation contract).
 //  - Synchronous path: pause → rate 0 → replace item nil → clear binding → clear soft-pause.
-//  - Async path: synchronous detach then session deactivate (watchdog-safe ordering owned
-//    by SPM callers that may skip deactivate on terminate paths).
 //
 //  AGENT NOTE: Members used across files are `internal` (Swift `private` is file-scoped).
 //  Prefer this domain file over re-implementing hard detach in privacy / factory-reset
@@ -57,10 +56,12 @@ extension DirectStreamingPlayer {
     ///
     /// Complements ``SharedPlayerManager/teardownNowPlayingSession()`` which clears
     /// `MPNowPlayingInfoCenter`. Safe when playback is already stopped or during privacy clear.
+    /// Callers that also need audio-session deactivation invoke ``deactivateAudioSessionAsync()``
+    /// separately (privacy / factory-reset paths already do).
     ///
     /// - Postcondition: Player paused, current item nil, soft-pause stash cleared.
-    /// - SeeAlso: ``teardownSystemMediaSession()``, ``deactivateAudioSessionAsync()``,
-    ///   ``clearAttachedItemBinding()``.
+    /// - SeeAlso: ``SharedPlayerManager/teardownNowPlayingSession()``,
+    ///   ``deactivateAudioSessionAsync()``, ``clearAttachedItemBinding()``.
     @MainActor
     func teardownSystemMediaSessionSynchronously() {
         guard !isTesting else { return }
@@ -71,15 +72,5 @@ extension DirectStreamingPlayer {
         playerItem = nil
         clearAttachedItemBinding()
         isSoftPaused = false
-    }
-
-    /// Full async teardown: synchronous player detach plus audio session deactivation.
-    ///
-    /// - SeeAlso: ``SharedPlayerManager/teardownNowPlayingSession()``,
-    ///   ``teardownSystemMediaSessionSynchronously()``, ``deactivateAudioSessionAsync()``.
-    @MainActor
-    func teardownSystemMediaSession() async {
-        teardownSystemMediaSessionSynchronously()
-        _ = await deactivateAudioSessionAsync()
     }
 }

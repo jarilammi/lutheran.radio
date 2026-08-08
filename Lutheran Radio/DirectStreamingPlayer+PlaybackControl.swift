@@ -70,7 +70,7 @@ extension DirectStreamingPlayer {
     /// - Returns: `true` if playback was successfully *initiated* (item replaced + play() called).
     ///            Note: Actual audio may start slightly later when the item becomes readyToPlay.
     /// - Throws: Only critical unrecoverable errors (rare).
-    /// - SeeAlso: ``shouldContinueInFlightAttach(startedAt:)``, ``setStreamAndPlay(to:context:)``,
+    /// - SeeAlso: ``shouldContinueInFlightAttach(startedAt:)``, ``attachAndPlay(to:context:)``,
     ///   ``SharedPlayerManager/canProceedWithPlayback()``.
     @MainActor
     func play() async -> Bool {
@@ -285,11 +285,6 @@ extension DirectStreamingPlayer {
         currentLoadingDelegate = nil
         
         removeAudioSessionObservers()
-        retryWorkItem?.cancel()
-        fallbackWorkItem?.cancel()
-        fallbackWorkItem = nil
-        pendingPlaybackWorkItem?.cancel()
-        pendingPlaybackWorkItem = nil
         
         // Soft silence first, then optional sticky visual lock. Outer `completion` fires only after
         // engine silence so SPM can refresh media surfaces without "paused chrome + audible stream".
