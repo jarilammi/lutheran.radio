@@ -50,7 +50,6 @@ struct CoreTests {
             "siikkari.net"
         ])
         #expect(policy.preferredStreamingDomainSuffix == "siikkari.net")
-        #expect(policy.legacyStreamingDomainSuffix == "siikkari.net")
 
         // TXT security-model hosts: siikkari primary, then established allow-list
         // fallbacks (independent of media apex list construction).

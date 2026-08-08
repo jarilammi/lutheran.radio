@@ -43,7 +43,7 @@ A plain `struct` (value type) that exposes only the minimal public surface requi
 - `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests` (authoritative runtime pins; sole production leaf is live `*.siikkari.net`; siikkari symbol is an alias)
 - `pinnedLeafFingerprint` / `pinnedSiikkariLeafFingerprint` / `pinnedFingerprints` (derived colon-hex)
 - `isInTransitionWindow`
-- `preferredStreamingDomainSuffixes` / `preferredStreamingDomainSuffix` / `legacyStreamingDomainSuffix` (sole media apex: `siikkari.net`)
+- `preferredStreamingDomainSuffixes` / `preferredStreamingDomainSuffix` (sole media apex: `siikkari.net`)
 - `isProtectedStreamingHost(_:)` / `hostRequiresDNSSECValidation(_:)` / `streamingHostCandidates(leadingLabel:)` (DNSSEC host membership + host construction; no hard-coded apexes at call sites)
 - `requiresDNSSECValidationForStreaming` + `makeSecureEphemeralConfiguration()` / `applySecureNetworkingRequirements(to:)` (the single place that turns on `URLSessionConfiguration.requiresDNSSECValidation` and related hardening for streaming hosts)
 - `current` (the canonical instance)

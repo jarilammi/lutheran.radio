@@ -141,18 +141,6 @@ public struct SecurityConfiguration: Sendable {
         preferredStreamingDomainSuffixes[0]
     }
     
-    /// Last entry of ``preferredStreamingDomainSuffixes`` (compatibility alias).
-    ///
-    /// Historically named for dual-apex fallback; with a single media apex this
-    /// equals ``preferredStreamingDomainSuffix``. Prefer the preferred symbol for
-    /// new call sites.
-    ///
-    /// - Returns: Last entry of ``preferredStreamingDomainSuffixes``, or `"siikkari.net"`
-    ///   if the list were ever empty (must not happen in production policy).
-    public var legacyStreamingDomainSuffix: String {
-        preferredStreamingDomainSuffixes.last ?? "siikkari.net"
-    }
-    
     /// Whether `host` is a bare apex or subdomain under any preferred streaming suffix.
     ///
     /// - Parameter host: Hostname (comparison is case-insensitive).
