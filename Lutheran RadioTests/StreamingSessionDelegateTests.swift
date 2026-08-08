@@ -9,11 +9,14 @@ import XCTest
 import AVFoundation
 @testable import Lutheran_Radio
 
-/// Protocol to unify both delegate types for testing
+/// Protocol to unify both delegate types for testing.
+///
+/// Production trust decisions flow through ``CertificateValidator`` (Core), not a
+/// stored hostname on the session delegate. This protocol only shares cancel/session
+/// surface used by the suite helpers.
 protocol SessionDelegateProtocol {
     var session: URLSession? { get set }
     var dataTask: URLSessionDataTask? { get set }
-    var originalHostname: String? { get set }
     func cancel()
 }
 
@@ -118,30 +121,6 @@ final class StreamingSessionDelegateTests: XCTestCase {
         // Then: Should not crash and maintain nil state
         XCTAssertNil(delegate.session, "Session should remain nil after multiple cancels")
         XCTAssertNil(delegate.dataTask, "Data task should remain nil after multiple cancels")
-    }
-    
-    func testOriginalHostnameProperty() {
-        // Use testable delegate
-        let delegate = testableDelegate!
-        
-        // Given: A test hostname
-        let testHostname = "finnish.lutheran.radio"
-        
-        // When: Setting and retrieving hostname
-        delegate.originalHostname = testHostname
-        let retrievedHostname = delegate.originalHostname
-        
-        // Then: Should preserve hostname
-        XCTAssertEqual(retrievedHostname, testHostname, "Should preserve original hostname")
-    }
-    
-    func testOriginalHostnameDefaultsToNil() {
-        // When: Creating new delegate
-        let newMockRequest = MockLoadingRequest()
-        let newDelegate = TestableStreamingSessionDelegate(mockLoadingRequest: newMockRequest)
-        
-        // Then: Original hostname should be nil by default
-        XCTAssertNil(newDelegate.originalHostname, "Original hostname should default to nil")
     }
     
     // MARK: - HTTP Response Handling Tests
@@ -390,10 +369,13 @@ final class StreamingSessionDelegateTests: XCTestCase {
     
     // MARK: - SSL Certificate Validation Tests
     
+    /// Challenge disposition for server-trust auth method.
+    ///
+    /// Production ``StreamingSessionDelegate`` evaluates trust via Core
+    /// ``CertificateValidator`` (async). This suite exercises the testable
+    /// mock's challenge path only; pin acceptance is covered in CoreTests.
     func testServerTrustAuthentication() {
         // Given: Server trust authentication challenge
-        testableDelegate.originalHostname = "test.lutheran.radio"
-        
         let protectionSpace = URLProtectionSpace(
             host: "192.168.1.1",
             port: 443,
@@ -575,6 +557,11 @@ class MockLoadingRequest: LoadingRequestProtocol {
 
 /// Debug version with extensive logging.
 ///
+/// Challenge handling deliberately does **not** reimplement Core leaf-digest
+/// pinning. Production ``StreamingSessionDelegate`` routes server trust through
+/// ``CertificateValidator``; pin acceptance is covered in CoreTests. This mock
+/// only exercises disposition plumbing for non-production challenge paths.
+///
 /// - Important: Test-only delegate; `session` and `dataTask` are mutated only on the
 ///   XCTest main thread during delegate callback simulation.
 // SAFETY: Test-only type; mutable `session`/`dataTask` are confined to the XCTest main thread.
@@ -583,7 +570,6 @@ final class TestableStreamingSessionDelegate: NSObject, URLSessionDataDelegate, 
     var session: URLSession?
     var dataTask: URLSessionDataTask?
     var onError: ((Error) -> Void)?
-    var originalHostname: String?
     
     private var mockLoadingRequest: LoadingRequestProtocol
     var hasReceivedSuccessfulResponse = false  // Make this public for testing
@@ -671,29 +657,13 @@ final class TestableStreamingSessionDelegate: NSObject, URLSessionDataDelegate, 
     }
     
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        // Disposition plumbing only — not a substitute for Core pin evaluation.
         if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
-            guard let serverTrust = challenge.protectionSpace.serverTrust else {
+            guard challenge.protectionSpace.serverTrust != nil else {
                 completionHandler(.cancelAuthenticationChallenge, nil)
                 return
             }
-            
-            // Use the stored original hostname for validation
-            if let originalHost = self.originalHostname {
-                let policy = SecPolicyCreateSSL(true, originalHost as CFString)
-                SecTrustSetPolicies(serverTrust, [policy] as CFArray)
-                
-                var error: CFError?
-                // SAFETY: Test-only mirror of production trust evaluation; `serverTrust` is borrowed from the challenge.
-                if unsafe SecTrustEvaluateWithError(serverTrust, &error) {
-                    let credential = URLCredential(trust: serverTrust)
-                    completionHandler(.useCredential, credential)
-                } else {
-                    completionHandler(.cancelAuthenticationChallenge, nil)
-                }
-            } else {
-                // Fallback to default handling
-                completionHandler(.performDefaultHandling, nil)
-            }
+            completionHandler(.performDefaultHandling, nil)
         } else {
             completionHandler(.performDefaultHandling, nil)
         }

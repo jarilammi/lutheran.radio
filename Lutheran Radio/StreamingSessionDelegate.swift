@@ -44,9 +44,6 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
     /// Optional callback for error handling during the session.
     var onError: ((Error) -> Void)?
     
-    /// The original hostname for SSL validation (used in certificate pinning).
-    var originalHostname: String?
-    
     /// Initializes the delegate with the given loading request.
     ///
     /// - Parameter loadingRequest: The AVAssetResourceLoadingRequest to fulfill.

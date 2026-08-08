@@ -459,7 +459,6 @@ final class WidgetRefreshManager: @unchecked Sendable {
             from: visualState,
             currentLanguage: resolvedLanguage,
             hasError: hasError,
-            isTransitioning: false,
             isImmediateDelivery: immediate
         )
         
@@ -478,7 +477,6 @@ final class WidgetRefreshManager: @unchecked Sendable {
                 from: newState.visualState,
                 currentLanguage: newState.currentLanguage,
                 hasError: newState.hasError,
-                isTransitioning: newState.isTransitioning,
                 isImmediateDelivery: true
             )
             Task { @MainActor in
@@ -1145,7 +1143,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///   - hasError: Permanent-error flag from ``SharedPlayerManager/loadSharedState()``.
     /// - Returns: `true` when the derived refresh must execute immediately.
     /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
-    ///   ``handlePlayerEvent(_:)``, ``SharedPlayerManager/performActualSave(_:widgetState:at:)``,
+    ///   ``handlePlayerEvent(_:)``, ``SharedPlayerManager/performActualSave(_:)``,
     ///   docs/Widget-Functionality-Roadmap.md (Tier 3), docs/Event-Driven-Refactor-Roadmap.md,
     ///   docs/Widget-Presentation-Dataflow.md (home soft-resume refresh authority).
     func refreshUsesImmediateDelivery(
@@ -1217,37 +1215,51 @@ final class WidgetRefreshManager: @unchecked Sendable {
 }
 
 
-// MARK: - WidgetState (lightweight projection of PlayerVisualState)
+// MARK: - WidgetState (in-memory WRM refresh projection)
 
+/// Lightweight in-memory candidate for ``WidgetRefreshManager`` coalesce / debounce / wake policy.
+///
+/// Not an App Group snapshot and not a persist input. ``SharedPlayerManager/saveCurrentState()``
+/// writes via ``performActualSave(_:)`` using actor visual + a play/language/error tuple only.
+/// Playing vs paused and thermal-pause identity are derived from ``visualState`` at decision sites
+/// (`isActivelyPlaying`, case matches) rather than stored as parallel booleans.
+///
+/// - Important: Keep only fields that WRM control flow actually reads. Do not reintroduce
+///   write-only derived fields (`isPlaying`, `isThermalPaused`, wall-clock `timestamp`) or
+///   unused transition flags without a live branch that consumes them.
+/// - SeeAlso: ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
+///   ``WidgetRefreshManager/performRefreshIfNotStale(for:)``,
+///   ``SharedPlayerManager/performActualSave(_:)``,
+///   ``PlayerVisualState``, docs/Widget-Functionality-Roadmap.md
 struct WidgetState {
+    /// Authoritative visual chrome for this refresh candidate.
     let visualState: PlayerVisualState
-    let isPlaying: Bool
+    /// Language code used for coalesce identity and DEBUG labels.
     let currentLanguage: String
+    /// Permanent-error flag for urgency and coalesce identity.
     let hasError: Bool
-    let isTransitioning: Bool
-    let isThermalPaused: Bool
-    let timestamp: Date
-    /// Whether this candidate bypassed adaptive debounce (sticky pause, teardown, error).
-    /// Carried into ``performRefreshIfNotStale`` so regress policy can distinguish forward
-    /// sticky pause from a late debounced pause that lost the soft-resume race.
+    /// Whether this candidate bypassed adaptive debounce (sticky pause, teardown, error, language urgency).
+    /// Carried into ``WidgetRefreshManager/performRefreshIfNotStale(for:)`` so regress policy can
+    /// distinguish forward sticky pause from a late debounced pause that lost the soft-resume race.
     let isImmediateDelivery: Bool
-    
-    /// Modern initializer — this is the only path now
+
+    /// Builds a WRM-only projection from refresh derivation inputs.
+    ///
+    /// - Parameters:
+    ///   - visualState: Candidate ``PlayerVisualState``.
+    ///   - currentLanguage: Resolved language for identity / labels.
+    ///   - hasError: Permanent-error flag.
+    ///   - isImmediateDelivery: When `true`, sticky/error/language-urgent delivery (default `false`).
     init(from visualState: PlayerVisualState,
          currentLanguage: String,
          hasError: Bool,
-         isTransitioning: Bool = false,
          isImmediateDelivery: Bool = false) {
-        self.visualState     = visualState
-        self.isPlaying       = visualState.isActivelyPlaying
+        self.visualState = visualState
         self.currentLanguage = currentLanguage
-        self.hasError        = hasError
-        self.isTransitioning = isTransitioning
-        self.isThermalPaused = (visualState == .thermalPaused)
-        self.timestamp       = Date()
+        self.hasError = hasError
         self.isImmediateDelivery = isImmediateDelivery
     }
-    
+
     #if DEBUG
     var debugVisualStateLabel: String {
         switch visualState {

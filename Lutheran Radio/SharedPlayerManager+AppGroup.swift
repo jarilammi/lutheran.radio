@@ -382,7 +382,7 @@ extension SharedPlayerManager {
     ///   (visualState, currentLanguage, hasError, metadata). Widget timeline reload is scheduled
     ///   by the Tier 2 ``PlayerEvent`` observer (``.persistedWidgetStateDidUpdate`` and related cases).
     ///
-    /// - SeeAlso: ``PersistedLanguageResolution``, ``performActualSave(_:widgetState:at:)``,
+    /// - SeeAlso: ``PersistedLanguageResolution``, ``performActualSave(_:)``,
     ///   ``preferredWidgetLanguage()``, ``streamSwitchConnectingLanguageCode``,
     ///   ``liveActivityLanguageCodeForContentPush()``,
     ///   ``saveCombinedWidgetState(language:)``,
@@ -397,8 +397,6 @@ extension SharedPlayerManager {
         guard !isRunningInWidget() else { return }
         
         let player = DirectStreamingPlayer.shared
-        
-        let now = Date()
 
         // Suspend before language resolve so concurrent destination snapshot writes are visible.
         // Source the legacy "playing" bool from the authoritative visual state (SSOT),
@@ -427,21 +425,15 @@ extension SharedPlayerManager {
             connectingLanguageCode: streamSwitchConnectingLanguageCode
         )
 
-        // WidgetState is a computed view of PlayerVisualState (SSOT).
-        let widgetState = WidgetState(
-            from: currentVisualState,
-            currentLanguage: currentLanguageCode,
-            hasError: hasPermanentError || isPermanentError,
-            isTransitioning: false
-        )
-        
+        // Persist path compares the tuple + actor `currentVisualState` / metadata only.
+        // In-memory ``WidgetState`` is a WidgetRefreshManager projection and is not built here.
         let currentState = (
             isPlaying: isPlaying,
             currentLanguage: currentLanguageCode,
             hasError: hasPermanentError || isPermanentError
         )
         
-        performActualSave(currentState, widgetState: widgetState, at: now)
+        performActualSave(currentState)
     }
     
     nonisolated func saveFireAndForget() {
@@ -466,7 +458,7 @@ extension SharedPlayerManager {
     ///   - metadataUnchanged: `true` when stream program metadata matches.
     ///   - hasError: Candidate permanent-error flag (never skip error repairs).
     /// - Returns: `true` when the persist must no-op (liveness-only).
-    /// - SeeAlso: ``performActualSave(_:widgetState:at:)``,
+    /// - SeeAlso: ``performActualSave(_:)``,
     ///   ``DirectStreamingPlayer/shouldSkipForceWidgetSaveOnStableStatus(isPlaying:reasonKey:visual:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     nonisolated static func shouldSkipIdenticalStickyConnectingSnapshotWrite(
@@ -488,9 +480,25 @@ extension SharedPlayerManager {
         }
     }
 
-    internal func performActualSave(_ state: (isPlaying: Bool, currentLanguage: String, hasError: Bool),
-                                   widgetState: WidgetState,
-                                   at _: Date) {
+    /// Authoritative privacy-gated App Group snapshot write for the main-app persist path.
+    ///
+    /// Uses the caller-provided `(isPlaying, currentLanguage, hasError)` tuple together with
+    /// actor-isolated ``currentVisualState`` and ``currentStreamMetadata``. Does not accept an
+    /// in-memory ``WidgetState`` projection — that type is owned by ``WidgetRefreshManager`` for
+    /// coalesce / debounce bookkeeping only.
+    ///
+    /// - Parameters:
+    ///   - state: Candidate play/language/error flags resolved by ``saveCurrentState()``.
+    /// - Precondition: Caller must already be on the main-app process path (`saveCurrentState`
+    ///   returns early in the extension).
+    /// - Postcondition: When the privacy gate is open and the candidate is not an identical
+    ///   sticky Connecting no-op / non-urgent unchanged snapshot, ``savePersistedWidgetState``
+    ///   runs and liveness is stamped immediately; otherwise only a liveness bump may occur.
+    /// - SeeAlso: ``saveCurrentState()``, ``shouldSkipIdenticalStickyConnectingSnapshotWrite``,
+    ///   ``WidgetRefreshManager``, ``bumpWidgetLivenessTimestamp(policy:minInterval:)``,
+    ///   the App Group table in `SharedPlayerManager.swift`,
+    ///   docs/Widget-Functionality-Roadmap.md
+    internal func performActualSave(_ state: (isPlaying: Bool, currentLanguage: String, hasError: Bool)) {
         // Privacy gate: when !hasActiveWidgets we suppress all the legacy + snapshot writes
         // (savePersisted is also guarded, but we avoid the work and the downstream refreshIfNeeded scheduling).
         guard Self.hasActiveWidgets else {

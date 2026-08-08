@@ -79,11 +79,13 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
             return false  // Let the system handle non-protected hosts
         }
         
-        // Store the original hostname for SSL validation
-        let originalHostname = host
+        // Server-trust acceptance is sole-source in Core ``CertificateValidator``
+        // (full DER leaf digest + transition window); the session delegate never
+        // needs a stored hostname for pinning. Host membership was already gated
+        // above via ``SecurityConfiguration/hostRequiresDNSSECValidation(_:)``.
         #if DEBUG
         print("[DirectStreamingPlayer] [Resource Loader] Handling protected streaming HTTPS URL: \(url)")
-        print("[DirectStreamingPlayer] [Resource Loader] Original hostname for SSL: \(originalHostname)")
+        print("[DirectStreamingPlayer] [Resource Loader] Protected host: \(host)")
         #endif
         
         // Create clean request with the HTTPS URL (no conversion needed)
@@ -97,12 +99,11 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         print("[DirectStreamingPlayer] [Resource Loader] Final request headers: \(modifiedRequest.allHTTPHeaderFields ?? [:])")
         #endif
         
-        // Create streaming delegate
+        // Create streaming delegate (trust challenges → CertificateValidator.shared)
         let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
-        streamingDelegate.originalHostname = originalHostname
         
         #if DEBUG
-        print("[DirectStreamingPlayer] [Resource Loader] StreamingSessionDelegate created for hostname: \(originalHostname)")
+        print("[DirectStreamingPlayer] [Resource Loader] StreamingSessionDelegate created for host: \(host)")
         #endif
         
         // Enhanced configuration for SSL pinning + DNSSEC-protected name resolution.

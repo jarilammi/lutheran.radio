@@ -827,9 +827,10 @@ struct WidgetSurfaceTests {
 
     // MARK: - Liveness presentation
 
-    @Test func livenessBranchesAreInverses() {
-        #expect(WidgetLivenessPresentation.shouldShowInteractiveChrome(isMainAppRecentlyActive: true))
+    /// Passive `tap_to_open` is the inverse of recent activity; window stays at 60 s.
+    @Test func livenessPassiveBranchAndWindow() {
         #expect(WidgetLivenessPresentation.shouldShowPassiveTapToOpen(isMainAppRecentlyActive: false))
+        #expect(!WidgetLivenessPresentation.shouldShowPassiveTapToOpen(isMainAppRecentlyActive: true))
         #expect(WidgetLivenessPresentation.mainAppRecentActivityWindowSeconds == 60)
     }
 

@@ -1658,7 +1658,7 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
     ///
     /// Language change and visual transition to ``.playing`` still emit.
     ///
-    /// - SeeAlso: ``SharedPlayerManager/performActualSave(_:widgetState:at:)``,
+    /// - SeeAlso: ``SharedPlayerManager/performActualSave(_:)``,
     ///   ``SharedPlayerManager/shouldSkipIdenticalStickyConnectingSnapshotWrite(currentVisual:previousVisual:languageUnchanged:errorUnchanged:metadataUnchanged:hasError:)``
     func testSaveCurrentStateSkipsIdenticalStickyConnectingPersist() async {
         let manager = self.manager
