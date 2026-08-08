@@ -353,14 +353,14 @@ extension WidgetRefreshManager {
 
     /// Prevents ``beginObservingPlayerEvents()`` from starting while enabled.
     ///
-    /// Replay live-forwarding in ``SharedPlayerManager/makeEventsStreamWithReplay()``
-    /// requires the shared ``events`` iterator. ``AsyncStream`` admits one consumer;
-    /// tests that drive ``PlayerEventSubscriber`` enable this gate and call
-    /// ``_test_suspendPlayerEventObservation()`` to release any observer started
-    /// before the flag was set.
+    /// Isolates the shared ``SharedPlayerManager/events`` primary iterator and multi-cast
+    /// replay attach sites during XCTest. ``AsyncStream`` admits one primary consumer;
+    /// suites enable this gate and call ``_test_suspendPlayerEventObservation()`` to
+    /// release any observer started before the flag was set.
     ///
     /// - Parameter suppress: Whether Tier 2 live observation must remain idle.
-    /// - SeeAlso: ``_test_suspendPlayerEventObservation()``, ``PlayerEventSubscriberEventTests``,
+    /// - SeeAlso: ``_test_suspendPlayerEventObservation()``,
+    ///   ``SharedPlayerManagerEventTests``, ``WidgetRefreshManagerEventTests``,
     ///   CODING_AGENT.md (fast test patterns).
     @MainActor
     static func _test_setSuppressPlayerEventObservation(_ suppress: Bool) {
@@ -370,9 +370,11 @@ extension WidgetRefreshManager {
     /// Cancels the active Tier 2 ``PlayerEvent`` observation task, if any.
     ///
     /// Idempotent. Used with ``_test_setSuppressPlayerEventObservation(true)`` so
-    /// replay-forwarding tests can consume live emissions without WidgetCenter work.
+    /// emitter / chrome / intent suites can consume live or multi-cast emissions
+    /// without WidgetCenter work from this observer.
     ///
-    /// - SeeAlso: ``beginObservingPlayerEvents()``, ``PlayerEventSubscriberEventTests``.
+    /// - SeeAlso: ``beginObservingPlayerEvents()``, ``SharedPlayerManagerEventTests``,
+    ///   ``WidgetRefreshManagerEventTests``.
     @MainActor
     func _test_suspendPlayerEventObservation() {
         playerEventObserver.cancel()

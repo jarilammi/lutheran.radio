@@ -348,7 +348,7 @@ Do **not** re-solve main-app grey residual by inventing `.playing` before the en
 
 - [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md) — presentation surfaces, LA event-driven model, termination invariant, **main-app chrome authority** (SSOT visual paint + demoted status adapter; soft-resume hold contract)
 - [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) — Tier 4 completion status
-- [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) — `PlayerEvent` consumers (``WidgetRefreshManager``, main-app chrome observation, ``PlayerEventSubscriber``)
+- [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) — `PlayerEvent` consumers (``WidgetRefreshManager``, main-app chrome observation)
 - `Lutheran RadioTests/RadioLiveActivityManagerTests.swift` — LA diff suppression
 - `Lutheran RadioTests/SharedPlayerManagerMediaSurfaceTests.swift` — `refreshAllMediaSurfaces` contract; Now Playing rate/`playbackState` alignment; unsupported remote-command disable; media-transport mailbox (double-toggle, pause preemption, LA + remote interleave)
 - `Lutheran RadioTests/SharedPlayerManagerMediaTransportLatencyTests.swift` — DEBUG ``MediaTransportLatencyTimeline`` pause + LA toggle chains

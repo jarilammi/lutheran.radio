@@ -924,7 +924,7 @@ actor SharedPlayerManager {
     /// - Returns: A stream whose first elements represent the state at the time
     ///   the stream was created, followed by live events.
     /// - SeeAlso: ``events``, ``currentState``, `PlayerCurrentState`, `PlayerEvent`,
-    ///   `WidgetEventObserver`, `PlayerEventSubscriber`,
+    ///   `WidgetEventObserver`,
     ///   ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``,
     ///   `PlayerCurrentState.isInPermanentError`,
     ///   `PlayerCurrentState.isBlockedByStickyIntent`,
@@ -940,7 +940,8 @@ actor SharedPlayerManager {
     /// Production consumers cancel their own observation task; stream termination
     /// removes that consumer's multi-cast entry without finishing siblings.
     ///
-    /// - SeeAlso: ``makeEventsStreamWithReplay()``, ``events``, ``PlayerEventSubscriber``.
+    /// - SeeAlso: ``makeEventsStreamWithReplay()``, ``events``,
+    ///   ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``.
     func cancelReplayForwarding() {
         for task in replayForwardingTasks.values {
             task.cancel()
@@ -970,7 +971,7 @@ actor SharedPlayerManager {
         continuation.yield(.persistedWidgetStateDidUpdate)
 
         // Independent multi-cast live feed — does not take the primary ``events`` iterator.
-        // Multiple replay consumers (main chrome, PlayerEventSubscriber, tests) may attach
+        // Multiple replay consumers (main-app chrome observation, tests) may attach
         // concurrently; each registers its own continuation and forwarding task.
         let subscriptionID = UUID()
         let (liveFeed, liveContinuation) = AsyncStream.makeStream(of: PlayerEvent.self)
@@ -1373,11 +1374,11 @@ actor SharedPlayerManager {
     /// Used to bypass privacy write gates for optimistic updates originating from
     /// App Intents (proof that a Lutheran widget is present and was just interacted with)
     /// and to suppress main-app-only ``PlayerEvent`` observation in
-    /// ``PlayerEventSubscriber/beginObserving()`` and
-    /// ``WidgetRefreshManager/beginObservingPlayerEvents()``.
+    /// ``WidgetRefreshManager/beginObservingPlayerEvents()`` and
+    /// ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``.
     ///
     /// - SeeAlso: ``isRunningInWidget()``, ``emit(_:)``,
-    ///   ``_test_setSimulateWidgetProcessContext(_:)`` (DEBUG), ``PlayerEventSubscriber``,
+    ///   ``_test_setSimulateWidgetProcessContext(_:)`` (DEBUG),
     ///   docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func isWidgetProcess() -> Bool {
         #if LUTHERAN_MAIN_APP

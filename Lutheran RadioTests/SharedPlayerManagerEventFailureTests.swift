@@ -60,7 +60,7 @@ final class SharedPlayerManagerEventFailureTests: XCTestCase {
     /// - The classified `streamDidFail` verb follows the visual mutation and precedes
     ///   the persisted snapshot signal when the privacy gate allows the write path.
     ///
-    /// Consumers (`PlayerEventSubscriber`, `WidgetRefreshManager`) rely on this ordering
+    /// Consumers (`WidgetRefreshManager`, main-app chrome observation) rely on this ordering
     /// and on the absence of `playbackIntentChanged` during failure recovery paths.
     ///
     /// Collection uses the DEBUG notification seam (same rationale as the `stop()` order
@@ -378,7 +378,7 @@ final class SharedPlayerManagerEventFailureTests: XCTestCase {
     ///
     /// Stream failure is visually identical to explicit pause (`.userPaused`) but
     /// **must not** flip `playbackIntent` to sticky `.userPaused`. Late subscribers
-    /// (`PlayerEventSubscriber`, `WidgetEventObserver`) initialize from the replay
+    /// (`WidgetEventObserver`, main-app chrome observation) initialize from the replay
     /// prefix — not from historical `streamDidFail` verbs — so the synthesized
     /// `.playbackIntentChanged` value is the contract that distinguishes auto-resume
     /// failure UI from sticky user pause.
@@ -510,7 +510,7 @@ final class SharedPlayerManagerEventFailureTests: XCTestCase {
     /// ``setUserPaused()`` moves intent to sticky `.userPaused` (`isBlockedByStickyIntent`
     /// is true). ``markPlaybackStoppedByStreamFailure(_:)`` preserves `.shouldBePlaying`
     /// so auto-resume paths can recover without an extra play tap (`isBlockedByStickyIntent`
-    /// is false). Consumers (`PlayerEventSubscriber`, `WidgetRefreshManager`) initialize
+    /// is false). Consumers (`WidgetRefreshManager`, main-app chrome observation) initialize
     /// from the replay prefix — not from historical `streamDidPause` / `streamDidFail`
     /// verbs — so the synthesized `.playbackIntentChanged` value is the contract that
     /// separates sticky pause from recoverable failure UI.
@@ -626,7 +626,7 @@ final class SharedPlayerManagerEventFailureTests: XCTestCase {
     ///
     /// Tier 3 replay deliberately omits stream transition verbs; terminal error
     /// conditions are expressed through snapshot fields (especially `hasError`).
-    /// Consumers (`PlayerEventSubscriber`, `WidgetRefreshManager`) must combine
+    /// Consumers (`WidgetRefreshManager`, main-app chrome observation) must combine
     /// the four-event replay prefix with `currentState` (or
     /// `PlayerCurrentState.isInPermanentError`) to distinguish permanent failure
     /// chrome from recoverable grey pause UI.

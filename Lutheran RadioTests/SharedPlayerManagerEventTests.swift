@@ -393,7 +393,8 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     ///    emit `streamDidPause`. Assertions use ordered subsequence matching, not a fixed
     ///    total event count.
     ///
-    /// The replay stream is the surface consumed by `PlayerEventSubscriber` and
+    /// The replay stream is the surface consumed by main-app chrome observation
+    /// (``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``) and
     /// `WidgetEventObserver`-based helpers; consumers depend on prefix-then-live ordering.
     ///
     /// **Why hybrid collection**: Prefix assertions use the replay stream (buffered, reliable).
@@ -403,7 +404,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     ///
     /// - SeeAlso: ``SharedPlayerManager/makeEventsStreamWithReplay()``, ``SharedPlayerManager/stop()``,
     ///   ``SharedPlayerManager/currentState``, ``PlayerCurrentState``, ``emit(_:)``,
-    ///   `PlayerEventSubscriber`, `WidgetEventObserver`,
+    ///   `WidgetEventObserver`, ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``,
     ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 3 replay + Tier 5 emission order),
     ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
     func testReplayStreamPrefixesStateThenForwardsLiveStopEmissionsInOrder() async {

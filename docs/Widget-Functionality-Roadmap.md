@@ -109,7 +109,7 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 
 ### Documentation & Tests (Widget-Adjacent, Complete)
 
-- **Event-driven consumer tests:** `WidgetRefreshManagerEventTests.swift` (20), `WidgetEventObserverTests.swift` (6), `RadioLiveActivityManagerTests.swift` attribute-events subset (6), widget-process guards in `SharedPlayerManagerEventTests.swift` / `PlayerEventSubscriberEventTests.swift`.
+- **Event-driven consumer tests:** `WidgetRefreshManagerEventTests.swift` (20), `WidgetEventObserverTests.swift` (6), `RadioLiveActivityManagerTests.swift` attribute-events subset (6), widget-process guards in `SharedPlayerManagerEventTests.swift`.
 - **Presentation mapper matrices (2026-07-14):** `PlayerPresentationMapperTests.swift` (9) — `makeStatusPresentation()` and `makeControlPresentation()` for all six `PlayerVisualState` cases; complements `WidgetDisplayModelsTests.swift` metadata resolver coverage.
 - **Snapshot / lifecycle tests:** cold-launch factory reset, liveness sentinel, session teardown, post-stop hygiene, Now Playing metadata clear.
 - **Now Playing metadata alignment (2026-06-25/26):** `updateNowPlayingInfo()` delegates to `StreamProgramMetadata.nowPlayingDisplayStrings(...)`; language-switch metadata clear triggers immediate Now Playing refresh. Same formatter family as widget/LA title resolution.

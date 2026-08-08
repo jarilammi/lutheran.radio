@@ -17,25 +17,21 @@
 //  - Production paint authority for visual transitions lives on
 //    ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()`` (multi-cast
 //    `visualStateDidChange` → `updateUI`). Status path is race lead + errors only.
-//  - `PlayerEventSubscriber` remains available as a testable observation helper type in this
-//    file (UI-only counters / intent observation). Production `RadioPlayerView` does not
-//    attach a second paint path from events (non-forcing: one chrome owner).
+//  - This view does not observe `PlayerEvent` directly. Widget timeline reloads use
+//    `WidgetRefreshManager`; in-app chrome uses coordinator SSOT observation (non-forcing:
+//    one chrome owner).
 //
 //  Key invariants (UI layer only):
 //  - No security, certificate, DNS, or Core/ logic lives here or is called from here.
-//  - The subscriber is strictly additive and non-forcing; existing state bindings and
-//    visual derivation in PlayerViewModel continue to drive all rendering.
-//  - Observation lifetime is tied to the view via `.task` / `.onDisappear` (no leaks,
-//    auto-cancel on disappearance).
-//  - Value-type driven updates preferred: @State + onChange(of: subscriber.prop) +
-//    local @State for any animation/refresh coordination.
+//  - Rendering is driven by `@Bindable PlayerViewModel` and coordinator-wired closures only.
 //
-//  - SeeAlso: `PlayerEventSubscriber` (testable observation helper co-located in this file),
-//    `PlayerViewModel`, `ViewController`, `SharedPlayerManager` (``events``, ``PlayerEvent``),
-//    `WidgetEventObserver`, `PlaybackControlsView`, `LanguageSelectorView`, `NowPlayingMetadataView`,
+//  - SeeAlso: `PlayerViewModel`, `ViewController`, `RadioPlayerCoordinator`,
+//    `SharedPlayerManager` (``events``, ``PlayerEvent``),
+//    `PlaybackControlsView`, `LanguageSelectorView`, `NowPlayingMetadataView`,
 //    CODING_AGENT.md (Documentation & Comment Standards, Single Source of Truth Principles,
 //    Defensive Swift Practices, event-driven direction),
 //    docs/Event-Driven-Refactor-Roadmap.md,
+//    docs/Widget-Presentation-Dataflow.md (main-app chrome authority),
 //    <doc:Architecture>.
 //
 //  Created by Jari Lammi on 19.6.2026.
@@ -45,9 +41,7 @@ import SwiftUI
 import AVKit
 import MediaPlayer
 import UIKit
-import Observation
 import WidgetSurface
-// Observation provides @Observable for the lightweight subscriber helper below.
 // Swift 6 strict concurrency + SWIFT_STRICT_MEMORY_SAFETY = YES are inherited from target settings.
 
 /// The main player interface built in SwiftUI.
@@ -96,217 +90,6 @@ import WidgetSurface
 ///   `RadioPlayerCoordinator`, `BackgroundImageController`,
 ///   `RadioPlayerCoordinator.confirmAndClearLocalState()`, CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files),
 ///   <doc:Architecture>.
-// MARK: - PlayerEventSubscriber (lightweight UI-layer observer)
-
-/// Lightweight subscriber / observer for `PlayerEvent` values emitted by the shared player layer.
-///
-/// Placed in the main app UI layer (inside the primary player hosting view `RadioPlayerView`).
-/// Its sole responsibility is to react to `playbackIntentChanged` and other key domain events
-/// (stream transitions, metadata, visual state, persisted state) and drive **UI-only** side effects
-/// such as updating local `@State` values that can feed animations, subtree refreshes, or
-/// additional coordination with WidgetKit / Live Activities — without ever mutating player state,
-/// intents, or Core surfaces.
-///
-/// The subscriber consumes the replaying stream (`makeEventsStreamWithReplay`) so that
-/// late appearance of the player UI receives the current state as initial events
-/// before live updates.
-///
-/// Design choices (per requirements):
-/// - Modern Observation: `@Observable` + `@State` ownership in the hosting `View`.
-/// - Value-type driven: changes flow through published value properties; consumers use
-///   `.onChange(of: ...)` rather than imperative callbacks where possible.
-/// - Additive only: the primary `@Bindable viewModel` and all existing direct bindings in
-///   `PlaybackControlsView`, `LanguageSelectorView`, `NowPlayingMetadataView` etc. are
-///   left 100% untouched.
-/// - Reuses the established `WidgetEventObserver` internally for cancellable task management
-///   and weak-self safe main-actor delivery (no duplicated observation boilerplate).
-/// - Lifetime: started from a `.task` modifier in `RadioPlayerView.body`; cancelled on
-///   disappear. The view's `@State` preserves the instance across SwiftUI updates.
-///
-/// Why a dedicated helper in the UI layer (not inside `PlayerViewModel` or coordinator):
-/// `RadioPlayerView` is the composition root for the visible player chrome. Keeping a
-/// narrow event subscriber here allows future local animation state or view-refresh
-/// triggers to live close to the rendering site while the VM/coordinator retain their
-/// existing responsibilities for authoritative visual + action wiring.
-///
-/// Actor isolation / Sendable:
-/// - The whole type is `@MainActor`.
-/// - `PlayerEvent` and `PlaybackIntent` are `Sendable`.
-/// - The observation Task hops to main actor for all handler delivery.
-/// - No `@unchecked Sendable`, no `nonisolated(unsafe)`, no force-unwraps.
-///
-/// Security Invariant:
-/// This type and all call sites live exclusively in the Lutheran Radio (main app) target
-/// UI layer. It performs zero certificate validation, DNS lookups, security model checks,
-/// or credential handling. All such logic is isolated inside `Core/`. See
-/// CODING_AGENT.md "Core Framework Surface Area".
-///
-/// - SeeAlso: ``beginObserving()``, ``handle(_:)``,
-///   `SharedPlayerManager.makeEventsStreamWithReplay()`, `SharedPlayerManager.events`,
-///   `SharedPlayerManager.currentState`, `PlayerCurrentState`,
-///   `PlayerCurrentState.isActivelyPlaying`,
-///   `PlayerCurrentState.isBlockedByStickyIntent`,
-///   `PlayerCurrentState.isInPermanentError`,
-///   ``PlayerEvent``, `PlaybackIntent`, `WidgetEventObserver`,
-///   `RadioPlayerView`, `PlayerViewModel`,
-///   docs/Event-Driven-Refactor-Roadmap.md,
-///   `PlayerEventSubscriberEventTests` (consumer replay + observable-state contract),
-///   CODING_AGENT.md (event-driven direction, Documentation & Comment Standards,
-///   narrow inputs, Single Source of Truth),
-///   <doc:Architecture>.
-@MainActor
-@Observable
-final class PlayerEventSubscriber {
-
-    // MARK: - Observable state (value-type driven updates)
-
-    /// The most recent `PlaybackIntent` delivered via a `.playbackIntentChanged` event.
-    ///
-    /// Updated only on that specific case (other events only bump the count).
-    /// Consumers in `RadioPlayerView` read this via `.onChange(of: ...)` to drive
-    /// intent-specific UI-only reactions (e.g. animation phase, local derived state).
-    ///
-    /// - Note: Initial value is a safe default; the real value is seeded from
-    ///   `currentPlaybackIntent` on `beginObserving` and then kept in sync by events.
-    /// - SeeAlso: `playbackIntentChanged(PlaybackIntent)`, SharedPlayerManager.`currentPlaybackIntent`.
-    private(set) var lastObservedIntent: PlaybackIntent = .shouldBePlaying
-
-    /// Monotonic counter incremented on every observed `PlayerEvent`.
-    ///
-    /// Provides a simple value that changes for *any* key player-domain transition
-    /// (intent, stream start/pause/stop/fail, metadata, visual, persisted state).
-    /// Ideal attachment point for `.onChange` that wants to react to "something
-    /// important happened in the player" for UI refresh or animation coordination
-    /// without caring about the specific payload.
-    ///
-    /// - Complexity: O(1) per event.
-    /// - Postcondition: Increments exactly once per delivered event (after begin).
-    private(set) var eventCount: Int = 0
-
-    // MARK: - Observation machinery (reuses established helper)
-
-    /// Internal consolidated observer that owns the cancellable `Task`.
-    ///
-    /// Delegates the actual `for await` loop and main-actor handoff to
-    /// `WidgetEventObserver`. The task reference is not exposed from this type
-    /// (UI views do not need the white-box seam that the widget managers require).
-    private let eventObserver = WidgetEventObserver<PlayerEvent>()
-
-    /// Creates a new subscriber. Observation does not begin until `beginObserving()`
-    /// is called from the owning view's `.task` modifier.
-    init() {}
-
-    // MARK: - Public API
-
-    /// Begins (or restarts) observation of `SharedPlayerManager.events`.
-    ///
-    /// Any prior observation is cancelled first. Seeds `lastObservedIntent` from the
-    /// actor's current value (non-blocking for late subscribers) then consumes the
-    /// stream, delivering every element to ``handle(_:)``.
-    ///
-    /// Must be called from a `@MainActor` async context (e.g. SwiftUI `.task`).
-    /// Safe to call multiple times; idempotent with respect to prior cancellation.
-    ///
-    /// - Postcondition: The subscriber is actively consuming events emitted after
-    ///   this call. `eventCount` and `lastObservedIntent` will be updated on the
-    ///   main actor as events arrive. Because the replaying stream is used, the
-    ///   subscriber also receives synthetic events representing the state present
-    ///   at the moment observation began.
-    /// - Important: This is additive. Starting observation has no effect on the
-    ///   emitter, on other subscribers (WidgetRefreshManager, etc.), or on any
-    ///   imperative playback paths.
-    /// - Precondition: Returns immediately without seeding observable state or attaching
-    ///   a replay stream when ``SharedPlayerManager/isWidgetProcess()`` is `true`. Widget
-    ///   extension processes cannot observe authoritative ``PlayerEvent`` emissions.
-    /// - SeeAlso: `WidgetEventObserver.beginObserving(_:onElement:onTermination:)`,
-    ///   `SharedPlayerManager.makeEventsStreamWithReplay()`, `SharedPlayerManager.events`,
-    ///   `SharedPlayerManager.currentState`, ``SharedPlayerManager/isWidgetProcess()``,
-    ///   ``PlayerEventSubscriberEventTests``.
-    func beginObserving() async {
-        eventObserver.cancel()
-
-        guard !SharedPlayerManager.isWidgetProcess() else { return }
-
-        // The replaying stream supplies current state as the initial events.
-        // An additional direct seed of intent provides an observable value
-        // immediately even before the first replay event is delivered.
-        lastObservedIntent = await SharedPlayerManager.shared.currentPlaybackIntent
-
-        let stream = await SharedPlayerManager.shared.makeEventsStreamWithReplay()
-        eventObserver.beginObserving(stream) { [weak self] event in
-            await self?.handle(event)
-        }
-    }
-
-    /// Cancels active observation and releases the underlying task.
-    ///
-    /// Idempotent. Called from `.onDisappear` in `RadioPlayerView` and from
-    /// `beginObserving` before restart. When the owning view is removed from the
-    /// hierarchy the `.task` modifier also cancels its context, providing
-    /// belt-and-suspenders cleanup.
-    ///
-    /// - Postcondition: No further events will be processed by this subscriber
-    ///   instance until the next `beginObserving`. Cancelling this consumer finishes
-    ///   only its multi-cast replay subscription; sibling consumers (main-app chrome
-    ///   observation, other tests) keep receiving live emissions.
-    /// - SeeAlso: ``SharedPlayerManager/makeEventsStreamWithReplay()``,
-    ///   ``SharedPlayerManager/cancelReplayForwarding()`` (bulk test isolation only).
-    func cancel() {
-        // Cancel the local for-await only. Multi-cast replay teardown is per-stream
-        // via AsyncStream onTermination — do not call bulk ``cancelReplayForwarding()``
-        // (that would tear down main-app chrome observation and sibling consumers).
-        eventObserver.cancel()
-    }
-
-    #if DEBUG
-    /// Applies a ``PlayerEvent`` through the production ``handle(_:)`` path for white-box tests.
-    ///
-    /// Exercises ``eventCount`` and ``lastObservedIntent`` update rules without requiring a
-    /// second ``AsyncStream`` iterator on the shared live ``events`` source.
-    ///
-    /// - Parameter event: Domain event to deliver.
-    /// - SeeAlso: ``handle(_:)``, ``PlayerEventSubscriberEventTests``.
-    func _test_applyPlayerEvent(_ event: PlayerEvent) async {
-        await handle(event)
-    }
-    #endif
-
-    // MARK: - Internal event handling (UI side effects only)
-
-    /// Reacts to a single `PlayerEvent`.
-    ///
-    /// Updates the observable properties (`lastObservedIntent` and/or `eventCount`).
-    /// All work here stays inside UI-only reactions; no calls are made into
-    /// `SharedPlayerManager` mutating APIs, `DirectStreamingPlayer`, or Core.
-    ///
-    /// - Parameter event: The domain event yielded by the authoritative emitter.
-    /// - Important: This method (and its callers) must never be used to bypass
-    ///   the single sources of truth or to perform player control decisions.
-    private func handle(_ event: PlayerEvent) async {
-        switch event {
-        case .playbackIntentChanged(let intent):
-            lastObservedIntent = intent
-            eventCount += 1
-
-        case .streamDidStart, .streamDidPause, .streamDidStop,
-             .streamDidFail, .metadataDidUpdate:
-            // Stream verbs and metadata carry no `PlaybackIntent`; only bump the counter.
-            eventCount += 1
-
-        case .visualStateDidChange, .persistedWidgetStateDidUpdate:
-            // Visual and persisted-snapshot signals drive generic UI refresh sites via
-            // `.onChange(of: eventCount)` without overwriting `lastObservedIntent`.
-            eventCount += 1
-
-        @unknown default:
-            // `PlayerEvent` is a `@frozen public` type in `WidgetSurface`; future SDK-linked
-            // cases must not trap the subscriber if the framework gains additive events.
-            eventCount += 1
-        }
-    }
-}
-
-// End of PlayerEventSubscriber
 
 struct RadioPlayerView: View {
     @Bindable var viewModel: PlayerViewModel
@@ -400,12 +183,12 @@ struct RadioPlayerView: View {
             }
         }
         .background(Color.clear)
-        // Player chrome is driven solely by `viewModel` (and coordinator-wired
-        // closures). `PlayerEventSubscriber` is retained as a testable type in this
-        // file for event-observation contracts; production does not attach a second
-        // presentation path or empty `.onChange` no-ops here.
-        // SeeAlso: `PlayerEventSubscriber`, docs/Event-Driven-Refactor-Roadmap.md,
-        // CODING_AGENT.md (non-forcing events; Single Source of Truth for UI chrome).
+        // Player chrome is driven solely by `viewModel` and coordinator-wired closures
+        // (``RadioPlayerCoordinator/beginObservingVisualStateForChrome()`` for durable
+        // visual paint). This view does not attach a second PlayerEvent presentation path.
+        // SeeAlso: docs/Widget-Presentation-Dataflow.md (main-app chrome authority),
+        // docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md (non-forcing events;
+        // Single Source of Truth for UI chrome).
     }
 }
 

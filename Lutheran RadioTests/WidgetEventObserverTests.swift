@@ -26,7 +26,7 @@ import WidgetSurface
 /// - SeeAlso: ``WidgetEventObserver/beginObserving(_:onElement:onTermination:)``,
 ///   ``WidgetEventObserver/beginObserving(unsafeSequence:onElement:onTermination:)``,
 ///   ``WidgetEventObserver/cancel()``, ``WidgetEventObserver/task``,
-///   ``WidgetRefreshManagerEventTests``, ``PlayerEventSubscriberEventTests``,
+///   ``WidgetRefreshManagerEventTests``,
 ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 polish / Tier 5),
 ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
 @MainActor

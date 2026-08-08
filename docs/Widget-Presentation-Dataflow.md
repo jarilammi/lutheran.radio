@@ -312,7 +312,7 @@ Home widgets and Live Activities derive chrome from snapshots / ContentState. Th
 | **Visual SSOT (primary)** | Durable paint after SPM mutations (`setPlaying`, pause, stop, policy) | ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()`` multi-cast-observes ``makeEventsStreamWithReplay()`` and applies ``updateUI(for:)`` on ``PlayerEvent/visualStateDidChange`` — **no** second engine status emission required |
 | **Status adapter (demoted)** | Error / unavailable / SSL / no-internet side effects + optional **one-frame race lead** when the engine reports audible before the actor visual is visible | ``handleStatusChange(_:reasonKey:)`` → pure ``RadioPlayerChromeVisualResolver`` → ``updateUI`` only when ``shouldApplyStatusPathChromePaint`` allows |
 
-Both paths share ``updateUI(for:)`` dedupe (`lastAppliedVisualState`). Observation is **non-forcing**: it never mutates SPM, never calls `play()`/`stop()`, and never bypasses privacy write suppression. ``PlayerEventSubscriber`` (``RadioPlayerView``) remains UI-only counters — not a second paint owner.
+Both paths share ``updateUI(for:)`` dedupe (`lastAppliedVisualState`). Observation is **non-forcing**: it never mutates SPM, never calls `play()`/`stop()`, and never bypasses privacy write suppression. ``RadioPlayerView`` does not observe ``PlayerEvent``; chrome paint is coordinator-owned only.
 
 ### Soft-resume hold contract
 

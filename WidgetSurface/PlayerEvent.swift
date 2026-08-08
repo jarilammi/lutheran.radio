@@ -166,7 +166,8 @@ import Foundation
 ///   participates safely in Observation, actor boundaries, testing, and diffing.
 /// - SeeAlso: ``PlayerEvent``, `SharedPlayerManager.currentState`,
 ///   `SharedPlayerManager.makeEventsStreamWithReplay()`,
-///   `PlayerEventSubscriber`, `WidgetRefreshManager`,
+///   `WidgetRefreshManager`,
+///   `RadioPlayerCoordinator.beginObservingVisualStateForChrome()`,
 ///   `PlaybackIntent.isStickyPauseOrLock`,
 ///   `PlayerVisualState.isActivelyPlaying`,
 ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 3 current-state replay + error and recovery surface),

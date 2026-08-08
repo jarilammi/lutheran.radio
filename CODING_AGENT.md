@@ -313,7 +313,7 @@ When authoring new tests that touch `PlayerEvent` emission, `SharedPlayerManager
 - Sibling emission suites (same isolation helpers): `SharedPlayerManagerEventFailureTests.swift` (streamDidFail payloads + post-failure replay prefixes), `SharedPlayerManagerEventMutationOrderTests.swift` (pause/play/metadata/privacy/sleep-timer order), `SharedPlayerManagerEventStreamSwitchTests.swift` (language/stream-switch emission)
 - Sibling SPM surface suites (same isolation helpers): `SharedPlayerManagerMediaSurfaceTests.swift` (teardown gates, soft silence, Now Playing, media-transport mailbox), `SharedPlayerManagerColdLaunchHygieneTests.swift` (factory reset / NP language hygiene), `SharedPlayerManagerMediaTransportLatencyTests.swift` (DEBUG latency timeline)
 - `Lutheran RadioTests/DirectStreamingPlayerMockTests.swift` / `DirectStreamingPlayerEngineTests.swift` — mock-unit vs real-engine attach/recovery isolation
-- `Lutheran RadioTests/PlayerEventSubscriberEventTests.swift` / `WidgetRefreshManagerEventTests.swift` — additional consumers of the shared collectors / LA sanitization
+- `Lutheran RadioTests/WidgetRefreshManagerEventTests.swift` — additional consumer of the shared collectors / LA sanitization
 - `Lutheran RadioTests/RadioLiveActivityManagerTests.swift` (setUp/tearDown hygiene)
 - `Lutheran Radio/RadioLiveActivityManager.swift` (deferral + guards)
 - `Lutheran Radio/SharedPlayerManager.swift` (`isRunningInUITestMode`, `makeEventsStreamWithReplay()` yield hardening)

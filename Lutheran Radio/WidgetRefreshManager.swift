@@ -1015,10 +1015,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
               eventObservationTask == nil else { return }
 
         #if DEBUG
-        // Unit tests that exercise replay live-forwarding (for example
-        // ``PlayerEventSubscriber``) require an exclusive iterator on the shared
-        // ``SharedPlayerManager/events`` stream. AsyncStream supports one consumer
-        // at a time; suppress observation for those tests only.
+        // Unit tests that exercise exclusive live ``events`` iteration or multi-cast
+        // replay isolation require the Tier 2 observer idle. AsyncStream's primary
+        // iterator admits one consumer at a time; suppress observation for those
+        // tests only (shared DEBUG seam — not product-path gating).
         guard unsafe !Self._test_suppressPlayerEventObservation else { return }
         #endif
 

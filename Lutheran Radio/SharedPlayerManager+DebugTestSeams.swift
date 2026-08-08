@@ -34,15 +34,14 @@ extension SharedPlayerManager {
     /// Simulates widget-extension process context for unit tests of cross-process guards.
     ///
     /// When `true` in the main-app test host, ``isRunningInWidget()`` and
-    /// ``isWidgetProcess()`` report widget context so ``emit(_:)`` suppresses stream delivery,
-    /// ``PlayerEventSubscriber/beginObserving()`` returns before replay attachment, and
-    /// ``WidgetRefreshManager`` does not start the Tier 2 live observer.
+    /// ``isWidgetProcess()`` report widget context so ``emit(_:)`` suppresses stream delivery
+    /// and ``WidgetRefreshManager`` does not start the Tier 2 live observer.
     ///
     /// - Parameter simulate: Pass `true` to exercise widget-process suppression; `false`
     ///   restores normal main-app behavior.
     /// - SeeAlso: ``isRunningInWidget()``, ``isWidgetProcess()``, ``emit(_:)``,
-    ///   ``PlayerEventSubscriber``, ``SharedPlayerManagerEventTests``,
-    ///   ``PlayerEventSubscriberEventTests``, CODING_AGENT.md (fast test patterns),
+    ///   ``SharedPlayerManagerEventTests``, ``WidgetRefreshManagerEventTests``,
+    ///   CODING_AGENT.md (fast test patterns),
     ///   docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func _test_setSimulateWidgetProcessContext(_ simulate: Bool) {
         unsafe _test_simulateWidgetProcessContext = simulate

@@ -151,7 +151,7 @@ final class SharedPlayerManagerEventMutationOrderTests: XCTestCase {
     /// `saveCurrentState`). Authoritative snapshot writes are only via
     /// ``saveCurrentState()`` / `performActualSave` (privacy-gated).
     ///
-    /// Consumers (`WidgetRefreshManager`, ``PlayerEventSubscriber``) observe the
+    /// Consumers (`WidgetRefreshManager`, main-app chrome observation) observe the
     /// identical pause vocabulary regardless of which canonical surface the player
     /// invoked. This test guards that contract independently so a future refactor
     /// cannot diverge the two paths silently.

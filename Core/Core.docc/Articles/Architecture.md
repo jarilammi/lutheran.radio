@@ -164,7 +164,8 @@ Mixing player presentation events into `Core/` would couple widget compilation t
 │      emit(_:)  ──guard──▶  events: AsyncStream<PlayerEvent> │
 │           │                      │                          │
 │           │                      ├──▶ WidgetRefreshManager  │
-│           │                      ├──▶ PlayerEventSubscriber │
+│           │                      ├──▶ main-app chrome       │
+│           │                      │    (replay multi-cast)   │
 │           │                      └──▶ test observers (DEBUG)│
 │           │                                                 │
 │      currentState ──▶ PlayerCurrentState snapshot           │
@@ -214,7 +215,7 @@ Tier 2 observers consume events additively. Imperative snapshot and refresh path
 | Consumer | Observes | Behavior |
 |----------|----------|----------|
 | `WidgetRefreshManager` | `SharedPlayerManager.events` (main app only) | Sole mutation-path timeline driver; derives refresh parameters and routes through `refreshIfNeeded(..., trigger: .playerEvent)`. Imperative triggers use other ``WidgetRefreshTrigger`` cases. |
-| `PlayerEventSubscriber` | `makeEventsStreamWithReplay()` in `RadioPlayerView` | UI-only observable state (`eventCount`, `lastObservedIntent`); does not replace `@Bindable` view model bindings |
+| `RadioPlayerCoordinator/beginObservingVisualStateForChrome()` | `makeEventsStreamWithReplay()` multi-cast | Primary durable main-app chrome paint on ``visualStateDidChange`` via ``updateUI(for:)``; status path is demoted race lead + errors only |
 | `RadioLiveActivityManager` | `Activity.contentUpdates` (attribute events) | Aligns `lastPushedContent`, diff-suppresses redundant `update(using:)`, self-heals on dismissal |
 | `WidgetEventObserver` | Generic `AsyncSequence` helper | Shared cancel-before-start, main-actor handoff, and task lifetime for both `PlayerEvent` and Live Activity attribute streams |
 
@@ -254,13 +255,13 @@ Emitter and consumer contracts are protected by 71 event-driven unit tests (as o
 - `SharedPlayerManagerEventTests` — emission order, replay prefix, live stream delivery, privacy gate
 - `SharedPlayerManagerMediaSurfaceTests` / `SharedPlayerManagerColdLaunchHygieneTests` / `SharedPlayerManagerMediaTransportLatencyTests` — session teardown, media surfaces, cold-launch hygiene, DEBUG latency timeline
 - `WidgetRefreshManagerEventTests` — derivation matrix, event-path gates, debounce/coalesce timing
-- `PlayerEventSubscriberEventTests` — replay prefix, observable rules, widget-process guard
 - `WidgetEventObserverTests` — delivery, termination, cancel, restart
 - `RadioLiveActivityManagerTests` — attribute-events (`contentUpdates`) via DEBUG synthetic seams
+- `RadioPlayerChromeVisualResolverTests` — main-app chrome SSOT observation + pure resolver
 
 Tests use fast/reliable patterns documented in `CODING_AGENT.md`: UITestMode short-circuits for DNS/streaming/ActivityKit IPC, subscribe-before-action collection on `AsyncStream`, and a DEBUG notification seam posted from `emit(_:)` for deterministic emission-order assertions. Replay live-forwarding in the XCTest host is best-effort only; primary contracts gate on the DEBUG seam and replay prefix.
 
-Canonical test files live under `Lutheran RadioTests/` (`SharedPlayerManagerEventTests.swift` plus media-surface / cold-launch / latency sibling suites, `WidgetRefreshManagerEventTests.swift`, `PlayerEventSubscriberEventTests.swift`, `WidgetEventObserverTests.swift`, and the attribute-events subset in `RadioLiveActivityManagerTests.swift`). The Tier 5 checklist in `docs/Event-Driven-Refactor-Roadmap.md` records the protected contracts.
+Canonical test files live under `Lutheran RadioTests/` (`SharedPlayerManagerEventTests.swift` plus media-surface / cold-launch / latency sibling suites, `WidgetRefreshManagerEventTests.swift`, `WidgetEventObserverTests.swift`, and the attribute-events subset in `RadioLiveActivityManagerTests.swift`). The Tier 5 checklist in `docs/Event-Driven-Refactor-Roadmap.md` records the protected contracts.
 
 ## See Also
 
@@ -276,7 +277,7 @@ Canonical test files live under `Lutheran RadioTests/` (`SharedPlayerManagerEven
 
 - `PlayerEvent` and `PlayerCurrentState` in `PlayerVisualState.swift`
 - `SharedPlayerManager` — `events`, `currentState`, `makeEventsStreamWithReplay()`, `emit(_:)`
-- `WidgetEventObserver`, `WidgetRefreshManager`, `PlayerEventSubscriber`
+- `WidgetEventObserver`, `WidgetRefreshManager`, ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``
 - `docs/Event-Driven-Refactor-Roadmap.md` — authoritative backlog, architectural evaluation, and Tier 5 test checklist
 - `docs/Widget-Presentation-Dataflow.md` — widget and Live Activity data flow
 - `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` — canonical emission-order and replay usage; collectors in `Support/PlayerEventTestSupport.swift`
