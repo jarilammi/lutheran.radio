@@ -42,8 +42,8 @@ import WidgetSurface
 // Play/pause control is **direction-bound** (``WidgetPlayRadioIntent`` / ``WidgetPauseRadioIntent``)
 // from the control glyph so residual LIVE cannot schedule the opposite verb of the visible
 // affordance. ``openAppWhenRun`` is false; root EntryView must **not** thrash structural `.id`
-// on paint wakes (Class A open-host). Home optimistic play never invents ``.playing`` (see
-// ``optimisticHomeWidgetVisualAfterPlayPlan``).
+// on paint wakes (intent miss → WidgetKit host open). Home optimistic play never invents
+// ``.playing`` (see ``optimisticHomeWidgetVisualAfterPlayPlan``).
 //
 // The identical top-level derivation pattern is used by Live Activity views.
 //
@@ -355,7 +355,7 @@ struct SimpleEntry: TimelineEntry, Sendable {
 /// covers intent-handler vs render process splits and main-app settle stamps (without dual
 /// ``reloadAllTimelines`` thrash). Heal **always** rebuilds via
 /// ``WidgetInteractivePaintHeal/projectHomeInteractivePaint`` (snapshot SSOT) — preferring a
-/// lagging Provider entry pause over resolve ``.playing`` blocked soft-resume settle (log5).
+/// lagging Provider entry pause over resolve ``.playing`` blocked soft-resume settle.
 ///
 /// - SeeAlso: `SmallWidgetView`, `MediumWidgetView`, `LargeWidgetView`,
 ///   ``WidgetInteractivePaintHeal/projectHomeInteractivePaint(laggingPaintEpoch:laggingPaintSignature:date:)``,
@@ -421,7 +421,7 @@ struct LutheranRadioWidgetEntryView: View {
         // @AppStorage + paintWakeGeneration create body dependencies for suite/Darwin wakes so
         // interactive paint heal re-runs. Do **not** put those tokens (or presentation chrome)
         // into a root `.id` — structural identity thrash recreates AppIntent buttons and drops
-        // the hit target (Class A open-host; see AGENT NOTE below).
+        // the hit target (intent miss → host open; see AGENT NOTE below).
         let _ = interactivePaintSignature
         let _ = interactivePaintEpoch
         let _ = paintWakeGeneration
@@ -462,21 +462,20 @@ struct LutheranRadioWidgetEntryView: View {
                 )
             }
         }
-        // AGENT NOTE — open-host / intent-miss class (home play/pause):
-        // Captures (main-only Console) showed ``sceneDidBecomeActive`` with **no**
-        // ``WidgetPauseRadioIntent.perform``, no pending-mailbox/Darwin drain, no ``stop()`` /
-        // sticky userPaused — audio kept playing. That is WidgetKit default host open when the
-        // AppIntent button is not hit, not B1-2 residual LIVE (pause never started).
+        // AGENT NOTE — open-host / intent-miss (home play/pause):
+        // When the AppIntent button is not hit, WidgetKit opens the host app: main may show
+        // ``sceneDidBecomeActive`` with **no** ``WidgetPauseRadioIntent.perform``, no
+        // pending-mailbox/Darwin drain, no ``stop()`` / sticky userPaused — audio keeps playing.
+        // That is default host open, not interactive LIVE residual paint (pause never started).
         //
-        // Root cause class: thrashing structural identity around interactive buttons.
-        // ``liveChromeIdentitySkipWake`` after an identical playing stamp (epoch 2→3 in the
-        // captures) advances suite epoch/signature + Darwin paint-advanced wake. Folding any of
-        // paintSignature, paint epoch, paintWakeGeneration, or presentation chrome into a root
-        // `.id` destroys/recreates the entire interactive tree (and Button intent targets).
-        // Body re-eval via the `let _ =` suite/wake deps above is enough for heal to update
-        // Text/Image bindings; Button identity is direction-stable
-        // (see ``homeWidgetPlayPauseButton``). Never re-add a root `.id` wake token without
-        // eyes-on proof that open-host is gone.
+        // Root cause: thrashing structural identity around interactive buttons.
+        // ``liveChromeIdentitySkipWake`` after an identical playing stamp advances suite
+        // epoch/signature + Darwin paint-advanced wake. Folding any of paintSignature, paint
+        // epoch, paintWakeGeneration, or presentation chrome into a root `.id` destroys/recreates
+        // the entire interactive tree (and Button intent targets). Body re-eval via the
+        // `let _ =` suite/wake deps above is enough for heal to update Text/Image bindings;
+        // Button identity is direction-stable (see ``homeWidgetPlayPauseButton``). Never re-add
+        // a root `.id` wake token without eyes-on proof that open-host is gone.
         .onReceive(
             NotificationCenter.default.publisher(
                 for: SharedPlayerManager.homeWidgetInteractivePaintAdvancedNotification
@@ -764,7 +763,7 @@ struct LargeWidgetView: View {
 /// **Paint honesty:** Callers pass control from ``LutheranRadioWidgetEntryView`` interactive
 /// paint heal (``WidgetInteractivePaintHeal`` → ``resolveFromSnapshot()``). This control does
 /// **not** re-resolve independently — a second suite read mid-body could disagree with the
-/// parent slice and thrash Button identity (Class A open-host).
+/// parent slice and thrash Button identity (intent miss → host open).
 ///
 /// **Hit target:** Expanded tappable area (peer to Live Activity control chrome) so a small
 /// SF Symbol glyph is not the only hit region; miss → WidgetKit default host open.

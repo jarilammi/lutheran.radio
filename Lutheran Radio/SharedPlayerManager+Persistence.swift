@@ -908,7 +908,7 @@ extension SharedPlayerManager {
             // Flush optimistic / settle stamps before WidgetCenter reload. Intent perform and
             // Provider/timeline render may run in different extension process instances; without
             // a suite flush, interactive LIVE can re-resolve a lagging ``.playing`` residual while
-            // this process already holds ``.userPaused`` (B1-2 residual-playing class).
+            // this process already holds ``.userPaused`` (interactive LIVE residual-playing class).
             defaults.synchronize()
             CFPreferencesAppSynchronize("group.radio.lutheran.shared" as CFString)
             bumpHomeWidgetInteractivePaintEpoch(reason: "liveChromeWrite")
@@ -934,7 +934,7 @@ extension SharedPlayerManager {
     /// Forces a cross-process preference-domain re-sync (``CFPreferencesAppSynchronize`` + suite
     /// ``synchronize()``) and prefers ``CFPreferencesCopyAppValue`` so a Provider / interactive
     /// entry heal does not paint residual ``.playing`` from a stale per-process UserDefaults
-    /// cache after another process stamped ``.userPaused`` (B1-2 residual-playing class).
+    /// cache after another process stamped ``.userPaused`` (interactive LIVE residual-playing class).
     ///
     /// - Returns: Parsed ``HomeWidgetLiveChrome``, or `nil` when missing, decode fails
     ///   (including unknown visual token), or language is empty (treat as absent → factory path).
@@ -1002,8 +1002,8 @@ extension SharedPlayerManager {
     /// UserDefaults. Definitive control visuals (``.userPaused`` **and** ``.playing``) still bump
     /// paint epoch + signature (``liveChromeIdentitySkipWake``) so interactive LIVE can re-resolve
     /// after main settle when extension already stamped the same chrome — without force-rewriting
-    /// the JSON blob (log4: sticky rewrite + dual WidgetCenter wakes thrashed without healing
-    /// residual). Connecting identity skips stay quiet.
+    /// the JSON blob (sticky rewrite + dual WidgetCenter wakes thrashed residual LIVE without
+    /// healing it). Connecting identity skips stay quiet.
     ///
     /// **Soft-resume honesty (main app):** Callers must pass the **actual** session visual.
     /// Product soft-resume retains sticky ``.userPaused`` until ``setPlaying()``; do not invent
@@ -1049,8 +1049,8 @@ extension SharedPlayerManager {
             // Main sticky pause after extension optimistic ``.userPaused``, and main soft-resume
             // ``.playing`` after an earlier identical stamp, both hit this path. Wake interactive
             // LIVE via epoch + signature + Darwin/local NC only — do **not** force rewrite the
-            // chrome blob or call ``reloadAllTimelines`` (log4 thrash regression). Connecting
-            // identity skips stay quiet (attach storms).
+            // chrome blob or call ``reloadAllTimelines`` (WidgetCenter thrash without healing
+            // residual LIVE). Connecting identity skips stay quiet (attach storms).
             if visualState.isDefinitiveMediaToggleVisual {
                 // ``bumpHomeWidgetInteractivePaintEpoch`` republishes signature from chrome and
                 // posts paint-advanced wake — no second publish needed.

@@ -677,7 +677,7 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
     /// Protects identity skip on repeated identical optimistic toggle stamps (no App Group spam).
     ///
     /// Sticky pause still wakes paint epoch/signature; JSON ``updatedAt`` stays stable so we do
-    /// not thrash suite writes (log4 regression from force-rewrite).
+    /// not thrash suite writes (force-rewrite thrash regression).
     func testOptimisticToggleLiveChromeIdentitySkipLeavesUpdatedAtUnchanged() async {
         SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
         SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "de")

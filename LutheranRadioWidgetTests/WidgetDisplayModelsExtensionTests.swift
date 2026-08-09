@@ -583,9 +583,9 @@ final class WidgetDisplayModelsExtensionTests: XCTestCase {
 
     /// Soft-resume settle: fresher live-chrome ``.playing`` wins over sticky pause session.
     ///
-    /// **Invariant protected:** log5 inverse residual (grey Tauko after audio playing) must not
-    /// come from chrome selection preferring stale extension session over main App Group settle.
-    /// Heal always rebuilds from this resolve (never keeps lagging entry pause chrome).
+    /// **Invariant protected:** Soft-resume inverse residual (pause chrome after audio playing)
+    /// must not come from chrome selection preferring stale extension session over main App Group
+    /// settle. Heal always rebuilds from this resolve (never keeps lagging entry pause chrome).
     ///
     /// - SeeAlso: ``resolveHomeWidgetChromeFields``, ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``.
     func testFresherLiveChromePlayingBeatsStaleSessionUserPausedForSoftResumeSettle() {

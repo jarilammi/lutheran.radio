@@ -829,8 +829,8 @@ final class WidgetRefreshManager: @unchecked Sendable {
                 return !isImmediate
             }
             // Soft-resume residual: sticky ``.userPaused`` wake after memory already advanced to
-            // ``.playing`` must not re-issue a timeline reload (still.txt: WRM executed
-            // ``.userPaused`` after liveChromeWrite playing → residual Tauko over Toistaa).
+            // ``.playing`` must not re-issue a timeline reload (otherwise residual pause chrome
+            // over audible playing after soft-resume settle).
             // Forward home pause advances memory to ``.userPaused`` *before* the pause wake runs
             // (stop path), so real pauses are not discarded here.
             if requested == .userPaused || requested == .thermalPaused {

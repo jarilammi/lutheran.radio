@@ -554,7 +554,7 @@ enum WidgetIntentExecution {
     /// ``LutheranRadioWidgetEntryView`` re-resolves via suite observation / paint-advanced NC +
     /// ``resolveFromSnapshot()`` even when live-chrome identity skip suppresses a second JSON
     /// write. WidgetCenter wake path is WRM ``extensionOptimistic`` only — do **not** add
-    /// ``reloadAllTimelines`` here (log4: dual wakes thrashed residual LIVE without healing it).
+    /// ``reloadAllTimelines`` here (dual wakes thrashed residual LIVE without healing it).
     /// System also reloads the Provider after ``perform()`` returns (App Intent contract).
     ///
     /// **Live Activity pause honesty:** When the plan targets a control visual (``.userPaused``

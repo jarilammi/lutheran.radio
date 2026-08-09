@@ -1207,7 +1207,7 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
     ///
     /// **Invariant protected:** Main sticky pause after extension optimistic already stamped
     /// ``.userPaused`` identity-skips the JSON write. Epoch + signature still advance so
-    /// interactive LIVE can re-resolve without thrashing App Group rewrites (log4 regression).
+    /// interactive LIVE can re-resolve without thrashing App Group rewrites (force-rewrite thrash).
     /// Connecting identity skips must stay quiet (attach-path spam).
     ///
     /// - SeeAlso: ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,

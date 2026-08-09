@@ -1282,7 +1282,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
                 memory: .playing
             )
         )
-        // Soft-resume residual: sticky pause wake after audible memory must discard (still.txt).
+        // Soft-resume residual: sticky pause wake after audible memory must discard.
         XCTAssertTrue(
             WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
                 executing: .userPaused,
@@ -1334,7 +1334,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             Case(requested: .prePlay, memory: .userPaused, session: .userPaused, isImmediate: false, label: "connecting vs sticky memory"),
             // Soft-resume residual: sticky pause wake after audible memory (memory leg discards).
             Case(requested: .userPaused, memory: .playing, session: .playing, isImmediate: false, label: "session soft-resume reverse pause"),
-            // Soft-resume residual: immediate sticky wake after memory already playing (still.txt).
+            // Soft-resume residual: immediate sticky wake after memory already playing.
             Case(requested: .userPaused, memory: .playing, session: .playing, isImmediate: true, label: "immediate sticky after audible memory"),
             // Overlap: non-immediate connecting after audible.
             Case(requested: .prePlay, memory: .playing, session: .playing, isImmediate: false, label: "non-immediate connecting after play"),
