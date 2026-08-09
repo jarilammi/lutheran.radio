@@ -34,14 +34,15 @@ import WidgetSurface
 // 2. Local + Darwin paint-advanced wake (``homeWidgetInteractivePaintAdvanced``) so main settle
 //    and cross-process suite stamps re-run heal without suite KVO (peer to widget-action Darwin)
 // 3. ``SimpleEntry/paintEpoch`` + ``paintSignature`` for TimelineEntry structural identity after
-//    ``reloadTimelines``
+//    ``reloadTimelines`` (Provider / archive only — **not** root EntryView `.id`)
 // Live-chrome load uses CFPreferences re-sync so heal does not re-paint residual playing from a
 // stale suite cache. Heal always prefers snapshot SSOT over a lagging Provider entry (never keep
 // residual pause chrome when resolve/live chrome already advanced to ``.playing``).
 //
 // Play/pause control is **direction-bound** (``WidgetPlayRadioIntent`` / ``WidgetPauseRadioIntent``)
 // from the control glyph so residual LIVE cannot schedule the opposite verb of the visible
-// affordance. Home optimistic play never invents ``.playing`` (see
+// affordance. ``openAppWhenRun`` is false; root EntryView must **not** thrash structural `.id`
+// on paint wakes (Class A open-host). Home optimistic play never invents ``.playing`` (see
 // ``optimisticHomeWidgetVisualAfterPlayPlan``).
 //
 // The identical top-level derivation pattern is used by Live Activity views.
@@ -417,8 +418,10 @@ struct LutheranRadioWidgetEntryView: View {
         // interactive LIVE does not keep residual playing/pause chrome after optimistic toggle or
         // main settle. Suite + Darwin/local wake dependencies force body re-eval.
         let _ = Self.paintWakeObserverRegistration
-        // @AppStorage + paintWakeGeneration create body dependencies for suite/Darwin wakes.
-        // Do not fold suite epoch/signature into root `.id` (see identity note below).
+        // @AppStorage + paintWakeGeneration create body dependencies for suite/Darwin wakes so
+        // interactive paint heal re-runs. Do **not** put those tokens (or presentation chrome)
+        // into a root `.id` — structural identity thrash recreates AppIntent buttons and drops
+        // the hit target (Class A open-host; see AGENT NOTE below).
         let _ = interactivePaintSignature
         let _ = interactivePaintEpoch
         let _ = paintWakeGeneration
@@ -459,13 +462,21 @@ struct LutheranRadioWidgetEntryView: View {
                 )
             }
         }
-        // Identity tracks resolved chrome + wake generation so residual Toistaa/Tauko can
-        // rebuild without embedding every suite epoch flip into the root view id (that thrash
-        // recreated the entire interactive tree mid-tap and made AppIntent buttons miss hit
-        // testing → system default “open host app” instead of play/pause).
-        // Suite epoch/signature still force body re-eval via @AppStorage + paintWakeGeneration;
-        // presentation text/glyph in `.id` is enough for structural chrome honesty.
-        .id("\(paintWakeGeneration)|\(paint.statusPresentation.text)|\(paint.controlPresentation.systemImage)|\(paint.currentLanguageCode)|\(entry.paintSignature)")
+        // AGENT NOTE — open-host / intent-miss class (home play/pause):
+        // Captures (main-only Console) showed ``sceneDidBecomeActive`` with **no**
+        // ``WidgetPauseRadioIntent.perform``, no pending-mailbox/Darwin drain, no ``stop()`` /
+        // sticky userPaused — audio kept playing. That is WidgetKit default host open when the
+        // AppIntent button is not hit, not B1-2 residual LIVE (pause never started).
+        //
+        // Root cause class: thrashing structural identity around interactive buttons.
+        // ``liveChromeIdentitySkipWake`` after an identical playing stamp (epoch 2→3 in the
+        // captures) advances suite epoch/signature + Darwin paint-advanced wake. Folding any of
+        // paintSignature, paint epoch, paintWakeGeneration, or presentation chrome into a root
+        // `.id` destroys/recreates the entire interactive tree (and Button intent targets).
+        // Body re-eval via the `let _ =` suite/wake deps above is enough for heal to update
+        // Text/Image bindings; Button identity is direction-stable
+        // (see ``homeWidgetPlayPauseButton``). Never re-add a root `.id` wake token without
+        // eyes-on proof that open-host is gone.
         .onReceive(
             NotificationCenter.default.publisher(
                 for: SharedPlayerManager.homeWidgetInteractivePaintAdvancedNotification
@@ -750,11 +761,13 @@ struct LargeWidgetView: View {
 /// (play / connecting) wires ``WidgetPlayRadioIntent``. Direction-bound intents keep residual
 /// LIVE paint from scheduling the opposite verb of the visible affordance.
 ///
-/// **Paint honesty:** Re-derives control from ``resolveFromSnapshot()`` at render (suite
-/// re-sync on live-chrome load) so a lagging parent slice cannot keep residual pause/play
-/// glyph after App Group advanced. Caller-passed ``controlPresentation`` remains the family
-/// layout input for tint/font consistency when resolve agrees; when snapshot disagrees,
-/// snapshot wins (interactive LIVE residual class).
+/// **Paint honesty:** Callers pass control from ``LutheranRadioWidgetEntryView`` interactive
+/// paint heal (``WidgetInteractivePaintHeal`` → ``resolveFromSnapshot()``). This control does
+/// **not** re-resolve independently — a second suite read mid-body could disagree with the
+/// parent slice and thrash Button identity (Class A open-host).
+///
+/// **Hit target:** Expanded tappable area (peer to Live Activity control chrome) so a small
+/// SF Symbol glyph is not the only hit region; miss → WidgetKit default host open.
 ///
 /// - Parameters:
 ///   - controlPresentation: Pre-derived control slice from Provider / interactive paint heal.
@@ -763,41 +776,42 @@ struct LargeWidgetView: View {
 ///   from this free function. Call sites are widget `View` bodies (already main-actor).
 /// - SeeAlso: ``WidgetPlayRadioIntent``, ``WidgetPauseRadioIntent``,
 ///   ``PlayerVisualState/makeControlPresentation()``,
-///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``.
+///   ``LutheranRadioWidgetEntryView`` (heal SSOT).
 @MainActor
 @ViewBuilder
 private func homeWidgetPlayPauseButton(
     controlPresentation: PlayerControlPresentation,
     font: Font
 ) -> some View {
-    // Snapshot SSOT at button render: suite re-sync inside live-chrome load. Prefer snapshot
-    // when it disagrees with the parent slice so residual system-held glyphs cannot stick.
-    let snapshotFields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
-    let snapshotControl = snapshotFields.visualState.makeControlPresentation()
-    let control = snapshotControl.systemImage == controlPresentation.systemImage
-        ? controlPresentation
-        : snapshotControl
-    let image = Image(systemName: control.systemImage)
+    // Control SSOT for the button: parent heal slice only (actively playing → `pause.fill`).
+    // Button identity is **direction only** (pause vs play intent). Never include paint
+    // epoch/signature/wake generation — those recreate AppIntent buttons and drop hit testing
+    // (tap falls through to host-app open). Residual chrome text/glyph is owned by entry-view
+    // heal body re-eval, not by thrashing this Button.
+    // Do not mark the control with ``invalidatableContent()`` — Apple guidance is judicious use
+    // on important data views; annotating the interactive control risks a non-tappable settle
+    // window while status text already uses invalidatableContent for residual LIVE honesty.
+    let isPause = controlPresentation.systemImage == "pause.fill"
+    let label = Image(systemName: controlPresentation.systemImage)
         .font(font)
-        .foregroundColor(control.tint)
+        .foregroundColor(controlPresentation.tint)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
         .contentTransition(.opacity)
-        // Control glyph awaits timeline / heal settle after App Intent (peer to status text).
-        .invalidatableContent()
-    // Control SSOT: actively playing → `pause.fill`; otherwise → `play.fill`.
-    // Next-action affordance: pause glyph stops audio; play glyph starts/resumes.
-    // Button identity is **glyph + direction only**. Including paint epoch/signature here
-    // recreated AppIntent buttons on every suite wake and could drop the intent hit target
-    // (tap fell through to host-app open). Residual chrome rebuild is owned by the entry
-    // view heal + parent presentation `.id`, not by thrashing the Button identity.
-    let controlIdentity = control.systemImage
-    if control.systemImage == "pause.fill" {
-        Button(intent: WidgetPauseRadioIntent()) { image }
+    if isPause {
+        Button(intent: WidgetPauseRadioIntent()) { label }
             .buttonStyle(.plain)
-            .id("home-control-pause|\(controlIdentity)")
+            .id("home-control-pause")
+            .accessibilityLabel(
+                String(localized: "accessibility_label_pause", defaultValue: "Pause", table: "Localizable")
+            )
     } else {
-        Button(intent: WidgetPlayRadioIntent()) { image }
+        Button(intent: WidgetPlayRadioIntent()) { label }
             .buttonStyle(.plain)
-            .id("home-control-play|\(controlIdentity)")
+            .id("home-control-play")
+            .accessibilityLabel(
+                String(localized: "Play", defaultValue: "Play", table: "Localizable")
+            )
     }
 }
 
@@ -896,6 +910,8 @@ public struct SwitchStreamIntent: AppIntent {
     public nonisolated static var description: IntentDescription {
         IntentDescription("Switch to a different language stream.")
     }
+    /// Stream chips must stay in-widget; never foreground main for language switch.
+    public nonisolated static var openAppWhenRun: Bool { false }
 
     @Parameter(title: "Language Code")
     var streamLanguageCode: String

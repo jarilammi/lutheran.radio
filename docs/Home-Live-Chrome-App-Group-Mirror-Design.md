@@ -1,7 +1,7 @@
 # Home Live Chrome App Group Mirror — Design Spec
 
-**Status:** **Implemented** (2026-08-07) · PR1–PR4 shipped · Provider paint via ``resolveHomeWidgetChromeFields`` (agreement → session; disagreement → fresher `updatedAt`) · privacy residual clear true→false edge only · device eyes-on §10.3 / §14 **passed** · PR5 wake-discard unification **shipped** (optional follow-on; not required for Implemented). Details: §6, §7.2, §8, §11.  
-**Date:** 2026-07-30 (inventory polish 2026-08-06; eyes-on absorb 2026-08-07; PR5 2026-08-07)  
+**Status:** **Implemented** (2026-08-07) · PR1–PR4 shipped · Provider paint via ``resolveHomeWidgetChromeFields`` (agreement → session; disagreement → fresher `updatedAt`) · privacy residual clear true→false edge only · device eyes-on §10.3 / §14 **passed** · PR5 wake-discard unification **shipped** · interactive LIVE heal + paint wake tokens + in-widget pause/play (Class A open-host closed) **shipped** (2026-08-09 eyes-on). Details: §4, §6, §6.6, §7.2, §8, §11.  
+**Date:** 2026-07-30 (inventory polish 2026-08-06; eyes-on absorb 2026-08-07; PR5 2026-08-07; interactive LIVE / open-host 2026-08-09)  
 
 **Audience:** Implementers and reviewers of home/Control widget cross-process chrome  
 **Canonical permanent rules:** [`CODING_AGENT.md`](../CODING_AGENT.md) (always take precedence)  
@@ -160,6 +160,7 @@ All names are mechanism-oriented. Placement:
 - Payload type + identity skip + pure resolution: `WidgetSurface/HomeWidgetLiveChrome.swift` (presentation-only) — ``HomeWidgetLiveChrome``, ``shouldSkipIdenticalHomeWidgetLiveChromeWrite``, ``resolveHomeWidgetChromeFields``
 - Persist / load / clear / stamp convenience: `SharedPlayerManager+Persistence.swift` (membership-exception SPM, next to program-metadata mirror)
 - Provider paint: ``WidgetProviderSnapshotResolver/resolveFromSnapshot`` (membership-exception `WidgetDisplayModels.swift`)
+- Interactive LIVE heal + wake tokens: ``WidgetInteractivePaintHeal`` (same membership-exception file); App Group ``homeWidgetInteractivePaintEpoch`` / ``homeWidgetInteractivePaintSignature``; Darwin/local ``homeWidgetInteractivePaintAdvanced`` (wake only — **never** invent visual from tokens)
 
 ```text
 homeWidgetLiveChromeAppGroupKey: String  // "homeWidgetLiveChrome"
@@ -168,12 +169,15 @@ persistHomeWidgetLiveChromeMirror(_ chrome: HomeWidgetLiveChrome?)
   // Pre: hasActiveWidgets || isWidgetProcess()
   // Post: App Group holds JSON; no-op when gate closed (main app); nil / empty language removes key
   // Extension process refuses .playing stamps when shouldDistrustDurableMirrorPlayPlanning()
+  // Successful write/clear bumps interactive paint epoch + signature (wake)
 
 loadHomeWidgetLiveChromeMirror() -> HomeWidgetLiveChrome?
   // Returns nil if missing / decode fail / unknown visual token / empty language
+  // CFPreferences re-sync so interactive heal does not re-paint residual playing from a stale suite cache
 
 clearHomeWidgetLiveChromeMirror()
   // Gate true→false edge, privacy clear, factory residual, terminate hygiene
+  // Also clears interactive paint epoch / signature companions
 
 stampHomeWidgetLiveChromeFromSession(
   visualState: PlayerVisualState,
@@ -182,6 +186,8 @@ stampHomeWidgetLiveChromeFromSession(
   reason: String?
 )
   // Builds chrome + updatedAt = now; identity-skip then persist if gate open
+  // Definitive identity skip (.userPaused / .playing) still bumps paint epoch (liveChromeIdentitySkipWake)
+  // — JSON not rewritten; no dual reloadAllTimelines (thrash regression)
   // Wired from sticky pause, setPlaying, switch hold, save projection, extension optimistic paths
 
 shouldSkipIdenticalHomeWidgetLiveChromeWrite(
@@ -193,9 +199,15 @@ shouldSkipIdenticalHomeWidgetLiveChromeWrite(
 resolveHomeWidgetChromeFields(...) -> HomeWidgetResolvedChrome
   // agreement → session; disagreement → fresher updatedAt; neither → factory
   // distrustLiveChrome ignores residual mirror (terminate sentinel / reboot boot-identity)
+  // equal-timestamp definitive settle pairs prefer App Group mirror when sticky pause vs playing disagree
+
+// Wake-only companions (not paint SSOT)
+bumpHomeWidgetInteractivePaintEpoch(reason:)
+publishHomeWidgetInteractivePaintSignature(visualState:language:epoch:)
+postHomeWidgetInteractivePaintAdvancedWake()  // local NC + Darwin
 ```
 
-**Do not** add a second visual SSOT on the actor. Mirror is a **cross-process projection** of session visual + language already decided by SPM.
+**Do not** add a second visual SSOT on the actor. Mirror is a **cross-process projection** of session visual + language already decided by SPM. Paint epoch/signature are **wake identity only**.
 
 ---
 
@@ -324,7 +336,7 @@ Rigid session-first left home yellow Connecting when extension session held swit
 
 ### 6.4 Control Center Provider
 
-Same `resolveFromSnapshot` / hygiene path as home. No second resolution order.
+Same ``resolveFromSnapshot`` path as home. Narrow ``refreshVisualStateFromPersistence()`` only when the App Group suite is unavailable. No second resolution order.
 
 ### 6.5 What Providers must never do
 
@@ -332,6 +344,22 @@ Same `resolveFromSnapshot` / hygiene path as home. No second resolution order.
 - Read LA durable mirrors for home chrome.
 - Decode retired `persistedWidgetState` disk keys.
 - Invent `.playing` when mirror says `.prePlay` during switch hold.
+
+### 6.6 Interactive LIVE heal + in-widget pause/play (open-host closed)
+
+WidgetKit can hold a residual LIVE tree after optimistic pause/resume while App Group chrome already advanced (same honesty class as Live Activity ContentState lag). **Heal is not a second paint SSOT** — it re-runs ``resolveFromSnapshot`` / ``WidgetInteractivePaintHeal`` when the entry body re-evaluates.
+
+| Mechanism | Role |
+|-----------|------|
+| ``@AppStorage`` on paint signature + paint epoch | Same-process suite flips force body re-eval |
+| Darwin + local ``homeWidgetInteractivePaintAdvanced`` | Cross-process settle wake (peer to widget-action Darwin); advances entry ``paintWakeGeneration`` as a **body dependency only** |
+| ``SimpleEntry.paintEpoch`` / ``paintSignature`` | TimelineEntry structural identity after ``reloadTimelines`` (Provider archive) — **not** root EntryView `.id` |
+| Direction-bound ``WidgetPlayRadioIntent`` / ``WidgetPauseRadioIntent`` | Glyph schedules the matching verb; ``openAppWhenRun = false`` |
+| Stable control Button identity | Direction-only `.id` + expanded hit target; parent heal slice for control (no mid-button second resolve) |
+
+**Class A open-host (closed 2026-08-09):** When the AppIntent button is not hit, WidgetKit defaults to opening the host app — main foregrounds with **no** pending-mailbox drain and **no** ``stop()`` / sticky ``userPaused``. Folding suite paint epoch/signature, ``paintWakeGeneration``, or presentation chrome into a **root EntryView `.id`** recreated the interactive tree mid-tap (including after ``liveChromeIdentitySkipWake`` on an identical playing stamp) and dropped the intent hit target. **Fix:** suite/Darwin tokens stay body dependencies only; no thrashy root `.id`; do **not** re-add dual ``reloadAllTimelines`` or sticky JSON rewrite (log4 thrash).
+
+**Eyes-on proof (main Console):** after background, home pause → Darwin + ``Found pending action: pause`` → ``userPaused`` while main **stays backgrounded** (no `sceneDidBecomeActive` for the tap). Soft-resume play, second pause, and stream switch while paused (no auto-resume) round-trip on the same path. Trust intent/mailbox/SpringBoard stay-in-place over scheduler labels alone (§8.3).
 
 ---
 
@@ -512,8 +540,8 @@ Self-contained manual checklist for §14. **Do not commit device logs**; absorb 
 | Step | Required? | Home chrome expectation |
 |------|-----------|-------------------------|
 | Cold launch with widgets (new process; product auto-plays) → background | **Required** | Brief Connecting / ``prePlay``, then home settles **playing** for **this** process without reopening the app; not stuck factory while audio is live |
-| Pause from home | **Required** | First durable paint ``userPaused`` (no long residual ``playing`` flash) |
-| Soft resume from home | **Required** | Settles ``playing``; no long post-audible Connecting while soft-resume same-stream is already audible |
+| Pause from home | **Required** | App **stays backgrounded** (Darwin + pending ``pause`` → sticky ``userPaused`` / soft silence); first durable paint ``userPaused`` (no long residual ``playing`` flash). **Not** Class A open-host (main foreground with no mailbox / no stop) |
+| Soft resume from home | **Required** | Settles ``playing``; no long post-audible Connecting while soft-resume same-stream is already audible; main stays backgrounded |
 | Switch stream while playing | **Required** | Destination flag + Connecting / ``prePlay``, then ``playing`` after attach settle — never destination + ``playing`` mid-hold |
 | Privacy clear | **Required** | ``clearHomeWidgetLiveChromeMirror`` (and siblings); home factory/defaults — not residual playing |
 | Residual honesty when session + live chrome absent or distrust applies | Regression | Factory ``prePlay`` / passive ``tap_to_open`` — **not** prior-process playing residual |
@@ -533,8 +561,9 @@ Self-contained manual checklist for §14. **Do not commit device logs**; absorb 
 | **PR3** | Extension optimistic stamps + Provider paint via ``resolveHomeWidgetChromeFields`` (agreement → session; disagreement → fresher ``updatedAt``) | **Shipped** (2026-07-30) |
 | **PR4** | Terminate residual clear + sibling permanent docs (presentation dataflow, widget roadmap, event-driven OI-1 note, README pointer) | **Shipped** (2026-07-30) |
 | **PR5 (optional)** | Unify execute-time home **wake** discard (§8.2) | **Shipped** (2026-08-07) — ``refreshWouldDiscardHomeWake``; same discard cases as prior sequential checks; **not** required for Implemented |
+| **Interactive LIVE + open-host** | Entry heal, paint epoch/signature + Darwin wake, direction-bound home play/pause, no thrashy root EntryView `.id` (§6.6) | **Shipped** (2026-08-09) — hop removed earlier same week; Class A open-host closed on eyes-on |
 
-Required delivery for this design is **PR1–PR4 + §14 eyes-on**. PR5 is an optional follow-on (now shipped).
+Required delivery for this design is **PR1–PR4 + §14 eyes-on**. PR5 and interactive LIVE / open-host are follow-ons (now shipped).
 
 Do **not** mix Live Activity lock-stretch acceptance work into home live-chrome paint fixes.
 
@@ -587,6 +616,8 @@ Design is **successfully implemented** when:
 
 **Eyes-on status (2026-08-07):** **Passed** on physical device using the **required sequence in §10.3** (cold-launch auto-play → background → home pause → soft resume → switch while playing → privacy residual clear). On-device home paint confirmed; main-process mechanism lines consistent (privacy-gate re-stamp, identical live-chrome identity skip, soft-resume hold of ``userPaused`` until authoritative ``playing``, switch hold ``prePlay`` + destination language, ``clearHomeWidgetLiveChromeMirror``). Prefer Provider-side `creating entry` or on-device paint over main-app refresh logs (§8.3). Optional §10.3 rows (paused switch, remove/re-add widgets, force-quit residual) were not required for this pass. PR5 wake-discard unification is separate and shipped (§8.2).
 
+**Interactive LIVE / open-host (2026-08-09):** **Passed** on simulator eyes-on after non-thrash entry identity + stable direction-bound control. Main-process proof for home pause while backgrounded: Darwin + pending ``pause`` → ``stop()`` / sticky ``userPaused`` with **no** host open; soft-resume play, re-pause, and paused stream switch (no auto-resume) on the same session. See §6.6.
+
 ---
 
 ## 15. Decision summary
@@ -634,6 +665,7 @@ This file is the **committed mechanism SSOT**. Implementers may keep private scr
 | Privacy-gate residual clear true→false edge only | **Shipped** | 2026-07-30 | ``setHasActiveLutheranWidgets`` residual clear (liveness + instant feedback + ``homeWidgetStreamMetadata`` + ``homeWidgetLiveChrome``) runs only on previous-true → new-false. Re-asserting closed gate is residual no-op (WidgetCenter configs:0 lag must not wipe extension-stamped mirrors). false→true re-stamp edge unchanged. Full privacy / factory / terminate clear paths unchanged. Tests: ``testReassertingPrivacyGateClosedDoesNotClearLiveChromeOrMetadataMirrors``, ``testReassertingPrivacyGateClosedDoesNotClearLivenessOrInstantFeedbackResiduals`` + existing true→false / false→true coverage. |
 | Device eyes-on (success criteria §14) | **Passed** | 2026-08-07 | Physical device; required §10.3 sequence: cold-launch auto-play → background → home pause → soft resume → switch while playing → privacy residual clear. On-device paint + main mechanism consistency (gate re-stamp, identity skip, soft-resume hold, switch ``prePlay`` + destination language, ``clearHomeWidgetLiveChromeMirror``). Docs absorb only; Status → **Implemented**. |
 | PR5 — execute-time home wake discard unification | **Shipped** | 2026-08-07 | ``refreshWouldDiscardHomeWake`` composes memory lag then session lag (same discard cases as prior sequential checks; only composition unified); ``performRefreshIfNotStale`` single call site; pure helpers retained; wake-only framing in permanent docs; composition test `testRefreshWouldDiscardHomeWakeComposesMemoryThenSession`. Soft-resume Connecting deferral + identical coalesce unchanged. Not required for Implemented; do not mix with paint-blame fixes. |
+| Interactive LIVE heal + Class A open-host closed | **Shipped** | 2026-08-09 | Providers: ``resolveFromSnapshot`` only (``resolveWithActorHygiene`` removed). Interactive entry: always-heal via ``WidgetInteractivePaintHeal``; suite paint epoch/signature + Darwin/local paint-advanced wake as **body deps only** (no root EntryView `.id` thrash — that dropped AppIntent hit targets → host open without pause SSOT). Direction-bound ``WidgetPlayRadioIntent`` / ``WidgetPauseRadioIntent`` (``openAppWhenRun = false``); stable Button identity + expanded hit target. Identity-skip wake kept for definitive visuals without sticky JSON rewrite or dual ``reloadAllTimelines``. Eyes-on: background home pause/play/switch mailbox path while main stays backgrounded. |
 
 ### Temporary files (explicit allow / deny)
 

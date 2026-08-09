@@ -126,9 +126,10 @@ WidgetKit and ActivityKit receive **frozen value-type snapshots** across process
 1. **In-process session snapshot** (`PersistedWidgetState` via `loadPersistedWidgetState` / `savePersistedWidgetState`) — process-local visual/language (OI-1 memory-only for cold launch)
 2. **Privacy-gated App Group live chrome** (``homeWidgetLiveChrome``) — visual + language + hasError projection for extension Providers when main-app session RAM is unreachable
 3. **Privacy-gated App Group program-metadata mirror** (``homeWidgetStreamMetadata``) — program title/speaker peer (single concern; not folded into live chrome)
-4. **App Group instant-feedback + pending-action keys** (optimistic language flash + one-shot commands; not primary visual SSOT once live chrome is stamped)
-5. **Main-app-driven** `WidgetCenter.reloadTimelines` / `WidgetRefreshManager.refreshIfNeeded` — **wake signal only**; does not pass visual/language into WidgetKit (Providers re-read session + mirrors)
-6. **Live Activity** in-memory pushes from `RadioLiveActivityManager` (hot path avoids disk; LA durable mirrors are a different privacy class — not home-gated)
+4. **Interactive paint wake tokens** (``homeWidgetInteractivePaintEpoch`` / signature + Darwin paint-advanced) — force LIVE entry body re-eval after optimistic/main settle; **not** visual SSOT; **not** root view `.id`
+5. **App Group instant-feedback + pending-action keys** (optimistic language flash + one-shot commands; not primary visual SSOT once live chrome is stamped)
+6. **Main-app-driven** `WidgetCenter.reloadTimelines` / `WidgetRefreshManager.refreshIfNeeded` — **wake signal only**; does not pass visual/language into WidgetKit (Providers re-read session + mirrors)
+7. **Live Activity** in-memory pushes from `RadioLiveActivityManager` (hot path avoids disk; LA durable mirrors are a different privacy class — not home-gated)
 
 This is **permanent architecture**, not a gap to close with events. Mechanism SSOT for live chrome: [`docs/Home-Live-Chrome-App-Group-Mirror-Design.md`](Home-Live-Chrome-App-Group-Mirror-Design.md).
 
@@ -147,12 +148,12 @@ This is **permanent architecture**, not a gap to close with events. Mechanism SS
 
 | Surface | WidgetKit (`SimpleEntry`) | Control Center (`Value`) | ActivityKit (`ContentState` views) |
 |---------|---------------------------|--------------------------|-------------------------------------|
-| Status | Once in `Provider` → projected in `LutheranRadioWidgetEntryView` | Once in `Provider` → `Value.statusPresentation` | Once at top of `LockScreenLiveActivityView` and outer `dynamicIsland` closure |
-| Control | Once in `Provider` | Once in `Provider` → `Value.controlPresentation` | Once in outer `dynamicIsland` + `LockScreenLiveActivityView` |
+| Status | Once in `Provider` → projected in `LutheranRadioWidgetEntryView` (interactive heal re-resolves LIVE) | Once in `Provider` → `Value.statusPresentation` | Once at top of `LockScreenLiveActivityView` and outer `dynamicIsland` closure |
+| Control | Once in `Provider` → direction-bound home play/pause intents (``openAppWhenRun = false``) | Once in `Provider` → `Value.controlPresentation` | Once in outer `dynamicIsland` + `LockScreenLiveActivityView` |
 | Metadata | Once in `Provider` → `entry.widgetNowPlayingDisplayModel` | N/A (not shown) | Once in outer `dynamicIsland` + `LockScreenLiveActivityView` |
 | Language chrome (flag + name + alt-stream “current”) | Snapshot `currentLanguage` via Provider assembly / ``preferredWidgetLanguage()`` (home/Control; App Group + session hygiene) | N/A (not shown) | **`ContentState.currentLanguage`** pushed by ``RadioLiveActivityManager`` from main-app stream attach language; views hoist `context.state.currentLanguage` only |
 
-Leaf views (`WidgetMetadataRegion`, play/pause buttons) must not re-derive canonical mapping rules.
+Leaf views (`WidgetMetadataRegion`, play/pause buttons) must not re-derive canonical mapping rules. Home interactive LIVE re-resolves status/control via ``WidgetInteractivePaintHeal`` from suite wake tokens (paint epoch/signature + Darwin paint-advanced) as **body dependencies only** — never fold those tokens into a root EntryView `.id` (Class A open-host). Mechanism: [`docs/Home-Live-Chrome-App-Group-Mirror-Design.md`](Home-Live-Chrome-App-Group-Mirror-Design.md) §6.6.
 
 ### Non-Forcing Refresh Model
 
@@ -301,7 +302,8 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 
 **Scope:** Consolidation here is **main-app `refreshIfNeeded` call-site dedup only** — not replacing the snapshot model, not streaming `PlayerEvent` across process boundaries, and not removing optimistic extension writes or provider read-refresh hygiene.
 
-- [x] **Provider `refreshVisualStateFromPersistence` audit (2026-07-13):** Documented in **Provider snapshot audit** below and implemented via ``WidgetProviderSnapshotResolver`` in `WidgetDisplayModels.swift`. Home-widget and Control-widget Providers call ``resolveWithActorHygiene(manager:)``; snapshot fields remain static ``loadPersistedWidgetState()`` reads. Actor hop retained for extension hygiene (not removed — device-proven removal deferred).
+- [x] **Provider `refreshVisualStateFromPersistence` audit (2026-07-13; hop removed 2026-08):** Documented in **Provider snapshot audit** below and implemented via ``WidgetProviderSnapshotResolver`` in `WidgetDisplayModels.swift`. Home-widget and Control-widget Providers paint via ``resolveFromSnapshot()`` (session + privacy-gated ``homeWidgetLiveChrome``). ``resolveWithActorHygiene`` is removed. Control retains a narrow ``refreshVisualStateFromPersistence()`` only when the App Group suite is unavailable.
+- [x] **Interactive home LIVE heal + in-widget pause/play (2026-08-09):** Entry always re-resolves via ``WidgetInteractivePaintHeal`` / suite wake tokens (``homeWidgetInteractivePaintEpoch`` / signature + Darwin ``homeWidgetInteractivePaintAdvanced``) as body deps only — **no** thrashy root EntryView `.id` (that caused Class A open-host: intent miss → default host open with no mailbox pause). Direction-bound ``WidgetPlayRadioIntent`` / ``WidgetPauseRadioIntent`` (``openAppWhenRun = false``); stable Button identity + expanded hit target. Eyes-on: background home pause → Darwin + pending ``pause`` → ``userPaused`` while main stays backgrounded; soft-resume / re-pause / paused switch round-trip. Canonical: [`docs/Home-Live-Chrome-App-Group-Mirror-Design.md`](Home-Live-Chrome-App-Group-Mirror-Design.md) §6.6.
 - [x] **Imperative `refreshIfNeeded` deduplication (main app only, 2026-07-13):** Removed duplicate imperative calls from ``performActualSave``, ``didUpdateStreamMetadata``, and ``RadioPlayerCoordinator/updateUserDefaultsLanguage``. Tier 2 observer is now the sole driver for mutation-path timeline reloads; ``refreshUsesImmediateDelivery(for:hasError:)`` extended for sticky-pause and error urgency parity. Retained imperative paths: lifecycle/teardown (`performSessionAndWidgetTeardown`, ``performPostStopWidgetHygiene``, termination), AppDelegate foreground, widget-extension optimistic intents, widget-process ``handleWidgetPlay``/``handleWidgetStop`` delayed refresh.
 - [x] **Widget-action polling timer evaluation (2026-07-13):** Removed `ViewController.setupWidgetActionPolling()` (30 s repeating timer). Darwin notify + 1…5 s launch burst + `SceneDelegate` become-active/foreground hooks are sufficient; background timers are unreliable while suspended.
 - [x] **Control widget value-provider freshness (2026-07-13):** ``LutheranRadioWidgetControl/Provider`` uses ``WidgetProviderSnapshotResolver`` (symmetric hygiene with home-widget ``getPendingOrCurrentState``).
@@ -313,12 +315,12 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 | Provider path | Actor hop (`refreshVisualStateFromPersistence`) | Snapshot read | Notes |
 |---------------|--------------------------------------------------|---------------|-------|
 | Home widget `placeholder` | No | N/A (synthetic `.prePlay`) | Static preview only |
-| Home widget `snapshot` / `timeline` / `createEntry` | **Yes** (via ``WidgetProviderSnapshotResolver``) | ``loadPersistedWidgetState()`` only | Never falls back to ``currentVisualState``; hop resets loaded-guard for long-lived extension processes |
+| Home widget `snapshot` / `timeline` / `createEntry` | **No** | ``resolveFromSnapshot()`` | Paint SSOT is session + ``homeWidgetLiveChrome``; never ``currentVisualState`` on the happy path |
 | Control widget `previewValue` | No | N/A (synthetic `.prePlay`) | Static preview only |
-| Control widget `currentValue` | **Yes** (via resolver) | ``loadPersistedWidgetState()`` primary | Actor fallback when App Group unavailable or snapshot absent |
+| Control widget `currentValue` | **Only if App Group nil** | ``resolveFromSnapshot()`` primary | Narrow ``refreshVisualStateFromPersistence()`` then actor visual when suite unavailable |
 | Widget AppIntent optimistic (`ToggleRadioIntent`, etc.) | No | ``loadPersistedWidgetState()`` before write | Followed by extension-local ``refreshIfNeeded(..., immediate: true)`` |
 
-**Safe direct-read rule:** Code that reads **only** ``loadPersistedWidgetState()`` / ``resolveFromSnapshot()`` and never ``currentVisualState`` could skip the actor hop in theory; Providers keep the hop as permanent extension hygiene until device-proven otherwise.
+**Safe direct-read rule:** Home and Control Providers paint from ``resolveFromSnapshot()`` and do not use ``currentVisualState`` on the happy path. ``refreshVisualStateFromPersistence()`` remains for main-app cold launch and Control’s App Group–nil fallback only.
 
 #### Dual-path `refreshIfNeeded` inventory (with ``WidgetRefreshTrigger``)
 
@@ -455,6 +457,8 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 ---
 
 ## Update Log
+
+- **2026-08-09:** **Home interactive LIVE + Class A open-host closed (coalesced with Provider hop removal)** — Providers paint via ``resolveFromSnapshot()`` only (``resolveWithActorHygiene`` removed; Control keeps narrow ``refreshVisualStateFromPersistence()`` when App Group suite is unavailable). Interactive home LIVE heals residual playing/pause chrome via ``WidgetInteractivePaintHeal`` + suite paint epoch/signature + Darwin/local paint-advanced wake as **body dependencies only** — never thrash root EntryView `.id` with those tokens (mid-tap identity storm dropped AppIntent hit targets → host open without mailbox pause). Direction-bound ``WidgetPlayRadioIntent`` / ``WidgetPauseRadioIntent`` (``openAppWhenRun = false``); stable direction Button identity + expanded hit target; no dual ``reloadAllTimelines`` / sticky JSON rewrite on optimistic paths. Eyes-on: background home pause → Darwin + pending ``pause`` → sticky ``userPaused`` while main stays backgrounded; soft-resume play, re-pause, paused stream switch (no auto-resume). Canonical: **Provider snapshot audit** (Tier 3) + [`docs/Home-Live-Chrome-App-Group-Mirror-Design.md`](Home-Live-Chrome-App-Group-Mirror-Design.md) §6.6. No security surface change.
 
 - **2026-08-07:** **PR5 execute-time home wake discard unification** — ``WidgetRefreshManager/refreshWouldDiscardHomeWake(executing:memory:session:isImmediate:)`` is the single execute-time SSOT (memory lag first, then session lag). Pure helpers retained; ``performRefreshIfNotStale`` one call site; memory- and session-lag rules unchanged (same discard cases as the previous sequential checks). Soft-resume non-immediate Connecting, identical non-playing coalesce, dual-path triggers, and live chrome paint SSOT unchanged. Reload remains wake-only; Providers paint session + ``homeWidgetLiveChrome``. Gate: `testRefreshWouldDiscardHomeWakeComposesMemoryThenSession`. Canonical: [`docs/Home-Live-Chrome-App-Group-Mirror-Design.md`](Home-Live-Chrome-App-Group-Mirror-Design.md) §8. No security surface change.
 - **2026-08-07:** **Home live chrome device eyes-on absorb** — Design SSOT Status → **Implemented**. Physical-device required checklist passed: cold-launch auto-play → background → home pause → soft resume → switch while playing → privacy residual clear. Design §10.3 is self-contained (product auto-play; OI-1 = residual honesty, not silent open). Optional PR5 was unblocked after eyes-on (shipped same day as separate micro-step). No product code change in the absorb commit.
