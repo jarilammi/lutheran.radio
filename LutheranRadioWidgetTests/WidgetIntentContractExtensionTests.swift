@@ -177,7 +177,8 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         await WidgetIntentExecution.performHomeWidgetToggle()
 
         let snapshot = SharedPlayerManager.loadPersistedWidgetState()
-        XCTAssertEqual(snapshot?.visualState, .playing, "Optimistic play snapshot after home toggle")
+        // Soft-resume honesty: hold sticky pause until main setPlaying (not invent .playing).
+        XCTAssertEqual(snapshot?.visualState, .userPaused, "Optimistic home play holds sticky pause chrome")
         XCTAssertEqual(snapshot?.currentLanguage, "fi")
     }
 
@@ -190,6 +191,132 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         let snapshot = SharedPlayerManager.loadPersistedWidgetState()
         XCTAssertEqual(snapshot?.visualState, .userPaused, "Optimistic pause snapshot after home toggle")
         XCTAssertEqual(snapshot?.currentLanguage, "en")
+    }
+
+    /// Optimistic home pause advances snapshot, live chrome, paint epoch, and Provider resolve together.
+    ///
+    /// **Invariant protected:** After ``performHomeWidgetToggle`` from ``.playing``, interactive
+    /// LIVE heal inputs must all report ``.userPaused`` and the paint epoch must strictly increase
+    /// so ``LutheranRadioWidgetEntryView`` re-resolves residual Toistaa without restoring the
+    /// hygiene hop. A second identical pause stamp (identity skip) must still bump the epoch.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
+    ///   ``SharedPlayerManager/bumpHomeWidgetInteractivePaintEpoch(reason:)``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``.
+    func testPerformHomeWidgetTogglePauseAdvancesPaintEpochAndResolveHonesty() async {
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "fi")
+        let epochBefore = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+
+        await WidgetIntentExecution.performHomeWidgetToggle()
+
+        XCTAssertEqual(SharedPlayerManager.loadPersistedWidgetState()?.visualState, .userPaused)
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .userPaused,
+            "Live chrome must hold pause for cross-process interactive heal"
+        )
+        let epochAfterPause = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+        XCTAssertGreaterThan(
+            epochAfterPause,
+            epochBefore,
+            "Optimistic pause must bump interactive paint epoch for LIVE body re-eval"
+        )
+        XCTAssertEqual(
+            WidgetProviderSnapshotResolver.resolveFromSnapshot().visualState,
+            .userPaused,
+            "Provider resolve SSOT must match optimistic pause"
+        )
+        let signatureAfterPause = SharedPlayerManager.loadHomeWidgetInteractivePaintSignature()
+        XCTAssertEqual(
+            signatureAfterPause,
+            SharedPlayerManager.makeHomeWidgetInteractivePaintSignature(
+                visualState: .userPaused,
+                language: "fi",
+                epoch: epochAfterPause
+            ),
+            "Optimistic pause must publish stable paint signature for LIVE @AppStorage / entry identity"
+        )
+
+        // Identity-skip path: chrome already userPaused — toggle play then pause again is heavier;
+        // instead re-run executeOptimisticToggle with an explicit pause plan to force the always-bump.
+        let plan = WidgetToggleActionPlan(action: .pause, targetVisualState: .userPaused)
+        await WidgetIntentExecution.executeOptimisticToggle(plan: plan, language: "fi")
+        XCTAssertGreaterThan(
+            SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch(),
+            epochAfterPause,
+            "Re-toggle pause must bump epoch even when live-chrome identity skip applies"
+        )
+        XCTAssertEqual(
+            WidgetProviderSnapshotResolver.resolveFromSnapshot().visualState,
+            .userPaused
+        )
+        XCTAssertNotEqual(
+            SharedPlayerManager.loadHomeWidgetInteractivePaintSignature(),
+            signatureAfterPause,
+            "Re-toggle pause must flip paint signature even when chrome identity skips"
+        )
+    }
+
+    /// Optimistic home play advances paint epoch while holding sticky pause (soft-resume honesty).
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/performHomeWidgetToggle()``,
+    ///   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``,
+    ///   ``SharedPlayerManager/bumpHomeWidgetInteractivePaintEpoch(reason:)``.
+    func testPerformHomeWidgetTogglePlayAdvancesPaintEpochAndResolveHonesty() async {
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: "et")
+        let epochBefore = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+
+        await WidgetIntentExecution.performHomeWidgetToggle()
+
+        XCTAssertEqual(SharedPlayerManager.loadPersistedWidgetState()?.visualState, .userPaused)
+        XCTAssertEqual(SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState, .userPaused)
+        XCTAssertGreaterThan(
+            SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch(),
+            epochBefore,
+            "Optimistic play must bump interactive paint epoch"
+        )
+        XCTAssertEqual(
+            WidgetProviderSnapshotResolver.resolveFromSnapshot().visualState,
+            .userPaused,
+            "Home play must not invent .playing before engine setPlaying"
+        )
+    }
+
+    /// Direction-explicit pause intent always stamps ``.userPaused`` (residual-glyph safe).
+    func testPerformHomeWidgetPauseAlwaysStampsUserPaused() async {
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "fi")
+
+        await WidgetIntentExecution.performHomeWidgetPause()
+
+        XCTAssertEqual(SharedPlayerManager.loadPersistedWidgetState()?.visualState, .userPaused)
+        XCTAssertEqual(SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState, .userPaused)
+        XCTAssertEqual(
+            WidgetProviderSnapshotResolver.resolveFromSnapshot().visualState,
+            .userPaused
+        )
+    }
+
+    /// Direction-explicit play from pause holds sticky chrome; from connecting stays Connecting.
+    func testPerformHomeWidgetPlayHonestyMatrix() async {
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: "sv")
+        await WidgetIntentExecution.performHomeWidgetPlay()
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .userPaused,
+            "Soft-resume play must hold Tauko chrome until setPlaying"
+        )
+
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .prePlay, language: "sv")
+        await WidgetIntentExecution.performHomeWidgetPlay()
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .prePlay,
+            "Connect play must stay Connecting (play glyph), not invent pause glyph"
+        )
     }
 
     /// Empty session + residual live chrome `.playing` plans pause (not factory `.prePlay` play).
@@ -548,6 +675,9 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
     }
 
     /// Protects identity skip on repeated identical optimistic toggle stamps (no App Group spam).
+    ///
+    /// Sticky pause still wakes paint epoch/signature; JSON ``updatedAt`` stays stable so we do
+    /// not thrash suite writes (log4 regression from force-rewrite).
     func testOptimisticToggleLiveChromeIdentitySkipLeavesUpdatedAtUnchanged() async {
         SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
         SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "de")
@@ -556,12 +686,18 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         let first = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
         XCTAssertEqual(first?.visualState, .userPaused)
         let firstUpdatedAt = first?.updatedAt ?? 0
+        let epochAfterPause = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
 
         // Re-stamp identical pause chrome via the same optimistic writer.
         manager.persistOptimisticWidgetSnapshot(.userPaused, language: "de")
         let second = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
         XCTAssertEqual(second?.updatedAt, firstUpdatedAt, "Identity skip must not refresh updatedAt")
         XCTAssertEqual(second?.visualState, .userPaused)
+        XCTAssertGreaterThan(
+            SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch(),
+            epochAfterPause,
+            "Sticky pause identity skip must still bump paint epoch"
+        )
     }
 
     /// ``performControlWidgetToggle(isPlayingRequested:)`` mirrors Control ``ToggleRadioIntent``.
@@ -1151,11 +1287,12 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: "et")
         let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: .userPaused)
         XCTAssertEqual(plan.action, .play)
+        XCTAssertEqual(plan.targetVisualState, .userPaused, "Home play holds sticky pause until setPlaying")
 
         await WidgetIntentExecution.executeOptimisticToggle(plan: plan, language: "et")
 
         let snapshot = SharedPlayerManager.loadPersistedWidgetState()
-        XCTAssertEqual(snapshot?.visualState, .playing)
+        XCTAssertEqual(snapshot?.visualState, .userPaused)
         XCTAssertEqual(snapshot?.currentLanguage, "et")
     }
 

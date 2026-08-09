@@ -179,35 +179,61 @@ extension SharedPlayerManager {
 
     /// Language for ``WidgetRefreshManager`` derivation, coalesce bookkeeping, and DEBUG labels.
     ///
-    /// Prefer the in-process session snapshot when present. When the snapshot is absent —
-    /// including privacy write suppression with **no home widgets** — prefer the same
-    /// stream-attach / Live Activity language surfaces used for content pushes so
-    /// coalesce / deferred-refresh logs do not report ``preferredWidgetLanguage()``'s
-    /// privacy hard-default `"en"` while the engine stream or durable LA language mirror
-    /// holds a non-English code.
+    /// **Stream-switch honesty:** Extension optimistic switch stamps destination language into
+    /// privacy-gated ``homeWidgetLiveChrome`` (and often instant-feedback) **before** the main-app
+    /// process-local session language advances. Preferring a lagging session first produced WRM
+    /// first-paint / deferred Connecting labels on the **prior** language (`lang: fi` while
+    /// switching to `sv`) even though App Group chrome already held the destination.
     ///
     /// **Does not** open write suppression, write App Group snapshot keys, or change
-    /// home-widget Provider chrome resolution (still ``preferredWidgetLanguage()``).
+    /// home-widget Provider chrome resolution (Providers use ``resolveHomeWidgetChromeFields``).
     ///
-    /// Resolution order (first non-empty wins):
-    /// 1. Session snapshot `currentLanguage`
-    /// 2. Main app: ``DirectStreamingPlayer/selectedStream`` language (stream attach SSOT)
-    /// 3. Durable Live Activity language mirror (destination stamp / last content push)
-    /// 4. Non-empty `fallbackLanguage` from the refresh caller (when not privacy-default-only)
-    /// 5. Main app: ``preferredMainAppInitialLanguageCode()``; extension: ``preferredWidgetLanguage()``
+    /// Resolution order (first applicable wins):
+    /// 1. Privacy-gated live-chrome language when present and (session absent, languages agree,
+    ///    or live chrome `updatedAt` is strictly fresher than session) — cross-process switch
+    ///    / optimistic settle SSOT for refresh labels
+    /// 2. Session snapshot `currentLanguage` when non-empty
+    /// 3. Main app: ``DirectStreamingPlayer/selectedStream`` language (stream attach SSOT)
+    /// 4. Durable Live Activity language mirror (destination stamp / last content push)
+    /// 5. Non-empty `fallbackLanguage` from the refresh caller (when not privacy-default-only)
+    /// 6. Main app: ``preferredMainAppInitialLanguageCode()``; extension: ``preferredWidgetLanguage()``
     ///
     /// - Parameter fallbackLanguage: Optional language already known to the caller
-    ///   (e.g. ``loadSharedState()``.currentLanguage). Used only after snapshot / attach /
-    ///   mirror when it is non-empty; under no-widgets a bare `"en"` fallback is ignored in
-    ///   favor of the main-app locale reseed so hard-default pollution does not win.
+    ///   (e.g. ``loadSharedState()``.currentLanguage, which may already carry instant-feedback).
+    ///   Used only after live chrome / snapshot / attach / mirror when it is non-empty; under
+    ///   no-widgets a bare `"en"` fallback is ignored in favor of the main-app locale reseed so
+    ///   hard-default pollution does not win.
     /// - Returns: Non-empty language code for refresh state and diagnostic labels.
     /// - SeeAlso: ``mainAppLiveActivityLanguageCode()``, ``languageForLiveActivityOrWidgetOptimistic()``,
     ///   ``liveActivityLanguageCodeForContentPush()``, ``preferredWidgetLanguage()``,
+    ///   ``loadHomeWidgetLiveChromeMirror()``,
     ///   ``WidgetRefreshManager/deriveRefreshParameters(for:)``,
     ///   ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
-    ///   docs/Widget-Functionality-Roadmap.md, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    ///   docs/Widget-Functionality-Roadmap.md, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3, §6).
     nonisolated static func languageForWidgetRefreshDerivation(fallbackLanguage: String = "") -> String {
-        if let snapshotLanguage = loadPersistedWidgetState()?.currentLanguage, !snapshotLanguage.isEmpty {
+        let session = loadPersistedWidgetState()
+        let sessionLanguage = session?.currentLanguage
+        let sessionTime = session?.updatedAt ?? -.infinity
+
+        // Cross-process optimistic destination often lands in live chrome before main-process
+        // session language advances (stream-switch first WRM sample). Prefer fresher mirror.
+        if let liveChrome = loadHomeWidgetLiveChromeMirror(),
+           !liveChrome.currentLanguage.isEmpty {
+            let liveLang = liveChrome.currentLanguage
+            if let sessionLanguage, !sessionLanguage.isEmpty {
+                if sessionLanguage == liveLang {
+                    return sessionLanguage
+                }
+                if liveChrome.updatedAt > sessionTime {
+                    return liveLang
+                }
+                return sessionLanguage
+            }
+            return liveLang
+        }
+
+        if let snapshotLanguage = sessionLanguage, !snapshotLanguage.isEmpty {
             return snapshotLanguage
         }
 

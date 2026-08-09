@@ -8,13 +8,16 @@
 //  synthesis. Full pure presentation matrices (every visual state, flag map) live
 //  in WidgetSurfaceTests. This suite keeps snapshot / catalog / blueprint smoke that
 //  exercises SharedPlayerManager under the widget compile profile, including
-//  ``WidgetProviderSnapshotResolver`` live-chrome resolution (session vs mirror freshness).
+//  ``WidgetProviderSnapshotResolver`` live-chrome resolution (session vs mirror freshness)
+//  and ``WidgetInteractivePaintHeal`` (lagging TimelineEntry wake tokens + fresher suite).
 //
 //  - SeeAlso: ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)``,
-//    ``WidgetProviderSnapshotResolver``, ``WidgetProviderPresentationAssembly``,
+//    ``WidgetProviderSnapshotResolver``, ``WidgetInteractivePaintHeal``,
+//    ``WidgetProviderPresentationAssembly``,
 //    ``displayFlag(for:)``, ``displayLanguageName(for:)``,
 //    docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6),
-//    docs/Widget-Functionality-Roadmap.md.
+//    docs/Widget-Functionality-Roadmap.md,
+//    docs/Live-Activity-Stacking-and-Media-Surfaces.md (ContentState lag class — peer).
 //
 
 import XCTest
@@ -419,19 +422,335 @@ final class WidgetDisplayModelsExtensionTests: XCTestCase {
         XCTAssertEqual(fields.streamMetadata?.programTitle, "Mirror Title")
     }
 
-    func testResolveWithActorHygieneMatchesResolveFromSnapshot() async {
+    /// Protects stamped-session paint under the extension profile: ``resolveFromSnapshot()``
+    /// is the sole Provider happy-path resolver (no actor hop).
+    func testResolveFromSnapshotReturnsStampedSessionUnderExtensionProfile() {
         SharedPlayerManager.persistWidgetSnapshot(
             visualState: .playing,
             language: "de",
             streamMetadata: metadata(title: programTitle, speaker: speaker)
         )
 
-        let hygieneFields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
-        let directFields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
 
-        XCTAssertEqual(hygieneFields, directFields)
-        XCTAssertEqual(hygieneFields.visualState, .playing)
-        XCTAssertEqual(hygieneFields.currentLanguage, "de")
+        XCTAssertEqual(fields.visualState, .playing)
+        XCTAssertEqual(fields.currentLanguage, "de")
+        XCTAssertEqual(fields.streamMetadata?.programTitle, programTitle)
+    }
+
+    /// Live-chrome write bumps interactive paint epoch; resolve stays snapshot-SSOT (no hop).
+    ///
+    /// **Invariant protected:** Residual play/pause LIVE lag is healed by epoch wake +
+    /// ``resolveFromSnapshot`` — not by reintroducing ``resolveWithActorHygiene``.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/bumpHomeWidgetInteractivePaintEpoch(reason:)``,
+    ///   ``SharedPlayerManager/persistHomeWidgetLiveChromeMirror(_:)``.
+    func testLiveChromeWriteBumpsInteractivePaintEpochAndResolveFollowsMirror() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        let epochBefore = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .userPaused,
+                currentLanguage: "fi",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "testPaintEpoch"
+            )
+        )
+
+        XCTAssertGreaterThan(
+            SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch(),
+            epochBefore,
+            "Live-chrome write must bump interactive paint epoch"
+        )
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(fields.visualState, .userPaused)
+        XCTAssertEqual(fields.currentLanguage, "fi")
+    }
+
+    /// Sticky pause identity skip still advances paint epoch under extension profile.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``.
+    func testUserPausedIdentitySkipBumpsPaintEpochUnderExtensionProfile() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .userPaused,
+            language: "et",
+            hasError: false,
+            reason: "optimisticToggle"
+        )
+        let epochAfterWrite = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+        let firstUpdatedAt = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.updatedAt
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .userPaused,
+            language: "et",
+            hasError: false,
+            reason: "sessionSave"
+        )
+        XCTAssertGreaterThan(
+            SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch(),
+            epochAfterWrite,
+            "Extension-profile sticky pause identity skip must wake interactive paint epoch"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.updatedAt,
+            firstUpdatedAt,
+            "Identity skip must not rewrite live-chrome JSON under extension profile"
+        )
+        XCTAssertEqual(
+            WidgetProviderSnapshotResolver.resolveFromSnapshot().visualState,
+            .userPaused
+        )
+    }
+
+    /// Soft-resume ``.playing`` identity skip also advances paint epoch (residual Tauko wake).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``.
+    func testPlayingIdentitySkipBumpsPaintEpochUnderExtensionProfile() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .playing,
+            language: "fi",
+            hasError: false,
+            reason: "setPlaying"
+        )
+        let epochAfterWrite = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+        let firstUpdatedAt = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.updatedAt
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .playing,
+            language: "fi",
+            hasError: false,
+            reason: "sessionSave"
+        )
+        XCTAssertGreaterThan(
+            SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch(),
+            epochAfterWrite,
+            "Playing identity skip must wake interactive paint epoch for residual Tauko heal"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.updatedAt,
+            firstUpdatedAt,
+            "Playing identity skip must not rewrite live-chrome JSON"
+        )
+        XCTAssertEqual(
+            WidgetProviderSnapshotResolver.resolveFromSnapshot().visualState,
+            .playing
+        )
+    }
+
+    /// Live-chrome write publishes stable paint signature (epoch|visualToken|lang) for LIVE identity.
+    ///
+    /// **Invariant protected:** Signature uses ``HomeWidgetLiveChrome/stableToken(for:)`` so
+    /// ``SimpleEntry/paintSignature`` and ``@AppStorage`` observers flip on pause/play without
+    /// inventing visual from the token alone.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/makeHomeWidgetInteractivePaintSignature(visualState:language:epoch:)``,
+    ///   ``SharedPlayerManager/loadHomeWidgetInteractivePaintSignature()``.
+    func testLiveChromeWritePublishesStableInteractivePaintSignature() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .userPaused,
+                currentLanguage: "fi",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "testPaintSignature"
+            )
+        )
+
+        let epoch = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+        let expected = SharedPlayerManager.makeHomeWidgetInteractivePaintSignature(
+            visualState: .userPaused,
+            language: "fi",
+            epoch: epoch
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetInteractivePaintSignature(),
+            expected,
+            "Paint signature must use stable visual token + current epoch after live-chrome write"
+        )
+        XCTAssertTrue(
+            expected.contains("|userPaused|fi"),
+            "Stable token form epoch|userPaused|lang (not String(describing:) enum dump)"
+        )
+    }
+
+    /// Soft-resume settle: fresher live-chrome ``.playing`` wins over sticky pause session.
+    ///
+    /// **Invariant protected:** log5 inverse residual (grey Tauko after audio playing) must not
+    /// come from chrome selection preferring stale extension session over main App Group settle.
+    /// Heal always rebuilds from this resolve (never keeps lagging entry pause chrome).
+    ///
+    /// - SeeAlso: ``resolveHomeWidgetChromeFields``, ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``.
+    func testFresherLiveChromePlayingBeatsStaleSessionUserPausedForSoftResumeSettle() {
+        let sessionTime = Date().timeIntervalSince1970 - 2
+        let mirrorTime = Date().timeIntervalSince1970
+        let resolution = resolveHomeWidgetChromeFields(
+            sessionVisual: .userPaused,
+            sessionLanguage: "fi",
+            sessionHasError: false,
+            sessionUpdatedAt: sessionTime,
+            liveChrome: HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "fi",
+                hasError: false,
+                updatedAt: mirrorTime,
+                stampReason: "setPlaying"
+            ),
+            distrustLiveChrome: false
+        )
+        XCTAssertEqual(resolution.visualState, .playing)
+        XCTAssertEqual(resolution.source, .liveChrome)
+        XCTAssertEqual(resolution.currentLanguage, "fi")
+    }
+
+    // MARK: - Interactive home paint heal (snapshot rebuild + wake-token merge)
+
+    /// Lagging TimelineEntry wake tokens + fresher suite → heal projects suite chrome.
+    ///
+    /// **Invariant protected:** ``WidgetInteractivePaintHeal/projectHomeInteractivePaint``
+    /// rebuilds status/control from ``resolveFromSnapshot()`` and merges wake tokens
+    /// (`max` epoch; suite signature wins). Residual system-held chrome is modeled only via
+    /// lagging epoch/signature — entry status/control slices are never heal inputs — so App
+    /// Group ``.userPaused`` after optimistic home pause cannot lose to a lagging ``.playing``
+    /// archive once heal runs.
+    ///
+    /// **Soft-resume inverse (second half):** Fresher live-chrome ``.playing`` over sticky
+    /// session pause projects ``.playing`` — heal must not keep residual pause chrome.
+    ///
+    /// **Out of scope for this test:** Whether WidgetKit re-evaluated the on-screen home
+    /// widget after the suite stamp (body re-eval is driven by ``@AppStorage``, Darwin/local
+    /// paint-advanced wake, and timeline reload — not by this method alone).
+    ///
+    /// - SeeAlso: ``WidgetInteractivePaintHeal/projectHomeInteractivePaint(laggingPaintEpoch:laggingPaintSignature:date:)``,
+    ///   ``WidgetInteractivePaintHealProjection``,
+    ///   ``SharedPlayerManager/makeHomeWidgetInteractivePaintSignature(visualState:language:epoch:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (ContentState lag class).
+    func testLaggingEntryWakeTokensPlusFresherSuiteProjectsHealChromeNotLaggingPlaying() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+
+        // Residual playing archive after home pause (suite already userPaused).
+        // Durable SSOT after optimistic pause (audio/main path honest).
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: "fi")
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .userPaused,
+                currentLanguage: "fi",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "testLaggingEntryHealPause"
+            )
+        )
+
+        let suiteEpochAfterPause = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+        let suiteSignatureAfterPause = SharedPlayerManager.loadHomeWidgetInteractivePaintSignature()
+        XCTAssertGreaterThan(suiteEpochAfterPause, 0, "Live-chrome write must advance paint epoch")
+        XCTAssertFalse(suiteSignatureAfterPause.isEmpty, "Live-chrome write must publish paint signature")
+
+        // Model system-held residual LIVE: older playing-era wake tokens only.
+        // Heal never consumes lagging status/control slices — proving chrome comes from suite.
+        let laggingPlayingEpoch = max(0, suiteEpochAfterPause - 1)
+        let laggingPlayingSignature = SharedPlayerManager.makeHomeWidgetInteractivePaintSignature(
+            visualState: .playing,
+            language: "fi",
+            epoch: laggingPlayingEpoch
+        )
+        let laggingDate = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let pauseProjection = WidgetInteractivePaintHeal.projectHomeInteractivePaint(
+            laggingPaintEpoch: laggingPlayingEpoch,
+            laggingPaintSignature: laggingPlayingSignature,
+            date: laggingDate
+        )
+
+        XCTAssertEqual(
+            pauseProjection.fields.visualState,
+            .userPaused,
+            "Heal fields must follow fresher suite resolve, not lagging playing wake token"
+        )
+        XCTAssertEqual(pauseProjection.blueprint.visualState, .userPaused)
+        XCTAssertEqual(
+            pauseProjection.blueprint.statusPresentation,
+            PlayerVisualState.userPaused.makeStatusPresentation()
+        )
+        XCTAssertEqual(
+            pauseProjection.blueprint.controlPresentation,
+            PlayerVisualState.userPaused.makeControlPresentation()
+        )
+        XCTAssertEqual(pauseProjection.blueprint.currentLanguageCode, "fi")
+        XCTAssertEqual(pauseProjection.blueprint.date, laggingDate, "Lagging entry date is retained")
+        XCTAssertEqual(
+            pauseProjection.paintEpoch,
+            max(laggingPlayingEpoch, suiteEpochAfterPause),
+            "Paint epoch must max(lagging entry, suite)"
+        )
+        XCTAssertEqual(
+            pauseProjection.paintSignature,
+            suiteSignatureAfterPause,
+            "Non-empty suite signature must win over lagging playing signature"
+        )
+        XCTAssertNotEqual(
+            pauseProjection.paintSignature,
+            laggingPlayingSignature,
+            "Lagging playing signature must not stick when suite advanced"
+        )
+
+        // Soft-resume settle: fresher playing suite beats sticky session pause.
+        // Process-local sticky pause is older than main setPlaying live chrome (soft-resume hold).
+        SharedPlayerManager.inMemorySessionWidgetSnapshot = SharedPlayerManager.PersistedWidgetState(
+            visualState: .userPaused,
+            currentLanguage: "fi",
+            lastLanguageChangeTime: Date().addingTimeInterval(-3),
+            streamMetadata: nil,
+            hasError: false
+        )
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "fi",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "testLaggingEntryHealSoftResume"
+            )
+        )
+
+        let suiteEpochAfterPlay = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+        let suiteSignatureAfterPlay = SharedPlayerManager.loadHomeWidgetInteractivePaintSignature()
+        let laggingPauseEpoch = max(0, suiteEpochAfterPlay - 1)
+        let laggingPauseSignature = SharedPlayerManager.makeHomeWidgetInteractivePaintSignature(
+            visualState: .userPaused,
+            language: "fi",
+            epoch: laggingPauseEpoch
+        )
+
+        let playProjection = WidgetInteractivePaintHeal.projectHomeInteractivePaint(
+            laggingPaintEpoch: laggingPauseEpoch,
+            laggingPaintSignature: laggingPauseSignature,
+            date: laggingDate
+        )
+
+        XCTAssertEqual(
+            playProjection.fields.visualState,
+            .playing,
+            "Soft-resume heal must project fresher live-chrome .playing over sticky session"
+        )
+        XCTAssertEqual(playProjection.blueprint.visualState, .playing)
+        XCTAssertEqual(
+            playProjection.blueprint.controlPresentation,
+            PlayerVisualState.playing.makeControlPresentation()
+        )
+        XCTAssertEqual(
+            playProjection.paintEpoch,
+            max(laggingPauseEpoch, suiteEpochAfterPlay)
+        )
+        XCTAssertEqual(playProjection.paintSignature, suiteSignatureAfterPlay)
     }
 
     // MARK: - Presentation assembly + factory blueprint (thin linkage smoke)

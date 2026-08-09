@@ -30,7 +30,7 @@ final class WidgetIntentCoordinatorTests: XCTestCase {
     // MARK: - Home widget toggle
 
     /// Home-widget toggle matrix: pause while playing; refuse thermal; play otherwise
-    /// (security recovery optimistically targets Connecting, not green playing).
+    /// (home optimistic play holds sticky pause or Connecting — never invents ``.playing``).
     func testPlanHomeWidgetToggleMatrix() {
         for state in allVisualStates {
             let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: state)
@@ -43,7 +43,11 @@ final class WidgetIntentCoordinatorTests: XCTestCase {
                 XCTAssertFalse(plan.shouldExecutePendingAction)
             } else {
                 XCTAssertEqual(plan.action, .play, "Non-playing non-thermal must plan play for \(state)")
-                XCTAssertEqual(plan.targetVisualState, state.optimisticVisualAfterPlayPlan)
+                XCTAssertEqual(
+                    plan.targetVisualState,
+                    state.optimisticHomeWidgetVisualAfterPlayPlan,
+                    "Home optimistic play must not invent .playing for \(state)"
+                )
                 XCTAssertTrue(plan.shouldExecutePendingAction)
             }
         }
@@ -115,7 +119,7 @@ final class WidgetIntentCoordinatorTests: XCTestCase {
             mainProcessRecentlyActive: true
         )
         XCTAssertEqual(plan.action, .play)
-        XCTAssertEqual(plan.targetVisualState, .playing)
+        XCTAssertEqual(plan.targetVisualState, .userPaused)
     }
 
     /// Residual live chrome ``.playing`` still plans pause under distrust (glyph honesty).

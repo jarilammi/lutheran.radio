@@ -14,7 +14,7 @@ import WidgetSurface
 
 /// Protects the canonical title / speaker / emphasis mapping for every
 /// `PlayerVisualState` × metadata presence combination (main-app test host),
-/// plus Provider snapshot hygiene and stream-catalog assembly wrappers.
+/// plus Provider ``resolveFromSnapshot`` paint and stream-catalog assembly wrappers.
 ///
 /// Pure presentation assembly without the stream catalog is covered in
 /// `WidgetSurfaceTests`. This suite exercises membership-exception paths that
@@ -243,29 +243,16 @@ final class WidgetDisplayModelsTests: XCTestCase {
         XCTAssertFalse(label.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
-    // MARK: - resolveWithActorHygiene (Tier 3 provider hygiene)
+    // MARK: - Main-app actor session reload (not Provider paint)
 
-    /// Verifies ``resolveWithActorHygiene(manager:)`` returns the same snapshot fields as
-    /// ``resolveFromSnapshot()`` after the actor hygiene hop.
-    func testResolveWithActorHygieneMatchesResolveFromSnapshot() async {
-        SharedPlayerManager.persistWidgetSnapshot(
-            visualState: .playing,
-            language: "de",
-            streamMetadata: metadata(title: programTitle, speaker: speaker)
-        )
-
-        let hygieneFields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
-        let directFields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
-
-        XCTAssertEqual(hygieneFields, directFields)
-        XCTAssertEqual(hygieneFields.visualState, .playing)
-        XCTAssertEqual(hygieneFields.currentLanguage, "de")
-        XCTAssertEqual(hygieneFields.streamMetadata?.programTitle, programTitle)
-    }
-
-    /// Verifies the hygiene hop reloads ``SharedPlayerManager/currentVisualState`` from the
-    /// in-session snapshot when the actor holds stale in-memory policy.
-    func testResolveWithActorHygieneReloadsActorVisualStateFromSnapshot() async {
+    /// Verifies ``refreshVisualStateFromPersistence()`` reloads
+    /// ``SharedPlayerManager/currentVisualState`` from the in-session snapshot when the actor
+    /// holds stale in-memory policy. Main-app cold-launch / coordination still use this API;
+    /// Providers paint via ``resolveFromSnapshot()`` without this hop.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/refreshVisualStateFromPersistence()``,
+    ///   ``SharedPlayerManager/ensureVisualStateLoaded()``.
+    func testRefreshVisualStateFromPersistenceReloadsActorVisualStateFromSnapshot() async {
         SharedPlayerManager.persistWidgetSnapshot(
             visualState: .userPaused,
             language: "sv",
@@ -273,26 +260,14 @@ final class WidgetDisplayModelsTests: XCTestCase {
         )
         await manager.setVisualState(.prePlay)
 
-        let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
+        await manager.refreshVisualStateFromPersistence()
 
-        XCTAssertEqual(fields.visualState, .userPaused)
-        XCTAssertEqual(fields.currentLanguage, "sv")
         let actorVisual = await manager.currentVisualState
         XCTAssertEqual(actorVisual, .userPaused)
-    }
-
-    /// Verifies factory defaults survive hygiene when no in-session snapshot exists.
-    func testResolveWithActorHygieneDefaultsToPrePlayWhenSnapshotAbsent() async {
-        await SharedPlayerManager.clearAllLocalState()
-        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
-
-        let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
-
-        XCTAssertEqual(fields.visualState, .prePlay)
-        XCTAssertFalse(fields.hasError)
-        XCTAssertFalse(fields.currentLanguage.isEmpty)
-        let actorVisual = await manager.currentVisualState
-        XCTAssertEqual(actorVisual, .prePlay)
+        // Paint path remains independent of actor state after the reload.
+        let paintFields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(paintFields.visualState, .userPaused)
+        XCTAssertEqual(paintFields.currentLanguage, "sv")
     }
 
     // MARK: - Provider presentation assembly (SimpleEntry / Control Value synthesis)
@@ -377,14 +352,14 @@ final class WidgetDisplayModelsTests: XCTestCase {
     }
 
     /// Verifies persisted snapshot → assembly path mirrors home-widget Provider entry synthesis.
-    func testAssemblePresentationSlicesFromPersistedSnapshotMatchesProviderContract() async {
+    func testAssemblePresentationSlicesFromPersistedSnapshotMatchesProviderContract() {
         SharedPlayerManager.persistWidgetSnapshot(
             visualState: .playing,
             language: "et",
             streamMetadata: metadata(title: programTitle, speaker: speaker)
         )
 
-        let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
         let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
         let stream = SharedPlayerManager.streamForLanguageCode("et")
 

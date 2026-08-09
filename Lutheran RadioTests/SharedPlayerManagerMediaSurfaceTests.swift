@@ -1203,6 +1203,106 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
         XCTAssertEqual(third?.stampReason, "playing")
     }
 
+    /// Sticky ``.userPaused`` identity skip still bumps interactive paint epoch (LIVE wake).
+    ///
+    /// **Invariant protected:** Main sticky pause after extension optimistic already stamped
+    /// ``.userPaused`` identity-skips the JSON write. Epoch + signature still advance so
+    /// interactive LIVE can re-resolve without thrashing App Group rewrites (log4 regression).
+    /// Connecting identity skips must stay quiet (attach-path spam).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
+    ///   ``SharedPlayerManager/bumpHomeWidgetInteractivePaintEpoch(reason:)``,
+    ///   ``LutheranRadioWidgetEntryView``.
+    func testUserPausedLiveChromeIdentitySkipBumpsInteractivePaintEpoch() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .userPaused,
+            language: "fi",
+            hasError: false,
+            reason: "optimisticToggle"
+        )
+        let epochAfterWrite = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+        let firstUpdatedAt = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.updatedAt
+
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .userPaused,
+            language: "fi",
+            hasError: false,
+            reason: "sessionSave"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.updatedAt,
+            firstUpdatedAt,
+            "Identity skip must not rewrite live-chrome JSON (avoid thrash)"
+        )
+        XCTAssertGreaterThan(
+            SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch(),
+            epochAfterWrite,
+            "Sticky pause identity skip must bump paint epoch for interactive LIVE re-resolve"
+        )
+
+        // Connecting identity skip must stay quiet (no epoch thrash).
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .prePlay,
+            language: "fi",
+            hasError: false,
+            reason: "connecting"
+        )
+        let epochAfterConnectingWrite = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .prePlay,
+            language: "fi",
+            hasError: false,
+            reason: "connectingIdentical"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch(),
+            epochAfterConnectingWrite,
+            "Connecting identity skip must not bump paint epoch"
+        )
+    }
+
+    /// Soft-resume ``.playing`` identity skip also bumps paint epoch (residual Tauko wake).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
+    ///   ``SharedPlayerManager/bumpHomeWidgetInteractivePaintEpoch(reason:)``.
+    func testPlayingLiveChromeIdentitySkipBumpsInteractivePaintEpoch() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .playing,
+            language: "fi",
+            hasError: false,
+            reason: "setPlaying"
+        )
+        let epochAfterWrite = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+        let firstUpdatedAt = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.updatedAt
+
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .playing,
+            language: "fi",
+            hasError: false,
+            reason: "sessionSave"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.updatedAt,
+            firstUpdatedAt,
+            "Playing identity skip must not rewrite live-chrome JSON"
+        )
+        XCTAssertGreaterThan(
+            SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch(),
+            epochAfterWrite,
+            "Playing identity skip must bump paint epoch for residual Tauko re-resolve"
+        )
+    }
+
     /// Protects Tier 4 ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``
     /// coordination ordering: Now Playing update precedes widget refresh; Live Activity IPC is
     /// skipped under UITestMode without blocking the NP path.

@@ -40,7 +40,7 @@ enum WidgetIntentExecution {
 
     // MARK: - AppIntent perform entry points (extension `perform()` + tests)
 
-    /// Full home-widget toggle path used by ``WidgetToggleRadioIntent/perform()``.
+    /// Full home-widget toggle path used by legacy ``WidgetToggleRadioIntent/perform()``.
     ///
     /// Resolves paint-aligned visual state via ``resolveHomeWidgetChromeFields`` (process-local
     /// session + privacy-gated ``homeWidgetLiveChrome``), then plans with main-process liveness
@@ -49,18 +49,28 @@ enum WidgetIntentExecution {
     /// true, residual live chrome is ignored for resolve (same as Providers) so planning matches
     /// factory / non-playing paint after dirty exit or reboot.
     ///
+    /// **Prefer direction-explicit buttons:** home family views use ``performHomeWidgetPlay()`` /
+    /// ``performHomeWidgetPause()`` so residual LIVE glyphs cannot invert the scheduled verb.
+    /// This toggle path remains for tests and any single-intent call sites.
+    ///
     /// **Why not bare ``loadPersistedVisualStateDirect()``:** after dirty kill / reboot the
     /// in-process session is empty (OI-1) and that helper returns factory ``.prePlay``, which
     /// always planned play. While main is live, Providers paint residual live chrome and planning
     /// must match that resolve path.
     ///
-    /// - SeeAlso: ``WidgetIntentCoordinators/planHomeWidgetToggle(resolution:distrustDurableMirrorPlay:mainProcessRecentlyActive:)``,
+    /// - SeeAlso: ``performHomeWidgetPlay()``, ``performHomeWidgetPause()``,
+    ///   ``WidgetIntentCoordinators/planHomeWidgetToggle(resolution:distrustDurableMirrorPlay:mainProcessRecentlyActive:)``,
     ///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:distrustLiveChrome:)``,
     ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
     ///   ``SharedPlayerManager/isMainAppProcessRecentlyActive()``,
     ///   ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``,
     ///   docs/Widget-Presentation-Dataflow.md.
     static func performHomeWidgetToggle() async {
+        // Intent execution proves a home widget surface exists (symmetric with Control / switch).
+        // Await the gate so optimistic stamp + extensionOptimistic reload are not suppressed
+        // by a cold extension process where ``hasActiveLutheranWidgets`` is still false.
+        await MainActor.run { WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
+
         let session = SharedPlayerManager.loadPersistedWidgetState()
         let liveChrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
         let distrust = SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning()
@@ -86,12 +96,108 @@ enum WidgetIntentExecution {
         await executeOptimisticToggle(plan: plan, language: language)
     }
 
+    /// Direction-explicit **pause** from the home play/pause control.
+    ///
+    /// Always schedules pause / sticky ``.userPaused`` chrome. Residual LIVE that still shows a
+    /// pause glyph while App Group is already paused re-stamps pause — never plans play from a
+    /// lagging toggle resolve (the inverted-tap failure class when glyph and App Group disagree).
+    ///
+    /// - SeeAlso: ``performHomeWidgetPlay()``, ``WidgetIntentCoordinators/planHomeWidgetPause()``,
+    ///   ``executeOptimisticToggle(plan:language:)``.
+    static func performHomeWidgetPause() async {
+        await MainActor.run { WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
+
+        let session = SharedPlayerManager.loadPersistedWidgetState()
+        let liveChrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        let distrust = SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning()
+        let resolution = resolveHomeWidgetChromeFields(
+            sessionVisual: session?.visualState,
+            sessionLanguage: session?.currentLanguage,
+            sessionHasError: session?.hasError,
+            sessionUpdatedAt: session?.updatedAt,
+            liveChrome: liveChrome,
+            distrustLiveChrome: distrust
+        )
+        let plan = WidgetIntentCoordinators.planHomeWidgetPause()
+        let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
+            persistedLanguage: resolution.currentLanguage ?? session?.currentLanguage,
+            preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
+        )
+        await executeOptimisticToggle(plan: plan, language: language)
+    }
+
+    /// Direction-explicit **play** from the home play/pause control.
+    ///
+    /// Applies thermal refuse and post-exit residual-play distrust. Optimistic chrome uses
+    /// ``optimisticHomeWidgetVisualAfterPlayPlan`` (hold sticky pause or Connecting — never invent
+    /// home ``.playing`` before engine ``setPlaying()``). When chrome is already ``.playing``,
+    /// re-stamps playing + bumps paint epoch so residual Tauko heals without a second engine play.
+    ///
+    /// - SeeAlso: ``performHomeWidgetPause()``, ``WidgetIntentCoordinators/planHomeWidgetPlay(from:)``,
+    ///   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``.
+    static func performHomeWidgetPlay() async {
+        await MainActor.run { WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
+
+        let session = SharedPlayerManager.loadPersistedWidgetState()
+        let liveChrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        let distrust = SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning()
+        let resolution = resolveHomeWidgetChromeFields(
+            sessionVisual: session?.visualState,
+            sessionLanguage: session?.currentLanguage,
+            sessionHasError: session?.hasError,
+            sessionUpdatedAt: session?.updatedAt,
+            liveChrome: liveChrome,
+            distrustLiveChrome: distrust
+        )
+        let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
+            persistedLanguage: resolution.currentLanguage ?? session?.currentLanguage,
+            preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
+        )
+
+        // Already authoritative playing: heal residual non-playing LIVE paint; do not re-queue play.
+        if resolution.visualState.isActivelyPlaying {
+            let manager = SharedPlayerManager.shared
+            manager.persistOptimisticWidgetSnapshot(.playing, language: language)
+            await manager._forceSetCurrentVisualState(.playing)
+            SharedPlayerManager.bumpHomeWidgetInteractivePaintEpoch(reason: "homePlayHealAlreadyPlaying")
+            SharedPlayerManager.publishHomeWidgetInteractivePaintSignature(
+                visualState: .playing,
+                language: language,
+                epoch: SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch(),
+                postPaintWake: false
+            )
+            await Task.yield()
+            await Task.yield()
+            let state = manager.loadSharedState()
+            await WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: .playing,
+                currentLanguage: language,
+                hasError: state.hasError,
+                immediate: true,
+                trigger: .extensionOptimistic
+            )
+            return
+        }
+
+        var plan = WidgetIntentCoordinators.planHomeWidgetPlay(from: resolution.visualState)
+        // Same residual/factory play distrust as toggle path when main cannot service audio.
+        let residualOrFactory =
+            resolution.source == .liveChrome || resolution.source == .factory
+        let mainCannotServiceAudio =
+            !SharedPlayerManager.isMainAppProcessRecentlyActive() || distrust
+        if mainCannotServiceAudio, residualOrFactory, plan.action == .play {
+            plan = WidgetToggleActionPlan(action: .none, targetVisualState: resolution.visualState)
+        }
+        guard plan.shouldExecutePendingAction else { return }
+        await executeOptimisticToggle(plan: plan, language: language)
+    }
+
     /// Full Control Center toggle path used by ``ToggleRadioIntent/perform()``.
     ///
     /// - Parameter isPlayingRequested: `true` = play, `false` = pause (ControlWidgetToggle value).
     /// - SeeAlso: ``WidgetIntentCoordinators/planControlWidgetToggle(isPlayingRequested:)``.
     static func performControlWidgetToggle(isPlayingRequested: Bool) async {
-        Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
+        await MainActor.run { WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
 
         let plan = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: isPlayingRequested)
         let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
@@ -438,9 +544,18 @@ enum WidgetIntentExecution {
     ///
     /// **Home live chrome:** ``signalWidgetPendingAction`` → ``persistOptimisticWidgetSnapshot``
     /// stamps privacy-gated ``homeWidgetLiveChrome`` with the plan’s ``targetVisualState``
-    /// (reason `"optimisticToggle"`). Pause → ``.userPaused``; play → plan optimistic visual
-    /// (``optimisticVisualAfterPlayPlan`` / Control ``.playing``) — never invent beyond the pure
-    /// planner. Main-app settle overwrites when the gate is open.
+    /// (reason `"optimisticToggle"`). Pause → ``.userPaused``; home play →
+    /// ``optimisticHomeWidgetVisualAfterPlayPlan`` (hold sticky pause or Connecting — never invent
+    /// home ``.playing`` before engine settle); Control may still target ``.playing``. Main-app
+    /// settle overwrites when the gate is open.
+    ///
+    /// **Interactive LIVE paint:** Always bumps ``homeWidgetInteractivePaintEpoch`` (+ signature
+    /// + Darwin/local paint-advanced wake) after the optimistic stamp so
+    /// ``LutheranRadioWidgetEntryView`` re-resolves via suite observation / paint-advanced NC +
+    /// ``resolveFromSnapshot()`` even when live-chrome identity skip suppresses a second JSON
+    /// write. WidgetCenter wake path is WRM ``extensionOptimistic`` only — do **not** add
+    /// ``reloadAllTimelines`` here (log4: dual wakes thrashed residual LIVE without healing it).
+    /// System also reloads the Provider after ``perform()`` returns (App Intent contract).
     ///
     /// **Live Activity pause honesty:** When the plan targets a control visual (``.userPaused``
     /// or ``.playing``), also warms the durable LA toggle mirror (not gated by home widgets)
@@ -456,6 +571,8 @@ enum WidgetIntentExecution {
     ///   ``pushOptimisticLiveActivityToggleContent(visualState:)``,
     ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``,
     ///   ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
+    ///   ``SharedPlayerManager/bumpHomeWidgetInteractivePaintEpoch(reason:)``,
+    ///   ``SharedPlayerManager/publishHomeWidgetInteractivePaintSignature(visualState:language:epoch:)``,
     ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3),
     ///   docs/Event-Driven-Refactor-Roadmap.md,
@@ -468,6 +585,22 @@ enum WidgetIntentExecution {
             action: plan.action.wireValue,
             language: language
         )
+        // Align actor memory **before** extensionOptimistic wake discard samples
+        // ``currentVisualState``. ``persistOptimisticWidgetSnapshot`` already wrote session +
+        // live chrome; awaiting here closes the fire-and-forget race that could leave memory
+        // at residual ``.playing`` while App Group already holds ``.userPaused``.
+        await manager._forceSetCurrentVisualState(plan.targetVisualState)
+        // Always bump interactive paint epoch + signature after toggle so LIVE body re-eval
+        // advances even when live-chrome was already at target visual (identity skip).
+        SharedPlayerManager.bumpHomeWidgetInteractivePaintEpoch(reason: "optimisticToggle")
+        // Re-publish signature with the plan target (authoritative for this intent) without a
+        // second Darwin/local wake — bump already posted paint-advanced.
+        SharedPlayerManager.publishHomeWidgetInteractivePaintSignature(
+            visualState: plan.targetVisualState,
+            language: language,
+            epoch: SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch(),
+            postPaintWake: false
+        )
         // Home/Control pause must not leave LA ContentState stuck on Connecting while the
         // home snapshot already shows userPaused — same optimistic ContentState path as LA toggle.
         if plan.targetVisualState.isDefinitiveMediaToggleVisual {
@@ -479,6 +612,10 @@ enum WidgetIntentExecution {
             }
             await pushOptimisticLiveActivityToggleContent(visualState: plan.targetVisualState)
         }
+        // Yield so App Group live-chrome / session writers, paint epoch, and actor force-set are
+        // visible to Provider re-resolve and interactive entry-view heal before WidgetCenter wakes.
+        await Task.yield()
+        await Task.yield()
         let state = manager.loadSharedState()
         await WidgetRefreshManager.shared.refreshIfNeeded(
             visualState: plan.targetVisualState,
@@ -512,7 +649,7 @@ enum WidgetIntentExecution {
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3, §9),
     ///   docs/Widget-Presentation-Dataflow.md.
     static func executeHomeWidgetStreamSwitch(languageCode: String) async {
-        Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
+        await MainActor.run { WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
 
         let manager = SharedPlayerManager.shared
         guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == languageCode }) else {
@@ -532,6 +669,14 @@ enum WidgetIntentExecution {
         await publishOptimisticStreamSwitchLanguageChrome(languageCode: languageCode)
 
         await manager.switchToStream(targetStream)
+        // Same LIVE wake as toggle: sticky / identical chrome still needs interactive re-resolve.
+        SharedPlayerManager.bumpHomeWidgetInteractivePaintEpoch(reason: "optimisticSwitch")
+        SharedPlayerManager.publishHomeWidgetInteractivePaintSignature(
+            visualState: optimisticHomeVisual,
+            language: languageCode,
+            epoch: SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch(),
+            postPaintWake: false
+        )
 
         let state = manager.loadSharedState()
         await WidgetRefreshManager.shared.refreshIfNeeded(

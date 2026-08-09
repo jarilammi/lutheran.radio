@@ -170,12 +170,16 @@ import UIKit
     ///
     /// - ``securityLocked`` → ``prePlay`` (connecting chrome) so recovery re-validation does
     ///   not flash green / pause-glyph while DNS/cert work is still in flight.
-    /// - All other play-eligible states → ``playing`` so a rapid second lock-screen tap can
-    ///   re-plan pause from optimistic ContentState (existing dual-tap contract).
+    /// - All other play-eligible states → ``playing`` so a rapid second **lock-screen / Live Activity**
+    ///   tap can re-plan pause from optimistic ContentState (dual-tap contract).
     ///
-    /// - Returns: Target visual for durable LA mirror / optimistic ContentState / home-widget
-    ///   optimistic snapshot after a play plan.
-    /// - SeeAlso: ``blocksPlannedPlay``, ``WidgetIntentExecution/performLiveActivityToggle()``,
+    /// **Home widgets do not use this for optimistic paint.** Home uses
+    /// ``optimisticHomeWidgetVisualAfterPlayPlan`` so the control glyph never claims audible
+    /// pause-affordance before engine ``setPlaying()`` (soft-resume hold + Connecting honesty).
+    ///
+    /// - Returns: Target visual for durable LA mirror / optimistic ContentState after a play plan.
+    /// - SeeAlso: ``optimisticHomeWidgetVisualAfterPlayPlan``, ``blocksPlannedPlay``,
+    ///   ``WidgetIntentExecution/performLiveActivityToggle()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     public var optimisticVisualAfterPlayPlan: PlayerVisualState {
         switch self {
@@ -183,6 +187,35 @@ import UIKit
             return .prePlay
         default:
             return .playing
+        }
+    }
+
+    /// Optimistic **home-widget** visual after a play plan — never invents audible ``.playing``.
+    ///
+    /// Home control chrome must match next-action affordance honesty until the engine settles:
+    /// - ``userPaused`` → hold ``userPaused`` (soft-resume intermediate; main
+    ///   ``setPlaying()`` advances to green / pause glyph — same as main-app soft-resume hold).
+    /// - ``securityLocked`` / ``cleared`` / ``prePlay`` / other non-playing → ``prePlay``
+    ///   (Connecting; play glyph + Yhdistää, not Toistaa / pause glyph).
+    /// - ``playing`` → ``playing`` (play plan should not run while already playing).
+    ///
+    /// **Why not ``optimisticVisualAfterPlayPlan``:** that helper returns ``.playing`` for dual-tap
+    /// Live Activity ContentState. Stamping ``.playing`` on the home widget before audio starts
+    /// paints pause glyph + Toistaa while still silent — looks inverted and, with residual LIVE
+    /// lag, makes a single toggle intent plan the opposite of the visible button.
+    ///
+    /// - Returns: Target visual for home session + ``homeWidgetLiveChrome`` after a home play plan.
+    /// - SeeAlso: ``optimisticVisualAfterPlayPlan``,
+    ///   ``WidgetIntentCoordinators/planHomeWidgetToggle(from:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.2 soft-resume, §5.3 extension play).
+    public var optimisticHomeWidgetVisualAfterPlayPlan: PlayerVisualState {
+        switch self {
+        case .userPaused:
+            return .userPaused
+        case .playing:
+            return .playing
+        case .prePlay, .cleared, .thermalPaused, .securityLocked:
+            return .prePlay
         }
     }
 

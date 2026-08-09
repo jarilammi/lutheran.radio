@@ -190,7 +190,10 @@ struct WidgetSurfaceTests {
         #expect(resolved.source == .session)
     }
 
-    /// Protects timestamp tie on disagreement preferring session.
+    /// Protects timestamp tie on non-settle disagreement preferring session.
+    ///
+    /// Connecting vs playing on equal stamps stays session-first (same-tick optimistic continuity).
+    /// Definitive pause/play settle pairs use a separate preference (see soft-resume / pause settle tests).
     @Test func resolveHomeWidgetChromeFieldsDisagreementTiePrefersSession() {
         let mirror = HomeWidgetLiveChrome(
             visualState: .playing,
@@ -208,6 +211,50 @@ struct WidgetSurfaceTests {
         )
         #expect(resolved.visualState == .prePlay)
         #expect(resolved.source == .session)
+    }
+
+    /// Soft-resume settle: equal-timestamp sticky session pause loses to App Group playing.
+    ///
+    /// **Invariant protected:** Default disagreement ties prefer session; sticky ``.userPaused``
+    /// vs mirror ``.playing`` on equal stamps must prefer the mirror so residual Tauko cannot
+    /// stick after ``setPlaying`` when wall-clock ties.
+    @Test func resolveHomeWidgetChromeFieldsSoftResumeSettleTiePrefersMirrorPlaying() {
+        let mirror = HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: "fi",
+            hasError: false,
+            updatedAt: 100,
+            stampReason: "setPlaying"
+        )
+        let resolved = resolveHomeWidgetChromeFields(
+            sessionVisual: .userPaused,
+            sessionLanguage: "fi",
+            sessionHasError: false,
+            sessionUpdatedAt: 100,
+            liveChrome: mirror
+        )
+        #expect(resolved.visualState == .playing)
+        #expect(resolved.source == .liveChrome)
+    }
+
+    /// Home pause settle: equal-timestamp residual session playing loses to App Group pause.
+    @Test func resolveHomeWidgetChromeFieldsPauseSettleTiePrefersMirrorUserPaused() {
+        let mirror = HomeWidgetLiveChrome(
+            visualState: .userPaused,
+            currentLanguage: "fi",
+            hasError: false,
+            updatedAt: 200,
+            stampReason: "optimisticToggle"
+        )
+        let resolved = resolveHomeWidgetChromeFields(
+            sessionVisual: .playing,
+            sessionLanguage: "fi",
+            sessionHasError: false,
+            sessionUpdatedAt: 200,
+            liveChrome: mirror
+        )
+        #expect(resolved.visualState == .userPaused)
+        #expect(resolved.source == .liveChrome)
     }
 
     /// Untimestamped session loses to a stamped mirror when fields disagree (heal residual).
@@ -292,7 +339,9 @@ struct WidgetSurfaceTests {
     @Test func planHomeWidgetTogglePausedIsPlay() {
         let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: .userPaused)
         #expect(plan.action == .play)
-        #expect(plan.targetVisualState == .playing)
+        // Soft-resume honesty: hold sticky pause chrome until engine setPlaying (not invent .playing).
+        #expect(plan.targetVisualState == .userPaused)
+        #expect(plan.targetVisualState == PlayerVisualState.userPaused.optimisticHomeWidgetVisualAfterPlayPlan)
     }
 
     @Test func planControlWidgetToggleBoolMatrix() {
@@ -406,7 +455,7 @@ struct WidgetSurfaceTests {
             mainProcessRecentlyActive: true
         )
         #expect(plan.action == .play)
-        #expect(plan.targetVisualState == .playing)
+        #expect(plan.targetVisualState == .userPaused)
     }
 
     /// Residual `.playing` still plans pause under distrust (glyph honesty; not play resurrection).
@@ -546,6 +595,9 @@ struct WidgetSurfaceTests {
         #expect(!PlayerVisualState.securityLocked.blocksPlannedPlay)
         #expect(PlayerVisualState.securityLocked.optimisticVisualAfterPlayPlan == .prePlay)
         #expect(PlayerVisualState.userPaused.optimisticVisualAfterPlayPlan == .playing)
+        #expect(PlayerVisualState.userPaused.optimisticHomeWidgetVisualAfterPlayPlan == .userPaused)
+        #expect(PlayerVisualState.prePlay.optimisticHomeWidgetVisualAfterPlayPlan == .prePlay)
+        #expect(PlayerVisualState.securityLocked.optimisticHomeWidgetVisualAfterPlayPlan == .prePlay)
     }
 
     @Test func resolveLiveActivityTogglePrefersContentThenMirror() {

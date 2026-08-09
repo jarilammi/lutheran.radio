@@ -138,27 +138,57 @@ public enum WidgetIntentCoordinators {
     /// Matrix (pure visual; connecting cancel uses actor pipeline on lock-screen / remotes):
     /// - ``PlayerVisualState/plansMediaToggleAsPause`` (``.playing``) → pause / `.userPaused`
     /// - ``PlayerVisualState/blocksPlannedPlay`` (``.thermalPaused``) → `"none"` / keep thermal
-    /// - otherwise → play / ``PlayerVisualState/optimisticVisualAfterPlayPlan``
+    /// - otherwise → play / ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``
+    ///   (hold sticky pause or Connecting — **never** invent home ``.playing`` before engine settle)
     ///
     /// Prefer ``planHomeWidgetToggle(resolution:distrustDurableMirrorPlay:mainProcessRecentlyActive:)``
     /// at production call sites so empty process-local session does not invent **play** after
     /// main process exit / reboot while residual ``homeWidgetLiveChrome`` still paints.
+    /// Prefer direction-explicit ``planHomeWidgetPause()`` / ``planHomeWidgetPlay(from:)`` at
+    /// button call sites so residual LIVE glyphs cannot invert the scheduled verb.
     ///
     /// - Parameter visualState: Effective visual (from session + live-chrome resolve, or a direct test matrix).
     /// - Returns: Pending action + optimistic target visual state.
     /// - SeeAlso: ``planHomeWidgetToggle(resolution:distrustDurableMirrorPlay:mainProcessRecentlyActive:)``,
+    ///   ``planHomeWidgetPause()``, ``planHomeWidgetPlay(from:)``,
     ///   ``planLiveActivityToggle(from:)``, ``PlayerVisualState/blocksPlannedPlay``,
+    ///   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``,
     ///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:)``
     public static func planHomeWidgetToggle(from visualState: PlayerVisualState) -> WidgetToggleActionPlan {
         if visualState.plansMediaToggleAsPause {
-            return WidgetToggleActionPlan(action: .pause, targetVisualState: .userPaused)
+            return planHomeWidgetPause()
         }
+        if visualState.blocksPlannedPlay {
+            return WidgetToggleActionPlan(action: .none, targetVisualState: visualState)
+        }
+        return planHomeWidgetPlay(from: visualState)
+    }
+
+    /// Plans an explicit **pause** from the home play/pause control (direction-bound button).
+    ///
+    /// Always targets sticky ``.userPaused``. Safe when residual LIVE still shows a pause glyph
+    /// while App Group is already paused — re-stamps pause instead of planning play.
+    ///
+    /// - Returns: Pause plan with ``.userPaused`` optimistic chrome.
+    /// - SeeAlso: ``planHomeWidgetPlay(from:)``, ``WidgetIntentExecution/performHomeWidgetPause()``.
+    public static func planHomeWidgetPause() -> WidgetToggleActionPlan {
+        WidgetToggleActionPlan(action: .pause, targetVisualState: .userPaused)
+    }
+
+    /// Plans an explicit **play** from the home play/pause control (direction-bound button).
+    ///
+    /// - Parameter visualState: Effective chrome used only for thermal refuse and optimistic hold
+    ///   (``optimisticHomeWidgetVisualAfterPlayPlan`` — never invents ``.playing`` on home).
+    /// - Returns: Play plan, or refuse (``.none``) while thermal is authoritative.
+    /// - SeeAlso: ``planHomeWidgetPause()``, ``WidgetIntentExecution/performHomeWidgetPlay()``,
+    ///   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``.
+    public static func planHomeWidgetPlay(from visualState: PlayerVisualState) -> WidgetToggleActionPlan {
         if visualState.blocksPlannedPlay {
             return WidgetToggleActionPlan(action: .none, targetVisualState: visualState)
         }
         return WidgetToggleActionPlan(
             action: .play,
-            targetVisualState: visualState.optimisticVisualAfterPlayPlan
+            targetVisualState: visualState.optimisticHomeWidgetVisualAfterPlayPlan
         )
     }
 

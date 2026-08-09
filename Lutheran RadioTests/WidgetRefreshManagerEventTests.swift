@@ -340,7 +340,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         )
     }
 
-    /// Session snapshot language remains the top precedence for refresh derivation when present.
+    /// Session snapshot language remains above stream attach when live chrome is absent or agrees.
     func testDeriveRefreshParametersPrefersSnapshotLanguageOverStreamAttach() async {
         let streams = manager.availableStreams
         guard let german = streams.first(where: { $0.languageCode == "de" }) else {
@@ -363,6 +363,97 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             derived.currentLanguage,
             "fi",
             "In-process snapshot must outrank stream attach for refresh derivation"
+        )
+    }
+
+    /// Stream-switch first WRM sample: fresher privacy-gated live chrome destination must beat a
+    /// lagging process-local session language (``lang: fi`` while switching to ``sv`` class).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/languageForWidgetRefreshDerivation(fallbackLanguage:)``,
+    ///   ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``.
+    func testLanguageForWidgetRefreshDerivationPrefersFresherLiveChromeOverLaggingSession() {
+        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .prePlay,
+            language: "fi",
+            hasError: false
+        )
+        // Simulate extension optimistic switch destination already on App Group while main
+        // session language still holds the prior code (stale updatedAt).
+        let olderSession = SharedPlayerManager.loadPersistedWidgetState()
+        XCTAssertEqual(olderSession?.currentLanguage, "fi")
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .prePlay,
+            language: "sv",
+            hasError: false,
+            reason: "optimisticSwitch"
+        )
+        // Bump live chrome wall-clock ahead of session so fresher-mirror wins.
+        let futureChrome = HomeWidgetLiveChrome(
+            visualState: .prePlay,
+            currentLanguage: "sv",
+            hasError: false,
+            updatedAt: (olderSession?.updatedAt ?? Date().timeIntervalSince1970) + 1.0,
+            stampReason: "optimisticSwitch"
+        )
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(futureChrome)
+
+        let derived = SharedPlayerManager.languageForWidgetRefreshDerivation(fallbackLanguage: "fi")
+        XCTAssertEqual(
+            derived,
+            "sv",
+            "Fresher live-chrome destination language must win over lagging session for WRM labels"
+        )
+    }
+
+    /// Soft-resume settle: sticky pause → ``.playing`` must bypass adaptive debounce (immediate).
+    ///
+    /// Production advances actor memory via ``setPlaying()`` before the playing refresh samples
+    /// memory authority. This test mirrors that order so execute-time discard does not fire.
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
+    ///   ``WidgetRefreshManager/refreshWouldRegressMemoryAuthority(executing:memory:isImmediate:)``.
+    func testRefreshIfNeededForcesImmediatePlayingAfterStickyPause() async {
+        enableDebounceObservation()
+        await manager.setVisualState(.userPaused)
+
+        refreshManager.refreshIfNeeded(
+            visualState: .userPaused,
+            currentLanguage: "fi",
+            hasError: false,
+            immediate: true,
+            trigger: .test
+        )
+        _ = await waitForDebounceOutcome(.refreshExecuted)
+
+        // Clear log so the soft-resume playing sample is unambiguous.
+        WidgetRefreshManager._test_clearDebounceOutcomeLog()
+
+        // Authoritative soft-resume order: memory → .playing, then non-immediate playing wake.
+        // lastKnown remains .userPaused so soft-resume immediacy engages; memory matches
+        // requested so wake discard does not fire.
+        await manager.setVisualState(.playing)
+
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "fi",
+            hasError: false,
+            immediate: false,
+            trigger: .test
+        )
+        let sawPlaying = await waitForDebounceOutcome(.refreshExecuted)
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertTrue(
+            sawPlaying,
+            "Sticky→playing must execute without waiting adaptive debounce; log: \(log)"
+        )
+        XCTAssertFalse(
+            log.contains(.scheduledAdaptiveDebounce),
+            "Soft-resume playing must not schedule adaptive debounce; log: \(log)"
+        )
+        XCTAssertFalse(
+            log.contains(.discardedMemoryAuthorityRegress),
+            "Playing after setPlaying must not discard on memory lag; log: \(log)"
         )
     }
 
@@ -1191,6 +1282,30 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
                 memory: .playing
             )
         )
+        // Soft-resume residual: sticky pause wake after audible memory must discard (still.txt).
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: .userPaused,
+                memory: .playing,
+                isImmediate: true
+            ),
+            "Immediate sticky userPaused after memory .playing is soft-resume residual — discard"
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: .userPaused,
+                memory: .playing,
+                isImmediate: false
+            ),
+            "Non-immediate sticky userPaused after memory .playing must discard"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: .userPaused,
+                memory: .userPaused
+            ),
+            "Matching sticky memory must not discard forward pause wake"
+        )
     }
 
     /// Pure policy: ``refreshWouldDiscardHomeWake`` composes memory lag then session lag.
@@ -1217,10 +1332,10 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             Case(requested: .playing, memory: .prePlay, session: .prePlay, isImmediate: true, label: "premature playing during hold"),
             // Memory-unique: sticky lock vs connecting.
             Case(requested: .prePlay, memory: .userPaused, session: .userPaused, isImmediate: false, label: "connecting vs sticky memory"),
-            // Session-unique: non-immediate pause after soft-resume (memory already playing).
+            // Soft-resume residual: sticky pause wake after audible memory (memory leg discards).
             Case(requested: .userPaused, memory: .playing, session: .playing, isImmediate: false, label: "session soft-resume reverse pause"),
-            // Session allows immediate sticky pause vs lagging playing; memory playing allows pause.
-            Case(requested: .userPaused, memory: .playing, session: .playing, isImmediate: true, label: "immediate sticky vs lagging playing"),
+            // Soft-resume residual: immediate sticky wake after memory already playing (still.txt).
+            Case(requested: .userPaused, memory: .playing, session: .playing, isImmediate: true, label: "immediate sticky after audible memory"),
             // Overlap: non-immediate connecting after audible.
             Case(requested: .prePlay, memory: .playing, session: .playing, isImmediate: false, label: "non-immediate connecting after play"),
             // Immediate language Connecting may advance lagging playing (both legs allow).
@@ -1248,7 +1363,11 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             } else {
                 sessionLeg = false
             }
-            let expected = memoryLeg || sessionLeg
+            // Soft-resume settle: matching authoritative playing memory short-circuits discard
+            // even when the pure session helper would treat sticky lag as a reverse race.
+            let softResumePlayingSettle =
+                c.requested == .playing && c.memory == .playing
+            let expected = softResumePlayingSettle ? false : (memoryLeg || sessionLeg)
             let actual = WidgetRefreshManager.refreshWouldDiscardHomeWake(
                 executing: c.requested,
                 memory: c.memory,
@@ -1261,6 +1380,34 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
                 "Composition mismatch for \(c.label): memory=\(memoryLeg) session=\(sessionLeg) unified=\(actual)"
             )
         }
+
+        // Explicit soft-resume race: actor already `.playing`, session still sticky pause —
+        // pure session helper would discard; composition must allow the home playing wake.
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                executing: .playing,
+                persisted: .userPaused
+            ),
+            "Session helper alone still treats playing vs sticky as reverse-race discard"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.refreshWouldDiscardHomeWake(
+                executing: .playing,
+                memory: .playing,
+                session: .userPaused,
+                isImmediate: false
+            ),
+            "Soft-resume settle with matching playing memory must not drop home playing wake"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.refreshWouldDiscardHomeWake(
+                executing: .playing,
+                memory: .playing,
+                session: .userPaused,
+                isImmediate: true
+            ),
+            "Soft-resume settle (immediate soft-resume path) must not drop home playing wake"
+        )
     }
 
     /// After sticky pause locks and the early sticky session snapshot is written, non-carried

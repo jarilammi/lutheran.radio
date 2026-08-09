@@ -26,6 +26,24 @@ import WidgetSurface
 // `SmallWidgetView` / `MediumWidgetView` / `LargeWidgetView`. `WidgetMetadataRegion`
 // receives only `WidgetNowPlayingDisplayModel`.
 //
+// Interactive LIVE scenes re-resolve paint via ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``
+// so optimistic App Group ``homeWidgetLiveChrome`` (e.g. pause → ``.userPaused``) is not left
+// behind a system-held TimelineEntry that still shows residual ``.playing`` — same honesty class
+// as Live Activity ContentState lag after extension toggle. Body re-evaluation is driven by:
+// 1. ``@AppStorage`` on paint signature + paint epoch (suite-visible same-process flips)
+// 2. Local + Darwin paint-advanced wake (``homeWidgetInteractivePaintAdvanced``) so main settle
+//    and cross-process suite stamps re-run heal without suite KVO (peer to widget-action Darwin)
+// 3. ``SimpleEntry/paintEpoch`` + ``paintSignature`` for TimelineEntry structural identity after
+//    ``reloadTimelines``
+// Live-chrome load uses CFPreferences re-sync so heal does not re-paint residual playing from a
+// stale suite cache. Heal always prefers snapshot SSOT over a lagging Provider entry (never keep
+// residual pause chrome when resolve/live chrome already advanced to ``.playing``).
+//
+// Play/pause control is **direction-bound** (``WidgetPlayRadioIntent`` / ``WidgetPauseRadioIntent``)
+// from the control glyph so residual LIVE cannot schedule the opposite verb of the visible
+// affordance. Home optimistic play never invents ``.playing`` (see
+// ``optimisticHomeWidgetVisualAfterPlayPlan``).
+//
 // The identical top-level derivation pattern is used by Live Activity views.
 //
 // See docs/Widget-Presentation-Dataflow.md for rationale and contributor guidance.
@@ -194,7 +212,9 @@ struct Provider: AppIntentTimelineProvider {
         with configuration: RadioWidgetConfiguration,
         manager: SharedPlayerManager
     ) async -> SimpleEntry {
-        let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
+        // Paint SSOT: session + privacy-gated live chrome + program-metadata mirror.
+        // No actor hop — ``resolveFromSnapshot()`` never consults ``currentVisualState``.
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
         let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
         let blueprint = WidgetTimelineEntryFactory.makeHomeWidgetBlueprint(
             date: Date(),
@@ -206,7 +226,15 @@ struct Provider: AppIntentTimelineProvider {
         print("[LutheranRadioWidget] Widget creating entry: visualState=\(blueprint.visualState), station=\(blueprint.currentStation)")
         #endif
 
-        return SimpleEntry(blueprint: blueprint, availableStreams: manager.availableStreams, configuration: configuration)
+        let paintEpoch = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+        let paintSignature = SharedPlayerManager.loadHomeWidgetInteractivePaintSignature()
+        return SimpleEntry(
+            blueprint: blueprint,
+            availableStreams: manager.availableStreams,
+            configuration: configuration,
+            paintEpoch: paintEpoch,
+            paintSignature: paintSignature
+        )
     }
 }
 
@@ -217,16 +245,25 @@ struct Provider: AppIntentTimelineProvider {
 /// in the Provider (via ``WidgetProviderPresentationAssembly`` + ``WidgetTimelineEntryFactory``);
 /// family views read only the fields projected below.
 ///
+/// ``paintEpoch`` / ``paintSignature`` are wake/identity fields only (not paint SSOT) so WidgetKit
+/// structural comparison treats post-toggle Provider entries as distinct from residual archives.
+///
 /// - SeeAlso: ``WidgetHomeTimelineEntryBlueprint``, docs/Widget-Presentation-Dataflow.md.
 struct SimpleEntry: TimelineEntry, Sendable {
     let date: Date
     let currentStation: String
     let currentLanguageCode: String
+    /// Interactive paint wake token captured at Provider resolve time (not a visual SSOT).
+    let paintEpoch: Int
+    /// Interactive paint signature captured at Provider resolve time (not a visual SSOT).
+    let paintSignature: String
 
     init(
         blueprint: WidgetHomeTimelineEntryBlueprint,
         availableStreams: [DirectStreamingPlayer.Stream],
-        configuration: RadioWidgetConfiguration
+        configuration: RadioWidgetConfiguration,
+        paintEpoch: Int = 0,
+        paintSignature: String = ""
     ) {
         self.date = blueprint.date
         self.currentStation = blueprint.currentStation
@@ -236,6 +273,8 @@ struct SimpleEntry: TimelineEntry, Sendable {
         self.widgetNowPlayingDisplayModel = blueprint.widgetNowPlayingDisplayModel
         self.availableStreams = availableStreams
         self.configuration = configuration
+        self.paintEpoch = paintEpoch
+        self.paintSignature = paintSignature
     }
 
     init(
@@ -246,7 +285,9 @@ struct SimpleEntry: TimelineEntry, Sendable {
         controlPresentation: PlayerControlPresentation,
         widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel,
         availableStreams: [DirectStreamingPlayer.Stream],
-        configuration: RadioWidgetConfiguration
+        configuration: RadioWidgetConfiguration,
+        paintEpoch: Int = 0,
+        paintSignature: String = ""
     ) {
         self.date = date
         self.currentStation = currentStation
@@ -256,6 +297,8 @@ struct SimpleEntry: TimelineEntry, Sendable {
         self.widgetNowPlayingDisplayModel = widgetNowPlayingDisplayModel
         self.availableStreams = availableStreams
         self.configuration = configuration
+        self.paintEpoch = paintEpoch
+        self.paintSignature = paintSignature
     }
 
     /// Narrow presentation for the status indicator (text + associated colors).
@@ -295,11 +338,67 @@ struct SimpleEntry: TimelineEntry, Sendable {
 /// entry fields (for example `configuration` or `streamMetadata`) do not participate
 /// in the family view's stored property dependency set.
 ///
+/// **Interactive paint heal:** Before projecting, re-resolves status/control/metadata/station
+/// from ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` (session + privacy-gated
+/// ``homeWidgetLiveChrome``). Provider-built ``SimpleEntry`` remains the WidgetKit wake payload
+/// and archival timeline SSOT; LIVE interactive scenes can lag that archive after
+/// optimistic stamps (durable chrome already ``.userPaused`` while the system-held entry still
+/// shows residual ``.playing`` / green pause — or residual Tauko after soft-resume settle).
+/// Re-resolve is the home-widget peer to Live Activity optimistic ContentState push — paint
+/// follows App Group chrome when the body re-evaluates, without trusting
+/// ``SharedPlayerManager/currentVisualState``.
+///
+/// **Why suite tokens + Darwin/local wake:** ``resolveFromSnapshot()`` only helps when body
+/// re-runs. WidgetKit often keeps an archived LIVE tree. ``@AppStorage`` on signature + epoch
+/// covers same-process suite flips; local NC + Darwin ``homeWidgetInteractivePaintAdvanced``
+/// covers intent-handler vs render process splits and main-app settle stamps (without dual
+/// ``reloadAllTimelines`` thrash). Heal **always** rebuilds via
+/// ``WidgetInteractivePaintHeal/projectHomeInteractivePaint`` (snapshot SSOT) — preferring a
+/// lagging Provider entry pause over resolve ``.playing`` blocked soft-resume settle (log5).
+///
 /// - SeeAlso: `SmallWidgetView`, `MediumWidgetView`, `LargeWidgetView`,
-///   docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md.
+///   ``WidgetInteractivePaintHeal/projectHomeInteractivePaint(laggingPaintEpoch:laggingPaintSignature:date:)``,
+///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+///   ``SharedPlayerManager/bumpHomeWidgetInteractivePaintEpoch(reason:)``,
+///   ``SharedPlayerManager/postHomeWidgetInteractivePaintAdvancedWake()``,
+///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
+///   docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md,
+///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (ContentState lag class).
 struct LutheranRadioWidgetEntryView: View {
     var entry: Provider.Entry
     @Environment(\.widgetFamily) var family
+
+    /// App Group suite for interactive paint observation (same container as live chrome).
+    ///
+    /// Falls back to `.standard` only if the suite is unavailable (should not happen for a
+    /// correctly signed extension); paint heal still re-resolves from snapshot readers.
+    private static let appGroupDefaults =
+        UserDefaults(suiteName: "group.radio.lutheran.shared") ?? .standard
+
+    /// One-time Darwin → local NC bridge registration for this process.
+    private static let paintWakeObserverRegistration: Void = {
+        SharedPlayerManager.registerHomeWidgetInteractivePaintWakeObserverIfNeeded()
+    }()
+
+    /// Wake token: epoch + visual + language; flips when live chrome or optimistic toggle advances.
+    ///
+    /// Reading this property creates a SwiftUI dependency so body re-runs after
+    /// ``publishHomeWidgetInteractivePaintSignature`` when the suite mutation is visible in-process.
+    @AppStorage(
+        SharedPlayerManager.homeWidgetInteractivePaintSignatureAppGroupKey,
+        store: LutheranRadioWidgetEntryView.appGroupDefaults
+    )
+    private var interactivePaintSignature: String = ""
+
+    /// Integer epoch companion — dual suite observation when String KVO is skipped.
+    @AppStorage(
+        SharedPlayerManager.homeWidgetInteractivePaintEpochAppGroupKey,
+        store: LutheranRadioWidgetEntryView.appGroupDefaults
+    )
+    private var interactivePaintEpoch: Int = 0
+
+    /// Local generation advanced by Darwin/local paint-advanced wake (cross-process settle).
+    @State private var paintWakeGeneration: UInt = 0
 
     var body: some View {
         // SECURITY / RENDERING NOTE: WidgetKit (iOS 17+) requires .containerBackground(for: .widget)
@@ -313,45 +412,97 @@ struct LutheranRadioWidgetEntryView: View {
         //
         // See also: LutheranRadioWidget.swift (the three size views no longer apply root .background),
         // WidgetKit documentation on container backgrounds, and CODING_AGENT.md "Single Source of Truth".
+        //
+        // Paint heal: re-resolve from snapshot SSOT (CFPreferences re-sync on live-chrome load) so
+        // interactive LIVE does not keep residual playing/pause chrome after optimistic toggle or
+        // main settle. Suite + Darwin/local wake dependencies force body re-eval.
+        let _ = Self.paintWakeObserverRegistration
+        // @AppStorage + paintWakeGeneration create body dependencies for suite/Darwin wakes.
+        // Do not fold suite epoch/signature into root `.id` (see identity note below).
+        let _ = interactivePaintSignature
+        let _ = interactivePaintEpoch
+        let _ = paintWakeGeneration
+        let paint = Self.interactivePaintEntry(from: entry)
         Group {
             switch family {
             case .systemSmall:
                 SmallWidgetView(
-                    statusPresentation: entry.statusPresentation,
-                    controlPresentation: entry.controlPresentation,
-                    currentLanguageCode: entry.currentLanguageCode,
-                    availableStreams: entry.availableStreams
+                    statusPresentation: paint.statusPresentation,
+                    controlPresentation: paint.controlPresentation,
+                    currentLanguageCode: paint.currentLanguageCode,
+                    availableStreams: paint.availableStreams
                 )
             case .systemMedium:
                 MediumWidgetView(
-                    statusPresentation: entry.statusPresentation,
-                    controlPresentation: entry.controlPresentation,
-                    metadataModel: entry.widgetNowPlayingDisplayModel,
-                    currentStation: entry.currentStation,
-                    currentLanguageCode: entry.currentLanguageCode,
-                    availableStreams: entry.availableStreams
+                    statusPresentation: paint.statusPresentation,
+                    controlPresentation: paint.controlPresentation,
+                    metadataModel: paint.widgetNowPlayingDisplayModel,
+                    currentStation: paint.currentStation,
+                    currentLanguageCode: paint.currentLanguageCode,
+                    availableStreams: paint.availableStreams
                 )
             case .systemLarge:
                 LargeWidgetView(
-                    statusPresentation: entry.statusPresentation,
-                    controlPresentation: entry.controlPresentation,
-                    metadataModel: entry.widgetNowPlayingDisplayModel,
-                    currentStation: entry.currentStation,
-                    currentLanguageCode: entry.currentLanguageCode,
-                    availableStreams: entry.availableStreams
+                    statusPresentation: paint.statusPresentation,
+                    controlPresentation: paint.controlPresentation,
+                    metadataModel: paint.widgetNowPlayingDisplayModel,
+                    currentStation: paint.currentStation,
+                    currentLanguageCode: paint.currentLanguageCode,
+                    availableStreams: paint.availableStreams
                 )
             default:
                 SmallWidgetView(
-                    statusPresentation: entry.statusPresentation,
-                    controlPresentation: entry.controlPresentation,
-                    currentLanguageCode: entry.currentLanguageCode,
-                    availableStreams: entry.availableStreams
+                    statusPresentation: paint.statusPresentation,
+                    controlPresentation: paint.controlPresentation,
+                    currentLanguageCode: paint.currentLanguageCode,
+                    availableStreams: paint.availableStreams
                 )
             }
+        }
+        // Identity tracks resolved chrome + wake generation so residual Toistaa/Tauko can
+        // rebuild without embedding every suite epoch flip into the root view id (that thrash
+        // recreated the entire interactive tree mid-tap and made AppIntent buttons miss hit
+        // testing → system default “open host app” instead of play/pause).
+        // Suite epoch/signature still force body re-eval via @AppStorage + paintWakeGeneration;
+        // presentation text/glyph in `.id` is enough for structural chrome honesty.
+        .id("\(paintWakeGeneration)|\(paint.statusPresentation.text)|\(paint.controlPresentation.systemImage)|\(paint.currentLanguageCode)|\(entry.paintSignature)")
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: SharedPlayerManager.homeWidgetInteractivePaintAdvancedNotification
+            )
+        ) { _ in
+            paintWakeGeneration &+= 1
         }
         .containerBackground(for: .widget) {
             Color(.systemBackground)
         }
+    }
+
+    /// Rebuilds presentation slices from the current snapshot SSOT for interactive paint honesty.
+    ///
+    /// Thin shell over ``WidgetInteractivePaintHeal/projectHomeInteractivePaint`` so heal math
+    /// is shared with extension-profile unit tests; this view keeps streams and configuration
+    /// from the WidgetKit-delivered entry. Always prefers resolve over lagging entry chrome —
+    /// never keep residual pause when suite already advanced to ``.playing``.
+    ///
+    /// - Parameter entry: WidgetKit-delivered timeline entry (streams + configuration retained).
+    /// - Returns: Entry whose status/control/metadata/station match snapshot SSOT.
+    /// - SeeAlso: ``WidgetInteractivePaintHeal/projectHomeInteractivePaint(laggingPaintEpoch:laggingPaintSignature:date:)``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   ``SharedPlayerManager/loadHomeWidgetLiveChromeMirror()`` (suite re-sync on read).
+    private static func interactivePaintEntry(from entry: SimpleEntry) -> SimpleEntry {
+        let projection = WidgetInteractivePaintHeal.projectHomeInteractivePaint(
+            laggingPaintEpoch: entry.paintEpoch,
+            laggingPaintSignature: entry.paintSignature,
+            date: entry.date
+        )
+        return SimpleEntry(
+            blueprint: projection.blueprint,
+            availableStreams: entry.availableStreams,
+            configuration: entry.configuration,
+            paintEpoch: projection.paintEpoch,
+            paintSignature: projection.paintSignature
+        )
     }
 }
 
@@ -381,6 +532,9 @@ struct SmallWidgetView: View {
                     .font(.caption2)
                     .foregroundStyle(statusPresentation.foreground)
                     .lineLimit(1)
+                    // Marks status for invalidation while App Intent / timeline settle (interactive
+                    // residual LIVE class — Toistaa ↔ Tauko after home pause/resume).
+                    .invalidatableContent()
 
                 if availableStreams.count > 1 {
                     let topRow = Array(availableStreams.prefix(3))
@@ -402,14 +556,10 @@ struct SmallWidgetView: View {
 
                 Spacer(minLength: 0)
 
-                // Control affordance sourced exclusively from the narrow pre-derived
-                // PlayerControlPresentation (populated via makeControlPresentation in the Provider).
-                Button(intent: WidgetToggleRadioIntent()) {
-                    Image(systemName: controlPresentation.systemImage)
-                        .font(.title2)
-                        .foregroundColor(controlPresentation.tint)
-                }
-                .buttonStyle(.plain)
+                // Direction-bound control: pause glyph → pause intent; play glyph → play intent.
+                // Residual LIVE lag cannot invert the scheduled verb the way a single toggle can
+                // when the visible glyph disagrees with App Group resolve.
+                homeWidgetPlayPauseButton(controlPresentation: controlPresentation, font: .title2)
             }
             .padding(8)
         }
@@ -467,13 +617,8 @@ struct MediumWidgetView: View {
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                     Spacer()
-                    // Control affordance from narrow PlayerControlPresentation (SSOT derivation).
-                    Button(intent: WidgetToggleRadioIntent()) {
-                        Image(systemName: controlPresentation.systemImage)
-                            .font(.title3)
-                            .foregroundColor(controlPresentation.tint)
-                    }
-                    .buttonStyle(.plain)
+                    // Direction-bound control (pause glyph → pause intent; play glyph → play intent).
+                    homeWidgetPlayPauseButton(controlPresentation: controlPresentation, font: .title3)
                 }
 
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -489,6 +634,7 @@ struct MediumWidgetView: View {
                         .foregroundStyle(statusPresentation.foreground)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        .invalidatableContent()
                 }
 
                 WidgetMetadataRegion(model: metadataModel, layout: .medium)
@@ -549,13 +695,8 @@ struct LargeWidgetView: View {
                         .font(.headline)
                         .fontWeight(.bold)
                     Spacer()
-                    // Control affordance from narrow PlayerControlPresentation (SSOT derivation).
-                    Button(intent: WidgetToggleRadioIntent()) {
-                        Image(systemName: controlPresentation.systemImage)
-                            .font(.title2)
-                            .foregroundColor(controlPresentation.tint)
-                    }
-                    .buttonStyle(.plain)
+                    // Direction-bound control (pause glyph → pause intent; play glyph → play intent).
+                    homeWidgetPlayPauseButton(controlPresentation: controlPresentation, font: .title2)
                 }
 
                 VStack(spacing: 4) {
@@ -567,6 +708,7 @@ struct LargeWidgetView: View {
                     Text(statusPresentation.text)
                         .font(.subheadline)
                         .foregroundStyle(statusPresentation.foreground)
+                        .invalidatableContent()
                 }
 
                 WidgetMetadataRegion(model: metadataModel, layout: .large)
@@ -600,8 +742,125 @@ struct LargeWidgetView: View {
     }
 }
 
+// MARK: - Home play/pause control (direction-bound)
+
+/// Builds the home-widget play/pause button from narrow ``PlayerControlPresentation``.
+///
+/// Pause glyph (`pause.fill`) wires ``WidgetPauseRadioIntent``; every other control glyph
+/// (play / connecting) wires ``WidgetPlayRadioIntent``. Direction-bound intents keep residual
+/// LIVE paint from scheduling the opposite verb of the visible affordance.
+///
+/// **Paint honesty:** Re-derives control from ``resolveFromSnapshot()`` at render (suite
+/// re-sync on live-chrome load) so a lagging parent slice cannot keep residual pause/play
+/// glyph after App Group advanced. Caller-passed ``controlPresentation`` remains the family
+/// layout input for tint/font consistency when resolve agrees; when snapshot disagrees,
+/// snapshot wins (interactive LIVE residual class).
+///
+/// - Parameters:
+///   - controlPresentation: Pre-derived control slice from Provider / interactive paint heal.
+///   - font: Family-specific control font.
+/// - Important: `@MainActor` is required so ``ButtonStyle/plain`` (main-actor static) is legal
+///   from this free function. Call sites are widget `View` bodies (already main-actor).
+/// - SeeAlso: ``WidgetPlayRadioIntent``, ``WidgetPauseRadioIntent``,
+///   ``PlayerVisualState/makeControlPresentation()``,
+///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``.
+@MainActor
+@ViewBuilder
+private func homeWidgetPlayPauseButton(
+    controlPresentation: PlayerControlPresentation,
+    font: Font
+) -> some View {
+    // Snapshot SSOT at button render: suite re-sync inside live-chrome load. Prefer snapshot
+    // when it disagrees with the parent slice so residual system-held glyphs cannot stick.
+    let snapshotFields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+    let snapshotControl = snapshotFields.visualState.makeControlPresentation()
+    let control = snapshotControl.systemImage == controlPresentation.systemImage
+        ? controlPresentation
+        : snapshotControl
+    let image = Image(systemName: control.systemImage)
+        .font(font)
+        .foregroundColor(control.tint)
+        .contentTransition(.opacity)
+        // Control glyph awaits timeline / heal settle after App Intent (peer to status text).
+        .invalidatableContent()
+    // Control SSOT: actively playing → `pause.fill`; otherwise → `play.fill`.
+    // Next-action affordance: pause glyph stops audio; play glyph starts/resumes.
+    // Button identity is **glyph + direction only**. Including paint epoch/signature here
+    // recreated AppIntent buttons on every suite wake and could drop the intent hit target
+    // (tap fell through to host-app open). Residual chrome rebuild is owned by the entry
+    // view heal + parent presentation `.id`, not by thrashing the Button identity.
+    let controlIdentity = control.systemImage
+    if control.systemImage == "pause.fill" {
+        Button(intent: WidgetPauseRadioIntent()) { image }
+            .buttonStyle(.plain)
+            .id("home-control-pause|\(controlIdentity)")
+    } else {
+        Button(intent: WidgetPlayRadioIntent()) { image }
+            .buttonStyle(.plain)
+            .id("home-control-play|\(controlIdentity)")
+    }
+}
+
 // MARK: - App Intents
 
+/// Direction-explicit **play** from the home-widget control (play glyph).
+///
+/// Runs in the widget extension process. Does **not** open the main app
+/// (``openAppWhenRun`` is `false`). Audio work is pending-mailbox + Darwin to a
+/// already-running/background main process when present.
+///
+/// - SeeAlso: ``WidgetIntentExecution/performHomeWidgetPlay()``, ``WidgetPauseRadioIntent``.
+struct WidgetPlayRadioIntent: AppIntent {
+    nonisolated static var title: LocalizedStringResource { "Play Lutheran Radio" }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Start or resume Lutheran Radio playback.")
+    }
+    /// Interactive home control must stay in-widget; never foreground main for play/pause.
+    nonisolated static var openAppWhenRun: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        #if DEBUG
+        print("[LutheranRadioWidget] WidgetPlayRadioIntent.perform called")
+        #endif
+        await WidgetIntentExecution.performHomeWidgetPlay()
+        #if DEBUG
+        print("[LutheranRadioWidget] WidgetPlayRadioIntent completed")
+        #endif
+        return .result()
+    }
+}
+
+/// Direction-explicit **pause** from the home-widget control (pause glyph).
+///
+/// Runs in the widget extension process. Does **not** open the main app
+/// (``openAppWhenRun`` is `false`).
+///
+/// - SeeAlso: ``WidgetIntentExecution/performHomeWidgetPause()``, ``WidgetPlayRadioIntent``.
+struct WidgetPauseRadioIntent: AppIntent {
+    nonisolated static var title: LocalizedStringResource { "Pause Lutheran Radio" }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Pause Lutheran Radio playback.")
+    }
+    /// Interactive home control must stay in-widget; never foreground main for play/pause.
+    nonisolated static var openAppWhenRun: Bool { false }
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        #if DEBUG
+        print("[LutheranRadioWidget] WidgetPauseRadioIntent.perform called")
+        #endif
+        await WidgetIntentExecution.performHomeWidgetPause()
+        #if DEBUG
+        print("[LutheranRadioWidget] WidgetPauseRadioIntent completed")
+        #endif
+        return .result()
+    }
+}
+
+/// Legacy single-intent toggle (tests / Shortcuts). Home family views use direction-bound intents.
 struct WidgetToggleRadioIntent: AppIntent {
     nonisolated static var title: LocalizedStringResource { "Toggle Lutheran Radio" }
     nonisolated static var description: IntentDescription {

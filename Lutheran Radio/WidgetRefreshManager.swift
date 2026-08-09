@@ -154,6 +154,14 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// Latest debounced target; read when the debounce timer runs so superseded visuals never reload timelines.
     private var pendingRefreshState: WidgetState?
     var lastKnownState: WidgetState?
+    /// Interactive paint epoch observed at the last successful kind reload (0 when none).
+    ///
+    /// When ``homeWidgetInteractivePaintEpoch`` advances after a live-chrome / optimistic stamp
+    /// while visual + language are unchanged, identical non-playing coalesce would skip the
+    /// follow-up ``reloadTimelines`` that residual LIVE needs to re-resolve. Comparing suite
+    /// epoch to this bookkeeping token allows one more kind-only wake without dual
+    /// ``reloadAllTimelines`` thrash.
+    private var lastPaintEpochAtSuccessfulReload: Int = 0
     /// Deferred `.prePlay` refresh; superseded by `.playing` on the same language within the coalesce window.
     private var coalescedPrePlayWorkItem: DispatchWorkItem?
     private var coalescedPrePlayState: WidgetState?
@@ -455,11 +463,28 @@ final class WidgetRefreshManager: @unchecked Sendable {
         let resolvedLanguage = SharedPlayerManager.languageForWidgetRefreshDerivation(
             fallbackLanguage: currentLanguage
         )
+        // Soft-resume / recovery settle: event-path ``.playing`` is normally non-immediate so
+        // Connecting can coalesce into one playing wake. Sticky pause → audible playing has no
+        // Connecting intermediate — force immediate so home does not wait on adaptive debounce
+        // after the last ``.userPaused`` wake (device eyes-on lag class).
+        let softResumePlayingImmediate: Bool = {
+            guard visualState == .playing, !immediate else { return false }
+            guard let prior = lastKnownState?.visualState else { return false }
+            switch prior {
+            case .userPaused, .thermalPaused, .securityLocked:
+                return true
+            case .prePlay, .cleared, .playing:
+                return false
+            @unknown default:
+                return false
+            }
+        }()
+        let effectiveImmediate = immediate || softResumePlayingImmediate
         let newState = WidgetState(
             from: visualState,
             currentLanguage: resolvedLanguage,
             hasError: hasError,
-            isImmediateDelivery: immediate
+            isImmediateDelivery: effectiveImmediate
         )
         
         if shouldCancelPendingDebounce(for: newState.visualState) {
@@ -489,7 +514,13 @@ final class WidgetRefreshManager: @unchecked Sendable {
         // Connecting `.prePlay` is deferred (not event-path immediate) so soft-resume playing can
         // supersede it; without this gate repeated attach-status prePlay still storms reloads.
         // Language already matched above; first transition into this visual still executes once.
+        // Exception: interactive paint epoch advanced since the last successful kind reload
+        // (optimistic toggle / identity-skip wake / live-chrome settle) — residual LIVE still
+        // needs a timeline re-delivery even when visual + language match lastKnown.
+        let paintEpochNow = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
+        let paintEpochAdvancedSinceReload = paintEpochNow > lastPaintEpochAtSuccessfulReload
         if let lastState = lastKnownState,
+           !paintEpochAdvancedSinceReload,
            Self.shouldCoalesceIdenticalNonPlayingRefresh(
                requestedVisual: newState.visualState,
                lastKnownVisual: lastState.visualState,
@@ -503,6 +534,21 @@ final class WidgetRefreshManager: @unchecked Sendable {
             #endif
             return
         }
+        #if DEBUG
+        if paintEpochAdvancedSinceReload,
+           let lastState = lastKnownState,
+           Self.shouldCoalesceIdenticalNonPlayingRefresh(
+               requestedVisual: newState.visualState,
+               lastKnownVisual: lastState.visualState,
+               languageUnchanged: lastState.currentLanguage == newState.currentLanguage,
+               errorFlagsMatch: lastState.hasError == newState.hasError,
+               hasError: hasError
+           ) {
+            print(
+                "[WidgetRefreshManager] Identical \(newState.debugVisualStateLabel) allowed — paint epoch \(paintEpochNow) > lastReload \(lastPaintEpochAtSuccessfulReload)"
+            )
+        }
+        #endif
         
         // Errors and non-playing visual transitions supersede a deferred .prePlay refresh.
         if hasError {
@@ -539,11 +585,12 @@ final class WidgetRefreshManager: @unchecked Sendable {
         // Defer lone .prePlay / .cleared refreshes briefly so a fast .playing follow-up can supersede them.
         // (.cleared is rare for widgets because clear wipes snapshot + forces hasActive false, but
         // keep symmetric so in-process main-app driven paths behave consistently.)
-        // `immediate: true` bypasses deferral for session teardown follow-up and termination hygiene.
+        // `immediate: true` (or soft-resume playing immediacy above) bypasses deferral for session
+        // teardown follow-up, termination hygiene, and sticky→playing settle.
         // Identical non-playing coalesce above already skipped when lastKnown matches.
         // Attach-path storms re-enter here many times — ``scheduleCoalescedPrePlayRefresh`` keeps a
         // single coalesce deadline (does not reset the window on each status callback).
-        if !immediate, !hasError, newState.visualState == .prePlay || newState.visualState == .cleared {
+        if !effectiveImmediate, !hasError, newState.visualState == .prePlay || newState.visualState == .cleared {
             #if DEBUG
             let alreadyDeferred = coalescedPrePlayWorkItem != nil
             if alreadyDeferred {
@@ -559,7 +606,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
         }
         
         // Adaptive debouncing - increase interval with frequency
-        if !immediate {
+        if !effectiveImmediate {
             let now = Date()
             if let lastRefresh = lastRefreshTime {
                 let timeSinceLastRefresh = now.timeIntervalSince(lastRefresh)
@@ -744,7 +791,8 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// 2. Connecting / stream-switch hold (``.prePlay`` / ``.cleared``) — never lose to lagging
     ///    sticky, and never accept premature ``.playing`` until memory advances via ``setPlaying()``.
     /// 3. Authoritative ``.playing`` — discard non-immediate late connecting (post-audible prePlay);
-    ///    immediate language-change Connecting may still advance (switch hold first wake).
+    ///    immediate language-change Connecting may still advance (switch hold first wake);
+    ///    discard sticky ``.userPaused`` / thermal after audible memory (soft-resume residual wake).
     ///
     /// - Parameters:
     ///   - requested: Visual the refresh would schedule into WidgetCenter.
@@ -780,6 +828,14 @@ final class WidgetRefreshManager: @unchecked Sendable {
             if requested == .prePlay || requested == .cleared {
                 return !isImmediate
             }
+            // Soft-resume residual: sticky ``.userPaused`` wake after memory already advanced to
+            // ``.playing`` must not re-issue a timeline reload (still.txt: WRM executed
+            // ``.userPaused`` after liveChromeWrite playing → residual Tauko over Toistaa).
+            // Forward home pause advances memory to ``.userPaused`` *before* the pause wake runs
+            // (stop path), so real pauses are not discarded here.
+            if requested == .userPaused || requested == .thermalPaused {
+                return true
+            }
             return false
         @unknown default:
             return false
@@ -793,6 +849,15 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// wake-only; Providers re-read session + privacy-gated ``homeWidgetLiveChrome``. This gate
     /// only discards useless or bookkeeping-hostile wake candidates (residual sticky, premature
     /// mid-hold ``.playing``, soft-resume reverse-race pause, post-audible Connecting).
+    ///
+    /// **Soft-resume settle exception:** When memory already holds authoritative ``.playing`` and
+    /// the candidate is also ``.playing``, session may still lag on sticky ``.userPaused`` until
+    /// ``saveCurrentState()`` finishes after ``applyVisualState(.playing)``. The pure session
+    /// helper still treats ``playing`` vs ``userPaused`` as a reverse-race discard (delayed
+    /// playing must not clear sticky disk alone), but with matching memory the wake is honest
+    /// home control paint (pause glyph after audible start) and must not be dropped — otherwise
+    /// interactive LIVE can keep residual Tauko/play after soft-resume while App Group chrome
+    /// already advanced on the live-chrome write that races the same settle.
     ///
     /// - Parameters:
     ///   - requested: Visual the refresh candidate would schedule.
@@ -814,6 +879,12 @@ final class WidgetRefreshManager: @unchecked Sendable {
         session: PlayerVisualState?,
         isImmediate: Bool = false
     ) -> Bool {
+        // Soft-resume / audible settle: actor already advanced to playing matching the candidate.
+        // Session snapshot may lag sticky pause until the in-flight save lands — do not drop the
+        // home playing wake that flips residual play glyph → pause glyph after soft-resume.
+        if requested == .playing, memory == .playing {
+            return false
+        }
         if refreshWouldRegressMemoryAuthority(
             executing: requested,
             memory: memory,
@@ -959,8 +1030,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
         }
 
         cancelPendingRefresh()
-        lastRefreshTime = Date()
-        lastKnownState = state
+        // Bookkeeping (`lastKnownState` / `lastRefreshTime`) only after a real WidgetCenter wake is
+        // scheduled. Setting them before `await currentConfigurations()` made concurrent dual-path
+        // `refreshIfNeeded` calls coalesce as "identical" while the first wake was still in flight —
+        // harmless when the first completes, hostile if the first path is discarded mid-await.
         
         do {
             let configs = try await WidgetCenter.shared.currentConfigurations()
@@ -971,6 +1044,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
             if hasActive {
                 WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
                 WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
+                lastRefreshTime = Date()
+                lastKnownState = state
+                lastPaintEpochAtSuccessfulReload =
+                    SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
                 
                 #if DEBUG
                 print("[WidgetRefreshManager] Widget refresh executed (our widgets active) — visualState: \(state.debugVisualStateLabel), lang: \(state.currentLanguage)")

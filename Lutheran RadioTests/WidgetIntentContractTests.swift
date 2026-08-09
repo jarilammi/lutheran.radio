@@ -352,8 +352,8 @@ final class WidgetIntentContractTests: XCTestCase {
             XCTAssertEqual(mapped.action, .play, "Play-eligible \(state) must schedule play")
             XCTAssertEqual(
                 mapped.targetVisualState,
-                state.optimisticVisualAfterPlayPlan,
-                "Optimistic target for \(state) must follow security/connecting policy"
+                state.optimisticHomeWidgetVisualAfterPlayPlan,
+                "Home optimistic target for \(state) must hold pause or Connecting (never invent .playing)"
             )
         }
 

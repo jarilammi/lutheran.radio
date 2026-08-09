@@ -163,39 +163,45 @@ extension LutheranRadioWidgetControl {
 
         // MARK: - State resolution (snapshot is the sole SSOT)
 
+        /// Resolves Control Center toggle paint fields.
+        ///
+        /// **Happy path (App Group available):** pure ``resolveFromSnapshot()`` — session +
+        /// privacy-gated ``homeWidgetLiveChrome`` + program-metadata mirror. No actor hop;
+        /// paint never consults ``SharedPlayerManager/currentVisualState``.
+        ///
+        /// **App Group unavailable (extremely rare):** narrow
+        /// ``refreshVisualStateFromPersistence()`` then actor visual, so process-local session
+        /// is applied before reading ``currentVisualState``. This is the only Provider path that
+        /// still touches the actor for paint.
+        ///
+        /// - Returns: Control ``Value`` ready for the toggle label / isPlaying presentation.
+        /// - SeeAlso: ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+        ///   ``SharedPlayerManager/refreshVisualStateFromPersistence()``,
+        ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6),
+        ///   docs/Widget-Presentation-Dataflow.md.
         private func resolveControlWidgetValue() async -> Value {
             let manager = SharedPlayerManager.shared
-            let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
-            let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
 
-            // App Group unavailable (extremely rare): actor fallback after hygiene.
+            // App Group unavailable: narrow actor refresh only on this rare fallback.
+            // Happy path must not reintroduce a full Provider hygiene hop.
             if UserDefaults(suiteName: "group.radio.lutheran.shared") == nil {
+                await manager.refreshVisualStateFromPersistence()
                 let vs = await manager.currentVisualState
+                let language = SharedPlayerManager.preferredWidgetLanguage()
                 let fallbackFields = WidgetProviderSnapshotFields(
-                    currentLanguage: fields.currentLanguage,
-                    hasError: fields.hasError,
+                    currentLanguage: language,
+                    hasError: false,
                     visualState: vs,
-                    streamMetadata: fields.streamMetadata
+                    streamMetadata: nil
                 )
                 let fallbackSlices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fallbackFields)
                 return Value(blueprint: WidgetTimelineEntryFactory.makeControlWidgetBlueprint(fields: fallbackFields, slices: fallbackSlices))
             }
 
-            // Snapshot present — SSOT path (symmetric with home-widget Provider).
-            if SharedPlayerManager.loadPersistedWidgetState() != nil {
-                return Value(blueprint: WidgetTimelineEntryFactory.makeControlWidgetBlueprint(fields: fields, slices: slices))
-            }
-
-            // No snapshot yet: actor visual + preferred language (installs that never wrote).
-            let vs = await manager.currentVisualState
-            let fallbackFields = WidgetProviderSnapshotFields(
-                currentLanguage: fields.currentLanguage,
-                hasError: fields.hasError,
-                visualState: vs,
-                streamMetadata: fields.streamMetadata
-            )
-            let fallbackSlices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fallbackFields)
-            return Value(blueprint: WidgetTimelineEntryFactory.makeControlWidgetBlueprint(fields: fallbackFields, slices: fallbackSlices))
+            // Happy path: snapshot + live chrome only (symmetric with home-widget Provider).
+            let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+            let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
+            return Value(blueprint: WidgetTimelineEntryFactory.makeControlWidgetBlueprint(fields: fields, slices: slices))
         }
     }
 }

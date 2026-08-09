@@ -574,6 +574,292 @@ extension SharedPlayerManager {
     /// table in SharedPlayerManager.swift and the permanent design doc.
     nonisolated static let homeWidgetLiveChromeAppGroupKey = "homeWidgetLiveChrome"
 
+    /// App Group integer epoch that forces home-widget **interactive LIVE** to re-evaluate paint.
+    ///
+    /// WidgetKit can keep a system-held TimelineEntry showing residual ``.playing`` (Toistaa /
+    /// green pause) after App Group ``homeWidgetLiveChrome`` already holds ``.userPaused`` —
+    /// same honesty class as Live Activity ContentState lag. ``LutheranRadioWidgetEntryView``
+    /// observes this key via ``@AppStorage`` so body re-runs ``resolveFromSnapshot()`` after
+    /// optimistic toggle / settle stamps, even when live-chrome **identity skip** would not
+    /// rewrite the JSON blob (main-app sticky pause after extension already stamped).
+    ///
+    /// Not a paint SSOT — only a wake token. Chrome fields remain session + ``homeWidgetLiveChrome``.
+    ///
+    /// - SeeAlso: ``bumpHomeWidgetInteractivePaintEpoch()``, ``loadHomeWidgetInteractivePaintEpoch()``,
+    ///   ``persistHomeWidgetLiveChromeMirror(_:)``,
+    ///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
+    ///   ``LutheranRadioWidgetEntryView``, docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6).
+    ///
+    /// AGENT NOTE: Single source of truth key name — any rename must update the App Group table
+    /// in SharedPlayerManager.swift and the entry-view ``@AppStorage`` binding.
+    nonisolated static let homeWidgetInteractivePaintEpochAppGroupKey = "homeWidgetInteractivePaintEpoch"
+
+    /// App Group string wake token combining epoch + visual + language for interactive LIVE paint.
+    ///
+    /// ``@AppStorage`` on an Int epoch alone is unreliable when WidgetKit holds an archived view
+    /// or when the render process suite cache lags. A string signature changes on every chrome
+    /// flip so SwiftUI dependencies re-fire when the suite is visible in-process, and Providers
+    /// embed the same token into ``SimpleEntry/paintSignature`` for structural TimelineEntry identity.
+    ///
+    /// Wake only — never invent visual from this string alone.
+    ///
+    /// - SeeAlso: ``homeWidgetInteractivePaintEpochAppGroupKey``,
+    ///   ``publishHomeWidgetInteractivePaintSignature(visualState:language:epoch:)``,
+    ///   ``loadHomeWidgetInteractivePaintSignature()``,
+    ///   ``LutheranRadioWidgetEntryView``.
+    ///
+    /// AGENT NOTE: Single source of truth key name — update App Group table + EntryView binding.
+    nonisolated static let homeWidgetInteractivePaintSignatureAppGroupKey =
+        "homeWidgetInteractivePaintSignature"
+
+    /// Local ``NotificationCenter`` name posted when interactive paint wake tokens advance.
+    ///
+    /// Same-process companion to the Darwin paint-advanced name: ``@AppStorage`` does not
+    /// always re-fire when the intent handler and LIVE render share a process but suite KVO
+    /// is skipped. ``LutheranRadioWidgetEntryView`` listens and re-resolves from snapshot SSOT.
+    ///
+    /// - SeeAlso: ``homeWidgetInteractivePaintAdvancedDarwinName``,
+    ///   ``postHomeWidgetInteractivePaintAdvancedWake()``,
+    ///   ``LutheranRadioWidgetEntryView``.
+    nonisolated static let homeWidgetInteractivePaintAdvancedNotification =
+        Notification.Name("radio.lutheran.homeWidgetInteractivePaintAdvanced")
+
+    /// Darwin notify name for cross-process interactive home paint wake.
+    ///
+    /// Posted from ``bumpHomeWidgetInteractivePaintEpoch(reason:)`` so a main-app settle
+    /// (soft-resume ``.playing`` stamp) can re-evaluate extension LIVE without relying on
+    /// suite ``@AppStorage`` KVO across processes. Peer to ``radio.lutheran.widget.action``.
+    ///
+    /// - SeeAlso: ``homeWidgetInteractivePaintAdvancedNotification``,
+    ///   ``postHomeWidgetInteractivePaintAdvancedWake()``,
+    ///   ``registerHomeWidgetInteractivePaintWakeObserverIfNeeded()``.
+    nonisolated static let homeWidgetInteractivePaintAdvancedDarwinName =
+        "radio.lutheran.homeWidget.interactivePaintAdvanced"
+
+    /// Increments the interactive paint epoch so LIVE home entry views re-resolve from snapshot SSOT.
+    ///
+    /// - Parameter reason: Optional DEBUG label (e.g. `"optimisticToggle"`, `"liveChromeWrite"`).
+    /// - Postcondition: App Group epoch is strictly greater than before (wrapping at `Int.max`);
+    ///   suite is flushed for cross-process ``@AppStorage`` visibility; paint signature is
+    ///   republished from current live chrome when present; local + Darwin paint-advanced wakes fire.
+    /// - SeeAlso: ``homeWidgetInteractivePaintEpochAppGroupKey``,
+    ///   ``loadHomeWidgetInteractivePaintEpoch()``,
+    ///   ``publishHomeWidgetInteractivePaintSignature(visualState:language:epoch:)``,
+    ///   ``postHomeWidgetInteractivePaintAdvancedWake()``,
+    ///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``.
+    nonisolated static func bumpHomeWidgetInteractivePaintEpoch(reason: String? = nil) {
+        let suite = "group.radio.lutheran.shared"
+        guard let defaults = UserDefaults(suiteName: suite) else { return }
+        // Re-sync before read so concurrent extension/main writers do not lose increments.
+        CFPreferencesAppSynchronize(suite as CFString)
+        defaults.synchronize()
+        let next = defaults.integer(forKey: homeWidgetInteractivePaintEpochAppGroupKey) &+ 1
+        defaults.set(next, forKey: homeWidgetInteractivePaintEpochAppGroupKey)
+        // Publish signature with best-known chrome so @AppStorage String observers always flip.
+        if let chrome = loadHomeWidgetLiveChromeMirrorWithoutResync() {
+            publishHomeWidgetInteractivePaintSignature(
+                visualState: chrome.visualState,
+                language: chrome.currentLanguage,
+                epoch: next,
+                postPaintWake: false
+            )
+        } else {
+            defaults.set("\(next)|unknown|", forKey: homeWidgetInteractivePaintSignatureAppGroupKey)
+        }
+        defaults.synchronize()
+        CFPreferencesAppSynchronize(suite as CFString)
+        // Suite tokens alone do not re-run LIVE in another process instance; post wake after flush.
+        postHomeWidgetInteractivePaintAdvancedWake()
+        #if DEBUG
+        if let reason {
+            print("[SharedPlayerManager] Bumped home-widget interactive paint epoch → \(next) (\(reason))")
+        }
+        #endif
+    }
+
+    /// Current interactive paint epoch from the App Group suite (0 when absent).
+    ///
+    /// - Returns: Integer observed by ``LutheranRadioWidgetEntryView`` / tests.
+    /// - SeeAlso: ``bumpHomeWidgetInteractivePaintEpoch(reason:)``.
+    nonisolated static func loadHomeWidgetInteractivePaintEpoch() -> Int {
+        let suite = "group.radio.lutheran.shared"
+        CFPreferencesAppSynchronize(suite as CFString)
+        guard let defaults = UserDefaults(suiteName: suite) else { return 0 }
+        defaults.synchronize()
+        if let cfValue = CFPreferencesCopyAppValue(
+            homeWidgetInteractivePaintEpochAppGroupKey as CFString,
+            suite as CFString
+        ) as? NSNumber {
+            return cfValue.intValue
+        }
+        return defaults.integer(forKey: homeWidgetInteractivePaintEpochAppGroupKey)
+    }
+
+    /// Current interactive paint signature from the App Group suite (empty when absent).
+    ///
+    /// - Returns: Wake string embedded in ``SimpleEntry/paintSignature`` / observed via ``@AppStorage``.
+    /// - SeeAlso: ``publishHomeWidgetInteractivePaintSignature(visualState:language:epoch:)``,
+    ///   ``loadHomeWidgetInteractivePaintEpoch()``.
+    nonisolated static func loadHomeWidgetInteractivePaintSignature() -> String {
+        let suite = "group.radio.lutheran.shared"
+        CFPreferencesAppSynchronize(suite as CFString)
+        guard let defaults = UserDefaults(suiteName: suite) else { return "" }
+        defaults.synchronize()
+        if let cfValue = CFPreferencesCopyAppValue(
+            homeWidgetInteractivePaintSignatureAppGroupKey as CFString,
+            suite as CFString
+        ) as? String {
+            return cfValue
+        }
+        return defaults.string(forKey: homeWidgetInteractivePaintSignatureAppGroupKey) ?? ""
+    }
+
+    /// Builds the stable paint-signature string (epoch + visual token + language).
+    ///
+    /// - Parameters:
+    ///   - visualState: Chrome visual projected into the signature (wake identity only).
+    ///   - language: Stream language code.
+    ///   - epoch: Current paint epoch integer.
+    /// - Returns: Signature string for App Group / ``SimpleEntry`` identity (not a paint SSOT).
+    /// - SeeAlso: ``HomeWidgetLiveChrome/stableToken(for:)``.
+    nonisolated static func makeHomeWidgetInteractivePaintSignature(
+        visualState: PlayerVisualState,
+        language: String,
+        epoch: Int
+    ) -> String {
+        "\(epoch)|\(HomeWidgetLiveChrome.stableToken(for: visualState))|\(language)"
+    }
+
+    /// Writes the interactive paint signature string for LIVE ``@AppStorage`` / entry identity.
+    ///
+    /// - Parameters:
+    ///   - visualState: Chrome visual projected into the signature (wake identity only).
+    ///   - language: Stream language code.
+    ///   - epoch: Current paint epoch integer.
+    ///   - postPaintWake: When `true` (default), posts local + Darwin paint-advanced wake after flush.
+    ///     Pass `false` when the caller already posts via ``bumpHomeWidgetInteractivePaintEpoch``.
+    /// - SeeAlso: ``homeWidgetInteractivePaintSignatureAppGroupKey``,
+    ///   ``bumpHomeWidgetInteractivePaintEpoch(reason:)``,
+    ///   ``postHomeWidgetInteractivePaintAdvancedWake()``.
+    nonisolated static func publishHomeWidgetInteractivePaintSignature(
+        visualState: PlayerVisualState,
+        language: String,
+        epoch: Int,
+        postPaintWake: Bool = true
+    ) {
+        let suite = "group.radio.lutheran.shared"
+        guard let defaults = UserDefaults(suiteName: suite) else { return }
+        let signature = makeHomeWidgetInteractivePaintSignature(
+            visualState: visualState,
+            language: language,
+            epoch: epoch
+        )
+        defaults.set(signature, forKey: homeWidgetInteractivePaintSignatureAppGroupKey)
+        defaults.synchronize()
+        CFPreferencesAppSynchronize(suite as CFString)
+        if postPaintWake {
+            postHomeWidgetInteractivePaintAdvancedWake()
+        }
+    }
+
+    /// Posts local ``NotificationCenter`` + Darwin paint-advanced wake for interactive LIVE re-eval.
+    ///
+    /// **Why both:** Same-process optimistic intent may not flip suite ``@AppStorage`` KVO; local
+    /// NC re-runs the LIVE body immediately. Main-app settle stamps run in another process —
+    /// Darwin is the cross-process peer to ``radio.lutheran.widget.action``. Not a WidgetCenter
+    /// thrash path (no extra ``reloadAllTimelines``).
+    ///
+    /// - SeeAlso: ``homeWidgetInteractivePaintAdvancedNotification``,
+    ///   ``homeWidgetInteractivePaintAdvancedDarwinName``,
+    ///   ``registerHomeWidgetInteractivePaintWakeObserverIfNeeded()``,
+    ///   ``bumpHomeWidgetInteractivePaintEpoch(reason:)``.
+    nonisolated static func postHomeWidgetInteractivePaintAdvancedWake() {
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        CFNotificationCenterPostNotification(
+            center,
+            CFNotificationName(homeWidgetInteractivePaintAdvancedDarwinName as CFString),
+            nil,
+            nil,
+            true
+        )
+        NotificationCenter.default.post(
+            name: homeWidgetInteractivePaintAdvancedNotification,
+            object: nil
+        )
+    }
+
+    /// Registers a process-lifetime Darwin observer that forwards paint-advanced wakes to local NC.
+    ///
+    /// Safe to call repeatedly (idempotent). ``LutheranRadioWidgetEntryView`` registers once so
+    /// main-app suite stamps can re-evaluate extension LIVE without suite KVO.
+    ///
+    /// - SeeAlso: ``postHomeWidgetInteractivePaintAdvancedWake()``,
+    ///   ``homeWidgetInteractivePaintAdvancedDarwinName``.
+    nonisolated static func registerHomeWidgetInteractivePaintWakeObserverIfNeeded() {
+        paintWakeObserverRegistrationLock.lock()
+        defer { paintWakeObserverRegistrationLock.unlock() }
+        // SAFETY: `nonisolated(unsafe)` flag is mutated only under
+        // ``paintWakeObserverRegistrationLock``; SE-0458 requires `unsafe` on each access.
+        guard unsafe !paintWakeObserverRegistered else { return }
+        unsafe paintWakeObserverRegistered = true
+
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        // SAFETY: Process-lifetime Darwin observer with a stable static NSObject as the opaque
+        // context (``paintWakeObserverToken``). Callback is a non-capturing C function
+        // (``homeWidgetInteractivePaintAdvancedDarwinCallback``) that only hops to main and posts
+        // NotificationCenter — no retain of widget views or actors. High-level Darwin API is
+        // not available for this wake path. Matches the CF Darwin pattern used for
+        // ``radio.lutheran.widget.action``.
+        let observer = unsafe Unmanaged.passUnretained(paintWakeObserverToken).toOpaque()
+        unsafe CFNotificationCenterAddObserver(
+            center,
+            observer,
+            homeWidgetInteractivePaintAdvancedDarwinCallback,
+            homeWidgetInteractivePaintAdvancedDarwinName as CFString,
+            nil,
+            .deliverImmediately
+        )
+    }
+
+    /// Opaque CF Darwin observer identity for paint-advanced wakes (process lifetime).
+    ///
+    /// `@unchecked Sendable` so the process-lifetime static can be `nonisolated` (not
+    /// `nonisolated(unsafe)`) and still reachable from nonisolated CF registration. CF holds
+    /// an unretained pointer only.
+    private final class HomeWidgetPaintWakeObserverToken: NSObject, @unchecked Sendable {}
+    // SAFETY: Immutable process-lifetime registration identity; never mutated after init; CF
+    // holds an unretained opaque pointer only (no ownership transfer). `nonisolated` (not
+    // `nonisolated(unsafe)`) because the type is Sendable — SE-0458 flags unnecessary unsafe
+    // on Sendable constants.
+    nonisolated private static let paintWakeObserverToken = HomeWidgetPaintWakeObserverToken()
+    // SAFETY: Boolean guarded by ``paintWakeObserverRegistrationLock``; no other concurrent readers.
+    nonisolated(unsafe) private static var paintWakeObserverRegistered = false
+    nonisolated private static let paintWakeObserverRegistrationLock = NSLock()
+
+    /// Loads live chrome without an extra suite re-sync (caller already synchronized).
+    ///
+    /// Used by epoch bump to attach visual/language to the paint signature without recursion.
+    nonisolated private static func loadHomeWidgetLiveChromeMirrorWithoutResync() -> HomeWidgetLiveChrome? {
+        let suite = "group.radio.lutheran.shared"
+        guard let defaults = UserDefaults(suiteName: suite) else { return nil }
+        let data: Data?
+        if let cfValue = CFPreferencesCopyAppValue(
+            homeWidgetLiveChromeAppGroupKey as CFString,
+            suite as CFString
+        ) as? Data {
+            data = cfValue
+        } else {
+            data = defaults.data(forKey: homeWidgetLiveChromeAppGroupKey)
+        }
+        guard let data,
+              let chrome = try? JSONDecoder().decode(HomeWidgetLiveChrome.self, from: data),
+              !chrome.currentLanguage.isEmpty
+        else {
+            return nil
+        }
+        return chrome
+    }
+
     /// Writes the privacy-gated home live-chrome mirror for cross-process Providers.
     ///
     /// - Parameter chrome: Live visual + language + hasError payload, or `nil` to clear.
@@ -582,7 +868,9 @@ extension SharedPlayerManager {
     ///   / empty language). When the gate is closed on the main app, **no** key is written.
     ///   Extension process under ``shouldDistrustDurableMirrorPlayPlanning()`` refuses to stamp
     ///   ``.playing`` (must not re-project residual “still playing” chrome after terminate/reboot).
+    ///   Successful write/clear also bumps ``homeWidgetInteractivePaintEpochAppGroupKey``.
     /// - SeeAlso: ``loadHomeWidgetLiveChromeMirror()``, ``clearHomeWidgetLiveChromeMirror()``,
+    ///   ``bumpHomeWidgetInteractivePaintEpoch(reason:)``,
     ///   ``shouldDistrustDurableMirrorPlayPlanning()``,
     ///   ``persistHomeWidgetStreamMetadataMirror(_:)`` (privacy-class peer),
     ///   ``HomeWidgetLiveChrome``, docs/Home-Live-Chrome-App-Group-Mirror-Design.md.
@@ -608,31 +896,69 @@ extension SharedPlayerManager {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         guard let chrome, !chrome.currentLanguage.isEmpty else {
             defaults.removeObject(forKey: homeWidgetLiveChromeAppGroupKey)
+            // Flush clear so Provider / interactive paint heal in another extension process
+            // cannot re-read residual chrome after privacy / factory wipe.
+            defaults.synchronize()
+            bumpHomeWidgetInteractivePaintEpoch(reason: "liveChromeClear")
             return
         }
         do {
             let data = try JSONEncoder().encode(chrome)
             defaults.set(data, forKey: homeWidgetLiveChromeAppGroupKey)
+            // Flush optimistic / settle stamps before WidgetCenter reload. Intent perform and
+            // Provider/timeline render may run in different extension process instances; without
+            // a suite flush, interactive LIVE can re-resolve a lagging ``.playing`` residual while
+            // this process already holds ``.userPaused`` (B1-2 residual-playing class).
+            defaults.synchronize()
+            CFPreferencesAppSynchronize("group.radio.lutheran.shared" as CFString)
+            bumpHomeWidgetInteractivePaintEpoch(reason: "liveChromeWrite")
+            // Authoritative signature from the chrome just written; bump already posted wake.
+            publishHomeWidgetInteractivePaintSignature(
+                visualState: chrome.visualState,
+                language: chrome.currentLanguage,
+                epoch: loadHomeWidgetInteractivePaintEpoch(),
+                postPaintWake: false
+            )
         } catch {
             #if DEBUG
             print("[SharedPlayerManager] Failed to encode home-widget live-chrome mirror: \(error.localizedDescription)")
             #endif
             defaults.removeObject(forKey: homeWidgetLiveChromeAppGroupKey)
+            defaults.synchronize()
+            bumpHomeWidgetInteractivePaintEpoch(reason: "liveChromeEncodeFailure")
         }
     }
 
     /// Reads the privacy-gated home live-chrome mirror, if present and well-formed.
+    ///
+    /// Forces a cross-process preference-domain re-sync (``CFPreferencesAppSynchronize`` + suite
+    /// ``synchronize()``) and prefers ``CFPreferencesCopyAppValue`` so a Provider / interactive
+    /// entry heal does not paint residual ``.playing`` from a stale per-process UserDefaults
+    /// cache after another process stamped ``.userPaused`` (B1-2 residual-playing class).
     ///
     /// - Returns: Parsed ``HomeWidgetLiveChrome``, or `nil` when missing, decode fails
     ///   (including unknown visual token), or language is empty (treat as absent → factory path).
     /// - SeeAlso: ``persistHomeWidgetLiveChromeMirror(_:)``, ``clearHomeWidgetLiveChromeMirror()``,
     ///   ``HomeWidgetLiveChrome``, docs/Home-Live-Chrome-App-Group-Mirror-Design.md.
     nonisolated static func loadHomeWidgetLiveChromeMirror() -> HomeWidgetLiveChrome? {
-        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared"),
-              let data = defaults.data(forKey: homeWidgetLiveChromeAppGroupKey)
-        else {
+        let suite = "group.radio.lutheran.shared"
+        // Cross-process re-sync: interactive heal and Provider resolve must not paint residual
+        // ``.playing`` from a stale suite RAM cache after another process stamped ``.userPaused``.
+        CFPreferencesAppSynchronize(suite as CFString)
+        guard let defaults = UserDefaults(suiteName: suite) else {
             return nil
         }
+        defaults.synchronize()
+        let data: Data?
+        if let cfValue = CFPreferencesCopyAppValue(
+            homeWidgetLiveChromeAppGroupKey as CFString,
+            suite as CFString
+        ) as? Data {
+            data = cfValue
+        } else {
+            data = defaults.data(forKey: homeWidgetLiveChromeAppGroupKey)
+        }
+        guard let data else { return nil }
         guard let chrome = try? JSONDecoder().decode(HomeWidgetLiveChrome.self, from: data),
               !chrome.currentLanguage.isEmpty
         else {
@@ -644,12 +970,18 @@ extension SharedPlayerManager {
     /// Removes the home live-chrome mirror (privacy gate close, privacy clear, factory residual, terminate).
     ///
     /// - SeeAlso: ``persistHomeWidgetLiveChromeMirror(_:)``,
+    ///   ``bumpHomeWidgetInteractivePaintEpoch(reason:)``,
     ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
     ///   ``removeAllLocalPlaybackKeys()``, ``forceStaleLivenessTimestampForTermination()``,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7 privacy clear matrix).
     nonisolated static func clearHomeWidgetLiveChromeMirror() {
-        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        let suite = "group.radio.lutheran.shared"
+        guard let defaults = UserDefaults(suiteName: suite) else { return }
         defaults.removeObject(forKey: homeWidgetLiveChromeAppGroupKey)
+        defaults.removeObject(forKey: homeWidgetInteractivePaintEpochAppGroupKey)
+        defaults.removeObject(forKey: homeWidgetInteractivePaintSignatureAppGroupKey)
+        defaults.synchronize()
+        CFPreferencesAppSynchronize(suite as CFString)
         #if DEBUG
         print("[SharedPlayerManager] Cleared home-widget live-chrome mirror")
         #endif
@@ -667,7 +999,11 @@ extension SharedPlayerManager {
     /// **Identity skip:** When visual + language + hasError already match the App Group mirror,
     /// the write is skipped (``shouldSkipIdenticalHomeWidgetLiveChromeWrite``) so attach-path
     /// Connecting storms, identical session saves, and repeated optimistic stamps do not spam
-    /// UserDefaults.
+    /// UserDefaults. Definitive control visuals (``.userPaused`` **and** ``.playing``) still bump
+    /// paint epoch + signature (``liveChromeIdentitySkipWake``) so interactive LIVE can re-resolve
+    /// after main settle when extension already stamped the same chrome — without force-rewriting
+    /// the JSON blob (log4: sticky rewrite + dual WidgetCenter wakes thrashed without healing
+    /// residual). Connecting identity skips stay quiet.
     ///
     /// **Soft-resume honesty (main app):** Callers must pass the **actual** session visual.
     /// Product soft-resume retains sticky ``.userPaused`` until ``setPlaying()``; do not invent
@@ -709,6 +1045,17 @@ extension SharedPlayerManager {
             #if DEBUG
             print("[SharedPlayerManager] Skipping identical home-widget live-chrome stamp (visual=\(visualState), lang=\(language))")
             #endif
+            // Identity skip omits a second JSON write (and its liveChromeWrite epoch bump).
+            // Main sticky pause after extension optimistic ``.userPaused``, and main soft-resume
+            // ``.playing`` after an earlier identical stamp, both hit this path. Wake interactive
+            // LIVE via epoch + signature + Darwin/local NC only — do **not** force rewrite the
+            // chrome blob or call ``reloadAllTimelines`` (log4 thrash regression). Connecting
+            // identity skips stay quiet (attach storms).
+            if visualState.isDefinitiveMediaToggleVisual {
+                // ``bumpHomeWidgetInteractivePaintEpoch`` republishes signature from chrome and
+                // posts paint-advanced wake — no second publish needed.
+                bumpHomeWidgetInteractivePaintEpoch(reason: "liveChromeIdentitySkipWake")
+            }
             return
         }
         persistHomeWidgetLiveChromeMirror(chrome)
@@ -913,6 +1260,30 @@ extension SharedPlayerManager {
         // Bare App Group `currentLanguage` is retired (purged only). Liveness uses the
         // privacy-gated helper so residual heartbeats cannot reappear with the gate closed.
         Self.bumpWidgetLivenessTimestamp(policy: .immediate)
+    }
+}
+
+/// C-compatible Darwin callback for interactive home paint wake (must not capture context).
+///
+/// Forwards to local ``NotificationCenter`` on the main queue so
+/// ``LutheranRadioWidgetEntryView`` can re-resolve snapshot SSOT after a main-app settle stamp.
+///
+/// - SeeAlso: ``SharedPlayerManager/registerHomeWidgetInteractivePaintWakeObserverIfNeeded()``,
+///   ``SharedPlayerManager/homeWidgetInteractivePaintAdvancedNotification``.
+// SAFETY: CF Darwin requires a C function pointer. This free function captures nothing; it only
+// hops to main and posts the SSOT ``homeWidgetInteractivePaintAdvancedNotification`` name.
+private func homeWidgetInteractivePaintAdvancedDarwinCallback(
+    _ center: CFNotificationCenter?,
+    _ observer: UnsafeMutableRawPointer?,
+    _ name: CFNotificationName?,
+    _ object: UnsafeRawPointer?,
+    _ userInfo: CFDictionary?
+) {
+    DispatchQueue.main.async {
+        NotificationCenter.default.post(
+            name: SharedPlayerManager.homeWidgetInteractivePaintAdvancedNotification,
+            object: nil
+        )
     }
 }
 

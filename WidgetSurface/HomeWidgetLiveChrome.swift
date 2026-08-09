@@ -222,7 +222,10 @@ public struct HomeWidgetResolvedChrome: Equatable, Sendable {
 /// 2. Only one source → that source.
 /// 3. Both present and chrome fields agree (visual + comparable language + hasError) → **session**
 ///    (same-process optimistic continuity; metadata stays with session).
-/// 4. Both present and disagree → source with **greater** `updatedAt` wins; **ties prefer session**.
+/// 4. Both present and disagree → source with **greater** `updatedAt` wins. **Ties prefer session**
+///    except definitive settle pairs (session ``.userPaused`` + mirror ``.playing``, or session
+///    ``.playing`` + mirror ``.userPaused``) where equal stamps prefer the App Group mirror so
+///    soft-resume / home-pause settle cannot leave residual opposite LIVE chrome.
 /// 5. Session missing `sessionUpdatedAt` is treated as older than any positive mirror stamp so a
 ///    main-app settle mirror can still heal an untimestamped residual session.
 /// 6. When ``distrustLiveChrome`` is true (termination sentinel or device reboot boot-identity
@@ -321,10 +324,21 @@ public func resolveHomeWidgetChromeFields(
         )
     }
 
-    // Disagree: fresher wall-clock wins; tie → session (same-tick optimistic continuity).
-    // Untimestamped session is older than any mirror stamp so main settle can heal residual prePlay.
+    // Disagree: fresher wall-clock wins. Untimestamped session is older than any mirror stamp
+    // so main settle can heal residual Connecting. Default tie prefers session (same-tick
+    // optimistic continuity) **except** definitive pause/play settle pairs where equal stamps
+    // would leave residual LIVE chrome: sticky session ``.userPaused`` vs mirror ``.playing``
+    // (soft-resume setPlaying) and residual session ``.playing`` vs mirror ``.userPaused``
+    // (home pause). Prefer the App Group mirror on those equal-timestamp settles.
     let sessionTime = sessionUpdatedAt ?? -.infinity
-    if mirror.updatedAt > sessionTime {
+    let softResumeSettleTie =
+        sVisual == .userPaused && mirror.visualState == .playing
+    let pauseSettleTie =
+        sVisual == .playing && mirror.visualState == .userPaused
+    let mirrorWins =
+        mirror.updatedAt > sessionTime
+        || ((softResumeSettleTie || pauseSettleTie) && mirror.updatedAt >= sessionTime)
+    if mirrorWins {
         return HomeWidgetResolvedChrome(
             visualState: mirror.visualState,
             currentLanguage: normalizedChromeLanguage(mirror.currentLanguage),
