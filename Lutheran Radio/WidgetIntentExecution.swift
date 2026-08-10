@@ -354,10 +354,14 @@ enum WidgetIntentExecution {
     /// - Parameter visualState: Target control visual (`.userPaused` after pause plan, `.playing` after play).
     /// - Note: Skips ActivityKit IPC under ``SharedPlayerManager/isRunningInUITestMode`` so
     ///   unit tests stay free of system-service round-trips; main-app last-pushed alignment
-    ///   still runs so white-box suppression tests can exercise the thrash guard.
+    ///   still runs so white-box suppression tests can exercise the thrash guard. On the main
+    ///   app, when ``DirectStreamingPlayer/selectedStream`` language differs from owned
+    ///   ContentState language, the optimistic push co-heals language with the visual flip so
+    ///   pause after stream switch does not re-stamp lagging prior-language chrome.
     /// - SeeAlso: ``performLiveActivityToggle()``,
     ///   ``pushOptimisticLiveActivityStreamSwitchContent(languageCode:visualState:)``,
     ///   ``LutheranRadioLiveActivityAttributes/ContentState/replacingVisualState(_:)``,
+    ///   ``RadioLiveActivityManager/languageForOptimisticToggleContentAlignment(lastPushedLanguage:ownedContentLanguage:selectedStreamLanguage:durableLanguageMirror:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func pushOptimisticLiveActivityToggleContent(visualState: PlayerVisualState) async {
         let skipActivityKitIPC = SharedPlayerManager.isRunningInUITestMode
@@ -365,7 +369,25 @@ enum WidgetIntentExecution {
         if !skipActivityKitIPC {
             for activity in interactiveLiveActivities() {
                 let current = activity.content.state
+                // Main-app: co-heal language chrome when stream attach already advanced but
+                // system-held ContentState language still lags (pause/play after switch must
+                // not re-stamp prior-language via replacingVisualState alone). Extension keeps
+                // visual-only replace — ContentState is the extension language chrome SSOT.
+                #if LUTHERAN_MAIN_APP
+                let selectedLanguage = DirectStreamingPlayer.shared.selectedStream.languageCode
+                let candidate: LutheranRadioLiveActivityAttributes.ContentState
+                if !selectedLanguage.isEmpty, current.currentLanguage != selectedLanguage {
+                    candidate = LutheranRadioLiveActivityAttributes.ContentState(
+                        visualState: visualState,
+                        streamMetadata: current.streamMetadata,
+                        currentLanguage: selectedLanguage
+                    )
+                } else {
+                    candidate = current.replacingVisualState(visualState)
+                }
+                #else
                 let candidate = current.replacingVisualState(visualState)
+                #endif
                 guard candidate != current else { continue }
 
                 nonisolated(unsafe) let safeActivity = activity

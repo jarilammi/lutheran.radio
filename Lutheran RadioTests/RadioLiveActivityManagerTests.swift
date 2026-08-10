@@ -61,6 +61,8 @@ class RadioLiveActivityManagerTests: XCTestCase {
         manager.currentActivity = nil
         manager._test_setPendingInteractiveLiveActivityEnsure(false)
         manager._test_setLanguageEnsureQuietPendingDestination(nil)
+        manager._test_setPlayingEnsureQuietPending(false)
+        manager._test_cancelAllPostQuietLongHorizonEnsure()
         // Singleton suppress memory must not leak across tests (optimistic stream-switch
         // / attribute-events cases write lastPushedContent without endActivity).
         manager._test_clearLastPushedContent()
@@ -71,6 +73,8 @@ class RadioLiveActivityManagerTests: XCTestCase {
         // releasing. Prevents live Tasks / Timers keeping the runner alive.
         manager?._test_setPendingInteractiveLiveActivityEnsure(false)
         manager?._test_setLanguageEnsureQuietPendingDestination(nil)
+        manager?._test_setPlayingEnsureQuietPending(false)
+        manager?._test_cancelAllPostQuietLongHorizonEnsure()
         manager?._test_clearLastPushedContent()
         manager?.stopLocalUpdateTimer()
         manager?.activityObservationTask?.cancel()
@@ -350,16 +354,28 @@ class RadioLiveActivityManagerTests: XCTestCase {
             metadata,
             "Optimistic control flip must not clear program title/speaker"
         )
+        // Language prefers selectedStream / durable mirror over lagging lastPushed (heal residual);
+        // when those are empty, seeded lastPushed "sv" is preserved.
+        let expectedLanguage: String = {
+            let resolved = manager._test_languageForOptimisticToggleContentAlignment(
+                lastPushedLanguage: "sv",
+                ownedContentLanguage: nil,
+                selectedStreamLanguage: DirectStreamingPlayer.shared.selectedStream.languageCode,
+                durableLanguageMirror: SharedPlayerManager.loadLiveActivityLanguageMirror()
+            )
+            return resolved.isEmpty ? SharedPlayerManager.mainAppLiveActivityLanguageCode() : resolved
+        }()
         XCTAssertEqual(
             manager.lastPushedContent?.currentLanguage,
-            "sv",
-            "Optimistic control flip must not clear stream language chrome"
+            expectedLanguage,
+            "Optimistic control flip must align language via stream-preferring policy"
         )
+        XCTAssertFalse(expectedLanguage.isEmpty, "Optimistic toggle must leave non-empty language chrome")
         XCTAssertTrue(
             manager._test_wouldSuppressLiveActivityUpdate(
                 visualState: .userPaused,
                 streamMetadata: metadata,
-                currentLanguage: "sv"
+                currentLanguage: expectedLanguage
             ),
             "Engine-complete pause candidate matching optimistic content must suppress"
         )
@@ -367,7 +383,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
             manager._test_wouldSuppressLiveActivityUpdate(
                 visualState: .playing,
                 streamMetadata: metadata,
-                currentLanguage: "sv"
+                currentLanguage: expectedLanguage
             ),
             "Divergent actor visual must still be eligible to push"
         )
@@ -392,9 +408,24 @@ class RadioLiveActivityManagerTests: XCTestCase {
         manager.recordOptimisticToggleContent(visualState: .userPaused)
 
         XCTAssertEqual(manager.lastPushedContent?.visualState, .userPaused)
-        XCTAssertEqual(manager.lastPushedContent?.currentLanguage, "de")
+        let expectedLanguage: String = {
+            let resolved = manager._test_languageForOptimisticToggleContentAlignment(
+                lastPushedLanguage: "de",
+                ownedContentLanguage: nil,
+                selectedStreamLanguage: DirectStreamingPlayer.shared.selectedStream.languageCode,
+                durableLanguageMirror: SharedPlayerManager.loadLiveActivityLanguageMirror()
+            )
+            return resolved.isEmpty ? SharedPlayerManager.mainAppLiveActivityLanguageCode() : resolved
+        }()
+        XCTAssertEqual(
+            manager.lastPushedContent?.currentLanguage,
+            expectedLanguage,
+            "Optimistic pause must keep non-empty language via stream-preferring alignment"
+        )
         XCTAssertEqual(manager.lastPushedContent?.streamMetadata, metadata)
         // Owned surface still Connecting → suppress denied (ActivityKit push still required).
+        // Use owned language "de" (system-held Connecting freeze) even when lastPushed healed
+        // to a newer stream code — pause honesty is visual, not language invent on suppress gate.
         XCTAssertFalse(
             RadioLiveActivityManager.shouldSuppressLiveActivityContentPush(
                 lastPushed: manager.lastPushedContent,
@@ -1024,14 +1055,15 @@ class RadioLiveActivityManagerTests: XCTestCase {
         manager._test_setLanguageEnsureQuietPendingDestination(nil)
     }
 
-    /// After soft playing ensure quiet while lock/ineligible, one high-signal settle push is
-    /// allowed after stream-switch hold/connect clears (audible start / soft-resume path).
+    /// After soft playing ensure quiet while lock/ineligible, one post-hold soft playing-ensure
+    /// re-arm is allowed after stream-switch hold/connect clears (audible start / soft-resume).
     ///
     /// Protects lock-stretch visual freeze: soft budget often exhausts (or cannot run while
     /// hold is active), then quiet defers visual-only `.playing` repair for the rest of the
     /// stretch. Settled acceptance is consume-once while ineligible; optimistic toggle /
-    /// stream-switch and eligibility re-open the window. Does **not** invent `.playing`
-    /// during hold/connect; does **not** end+request while ineligible.
+    /// stream-switch and eligibility re-open the settle entry. Delayed post-settled soft ensure
+    /// may continue after the entry while owned visual still lags. Does **not** invent
+    /// `.playing` during hold/connect; does **not** end+request while ineligible.
     func testSettledPlayingAcceptancePushAfterHoldClearWhileQuiet() {
         // Hold still active → wait for setPlaying (Connecting honesty).
         XCTAssertFalse(
@@ -1184,6 +1216,752 @@ class RadioLiveActivityManagerTests: XCTestCase {
         manager._test_setPlayingSettledAcceptanceConsumed(false)
         manager._test_setPlayingEnsureQuietPending(false)
         manager._test_clearLastPushedContent()
+    }
+
+    /// After post-hold settle soft ensure still leaves owned visual lagging authoritative
+    /// `.playing`, delayed soft ensure retries must remain schedulable even when quiet /
+    /// settle consume are engaged.
+    ///
+    /// Protects soft-resume / post-audible visual honesty under continuous lock: quiet
+    /// correctly stops status thrash, but must not permanently freeze playing ensure until
+    /// unlock. Does **not** invent `.playing` during hold/connect; does **not** end while
+    /// request ineligible (recreation eligibility is a separate gate).
+    func testPostSettledPlayingEnsureRetriesScheduleWhileOwnedVisualLags() {
+        // Soft-resume residual: actor playing, owned still userPaused.
+        XCTAssertTrue(
+            manager._test_shouldSchedulePostSettledPlayingEnsureRetries(
+                hasCurrentActivity: true,
+                actorVisual: .playing,
+                ownedContentVisual: .userPaused,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Post-audible lag with owned pause must schedule delayed soft playing ensure"
+        )
+        // Stream-switch residual: owned still Connecting.
+        XCTAssertTrue(
+            manager._test_shouldSchedulePostSettledPlayingEnsureRetries(
+                hasCurrentActivity: true,
+                actorVisual: .playing,
+                ownedContentVisual: .prePlay,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Post-audible lag with owned Connecting must schedule delayed soft playing ensure"
+        )
+        // Missing owned visual while actor playing → schedule.
+        XCTAssertTrue(
+            manager._test_shouldSchedulePostSettledPlayingEnsureRetries(
+                hasCurrentActivity: true,
+                actorVisual: .playing,
+                ownedContentVisual: nil,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Missing owned visual must schedule delayed soft playing ensure"
+        )
+        // Owned already playing → no delayed ensure.
+        XCTAssertFalse(
+            manager._test_shouldSchedulePostSettledPlayingEnsureRetries(
+                hasCurrentActivity: true,
+                actorVisual: .playing,
+                ownedContentVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Matched owned .playing must not schedule delayed soft playing ensure"
+        )
+        // Hold still active → wait for audible settle.
+        XCTAssertFalse(
+            manager._test_shouldSchedulePostSettledPlayingEnsureRetries(
+                hasCurrentActivity: true,
+                actorVisual: .playing,
+                ownedContentVisual: .userPaused,
+                isStreamSwitchHoldActive: true,
+                isConnectingPlayback: false
+            ),
+            "Stream-switch hold must block delayed post-settled playing ensure"
+        )
+        // Connecting pipeline still active → wait.
+        XCTAssertFalse(
+            manager._test_shouldSchedulePostSettledPlayingEnsureRetries(
+                hasCurrentActivity: true,
+                actorVisual: .playing,
+                ownedContentVisual: .userPaused,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: true
+            ),
+            "Connecting playback must block delayed post-settled playing ensure"
+        )
+        // Actor not authoritative playing → no schedule (do not invent).
+        XCTAssertFalse(
+            manager._test_shouldSchedulePostSettledPlayingEnsureRetries(
+                hasCurrentActivity: true,
+                actorVisual: .userPaused,
+                ownedContentVisual: .userPaused,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Non-playing actor must not schedule delayed playing ensure"
+        )
+        // Unowned surface → no schedule.
+        XCTAssertFalse(
+            manager._test_shouldSchedulePostSettledPlayingEnsureRetries(
+                hasCurrentActivity: false,
+                actorVisual: .playing,
+                ownedContentVisual: .userPaused,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Unowned activity must not schedule delayed post-settled playing ensure"
+        )
+
+        // Clearing quiet (delayed retry / post-hold re-arm) must allow soft ensure again.
+        // (Long-horizon pure policy is covered by testPostQuietLongHorizonEnsureRails.)
+        XCTAssertFalse(
+            manager._test_shouldRunPlayingContentEnsureSoftPushes(
+                needsPlayingEnsure: true,
+                quietPending: true,
+                isRequestEligible: false
+            ),
+            "Quiet while ineligible must still suppress status soft playing ensure"
+        )
+        XCTAssertTrue(
+            manager._test_shouldRunPlayingContentEnsureSoftPushes(
+                needsPlayingEnsure: true,
+                quietPending: false,
+                isRequestEligible: false
+            ),
+            "Clearing quiet (delayed retry / post-hold re-arm) must allow soft playing ensure again"
+        )
+        // Recreation remains gated when request is ineligible (surface continuity).
+        XCTAssertFalse(
+            manager._test_shouldRecreateAfterForegroundSoftEnsureFailed(
+                languageStillMismatches: false,
+                playingStillStalled: true,
+                isRequestEligible: false,
+                recreationsAttempted: 0
+            ),
+            "Playing-only lag while request ineligible must not end+request"
+        )
+        manager._test_setPlayingEnsureQuietPending(false)
+    }
+
+    /// Post-quiet sparse long-horizon ensure rails: pure-policy coverage for continuous-lock
+    /// residual after soft ensure + post-settled budgets exhaust.
+    ///
+    /// Protects: quiet is thrash protection, not a permanent freeze while request is ineligible
+    /// and owned ContentState still lags actor SSOT. Covers arm, cancel, dual-axis quiet coupling,
+    /// settled-still-lagging arm, partial-accept re-arm, and quiet-defer arm. Does **not** invent
+    /// `.playing` during hold/connect; does **not** end while request ineligible; does **not**
+    /// thrash on status ticks (sparse intervals only). Short soft ensure + post-settled remain.
+    func testPostQuietLongHorizonEnsureRails() {
+        // Interval contract: sparse 5s / 15s / 45s, max 3 fires.
+        XCTAssertEqual(
+            RadioLiveActivityManager.postQuietLongHorizonEnsureDelayedIntervalsMilliseconds,
+            [5_000, 15_000, 45_000],
+            "Long-horizon cadence must stay sparse (not post-settled 400/1000/2000)"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.postQuietLongHorizonEnsureMaxDelayedAttempts,
+            3
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.postQuietLongHorizonEnsureMaxDelayedAttempts,
+            RadioLiveActivityManager.postQuietLongHorizonEnsureDelayedIntervalsMilliseconds.count
+        )
+
+        // (1) After quiet while ineligible + owned still userPaused + actor playing → arm.
+        XCTAssertTrue(
+            manager._test_shouldArmPostQuietLongHorizonPlayingEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                longHorizonAlreadyArmed: false,
+                actorVisual: .playing,
+                lastPushedVisual: .playing,
+                ownedContentVisual: .userPaused,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Quiet freeze with owned pause while actor playing must arm long-horizon playing"
+        )
+        // Already armed → do not re-schedule thrash.
+        XCTAssertFalse(
+            manager._test_shouldArmPostQuietLongHorizonPlayingEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                longHorizonAlreadyArmed: true,
+                actorVisual: .playing,
+                lastPushedVisual: .playing,
+                ownedContentVisual: .userPaused,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Already-armed long-horizon must not re-schedule"
+        )
+        // Request eligible → soft ensure / FG rail owns recovery.
+        XCTAssertFalse(
+            manager._test_shouldArmPostQuietLongHorizonPlayingEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: true,
+                longHorizonAlreadyArmed: false,
+                actorVisual: .playing,
+                lastPushedVisual: .playing,
+                ownedContentVisual: .userPaused,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Eligible request must not arm long-horizon (presentable path owns recovery)"
+        )
+        // Owned already playing → no arm.
+        XCTAssertFalse(
+            manager._test_shouldArmPostQuietLongHorizonPlayingEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                longHorizonAlreadyArmed: false,
+                actorVisual: .playing,
+                lastPushedVisual: .playing,
+                ownedContentVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Matched owned .playing must not arm long-horizon"
+        )
+        // Hold / connecting → never invent playing via long-horizon.
+        XCTAssertFalse(
+            manager._test_shouldArmPostQuietLongHorizonPlayingEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                longHorizonAlreadyArmed: false,
+                actorVisual: .playing,
+                lastPushedVisual: .prePlay,
+                ownedContentVisual: .prePlay,
+                isStreamSwitchHoldActive: true,
+                isConnectingPlayback: false
+            ),
+            "Stream-switch hold must block long-horizon playing arm"
+        )
+
+        // Language peer: lag while ineligible → arm.
+        XCTAssertTrue(
+            manager._test_shouldArmPostQuietLongHorizonLanguageEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                longHorizonAlreadyArmed: false,
+                destinationLanguage: "et",
+                lastPushedLanguage: "et",
+                ownedContentLanguage: "sv",
+                isStreamSwitchHoldActive: false
+            ),
+            "Language lag while ineligible must arm long-horizon language"
+        )
+        XCTAssertFalse(
+            manager._test_shouldArmPostQuietLongHorizonLanguageEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                longHorizonAlreadyArmed: false,
+                destinationLanguage: "et",
+                lastPushedLanguage: "et",
+                ownedContentLanguage: "et",
+                isStreamSwitchHoldActive: false
+            ),
+            "Matched owned language must not arm long-horizon"
+        )
+
+        // (3) Cancel when ownership nil / owned playing / actor left play.
+        XCTAssertTrue(
+            manager._test_shouldCancelPostQuietLongHorizonPlayingEnsure(
+                hasCurrentActivity: false,
+                ownedContentVisual: .userPaused,
+                actorVisual: .playing
+            ),
+            "Unowned surface must cancel long-horizon playing"
+        )
+        XCTAssertTrue(
+            manager._test_shouldCancelPostQuietLongHorizonPlayingEnsure(
+                hasCurrentActivity: true,
+                ownedContentVisual: .playing,
+                actorVisual: .playing
+            ),
+            "Owned .playing acceptance must cancel long-horizon playing"
+        )
+        XCTAssertTrue(
+            manager._test_shouldCancelPostQuietLongHorizonPlayingEnsure(
+                hasCurrentActivity: true,
+                ownedContentVisual: .userPaused,
+                actorVisual: .userPaused
+            ),
+            "Actor leaving .playing must cancel long-horizon playing"
+        )
+        XCTAssertFalse(
+            manager._test_shouldCancelPostQuietLongHorizonPlayingEnsure(
+                hasCurrentActivity: true,
+                ownedContentVisual: .userPaused,
+                actorVisual: .playing
+            ),
+            "Still-lagging freeze must keep long-horizon playing"
+        )
+        XCTAssertTrue(
+            manager._test_shouldCancelPostQuietLongHorizonLanguageEnsure(
+                hasCurrentActivity: true,
+                destinationLanguage: "et",
+                ownedContentLanguage: "et"
+            ),
+            "Owned language match must cancel long-horizon language"
+        )
+        XCTAssertFalse(
+            manager._test_shouldCancelPostQuietLongHorizonLanguageEnsure(
+                hasCurrentActivity: true,
+                destinationLanguage: "et",
+                ownedContentLanguage: "sv"
+            ),
+            "Language still lagging must keep long-horizon language"
+        )
+
+        // (4) Settled playing still lagging arms long-horizon even after post-settled max
+        // (same arm policy as quiet entry — post-settled 3/3 is not terminal under lock).
+        XCTAssertTrue(
+            manager._test_shouldArmPostQuietLongHorizonPlayingEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                longHorizonAlreadyArmed: false,
+                actorVisual: .playing,
+                lastPushedVisual: .playing,
+                ownedContentVisual: .prePlay,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Post-settled residual Connecting must still arm long-horizon playing"
+        )
+
+        // (5) Partial language acceptance keeps/re-arms playing long-horizon (does not cancel).
+        // Axis heal policy: language win must follow through playing and not cancel playing rails.
+        let languageOnly = manager._test_contentUpdateAxisHealPolicy(
+            systemLanguage: "de",
+            systemVisual: .prePlay,
+            destinationLanguage: "de",
+            actorVisual: .playing,
+            isStreamSwitchHoldActive: false,
+            isConnectingPlayback: false
+        )
+        XCTAssertTrue(languageOnly.shouldFollowThroughPlayingEnsure)
+        XCTAssertFalse(
+            languageOnly.cancelPlayingPostSettled,
+            "Partial language acceptance must not cancel playing post-settled / long-horizon bookkeeping"
+        )
+        XCTAssertTrue(
+            manager._test_shouldArmPostQuietLongHorizonPlayingEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                longHorizonAlreadyArmed: false,
+                actorVisual: .playing,
+                lastPushedVisual: .playing,
+                ownedContentVisual: .prePlay,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "After partial language win with visual lag, playing long-horizon must still arm"
+        )
+
+        // (6) Dual-axis: language quiet alone does not prevent dual ensure when both lag.
+        XCTAssertTrue(
+            manager._test_shouldRunPostQuietLongHorizonDualAxisEnsure(
+                languageStillLags: true,
+                visualStillLags: true,
+                actorVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Both axes lagging while actor playing must allow dual-axis long-horizon fire"
+        )
+        XCTAssertTrue(
+            manager._test_shouldClearLanguageQuietForDualAxisLongHorizonFire(
+                languageQuietPending: true,
+                languageStillLags: true,
+                visualStillLags: true,
+                actorVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Language quiet must clear on dual-axis long-horizon playing fire when both lag"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearLanguageQuietForDualAxisLongHorizonFire(
+                languageQuietPending: true,
+                languageStillLags: false,
+                visualStillLags: true,
+                actorVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Language quiet must not clear for dual-axis when language already matched"
+        )
+        XCTAssertTrue(
+            manager._test_shouldClearPlayingQuietForDualAxisLongHorizonFire(
+                playingQuietPending: true,
+                languageStillLags: true,
+                visualStillLags: true,
+                actorVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Playing quiet must clear on dual-axis long-horizon language fire when both lag"
+        )
+        // Hold blocks dual-axis invent-playing.
+        XCTAssertFalse(
+            manager._test_shouldRunPostQuietLongHorizonDualAxisEnsure(
+                languageStillLags: true,
+                visualStillLags: true,
+                actorVisual: .playing,
+                isStreamSwitchHoldActive: true,
+                isConnectingPlayback: false
+            ),
+            "Hold must block dual-axis long-horizon ensure"
+        )
+
+        // (C4) Quiet defer while actor playing + not armed → arm.
+        XCTAssertTrue(
+            manager._test_shouldArmPostQuietLongHorizonPlayingEnsureAfterQuietDefer(
+                didDeferPlayingPushWhileQuiet: true,
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                longHorizonAlreadyArmed: false,
+                actorVisual: .playing,
+                lastPushedVisual: .playing,
+                ownedContentVisual: .userPaused,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Playing visual push deferred while quiet must arm long-horizon"
+        )
+        XCTAssertFalse(
+            manager._test_shouldArmPostQuietLongHorizonPlayingEnsureAfterQuietDefer(
+                didDeferPlayingPushWhileQuiet: false,
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                longHorizonAlreadyArmed: false,
+                actorVisual: .playing,
+                lastPushedVisual: .playing,
+                ownedContentVisual: .userPaused,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Non-deferred path must not force long-horizon via defer policy"
+        )
+
+        // (7) Existing quiet thrash: quiet still suppresses soft ensure while ineligible.
+        XCTAssertFalse(
+            manager._test_shouldRunPlayingContentEnsureSoftPushes(
+                needsPlayingEnsure: true,
+                quietPending: true,
+                isRequestEligible: false
+            ),
+            "Long-horizon must not remove status quiet thrash protection"
+        )
+        XCTAssertFalse(
+            manager._test_shouldRunLanguageContentEnsureSoftPushes(
+                needsLanguageEnsure: true,
+                destinationLanguage: "et",
+                quietPendingDestination: "et",
+                isRequestEligible: false
+            ),
+            "Language quiet thrash protection must remain"
+        )
+
+        // Test sanitization cancels long-horizon tasks (no ActivityKit; seams only).
+        manager._test_cancelAllPostQuietLongHorizonEnsure()
+        XCTAssertFalse(manager._test_postQuietLongHorizonPlayingEnsureArmed())
+        XCTAssertFalse(manager._test_postQuietLongHorizonLanguageEnsureArmed())
+        XCTAssertFalse(manager._test_postQuietLongHorizonDualAxisEnsureArmed())
+    }
+
+    /// Dual-axis continuous-lock residual after long-horizon: prePlay settle, dual-axis LH
+    /// schedule preference, multi-destination cancel/re-arm policy, and eligible recreate after
+    /// dual-axis exhaust. Protects fire quality (one dual ensure when both lag) and never invents
+    /// `.playing` during hold/connect; never ends while request ineligible.
+    func testDualAxisLongHorizonAndPrePlaySettleRails() {
+        // B1 — prePlay settle dual-axis when actor playing, owned Connecting, dest known.
+        XCTAssertTrue(
+            manager._test_shouldPushSettledDualAxisAcceptance(
+                actorVisual: .playing,
+                ownedContentVisual: .prePlay,
+                destinationLanguage: "de",
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false,
+                settledAcceptanceConsumed: false,
+                isRequestEligible: false
+            ),
+            "Owned prePlay after attach must allow dual-axis settle (lang + playing co-push)"
+        )
+        // Soft-resume userPaused is single-axis settled playing — not dual-axis prePlay settle.
+        XCTAssertFalse(
+            manager._test_shouldPushSettledDualAxisAcceptance(
+                actorVisual: .playing,
+                ownedContentVisual: .userPaused,
+                destinationLanguage: "sv",
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false,
+                settledAcceptanceConsumed: false,
+                isRequestEligible: false
+            ),
+            "userPaused soft-resume must not use dual-axis prePlay settle"
+        )
+        // Hold / connect must never invent playing via dual settle.
+        XCTAssertFalse(
+            manager._test_shouldPushSettledDualAxisAcceptance(
+                actorVisual: .playing,
+                ownedContentVisual: .prePlay,
+                destinationLanguage: "de",
+                isStreamSwitchHoldActive: true,
+                isConnectingPlayback: false,
+                settledAcceptanceConsumed: false,
+                isRequestEligible: false
+            ),
+            "Stream-switch hold must block dual-axis settle invent-playing"
+        )
+        // Consume-once while ineligible.
+        XCTAssertFalse(
+            manager._test_shouldPushSettledDualAxisAcceptance(
+                actorVisual: .playing,
+                ownedContentVisual: .prePlay,
+                destinationLanguage: "de",
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false,
+                settledAcceptanceConsumed: true,
+                isRequestEligible: false
+            ),
+            "Dual-axis settle consume-once while ineligible must suppress re-entry"
+        )
+        // Eligible re-opens settle window.
+        XCTAssertTrue(
+            manager._test_shouldPushSettledDualAxisAcceptance(
+                actorVisual: .playing,
+                ownedContentVisual: .prePlay,
+                destinationLanguage: "de",
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false,
+                settledAcceptanceConsumed: true,
+                isRequestEligible: true
+            ),
+            "Eligible request must re-open dual-axis settle when prePlay still sticks"
+        )
+        XCTAssertTrue(
+            manager._test_shouldClearDualAxisSettledAcceptanceConsume(
+                settledAcceptanceConsumed: true,
+                ownedOrSystemVisual: .playing
+            ),
+            "Owned playing must clear dual-axis settle consume"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearDualAxisSettledAcceptanceConsume(
+                settledAcceptanceConsumed: true,
+                ownedOrSystemVisual: .prePlay
+            ),
+            "Still-prePlay must keep dual-axis settle consume until leave Connecting"
+        )
+
+        // B3 — dual-axis LH schedule when both axes lag.
+        XCTAssertTrue(
+            manager._test_shouldArmPostQuietLongHorizonDualAxisEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                dualAxisAlreadyArmed: false,
+                languageStillLags: true,
+                visualStillLags: true,
+                actorVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Both axes lagging while ineligible must arm dual-axis long-horizon"
+        )
+        XCTAssertFalse(
+            manager._test_shouldArmPostQuietLongHorizonDualAxisEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                dualAxisAlreadyArmed: true,
+                languageStillLags: true,
+                visualStillLags: true,
+                actorVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Already-armed dual-axis long-horizon must not re-schedule thrash"
+        )
+        // Single-axis residual: language only → dual arm false.
+        XCTAssertFalse(
+            manager._test_shouldArmPostQuietLongHorizonDualAxisEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                dualAxisAlreadyArmed: false,
+                languageStillLags: true,
+                visualStillLags: false,
+                actorVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Language-only lag must not arm dual-axis long-horizon"
+        )
+        // prePlay visual lag + language lag still dual.
+        XCTAssertTrue(
+            manager._test_shouldRunPostQuietLongHorizonDualAxisEnsure(
+                languageStillLags: true,
+                visualStillLags: true,
+                actorVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "prePlay + language lag must run dual-axis long-horizon fire"
+        )
+        // Cancel dual when both accepted or actor left play.
+        XCTAssertTrue(
+            manager._test_shouldCancelPostQuietLongHorizonDualAxisEnsure(
+                hasCurrentActivity: true,
+                languageStillLags: false,
+                visualStillLags: false,
+                actorVisual: .playing
+            ),
+            "Both axes accepted must cancel dual-axis long-horizon"
+        )
+        XCTAssertTrue(
+            manager._test_shouldCancelPostQuietLongHorizonDualAxisEnsure(
+                hasCurrentActivity: true,
+                languageStillLags: true,
+                visualStillLags: true,
+                actorVisual: .userPaused
+            ),
+            "Actor leaving .playing must cancel dual-axis long-horizon"
+        )
+        XCTAssertFalse(
+            manager._test_shouldCancelPostQuietLongHorizonDualAxisEnsure(
+                hasCurrentActivity: true,
+                languageStillLags: true,
+                visualStillLags: true,
+                actorVisual: .playing
+            ),
+            "Both still lagging must keep dual-axis long-horizon"
+        )
+
+        // Secondary — dual-axis exhaust → eligible recreate preference; never while ineligible.
+        XCTAssertTrue(
+            manager._test_shouldMarkDualAxisLongHorizonExhausted(
+                languageStillLags: true,
+                visualStillLags: true,
+                isRequestEligible: false
+            ),
+            "Ineligible dual-axis exhaust with residual lag must mark pending presentable recovery"
+        )
+        XCTAssertFalse(
+            manager._test_shouldMarkDualAxisLongHorizonExhausted(
+                languageStillLags: true,
+                visualStillLags: true,
+                isRequestEligible: true
+            ),
+            "Eligible cycles own soft ensure / recreate — do not mark dual-axis exhaust"
+        )
+        XCTAssertTrue(
+            manager._test_shouldPreferEligibleRecreateAfterDualAxisLongHorizonExhausted(
+                dualAxisExhausted: true,
+                languageStillLags: true,
+                visualStillLags: true,
+                isRequestEligible: true,
+                recreationsAttempted: 0
+            ),
+            "After dual-axis LH exhaust, eligible become-active must prefer recreate when soft still lags"
+        )
+        XCTAssertFalse(
+            manager._test_shouldPreferEligibleRecreateAfterDualAxisLongHorizonExhausted(
+                dualAxisExhausted: true,
+                languageStillLags: true,
+                visualStillLags: true,
+                isRequestEligible: false,
+                recreationsAttempted: 0
+            ),
+            "Must never recreate solely for dual-axis lag while request ineligible"
+        )
+        XCTAssertFalse(
+            manager._test_shouldPreferEligibleRecreateAfterDualAxisLongHorizonExhausted(
+                dualAxisExhausted: false,
+                languageStillLags: true,
+                visualStillLags: true,
+                isRequestEligible: true,
+                recreationsAttempted: 0
+            ),
+            "Without dual-axis exhaust flag, dual-axis prefer path stays off (base recreate policy separate)"
+        )
+
+        // Quiet thrash protection retained (status soft ensure still quiet while ineligible).
+        XCTAssertFalse(
+            manager._test_shouldRunPlayingContentEnsureSoftPushes(
+                needsPlayingEnsure: true,
+                quietPending: true,
+                isRequestEligible: false
+            )
+        )
+        manager._test_cancelAllPostQuietLongHorizonEnsure()
+        XCTAssertFalse(manager._test_postQuietLongHorizonDualAxisEnsureArmed())
+    }
+
+    /// Optimistic toggle language alignment prefers stream attach over lagging lastPushed.
+    ///
+    /// Protects pause after stream switch: suppress memory that still holds the prior language
+    /// must not re-stamp prior-language chrome while ``selectedStream`` already advanced.
+    /// Does not invent privacy hard-default `"en"` when stream attach is empty.
+    func testOptimisticToggleLanguageAlignmentPrefersSelectedStreamOverLastPushed() {
+        // Engine advanced; lastPushed still prior language.
+        XCTAssertEqual(
+            manager._test_languageForOptimisticToggleContentAlignment(
+                lastPushedLanguage: "sv",
+                ownedContentLanguage: "sv",
+                selectedStreamLanguage: "et",
+                durableLanguageMirror: "sv"
+            ),
+            "et",
+            "Selected stream language must outrank lagging lastPushed / owned / mirror"
+        )
+        // Empty selected stream → durable mirror next.
+        XCTAssertEqual(
+            manager._test_languageForOptimisticToggleContentAlignment(
+                lastPushedLanguage: "sv",
+                ownedContentLanguage: "fi",
+                selectedStreamLanguage: "",
+                durableLanguageMirror: "et"
+            ),
+            "et",
+            "Durable language mirror must outrank lastPushed when stream attach is empty"
+        )
+        // Empty selected + empty mirror → owned content language.
+        XCTAssertEqual(
+            manager._test_languageForOptimisticToggleContentAlignment(
+                lastPushedLanguage: "sv",
+                ownedContentLanguage: "de",
+                selectedStreamLanguage: "",
+                durableLanguageMirror: nil
+            ),
+            "de",
+            "Owned content language must outrank lastPushed when stream/mirror empty"
+        )
+        // Only lastPushed available (unit isolation / no stream) → preserve it.
+        XCTAssertEqual(
+            manager._test_languageForOptimisticToggleContentAlignment(
+                lastPushedLanguage: "sv",
+                ownedContentLanguage: nil,
+                selectedStreamLanguage: "",
+                durableLanguageMirror: nil
+            ),
+            "sv",
+            "LastPushed language remains when no fresher source exists"
+        )
+        // All empty → empty (caller may fall back to mainAppLiveActivityLanguageCode).
+        XCTAssertEqual(
+            manager._test_languageForOptimisticToggleContentAlignment(
+                lastPushedLanguage: nil,
+                ownedContentLanguage: nil,
+                selectedStreamLanguage: "",
+                durableLanguageMirror: nil
+            ),
+            "",
+            "Empty sources must not invent a language code"
+        )
     }
 
     /// After playing soft-ensure budget exhaustion while request is ineligible, further
@@ -1830,6 +2608,241 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 accepted: playingEstonian
             ),
             "Candidate Connecting against accepted playing is not the pure prePlay freeze class"
+        )
+    }
+
+    /// Partial-acceptance dual-axis heal: contentUpdates / post-update policy must not treat
+    /// one-axis progress as a full surface heal (device: language de + visual prePlay lag).
+    ///
+    /// Protects continuous-lock residual: language acceptance must re-arm playing ensure;
+    /// stall streak must survive partial acceptance; soft-ensure spacing is longer while
+    /// request-ineligible. Does **not** end+request while ineligible; does **not** invent
+    /// `.playing` during hold/connect.
+    func testPartialAcceptanceAxisHealPolicies() {
+        let playingDe = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: nil,
+            currentLanguage: "de"
+        )
+        let prePlayDe = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .prePlay,
+            streamMetadata: nil,
+            currentLanguage: "de"
+        )
+        let prePlaySv = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .prePlay,
+            streamMetadata: nil,
+            currentLanguage: "sv"
+        )
+
+        // Stall streak: partial language match with visual lag must NOT reset.
+        XCTAssertTrue(
+            manager._test_isStalledLiveActivityContentPush(
+                candidate: playingDe,
+                accepted: prePlayDe
+            ),
+            "Language-matched Connecting freeze is still stalled"
+        )
+        XCTAssertFalse(
+            manager._test_shouldResetStalledContentStreak(
+                candidate: playingDe,
+                accepted: prePlayDe
+            ),
+            "Partial acceptance must keep stalled streak for deferred recreation bookkeeping"
+        )
+        XCTAssertTrue(
+            manager._test_shouldResetStalledContentStreak(
+                candidate: playingDe,
+                accepted: playingDe
+            ),
+            "Full match may reset stalled streak"
+        )
+        XCTAssertFalse(
+            manager._test_shouldResetStalledContentStreak(
+                candidate: playingDe,
+                accepted: prePlaySv
+            ),
+            "Both-axis lag must keep stalled streak"
+        )
+
+        // Soft-ensure spacing: short when eligible; longer when ineligible; nil after last attempt.
+        XCTAssertEqual(
+            manager._test_softEnsureInterAttemptDelayMilliseconds(
+                attempt: 1,
+                maxAttempts: 3,
+                isRequestEligible: true
+            ),
+            RadioLiveActivityManager.authoritativeContentEnsureEligibleInterAttemptDelayMilliseconds,
+            "Eligible soft ensure keeps short inter-attempt delay"
+        )
+        XCTAssertEqual(
+            manager._test_softEnsureInterAttemptDelayMilliseconds(
+                attempt: 1,
+                maxAttempts: 3,
+                isRequestEligible: false
+            ),
+            RadioLiveActivityManager.authoritativeContentEnsureIneligibleInterAttemptDelaysMilliseconds[0],
+            "Ineligible soft ensure uses longer first delay"
+        )
+        XCTAssertEqual(
+            manager._test_softEnsureInterAttemptDelayMilliseconds(
+                attempt: 2,
+                maxAttempts: 3,
+                isRequestEligible: false
+            ),
+            RadioLiveActivityManager.authoritativeContentEnsureIneligibleInterAttemptDelaysMilliseconds[1],
+            "Ineligible soft ensure uses longer second delay"
+        )
+        XCTAssertNil(
+            manager._test_softEnsureInterAttemptDelayMilliseconds(
+                attempt: 3,
+                maxAttempts: 3,
+                isRequestEligible: false
+            ),
+            "No delay after final soft-ensure attempt"
+        )
+
+        // Partial language acceptance re-arms playing; reverse re-arms language.
+        XCTAssertTrue(
+            manager._test_shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
+                candidateLanguage: "de",
+                acceptedLanguage: "de",
+                candidateVisual: .playing,
+                acceptedVisual: .prePlay
+            ),
+            "Language match with Connecting residual must re-arm playing ensure"
+        )
+        XCTAssertTrue(
+            manager._test_shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
+                candidateLanguage: "de",
+                acceptedLanguage: "de",
+                candidateVisual: .playing,
+                acceptedVisual: .userPaused
+            ),
+            "Language match with pause residual must re-arm playing ensure"
+        )
+        XCTAssertFalse(
+            manager._test_shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
+                candidateLanguage: "de",
+                acceptedLanguage: "sv",
+                candidateVisual: .playing,
+                acceptedVisual: .prePlay
+            ),
+            "Language still lagging is not partial language acceptance"
+        )
+        XCTAssertFalse(
+            manager._test_shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
+                candidateLanguage: "de",
+                acceptedLanguage: "de",
+                candidateVisual: .playing,
+                acceptedVisual: .playing
+            ),
+            "Full playing match must not re-arm playing ensure"
+        )
+        XCTAssertTrue(
+            manager._test_shouldRearmLanguageEnsureAfterPartialVisualAcceptance(
+                candidateLanguage: "et",
+                acceptedLanguage: "sv",
+                candidateVisual: .playing,
+                acceptedVisual: .playing
+            ),
+            "Visual match with language lag must re-arm language ensure"
+        )
+        XCTAssertFalse(
+            manager._test_shouldRearmLanguageEnsureAfterPartialVisualAcceptance(
+                candidateLanguage: "et",
+                acceptedLanguage: "et",
+                candidateVisual: .playing,
+                acceptedVisual: .playing
+            ),
+            "Full language match must not re-arm language ensure"
+        )
+
+        // contentUpdates axis heal: language-only progress (German partial).
+        let languageOnly = manager._test_contentUpdateAxisHealPolicy(
+            systemLanguage: "de",
+            systemVisual: .prePlay,
+            destinationLanguage: "de",
+            actorVisual: .playing,
+            isStreamSwitchHoldActive: false,
+            isConnectingPlayback: false
+        )
+        XCTAssertTrue(languageOnly.languageConverged)
+        XCTAssertFalse(languageOnly.playingConverged)
+        XCTAssertFalse(
+            languageOnly.resetStalledStreakAndRecreationBudget,
+            "Partial language progress must not wipe stall streak"
+        )
+        XCTAssertTrue(languageOnly.clearLanguageQuiet)
+        XCTAssertTrue(languageOnly.cancelLanguagePostSettled)
+        XCTAssertFalse(
+            languageOnly.cancelPlayingPostSettled,
+            "Must not cancel playing post-settled when visual still lags"
+        )
+        XCTAssertFalse(languageOnly.clearPlayingQuiet)
+        XCTAssertTrue(
+            languageOnly.shouldFollowThroughPlayingEnsure,
+            "Language win must follow through playing ensure for residual prePlay"
+        )
+        XCTAssertFalse(languageOnly.shouldFollowThroughLanguageEnsure)
+
+        // Full match → full heal.
+        let full = manager._test_contentUpdateAxisHealPolicy(
+            systemLanguage: "de",
+            systemVisual: .playing,
+            destinationLanguage: "de",
+            actorVisual: .playing,
+            isStreamSwitchHoldActive: false,
+            isConnectingPlayback: false
+        )
+        XCTAssertTrue(full.languageConverged)
+        XCTAssertTrue(full.playingConverged)
+        XCTAssertTrue(full.resetStalledStreakAndRecreationBudget)
+        XCTAssertTrue(full.clearPlayingQuiet)
+        XCTAssertTrue(full.cancelPlayingPostSettled)
+        XCTAssertFalse(full.shouldFollowThroughPlayingEnsure)
+        XCTAssertFalse(full.shouldFollowThroughLanguageEnsure)
+
+        // No progress → leave quiet/post-settled/streak alone.
+        let none = manager._test_contentUpdateAxisHealPolicy(
+            systemLanguage: "sv",
+            systemVisual: .playing,
+            destinationLanguage: "et",
+            actorVisual: .playing,
+            isStreamSwitchHoldActive: false,
+            isConnectingPlayback: false
+        )
+        XCTAssertFalse(none.languageConverged)
+        XCTAssertTrue(none.playingConverged)
+        XCTAssertFalse(
+            none.resetStalledStreakAndRecreationBudget,
+            "Language lag keeps stall bookkeeping"
+        )
+        XCTAssertFalse(none.clearLanguageQuiet)
+        XCTAssertFalse(none.cancelLanguagePostSettled)
+        XCTAssertTrue(none.clearPlayingQuiet)
+        XCTAssertTrue(none.cancelPlayingPostSettled)
+        XCTAssertTrue(
+            none.shouldFollowThroughLanguageEnsure,
+            "Playing win with language lag must follow through language ensure"
+        )
+        XCTAssertFalse(none.shouldFollowThroughPlayingEnsure)
+
+        // Hold/connect: never invent playing follow-through.
+        let hold = manager._test_contentUpdateAxisHealPolicy(
+            systemLanguage: "de",
+            systemVisual: .prePlay,
+            destinationLanguage: "de",
+            actorVisual: .playing,
+            isStreamSwitchHoldActive: true,
+            isConnectingPlayback: false
+        )
+        XCTAssertTrue(hold.languageConverged)
+        XCTAssertTrue(hold.visualConverged, "Hold forces effective Connecting match")
+        XCTAssertFalse(hold.playingConverged)
+        XCTAssertFalse(
+            hold.shouldFollowThroughPlayingEnsure,
+            "Must not follow through playing ensure during stream-switch hold"
         )
     }
 

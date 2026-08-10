@@ -100,24 +100,71 @@ import WidgetSurface
 /// on a longer cadence — never end+request while ineligible.
 /// **Settled playing acceptance:** peer for owned visual — after hold/connect clear while the
 /// actor is authoritative `.playing` and owned visual still lags (``.prePlay`` / ``.userPaused``),
-/// ``pushSettledPlayingAcceptanceContentIfNeeded()`` fires **one** dual-axis high-signal push
-/// even when ``playingEnsureQuietPending`` is engaged. Consume-once while ineligible stops
-/// soft-resume no-op thrash; re-open consume on optimistic toggle / stream-switch, eligibility,
-/// become-active, or `contentUpdates`. Does **not** invent `.playing` during hold/connect.
+/// ``pushSettledPlayingAcceptanceContentIfNeeded()`` clears playing quiet and re-runs a **full**
+/// soft playing-ensure budget (not a single dual-axis push alone) even when quiet was engaged
+/// after attach-storm / prior soft-resume exhaustion. Consume-once while ineligible stops
+/// soft-resume no-op thrash of the settle entry; re-open consume on optimistic toggle /
+/// stream-switch, eligibility, become-active, or `contentUpdates`. When owned visual still lags
+/// after that post-audible soft cycle while request is ineligible, status-driven thrash re-enters
+/// quiet **and** bounded delayed post-settled playing ensure retries re-clear quiet on a longer
+/// cadence — never end+request while ineligible. Does **not** invent `.playing` during hold/connect.
 /// Playing ensure has the same quiet-pending shape (``playingEnsureQuietPending``): after
 /// ``authoritativePlayingContentEnsureMaxAttempts`` without owned `.playing` while request is
 /// ineligible, visual-only status re-pushes that only repair `.playing` defer; pause
 /// (``.userPaused``) and language mutations still push. Re-arm playing quiet on authoritative
-/// play mutation, optimistic toggle / stream-switch, eligibility, become-active, or
-/// `contentUpdates`. On foreground / become-active with an **owned** activity, soft language +
-/// playing ensure run via ``ensureAuthoritativeContentOnForegroundIfNeeded()`` (clears both
-/// quiet flags and settled-acceptance consume markers first); dual SceneDelegate hooks are
-/// debounced for the owned-surface path while still **consuming** language/playing quiet and
+/// play mutation, optimistic toggle / stream-switch, eligibility, become-active, delayed
+/// post-settled playing ensure, or **axis-converged** `contentUpdates` (partial acceptance is
+/// not a full heal). On foreground / become-active with an
+/// **owned** activity, soft language + playing ensure run via
+/// ``ensureAuthoritativeContentOnForegroundIfNeeded()`` (clears both quiet flags and
+/// settled-acceptance consume markers first); dual SceneDelegate hooks are debounced for the
+/// owned-surface path while still **consuming** language/playing quiet and
 /// ``pendingInteractiveLiveActivityEnsure`` on unlock (and allowing a second pass when chrome
 /// still lags after a first ineligible pass). Eligible-only recreation is a last resort after
 /// soft ensure still fails (never while request is ineligible). ActivityKit may still delay
 /// applying language/visual until the process is presentable; the foreground owned-surface rail
 /// remains the intentional unlock recovery path.
+///
+/// ## Post-quiet sparse long-horizon ensure (continuous-lock acceptance rail)
+/// Soft ensure + post-settled delayed retries (400/1000/2000 ms) correctly stop status thrash
+/// after budget exhaustion while request is ineligible — but treating that quiet as **terminal**
+/// freezes residual lag for the rest of a continuous-lock stretch even though ActivityKit can
+/// still accept later without unlock. After language and/or playing quiet engage (or settled
+/// acceptance / partial-axis heal still leaves an axis lagging), ``armPostQuietLongHorizonPlayingEnsureIfNeeded()``
+/// / language peer / dual-axis peer schedule **sparse** delayed re-arms on
+/// ``postQuietLongHorizonEnsureDelayedIntervalsMilliseconds`` (5 s / 15 s / 45 s, max three fires
+/// per freeze generation). Each fire clears quiet once for the lagging axis (or **both** when
+/// dual-axis). When **both** axes lag while the actor is authoritative `.playing` without
+/// hold/connect, the dual-axis rail owns recovery: **one** ``ensureAuthoritativeDualAxisContentIfNeeded()``
+/// per fire (destination language **and** playing visual together) — not two independent short
+/// single-axis budgets that each re-quiet in the same turn. Single-axis rails arm only when the
+/// other axis already matches. Cancelled on ownership end, owned acceptance, actor leaving
+/// authoritative play, UITestMode / test sanitization, optimistic mutation / settle restart,
+/// destination advance (language/dual re-arm for the new destination), and foreground owned-surface
+/// ensure (presentable cycle owns recovery). After dual-axis long-horizon exhausts without
+/// acceptance, ``postQuietLongHorizonDualAxisExhausted`` keeps become-active / eligible recreation
+/// pending — never end the only interactive LA solely for lag while request ineligible. Does **not**
+/// thrash on every status/ICY tick; does **not** invent `.playing` during hold/connect. Short soft
+/// ensure + post-settled remain; long-horizon is **additional**, not a replacement.
+///
+/// ## Settled dual-axis acceptance (prePlay → playing after stream attach)
+/// After stream-switch hold clears, owned ContentState can stick on Connecting (``.prePlay``)
+/// while the actor is already authoritative `.playing` (and destination language may also lag).
+/// Sequential language-only then playing-only soft budgets often re-quiet without co-pushing both
+/// axes. ``pushSettledDualAxisAcceptanceContentIfNeeded()`` runs when owned visual is ``.prePlay``,
+/// the actor is `.playing`, hold/connect are clear, and destination language is known: clears both
+/// quiets once and runs ``ensureAuthoritativeDualAxisContentIfNeeded()`` so one soft path carries
+/// destination language **and** playing visual together. Does **not** invent `.playing` during
+/// hold/connect. Soft-resume from ``.userPaused`` still uses the single-axis settled playing rail.
+///
+/// ## Partial-acceptance dual-axis heal
+/// System `contentUpdates` and post-`Activity.update` re-reads can advance **one** ContentState
+/// axis while the other still lags (device: destination language accepted with Connecting visual,
+/// or playing visual accepted with prior language). Treat that as progress, not full heal:
+/// clear quiet / cancel post-settled / reset stall streak **only for converged axes**; re-arm the
+/// lagging axis (quiet clear + delayed soft ensure) so language acceptance cannot freeze playing
+/// repair (and the reverse). Soft-ensure inter-attempt spacing is longer while request is
+/// ineligible so ActivityKit has an apply window without raising attempt count.
 ///
 /// ## Soft-ensure thrash protection (concurrent collapse + deferred announce-once)
 /// Status-driven media-surface refreshes and dual soft-ensure call sites can re-enter
@@ -299,7 +346,8 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Destination language changes (new stream-switch mutation)
     /// - Interactive request becomes eligible
     /// - Foreground / become-active owned-surface soft ensure
-    /// - System `contentUpdates` yield (acceptance moment)
+    /// - System `contentUpdates` yield that **converges language** to destination (partial
+    ///   acceptance does not clear playing-axis state)
     /// - Owned language converges to destination
     ///
     /// Visual mutations (pause / play / Connecting) still push when owned visual differs —
@@ -365,7 +413,8 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Optimistic toggle or stream-switch ContentState (new control cycle)
     /// - Interactive request becomes eligible
     /// - Foreground / become-active owned-surface soft ensure
-    /// - System `contentUpdates` yield (acceptance moment)
+    /// - System `contentUpdates` yield that **converges visual** to authoritative `.playing`
+    ///   (partial language-only acceptance re-arms playing ensure rather than cancelling it)
     /// - Owned visual converges to `.playing`
     ///
     /// Pause (``.userPaused``) and language mutations still push — quiet is playing-stall
@@ -379,19 +428,142 @@ class RadioLiveActivityManager: ObservableObject {
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private var playingEnsureQuietPending = false
 
-    /// Whether a post-hold **settled** playing acceptance push already ran while interactive
-    /// request was ineligible and owned visual still lagged authoritative `.playing`.
+    /// Whether a post-hold **settled** playing acceptance soft-ensure re-arm already ran while
+    /// interactive request was ineligible and owned visual still lagged authoritative `.playing`.
     ///
     /// Soft playing ensure often exhausts (or never runs usefully) during stream-switch hold /
     /// attach, then quiet defers visual-only `.playing` repair for the rest of a lock stretch —
-    /// leaving Connecting chrome while audio is live. Settled acceptance consumes **one**
-    /// high-signal dual-axis push after hold clear; further soft-resume no-ops stay quiet until
-    /// optimistic toggle / stream-switch, eligibility, become-active, or system `contentUpdates`.
+    /// leaving Connecting or paused chrome while audio is live. Settled acceptance consumes
+    /// **one** post-hold full soft playing-ensure re-arm after hold clear; further soft-resume
+    /// no-ops skip re-entering settle while ineligible until optimistic toggle / stream-switch,
+    /// eligibility, become-active, or system `contentUpdates`. Bounded delayed post-settled
+    /// retries (``schedulePostSettledPlayingEnsureRetriesIfNeeded()``) continue soft ensure after
+    /// that cycle without re-opening the settle entry itself.
     ///
     /// - SeeAlso: ``pushSettledPlayingAcceptanceContentIfNeeded()``,
     ///   ``shouldPushSettledPlayingAcceptance(actorVisual:ownedContentVisual:isStreamSwitchHoldActive:isConnectingPlayback:settledAcceptanceConsumed:isRequestEligible:)``,
+    ///   ``shouldSchedulePostSettledPlayingEnsureRetries(hasCurrentActivity:actorVisual:ownedContentVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private var playingSettledAcceptanceConsumed = false
+
+    /// Delayed post-settled playing soft-ensure retries after audible settle still lags.
+    ///
+    /// Soft ensure during attach + one settle cycle can still leave system-held visual on
+    /// ``.userPaused`` / ``.prePlay`` while request is ineligible and audio is already live.
+    /// Status-driven thrash stays quiet; this task re-clears quiet on a longer cadence and
+    /// re-runs soft ensure without end+request. Cancelled on end paths, control mutation,
+    /// foreground owned-surface ensure, and owned visual convergence.
+    ///
+    /// - SeeAlso: ``schedulePostSettledPlayingEnsureRetriesIfNeeded()``,
+    ///   ``pushSettledPlayingAcceptanceContentIfNeeded()``.
+    private var postSettledPlayingEnsureRetryTask: Task<Void, Never>?
+
+    /// Maximum delayed soft-ensure cycles after a post-hold settled playing acceptance still lags.
+    ///
+    /// - SeeAlso: ``postSettledPlayingEnsureDelayedIntervalsMilliseconds``,
+    ///   ``schedulePostSettledPlayingEnsureRetriesIfNeeded()``.
+    static let postSettledPlayingEnsureMaxDelayedAttempts = 3
+
+    /// Sleep intervals (ms) before each delayed post-settled playing ensure attempt.
+    ///
+    /// Same cadence as language post-settled retries so dual-axis soft acceptance shares one
+    /// longer window after soft-resume / audible start without thrashing status-driven wakes.
+    ///
+    /// - SeeAlso: ``postSettledPlayingEnsureMaxDelayedAttempts``,
+    ///   ``schedulePostSettledPlayingEnsureRetriesIfNeeded()``.
+    static let postSettledPlayingEnsureDelayedIntervalsMilliseconds: [UInt64] = [400, 1_000, 2_000]
+
+    /// Maximum sparse long-horizon soft-ensure fires after quiet pending while request ineligible.
+    ///
+    /// Peer to short post-settled retries; longer cadence so residual continuous-lock lag is not
+    /// permanently quiet-frozen after the ~2 s post-settled budget without thrashing status ticks.
+    ///
+    /// - SeeAlso: ``postQuietLongHorizonEnsureDelayedIntervalsMilliseconds``,
+    ///   ``armPostQuietLongHorizonPlayingEnsureIfNeeded()``,
+    ///   ``armPostQuietLongHorizonLanguageEnsureIfNeeded()``.
+    static let postQuietLongHorizonEnsureMaxDelayedAttempts = 3
+
+    /// Sleep intervals (ms) before each post-quiet long-horizon ensure fire (per freeze generation).
+    ///
+    /// Longer than ``postSettledPlayingEnsureDelayedIntervalsMilliseconds`` / language peer
+    /// (400/1000/2000). Sparse by design — not status-driven thrash.
+    ///
+    /// - SeeAlso: ``postQuietLongHorizonEnsureMaxDelayedAttempts``,
+    ///   ``schedulePostQuietLongHorizonPlayingEnsure()``,
+    ///   ``schedulePostQuietLongHorizonLanguageEnsure(destination:)``.
+    static let postQuietLongHorizonEnsureDelayedIntervalsMilliseconds: [UInt64] = [
+        5_000, 15_000, 45_000
+    ]
+
+    /// Delayed sparse long-horizon **playing** soft-ensure after quiet / settle still lags.
+    ///
+    /// - SeeAlso: ``armPostQuietLongHorizonPlayingEnsureIfNeeded()``,
+    ///   ``cancelPostQuietLongHorizonPlayingEnsure()``.
+    private var postQuietLongHorizonPlayingEnsureTask: Task<Void, Never>?
+
+    /// Freeze generation for the playing long-horizon rail (new quiet freeze starts a fresh horizon).
+    private var postQuietLongHorizonPlayingEnsureGeneration: UInt64 = 0
+
+    /// Delayed sparse long-horizon **language** soft-ensure after quiet / settle still lags.
+    ///
+    /// - SeeAlso: ``armPostQuietLongHorizonLanguageEnsureIfNeeded()``,
+    ///   ``cancelPostQuietLongHorizonLanguageEnsure()``.
+    private var postQuietLongHorizonLanguageEnsureTask: Task<Void, Never>?
+
+    /// Freeze generation for the language long-horizon rail.
+    private var postQuietLongHorizonLanguageEnsureGeneration: UInt64 = 0
+
+    /// Delayed sparse long-horizon **dual-axis** soft-ensure when both language and visual lag.
+    ///
+    /// Owns recovery when destination language **and** owned visual lag authoritative `.playing`
+    /// under continuous lock. One dual-axis ensure per fire — not two single-axis short budgets.
+    ///
+    /// - SeeAlso: ``armPostQuietLongHorizonDualAxisEnsureIfNeeded()``,
+    ///   ``cancelPostQuietLongHorizonDualAxisEnsure()``,
+    ///   ``ensureAuthoritativeDualAxisContentIfNeeded()``.
+    private var postQuietLongHorizonDualAxisEnsureTask: Task<Void, Never>?
+
+    /// Freeze generation for the dual-axis long-horizon rail.
+    private var postQuietLongHorizonDualAxisEnsureGeneration: UInt64 = 0
+
+    /// Whether the dual-axis long-horizon generation exhausted without owned acceptance.
+    ///
+    /// Become-active / foreground owned-surface ensure treats this like pending ensure so an
+    /// eligible presentable cycle can soft-ensure then recreate — never while request ineligible.
+    ///
+    /// - SeeAlso: ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
+    ///   ``shouldInvokeOwnedSurfaceForegroundEnsure(hasCurrentActivity:lastOwnedSurfaceForegroundEnsureAt:now:debounceInterval:languageEnsureQuietPending:playingEnsureQuietPending:pendingInteractiveLiveActivityEnsure:contentEnsureStillNeeded:isRequestEligible:)``.
+    private var postQuietLongHorizonDualAxisExhausted = false
+
+    /// Whether a post-hold dual-axis settled acceptance cycle already ran while ineligible
+    /// (owned ``.prePlay`` while actor `.playing`).
+    ///
+    /// - SeeAlso: ``pushSettledDualAxisAcceptanceContentIfNeeded()``,
+    ///   ``shouldPushSettledDualAxisAcceptance(actorVisual:ownedContentVisual:destinationLanguage:isStreamSwitchHoldActive:isConnectingPlayback:settledAcceptanceConsumed:isRequestEligible:)``.
+    private var dualAxisSettledAcceptanceConsumed = false
+
+    /// Collapse concurrent dual-axis soft-push loops (same thrash shape as single-axis in-flight).
+    private var dualAxisEnsureSoftPushesInFlight = false
+
+    /// Inter-attempt sleep (ms) between soft-ensure pushes while interactive request is **eligible**.
+    ///
+    /// Presentable cycles converge quickly; keep short so unlock heal stays snappy.
+    ///
+    /// - SeeAlso: ``softEnsureInterAttemptDelayMilliseconds(attempt:maxAttempts:isRequestEligible:)``,
+    ///   ``authoritativeContentEnsureIneligibleInterAttemptDelaysMilliseconds``.
+    static let authoritativeContentEnsureEligibleInterAttemptDelayMilliseconds: UInt64 = 50
+
+    /// Inter-attempt sleeps (ms) between soft-ensure pushes while interactive request is **ineligible**.
+    ///
+    /// Device continuous-lock freezes rarely apply within a 50 ms storm; longer spacing gives
+    /// ActivityKit an apply window without raising ``authoritativePlayingContentEnsureMaxAttempts``
+    /// / language attempt count (no thrash volume increase).
+    ///
+    /// - SeeAlso: ``softEnsureInterAttemptDelayMilliseconds(attempt:maxAttempts:isRequestEligible:)``,
+    ///   ``authoritativeContentEnsureEligibleInterAttemptDelayMilliseconds``.
+    static let authoritativeContentEnsureIneligibleInterAttemptDelaysMilliseconds: [UInt64] = [
+        200, 400, 800
+    ]
 
     /// Whether a language soft-ensure push loop is already running on the main actor.
     ///
@@ -863,6 +1035,8 @@ class RadioLiveActivityManager: ObservableObject {
                 )
             }
             #endif
+            // Quiet defer is thrash protection — arm sparse long-horizon so lag is not terminal.
+            await armPostQuietLongHorizonLanguageEnsureIfNeeded()
             return
         }
 
@@ -896,6 +1070,8 @@ class RadioLiveActivityManager: ObservableObject {
                 )
             }
             #endif
+            // C4: deferred playing repair while quiet must arm long-horizon if not already armed.
+            await armPostQuietLongHorizonPlayingEnsureIfNeeded()
             return
         }
 
@@ -922,6 +1098,7 @@ class RadioLiveActivityManager: ObservableObject {
         ) {
             languageEnsureQuietPendingDestination = nil
             languageEnsureQuietSkipLogged = false
+            cancelPostQuietLongHorizonLanguageEnsure()
         }
         // Owned visual converged to playing → clear playing ensure quiet + settled consume.
         if Self.shouldClearPlayingEnsureQuietPending(
@@ -930,6 +1107,7 @@ class RadioLiveActivityManager: ObservableObject {
         ) {
             playingEnsureQuietPending = false
             playingEnsureQuietSkipLogged = false
+            cancelPostQuietLongHorizonPlayingEnsure()
         }
         if Self.shouldClearPlayingSettledAcceptanceConsume(
             settledAcceptanceConsumed: playingSettledAcceptanceConsumed,
@@ -938,13 +1116,63 @@ class RadioLiveActivityManager: ObservableObject {
             playingSettledAcceptanceConsumed = false
         }
 
+        // Partial acceptance: language landed while visual still lags authoritative playing —
+        // re-arm playing quiet and schedule delayed playing ensure (do not call ensure inline;
+        // this path may already be inside a soft-push loop). Symmetric for language after
+        // visual-only acceptance. Never invent .playing; never end while ineligible.
+        if Self.shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
+            candidateLanguage: candidate.currentLanguage,
+            acceptedLanguage: accepted.currentLanguage,
+            candidateVisual: candidate.visualState,
+            acceptedVisual: accepted.visualState
+        ) {
+            playingEnsureQuietPending = false
+            playingEnsureQuietSkipLogged = false
+            if !playingEnsureSoftPushesInFlight {
+                schedulePostSettledPlayingEnsureRetriesIfNeeded()
+            }
+            // Partial language win must keep/re-arm playing long-horizon (C2) — do not cancel it.
+            await armPostQuietLongHorizonPlayingEnsureIfNeeded()
+            #if DEBUG
+            print(
+                "🔴 Live Activity partial acceptance — language matched; " +
+                "re-armed playing ensure (owned visual=\(accepted.visualState))"
+            )
+            #endif
+        }
+        if Self.shouldRearmLanguageEnsureAfterPartialVisualAcceptance(
+            candidateLanguage: candidate.currentLanguage,
+            acceptedLanguage: accepted.currentLanguage,
+            candidateVisual: candidate.visualState,
+            acceptedVisual: accepted.visualState
+        ) {
+            languageEnsureQuietPendingDestination = nil
+            languageEnsureQuietSkipLogged = false
+            if !languageEnsureSoftPushesInFlight,
+               !candidate.currentLanguage.isEmpty {
+                schedulePostSettledLanguageEnsureRetriesIfNeeded(
+                    destination: candidate.currentLanguage
+                )
+            }
+            // Partial visual win must keep/re-arm language long-horizon (C3).
+            await armPostQuietLongHorizonLanguageEnsureIfNeeded()
+            #if DEBUG
+            print(
+                "🔴 Live Activity partial acceptance — visual matched; " +
+                "re-armed language ensure (owned language=\(accepted.currentLanguage))"
+            )
+            #endif
+        }
+
         let contentStalled = Self.isStalledLiveActivityContentPush(
             candidate: candidate,
             accepted: accepted
         )
+        // Only full (non-stalled) acceptance resets streak — partial progress must not wipe
+        // deferred recreation bookkeeping.
         if contentStalled {
             consecutiveStalledContentPushes += 1
-        } else {
+        } else if Self.shouldResetStalledContentStreak(candidate: candidate, accepted: accepted) {
             // Healthy surface — clear recreation budget so a later freeze can recreate again.
             consecutiveStalledContentPushes = 0
             interactiveContentRecreationsAttempted = 0
@@ -1080,6 +1308,190 @@ class RadioLiveActivityManager: ObservableObject {
             return true
         }
         return false
+    }
+
+    /// Whether stalled-push bookkeeping should reset after a system content observation.
+    ///
+    /// Only when system-held chrome no longer lags the candidate — **partial** acceptance
+    /// (language advanced, visual still Connecting / pause) must keep the streak so deferred
+    /// recreation bookkeeping is not wiped by one-axis progress.
+    ///
+    /// - Parameters:
+    ///   - candidate: Authoritative candidate ContentState.
+    ///   - accepted: System-held `content.state` (post-update or `contentUpdates`).
+    /// - Returns: `true` when ``consecutiveStalledContentPushes`` may reset to zero.
+    /// - SeeAlso: ``isStalledLiveActivityContentPush(candidate:accepted:)``,
+    ///   ``contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``.
+    static func shouldResetStalledContentStreak(
+        candidate: LutheranRadioLiveActivityAttributes.ContentState,
+        accepted: LutheranRadioLiveActivityAttributes.ContentState
+    ) -> Bool {
+        !isStalledLiveActivityContentPush(candidate: candidate, accepted: accepted)
+    }
+
+    /// Inter-attempt delay between soft-ensure `Activity.update` attempts.
+    ///
+    /// - Parameters:
+    ///   - attempt: 1-based attempt that just completed.
+    ///   - maxAttempts: Soft budget for this axis.
+    ///   - isRequestEligible: Interactive request eligibility (presentable vs lock-stretch).
+    /// - Returns: Milliseconds to sleep before the next attempt, or `nil` when no further attempt.
+    /// - SeeAlso: ``authoritativeContentEnsureEligibleInterAttemptDelayMilliseconds``,
+    ///   ``authoritativeContentEnsureIneligibleInterAttemptDelaysMilliseconds``,
+    ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   ``ensureAuthoritativeLanguageContentIfNeeded()``.
+    static func softEnsureInterAttemptDelayMilliseconds(
+        attempt: Int,
+        maxAttempts: Int,
+        isRequestEligible: Bool
+    ) -> UInt64? {
+        guard attempt >= 1, attempt < maxAttempts else { return nil }
+        if isRequestEligible {
+            return authoritativeContentEnsureEligibleInterAttemptDelayMilliseconds
+        }
+        let delays = authoritativeContentEnsureIneligibleInterAttemptDelaysMilliseconds
+        guard !delays.isEmpty else {
+            return authoritativeContentEnsureEligibleInterAttemptDelayMilliseconds
+        }
+        let index = attempt - 1
+        if index < delays.count {
+            return delays[index]
+        }
+        return delays[delays.count - 1]
+    }
+
+    /// Whether language matched while visual still needs authoritative `.playing` repair.
+    ///
+    /// Device residual: system accepts destination language with Connecting (``.prePlay``) or
+    /// pause chrome while audio is already playing — re-arm playing ensure without treating
+    /// the language win as a full surface heal.
+    ///
+    /// - SeeAlso: ``contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
+    ///   ``updateCurrentActivity()``.
+    static func shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
+        candidateLanguage: String,
+        acceptedLanguage: String,
+        candidateVisual: PlayerVisualState,
+        acceptedVisual: PlayerVisualState
+    ) -> Bool {
+        guard !candidateLanguage.isEmpty, acceptedLanguage == candidateLanguage else { return false }
+        guard candidateVisual == .playing else { return false }
+        return acceptedVisual != .playing
+    }
+
+    /// Whether visual matched while language still lags destination.
+    ///
+    /// - SeeAlso: ``shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(candidateLanguage:acceptedLanguage:candidateVisual:acceptedVisual:)``.
+    static func shouldRearmLanguageEnsureAfterPartialVisualAcceptance(
+        candidateLanguage: String,
+        acceptedLanguage: String,
+        candidateVisual: PlayerVisualState,
+        acceptedVisual: PlayerVisualState
+    ) -> Bool {
+        guard candidateVisual == acceptedVisual else { return false }
+        guard !candidateLanguage.isEmpty else { return false }
+        return acceptedLanguage != candidateLanguage
+    }
+
+    /// Axis-scoped heal decisions after a system `contentUpdates` yield or equivalent observation.
+    ///
+    /// Partial acceptance clears / cancels only the converged axis and schedules follow-through
+    /// for the lagging axis. Full match resets stall bookkeeping. No-progress yields leave
+    /// quiet, post-settled tasks, and stall streak intact (no thrash re-arm).
+    ///
+    /// - SeeAlso: ``handleActivityContentUpdate(_:)``,
+    ///   ``shouldResetStalledContentStreak(candidate:accepted:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    struct ContentUpdateAxisHealPolicy: Equatable, Sendable {
+        /// System language equals destination (non-empty).
+        let languageConverged: Bool
+        /// System visual matches effective actor visual (hold/connect → Connecting).
+        let visualConverged: Bool
+        /// Authoritative playing visual accepted without hold/connect.
+        let playingConverged: Bool
+        /// Reset ``consecutiveStalledContentPushes`` + recreation budget.
+        let resetStalledStreakAndRecreationBudget: Bool
+        let clearLanguageQuiet: Bool
+        let cancelLanguagePostSettled: Bool
+        let clearLanguageSettleConsume: Bool
+        let clearPlayingQuiet: Bool
+        let cancelPlayingPostSettled: Bool
+        let clearPlayingSettleConsume: Bool
+        /// Language landed; re-run / schedule playing soft ensure for residual visual lag.
+        let shouldFollowThroughPlayingEnsure: Bool
+        /// Playing landed; re-run / schedule language soft ensure for residual language lag.
+        let shouldFollowThroughLanguageEnsure: Bool
+    }
+
+    /// Builds ``ContentUpdateAxisHealPolicy`` from system-held content vs actor SSOT.
+    ///
+    /// - Parameters:
+    ///   - systemLanguage: `content.state.currentLanguage` from ActivityKit.
+    ///   - systemVisual: `content.state.visualState` from ActivityKit.
+    ///   - destinationLanguage: ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``.
+    ///   - actorVisual: ``SharedPlayerManager/currentVisualState``.
+    ///   - isStreamSwitchHoldActive: Stream-switch Connecting hold.
+    ///   - isConnectingPlayback: Play-start pipeline Connecting.
+    /// - Returns: Axis-scoped heal policy (never invents `.playing` during hold/connect).
+    /// - SeeAlso: ``ContentUpdateAxisHealPolicy``, ``applySystemContentUpdateHeal(systemContent:)``.
+    static func contentUpdateAxisHealPolicy(
+        systemLanguage: String,
+        systemVisual: PlayerVisualState,
+        destinationLanguage: String,
+        actorVisual: PlayerVisualState,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> ContentUpdateAxisHealPolicy {
+        let effectiveVisual: PlayerVisualState =
+            (isStreamSwitchHoldActive || isConnectingPlayback) ? .prePlay : actorVisual
+        let languageConverged =
+            !destinationLanguage.isEmpty && systemLanguage == destinationLanguage
+        let visualConverged = systemVisual == effectiveVisual
+        let playingConverged =
+            !isStreamSwitchHoldActive
+            && !isConnectingPlayback
+            && actorVisual == .playing
+            && systemVisual == .playing
+
+        let candidate = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: effectiveVisual,
+            streamMetadata: nil,
+            currentLanguage: destinationLanguage
+        )
+        let accepted = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: systemVisual,
+            streamMetadata: nil,
+            currentLanguage: systemLanguage
+        )
+        let resetStreak = shouldResetStalledContentStreak(candidate: candidate, accepted: accepted)
+
+        let followPlaying =
+            languageConverged
+            && !playingConverged
+            && !isStreamSwitchHoldActive
+            && !isConnectingPlayback
+            && actorVisual == .playing
+        let followLanguage =
+            playingConverged
+            && !languageConverged
+            && !destinationLanguage.isEmpty
+
+        return ContentUpdateAxisHealPolicy(
+            languageConverged: languageConverged,
+            visualConverged: visualConverged,
+            playingConverged: playingConverged,
+            resetStalledStreakAndRecreationBudget: resetStreak,
+            clearLanguageQuiet: languageConverged,
+            cancelLanguagePostSettled: languageConverged,
+            clearLanguageSettleConsume: languageConverged,
+            // Playing quiet clears only on true playing convergence — not on mere visual match
+            // to pause/Connecting. Follow-through explicitly re-arms playing quiet separately.
+            clearPlayingQuiet: playingConverged,
+            cancelPlayingPostSettled: playingConverged,
+            clearPlayingSettleConsume: playingConverged,
+            shouldFollowThroughPlayingEnsure: followPlaying,
+            shouldFollowThroughLanguageEnsure: followLanguage
+        )
     }
 
     /// Whether soft retries should yield to interactive activity recreation (streak/cap only).
@@ -1622,9 +2034,11 @@ class RadioLiveActivityManager: ObservableObject {
     /// Soft playing ensure often burns its budget (or never runs usefully while hold is active)
     /// during stream-switch attach, then quiet-pending blocks visual-only `.playing` repair for
     /// the rest of a lock stretch. When hold/connect clear and the actor is authoritative
-    /// `.playing`, one high-signal dual-axis ContentState push is allowed even though quiet would
+    /// `.playing`, one post-hold soft playing-ensure re-arm is allowed even though quiet would
     /// otherwise defer playing-only status re-pushes. Consume-once while request stays ineligible
-    /// prevents soft-resume no-op thrash; eligibility re-opens the settle window (unlock recovery).
+    /// prevents soft-resume no-op thrash of the settle entry; eligibility re-opens the settle
+    /// window (unlock recovery). Bounded delayed post-settled retries continue after the entry
+    /// without re-opening this gate.
     ///
     /// - Parameters:
     ///   - actorVisual: Actor ``SharedPlayerManager/currentVisualState``.
@@ -1633,9 +2047,10 @@ class RadioLiveActivityManager: ObservableObject {
     ///   - isConnectingPlayback: ``SharedPlayerManager/isConnectingPlayback``.
     ///   - settledAcceptanceConsumed: ``playingSettledAcceptanceConsumed``.
     ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``.
-    /// - Returns: `true` when a single settle push should run.
+    /// - Returns: `true` when a post-hold playing soft-ensure re-arm should run.
     /// - Note: Does **not** invent `.playing` during hold/connect. Does **not** end+request.
     /// - SeeAlso: ``pushSettledPlayingAcceptanceContentIfNeeded()``,
+    ///   ``shouldSchedulePostSettledPlayingEnsureRetries(hasCurrentActivity:actorVisual:ownedContentVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
     ///   ``shouldDeferRedundantPlayingPushWhileQuiet(candidateVisual:ownedContentVisual:ownedContentLanguage:candidateLanguage:quietPending:isRequestEligible:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func shouldPushSettledPlayingAcceptance(
@@ -1676,6 +2091,498 @@ class RadioLiveActivityManager: ObservableObject {
         guard settledAcceptanceConsumed else { return false }
         if ownedOrSystemVisual == .playing { return true }
         return false
+    }
+
+    /// Whether bounded delayed post-settled playing soft-ensure retries should be scheduled.
+    ///
+    /// After the post-hold settle soft-ensure re-arm still leaves owned visual lagging
+    /// authoritative `.playing`, status-driven thrash re-enters quiet. Delayed retries re-clear
+    /// quiet on a longer cadence so ActivityKit can accept `.playing` while request stays
+    /// ineligible — without end+request and without re-burning attach-storm status callbacks.
+    ///
+    /// - Parameters:
+    ///   - hasCurrentActivity: Whether this process owns an interactive activity.
+    ///   - actorVisual: Actor ``SharedPlayerManager/currentVisualState``.
+    ///   - ownedContentVisual: Owned `content.state.visualState`, if any.
+    ///   - isStreamSwitchHoldActive: ``SharedPlayerManager/isStreamSwitchPrePlayHoldActive``.
+    ///   - isConnectingPlayback: ``SharedPlayerManager/isConnectingPlayback``.
+    /// - Returns: `true` when ownership is non-nil, hold/connect are clear, actor is
+    ///   authoritative `.playing`, and owned visual is missing or still ≠ `.playing`.
+    /// - Note: Does **not** invent `.playing` during hold/connect. Does **not** decide end+request.
+    /// - SeeAlso: ``schedulePostSettledPlayingEnsureRetriesIfNeeded()``,
+    ///   ``pushSettledPlayingAcceptanceContentIfNeeded()``,
+    ///   ``postSettledPlayingEnsureDelayedIntervalsMilliseconds``.
+    static func shouldSchedulePostSettledPlayingEnsureRetries(
+        hasCurrentActivity: Bool,
+        actorVisual: PlayerVisualState,
+        ownedContentVisual: PlayerVisualState?,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        guard hasCurrentActivity else { return false }
+        guard actorVisual == .playing else { return false }
+        guard !isStreamSwitchHoldActive, !isConnectingPlayback else { return false }
+        if ownedContentVisual == .playing { return false }
+        return true
+    }
+
+    // MARK: - Post-quiet sparse long-horizon ensure (pure policy)
+
+    /// Whether sparse post-quiet long-horizon **playing** ensure should arm for this freeze.
+    ///
+    /// Arms only while request is **ineligible** and owned visual still lags authoritative
+    /// `.playing`. When already armed, leave the in-flight horizon (do not thrash re-schedule).
+    /// When request is eligible, soft ensure / foreground owned-surface ensure own recovery.
+    ///
+    /// - Parameters:
+    ///   - hasCurrentActivity: Whether this process owns an interactive activity.
+    ///   - isRequestEligible: Interactive `Activity.request` eligibility.
+    ///   - longHorizonAlreadyArmed: Whether ``postQuietLongHorizonPlayingEnsureTask`` is non-nil.
+    ///   - actorVisual: Actor ``currentVisualState``.
+    ///   - lastPushedVisual: ``lastPushedContent`` visual, if any.
+    ///   - ownedContentVisual: Owned `content.state.visualState`, if any.
+    ///   - isStreamSwitchHoldActive: Stream-switch Connecting hold.
+    ///   - isConnectingPlayback: Play-start pipeline Connecting.
+    /// - Returns: `true` when a new long-horizon playing rail should schedule.
+    /// - Note: Does **not** invent `.playing` during hold/connect. Does **not** end+request.
+    /// - SeeAlso: ``armPostQuietLongHorizonPlayingEnsureIfNeeded()``,
+    ///   ``shouldEnsureAuthoritativePlayingContent(actorVisual:streamSwitchHold:isConnectingPlayback:lastPushedVisual:ownedVisual:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldArmPostQuietLongHorizonPlayingEnsure(
+        hasCurrentActivity: Bool,
+        isRequestEligible: Bool,
+        longHorizonAlreadyArmed: Bool,
+        actorVisual: PlayerVisualState,
+        lastPushedVisual: PlayerVisualState?,
+        ownedContentVisual: PlayerVisualState?,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        guard hasCurrentActivity else { return false }
+        guard !longHorizonAlreadyArmed else { return false }
+        guard !isRequestEligible else { return false }
+        return shouldEnsureAuthoritativePlayingContent(
+            actorVisual: actorVisual,
+            streamSwitchHold: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback,
+            lastPushedVisual: lastPushedVisual,
+            ownedVisual: ownedContentVisual
+        )
+    }
+
+    /// Whether sparse post-quiet long-horizon **language** ensure should arm for this freeze.
+    ///
+    /// - Parameters:
+    ///   - hasCurrentActivity: Whether this process owns an interactive activity.
+    ///   - isRequestEligible: Interactive `Activity.request` eligibility.
+    ///   - longHorizonAlreadyArmed: Whether ``postQuietLongHorizonLanguageEnsureTask`` is non-nil.
+    ///   - destinationLanguage: ``liveActivityLanguageCodeForContentPush()``.
+    ///   - lastPushedLanguage: ``lastPushedContent`` language, if any.
+    ///   - ownedContentLanguage: Owned `content.state.currentLanguage`, if any.
+    ///   - isStreamSwitchHoldActive: Stream-switch Connecting hold (settle waits for hold clear).
+    /// - Returns: `true` when a new long-horizon language rail should schedule.
+    /// - Note: Does **not** invent `.playing`. Does **not** end+request.
+    /// - SeeAlso: ``armPostQuietLongHorizonLanguageEnsureIfNeeded()``,
+    ///   ``shouldEnsureAuthoritativeLanguageContent(destinationLanguage:ownedContentLanguage:lastPushedLanguage:)``.
+    static func shouldArmPostQuietLongHorizonLanguageEnsure(
+        hasCurrentActivity: Bool,
+        isRequestEligible: Bool,
+        longHorizonAlreadyArmed: Bool,
+        destinationLanguage: String,
+        lastPushedLanguage: String?,
+        ownedContentLanguage: String?,
+        isStreamSwitchHoldActive: Bool
+    ) -> Bool {
+        guard hasCurrentActivity else { return false }
+        guard !longHorizonAlreadyArmed else { return false }
+        guard !isRequestEligible else { return false }
+        guard !isStreamSwitchHoldActive else { return false }
+        guard !destinationLanguage.isEmpty else { return false }
+        return shouldEnsureAuthoritativeLanguageContent(
+            destinationLanguage: destinationLanguage,
+            ownedContentLanguage: ownedContentLanguage,
+            lastPushedLanguage: lastPushedLanguage
+        )
+    }
+
+    /// Whether an in-flight long-horizon **playing** fire should still run soft ensure.
+    ///
+    /// - SeeAlso: ``shouldArmPostQuietLongHorizonPlayingEnsure(hasCurrentActivity:isRequestEligible:longHorizonAlreadyArmed:actorVisual:lastPushedVisual:ownedContentVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``.
+    static func shouldContinuePostQuietLongHorizonPlayingEnsure(
+        hasCurrentActivity: Bool,
+        actorVisual: PlayerVisualState,
+        lastPushedVisual: PlayerVisualState?,
+        ownedContentVisual: PlayerVisualState?,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        guard hasCurrentActivity else { return false }
+        return shouldEnsureAuthoritativePlayingContent(
+            actorVisual: actorVisual,
+            streamSwitchHold: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback,
+            lastPushedVisual: lastPushedVisual,
+            ownedVisual: ownedContentVisual
+        )
+    }
+
+    /// Whether an in-flight long-horizon **language** fire should still run soft ensure.
+    ///
+    /// - SeeAlso: ``shouldArmPostQuietLongHorizonLanguageEnsure(hasCurrentActivity:isRequestEligible:longHorizonAlreadyArmed:destinationLanguage:lastPushedLanguage:ownedContentLanguage:isStreamSwitchHoldActive:)``.
+    static func shouldContinuePostQuietLongHorizonLanguageEnsure(
+        hasCurrentActivity: Bool,
+        destinationLanguage: String,
+        lastPushedLanguage: String?,
+        ownedContentLanguage: String?,
+        isStreamSwitchHoldActive: Bool
+    ) -> Bool {
+        guard hasCurrentActivity else { return false }
+        guard !isStreamSwitchHoldActive else { return false }
+        guard !destinationLanguage.isEmpty else { return false }
+        return shouldEnsureAuthoritativeLanguageContent(
+            destinationLanguage: destinationLanguage,
+            ownedContentLanguage: ownedContentLanguage,
+            lastPushedLanguage: lastPushedLanguage
+        )
+    }
+
+    /// Whether the playing long-horizon rail should cancel (ownership gone, accepted, or actor left play).
+    ///
+    /// - SeeAlso: ``cancelPostQuietLongHorizonPlayingEnsure()``.
+    static func shouldCancelPostQuietLongHorizonPlayingEnsure(
+        hasCurrentActivity: Bool,
+        ownedContentVisual: PlayerVisualState?,
+        actorVisual: PlayerVisualState
+    ) -> Bool {
+        if !hasCurrentActivity { return true }
+        if ownedContentVisual == .playing { return true }
+        if actorVisual != .playing { return true }
+        return false
+    }
+
+    /// Whether the language long-horizon rail should cancel (ownership gone, accepted, or empty dest).
+    ///
+    /// - SeeAlso: ``cancelPostQuietLongHorizonLanguageEnsure()``.
+    static func shouldCancelPostQuietLongHorizonLanguageEnsure(
+        hasCurrentActivity: Bool,
+        destinationLanguage: String,
+        ownedContentLanguage: String?
+    ) -> Bool {
+        if !hasCurrentActivity { return true }
+        if destinationLanguage.isEmpty { return true }
+        if let ownedContentLanguage, ownedContentLanguage == destinationLanguage {
+            return true
+        }
+        return false
+    }
+
+    /// Whether both ContentState axes lag while the actor is authoritative `.playing` without hold.
+    ///
+    /// Long-horizon fires use this to clear **both** quiet flags and run dual soft ensure so
+    /// language quiet cannot starve playing repair (and the reverse) under continuous lock.
+    /// Status-driven ``shouldDeferRedundantLanguagePushWhileQuiet`` already allows IPC when visual
+    /// differs; this policy covers soft-ensure entry after quiet engagement.
+    ///
+    /// - Note: Does **not** invent `.playing` during hold/connect.
+    /// - SeeAlso: ``shouldClearLanguageQuietForDualAxisLongHorizonFire(languageQuietPending:languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
+    ///   ``shouldClearPlayingQuietForDualAxisLongHorizonFire(playingQuietPending:languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``.
+    static func shouldRunPostQuietLongHorizonDualAxisEnsure(
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        actorVisual: PlayerVisualState,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        guard actorVisual == .playing else { return false }
+        guard !isStreamSwitchHoldActive, !isConnectingPlayback else { return false }
+        return languageStillLags && visualStillLags
+    }
+
+    /// Whether a playing long-horizon fire should also clear language quiet for dual-axis soft ensure.
+    ///
+    /// - SeeAlso: ``shouldRunPostQuietLongHorizonDualAxisEnsure(languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``.
+    static func shouldClearLanguageQuietForDualAxisLongHorizonFire(
+        languageQuietPending: Bool,
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        actorVisual: PlayerVisualState,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        guard languageQuietPending else { return false }
+        return shouldRunPostQuietLongHorizonDualAxisEnsure(
+            languageStillLags: languageStillLags,
+            visualStillLags: visualStillLags,
+            actorVisual: actorVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback
+        )
+    }
+
+    /// Whether a language long-horizon fire should also clear playing quiet for dual-axis soft ensure.
+    ///
+    /// - SeeAlso: ``shouldRunPostQuietLongHorizonDualAxisEnsure(languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``.
+    static func shouldClearPlayingQuietForDualAxisLongHorizonFire(
+        playingQuietPending: Bool,
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        actorVisual: PlayerVisualState,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        guard playingQuietPending else { return false }
+        return shouldRunPostQuietLongHorizonDualAxisEnsure(
+            languageStillLags: languageStillLags,
+            visualStillLags: visualStillLags,
+            actorVisual: actorVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback
+        )
+    }
+
+    /// Whether the dual-axis long-horizon **schedule** should arm (both axes lag; single-axis peers step aside).
+    ///
+    /// When both language and visual lag under continuous lock, arming two single-axis rails yields
+    /// near-simultaneous fires that each burn a short soft budget and re-quiet without a co-push.
+    /// Prefer one dual-axis horizon generation instead.
+    ///
+    /// - Note: Does **not** invent `.playing` during hold/connect. Does **not** end+request.
+    /// - SeeAlso: ``armPostQuietLongHorizonDualAxisEnsureIfNeeded()``,
+    ///   ``shouldRunPostQuietLongHorizonDualAxisEnsure(languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``.
+    static func shouldArmPostQuietLongHorizonDualAxisEnsure(
+        hasCurrentActivity: Bool,
+        isRequestEligible: Bool,
+        dualAxisAlreadyArmed: Bool,
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        actorVisual: PlayerVisualState,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        guard hasCurrentActivity else { return false }
+        guard !dualAxisAlreadyArmed else { return false }
+        guard !isRequestEligible else { return false }
+        return shouldRunPostQuietLongHorizonDualAxisEnsure(
+            languageStillLags: languageStillLags,
+            visualStillLags: visualStillLags,
+            actorVisual: actorVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback
+        )
+    }
+
+    /// Whether an in-flight dual-axis long-horizon fire should still run.
+    ///
+    /// - SeeAlso: ``shouldArmPostQuietLongHorizonDualAxisEnsure(hasCurrentActivity:isRequestEligible:dualAxisAlreadyArmed:languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``.
+    static func shouldContinuePostQuietLongHorizonDualAxisEnsure(
+        hasCurrentActivity: Bool,
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        actorVisual: PlayerVisualState,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        guard hasCurrentActivity else { return false }
+        return shouldRunPostQuietLongHorizonDualAxisEnsure(
+            languageStillLags: languageStillLags,
+            visualStillLags: visualStillLags,
+            actorVisual: actorVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback
+        )
+    }
+
+    /// Whether dual-axis long-horizon should cancel (ownership gone, both axes accepted, or actor left play).
+    ///
+    /// - SeeAlso: ``cancelPostQuietLongHorizonDualAxisEnsure()``.
+    static func shouldCancelPostQuietLongHorizonDualAxisEnsure(
+        hasCurrentActivity: Bool,
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        actorVisual: PlayerVisualState
+    ) -> Bool {
+        if !hasCurrentActivity { return true }
+        if actorVisual != .playing { return true }
+        // Both axes matched — dual work is done (single-axis residual uses single rails).
+        if !languageStillLags && !visualStillLags { return true }
+        return false
+    }
+
+    /// Whether dual-axis long-horizon exhaustion should mark pending presentable recovery.
+    ///
+    /// - SeeAlso: ``postQuietLongHorizonDualAxisExhausted``,
+    ///   ``shouldPreferEligibleRecreateAfterDualAxisLongHorizonExhausted(dualAxisExhausted:languageStillLags:visualStillLags:isRequestEligible:recreationsAttempted:maxRecreations:)``.
+    static func shouldMarkDualAxisLongHorizonExhausted(
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard !isRequestEligible else { return false }
+        return languageStillLags || visualStillLags
+    }
+
+    /// Whether eligible-only recreation after foreground soft ensure should prefer hard heal
+    /// after dual-axis long-horizon exhausted under continuous lock.
+    ///
+    /// Strengthens the existing ``shouldRecreateAfterForegroundSoftEnsureFailed`` path when the
+    /// dual-axis sparse rail already burned its generation without owned acceptance — still
+    /// **never** recreates while request is ineligible.
+    ///
+    /// - SeeAlso: ``shouldRecreateAfterForegroundSoftEnsureFailed(languageStillMismatches:playingStillStalled:isRequestEligible:recreationsAttempted:maxRecreations:)``,
+    ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``.
+    static func shouldPreferEligibleRecreateAfterDualAxisLongHorizonExhausted(
+        dualAxisExhausted: Bool,
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        isRequestEligible: Bool,
+        recreationsAttempted: Int,
+        maxRecreations: Int = RadioLiveActivityManager.maxInteractiveContentRecreations
+    ) -> Bool {
+        guard dualAxisExhausted else { return false }
+        return shouldRecreateAfterForegroundSoftEnsureFailed(
+            languageStillMismatches: languageStillLags,
+            playingStillStalled: visualStillLags,
+            isRequestEligible: isRequestEligible,
+            recreationsAttempted: recreationsAttempted,
+            maxRecreations: maxRecreations
+        )
+    }
+
+    /// Whether a post-hold **dual-axis** settled acceptance should run (prePlay stick after attach).
+    ///
+    /// When owned visual is still Connecting (``.prePlay``) while the actor is authoritative
+    /// `.playing` and hold/connect are clear, push destination language **and** playing together
+    /// via dual-axis soft ensure rather than language-only then playing-only budgets that re-quiet.
+    /// Consume-once while ineligible prevents soft-resume no-op thrash of the dual settle entry.
+    ///
+    /// - Note: Does **not** invent `.playing` during hold/connect. Soft-resume from ``.userPaused``
+    ///   uses single-axis settled playing acceptance.
+    /// - SeeAlso: ``pushSettledDualAxisAcceptanceContentIfNeeded()``,
+    ///   ``ensureAuthoritativeDualAxisContentIfNeeded()``.
+    static func shouldPushSettledDualAxisAcceptance(
+        actorVisual: PlayerVisualState,
+        ownedContentVisual: PlayerVisualState?,
+        destinationLanguage: String,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool,
+        settledAcceptanceConsumed: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard actorVisual == .playing else { return false }
+        guard !isStreamSwitchHoldActive, !isConnectingPlayback else { return false }
+        guard !destinationLanguage.isEmpty else { return false }
+        // B1: Connecting stick after stream attach — co-push lang + playing.
+        guard ownedContentVisual == .prePlay else { return false }
+        if settledAcceptanceConsumed, !isRequestEligible {
+            return false
+        }
+        return true
+    }
+
+    /// Whether dual-axis settled-acceptance consume should clear when owned leaves Connecting.
+    ///
+    /// - SeeAlso: ``pushSettledDualAxisAcceptanceContentIfNeeded()``.
+    static func shouldClearDualAxisSettledAcceptanceConsume(
+        settledAcceptanceConsumed: Bool,
+        ownedOrSystemVisual: PlayerVisualState?
+    ) -> Bool {
+        guard settledAcceptanceConsumed else { return false }
+        // Owned left Connecting (playing or intentional pause) — dual settle for prePlay is done.
+        if ownedOrSystemVisual != .prePlay { return true }
+        return false
+    }
+
+    /// Whether deferred playing-only status push while quiet should arm long-horizon (C4).
+    ///
+    /// Status thrash correctly defers; permanent freeze does not. When actor is still
+    /// authoritative `.playing` and the rail is not already armed, arm sparse recovery.
+    ///
+    /// - SeeAlso: ``shouldDeferRedundantPlayingPushWhileQuiet(candidateVisual:ownedContentVisual:ownedContentLanguage:candidateLanguage:quietPending:isRequestEligible:)``,
+    ///   ``shouldArmPostQuietLongHorizonPlayingEnsure(hasCurrentActivity:isRequestEligible:longHorizonAlreadyArmed:actorVisual:lastPushedVisual:ownedContentVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``.
+    static func shouldArmPostQuietLongHorizonPlayingEnsureAfterQuietDefer(
+        didDeferPlayingPushWhileQuiet: Bool,
+        hasCurrentActivity: Bool,
+        isRequestEligible: Bool,
+        longHorizonAlreadyArmed: Bool,
+        actorVisual: PlayerVisualState,
+        lastPushedVisual: PlayerVisualState?,
+        ownedContentVisual: PlayerVisualState?,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        guard didDeferPlayingPushWhileQuiet else { return false }
+        return shouldArmPostQuietLongHorizonPlayingEnsure(
+            hasCurrentActivity: hasCurrentActivity,
+            isRequestEligible: isRequestEligible,
+            longHorizonAlreadyArmed: longHorizonAlreadyArmed,
+            actorVisual: actorVisual,
+            lastPushedVisual: lastPushedVisual,
+            ownedContentVisual: ownedContentVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback
+        )
+    }
+
+    /// Whether deferred language-only status push while quiet should arm long-horizon.
+    ///
+    /// - SeeAlso: ``shouldArmPostQuietLongHorizonPlayingEnsureAfterQuietDefer(didDeferPlayingPushWhileQuiet:hasCurrentActivity:isRequestEligible:longHorizonAlreadyArmed:actorVisual:lastPushedVisual:ownedContentVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``.
+    static func shouldArmPostQuietLongHorizonLanguageEnsureAfterQuietDefer(
+        didDeferLanguagePushWhileQuiet: Bool,
+        hasCurrentActivity: Bool,
+        isRequestEligible: Bool,
+        longHorizonAlreadyArmed: Bool,
+        destinationLanguage: String,
+        lastPushedLanguage: String?,
+        ownedContentLanguage: String?,
+        isStreamSwitchHoldActive: Bool
+    ) -> Bool {
+        guard didDeferLanguagePushWhileQuiet else { return false }
+        return shouldArmPostQuietLongHorizonLanguageEnsure(
+            hasCurrentActivity: hasCurrentActivity,
+            isRequestEligible: isRequestEligible,
+            longHorizonAlreadyArmed: longHorizonAlreadyArmed,
+            destinationLanguage: destinationLanguage,
+            lastPushedLanguage: lastPushedLanguage,
+            ownedContentLanguage: ownedContentLanguage,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive
+        )
+    }
+
+    /// Resolves language chrome for visual-only optimistic toggle ``lastPushedContent`` alignment.
+    ///
+    /// Prefer stream-attach language over lagging suppress memory so pause/play after a stream
+    /// switch cannot re-stamp a prior `currentLanguage` into ``lastPushedContent`` while the
+    /// engine already plays the destination. Does **not** invent a hard-default privacy `"en"`
+    /// when stream attach is empty — falls through to owned / durable mirror / last-pushed.
+    ///
+    /// - Parameters:
+    ///   - lastPushedLanguage: ``lastPushedContent.currentLanguage``, if any.
+    ///   - ownedContentLanguage: Owned `content.state.currentLanguage`, if any.
+    ///   - selectedStreamLanguage: ``DirectStreamingPlayer/selectedStream`` language (empty when unset).
+    ///   - durableLanguageMirror: ``SharedPlayerManager/loadLiveActivityLanguageMirror()``, if any.
+    /// - Returns: Non-empty language when any source provides one; otherwise empty (caller may
+    ///   fall back to ``mainAppLiveActivityLanguageCode()`` for a non-empty product default).
+    /// - SeeAlso: ``recordOptimisticToggleContent(visualState:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func languageForOptimisticToggleContentAlignment(
+        lastPushedLanguage: String?,
+        ownedContentLanguage: String?,
+        selectedStreamLanguage: String,
+        durableLanguageMirror: String?
+    ) -> String {
+        if !selectedStreamLanguage.isEmpty {
+            return selectedStreamLanguage
+        }
+        if let mirror = durableLanguageMirror, !mirror.isEmpty {
+            return mirror
+        }
+        if let owned = ownedContentLanguage, !owned.isEmpty {
+            return owned
+        }
+        if let last = lastPushedLanguage, !last.isEmpty {
+            return last
+        }
+        return ""
     }
 
     /// Whether soft playing-ensure pushes should run now, or stay quiet after budget exhaustion.
@@ -1997,17 +2904,19 @@ class RadioLiveActivityManager: ObservableObject {
             lastPushedVisual: lastVisual,
             ownedVisual: ownedVisual
         )
-        // Owned visual converged → drop quiet.
+        // Owned visual converged → drop quiet + long-horizon.
         if Self.shouldClearPlayingEnsureQuietPending(
             quietPending: playingEnsureQuietPending,
             ownedOrSystemVisual: ownedVisual
         ) {
             playingEnsureQuietPending = false
             playingEnsureQuietSkipLogged = false
+            cancelPostQuietLongHorizonPlayingEnsure()
         }
         guard needsEnsure else {
             playingEnsureQuietPending = false
             playingEnsureQuietSkipLogged = false
+            cancelPostQuietLongHorizonPlayingEnsure()
             return
         }
 
@@ -2032,6 +2941,8 @@ class RadioLiveActivityManager: ObservableObject {
                 )
             }
             #endif
+            // Quiet skip still arms long-horizon if not already (status path may not defer).
+            await armPostQuietLongHorizonPlayingEnsureIfNeeded()
             return
         }
 
@@ -2080,12 +2991,18 @@ class RadioLiveActivityManager: ObservableObject {
             if acceptedVisual == .playing {
                 playingEnsureQuietPending = false
                 playingEnsureQuietSkipLogged = false
+                cancelPostQuietLongHorizonPlayingEnsure()
                 return
             }
-            // Brief yield so ActivityKit / contentUpdates can converge before the next soft push.
-            if attempt < Self.authoritativePlayingContentEnsureMaxAttempts {
+            // Yield + eligibility-aware spacing so ActivityKit can apply under lock-stretch
+            // without raising attempt count (eligible stays short for unlock heal).
+            if let delayMs = Self.softEnsureInterAttemptDelayMilliseconds(
+                attempt: attempt,
+                maxAttempts: Self.authoritativePlayingContentEnsureMaxAttempts,
+                isRequestEligible: requestEligible
+            ) {
                 await Task.yield()
-                try? await Task.sleep(for: .milliseconds(50))
+                try? await Task.sleep(for: .milliseconds(delayMs))
             }
         }
 
@@ -2118,6 +3035,8 @@ class RadioLiveActivityManager: ObservableObject {
                 "(recreation remains eligibility-gated)"
             )
             #endif
+            // Quiet is thrash protection, not a permanent freeze under continuous lock.
+            await armPostQuietLongHorizonPlayingEnsureIfNeeded()
         }
     }
 
@@ -2210,8 +3129,9 @@ class RadioLiveActivityManager: ObservableObject {
         if !requestEligible {
             languageSettledAcceptanceConsumedDestination = destination
         }
-        // Fresh settle cycle owns delayed retries for this destination.
+        // Fresh settle cycle owns delayed retries + long-horizon for this destination.
         cancelPostSettledLanguageEnsureRetries()
+        cancelPostQuietLongHorizonLanguageEnsure()
 
         #if DEBUG
         print(
@@ -2259,6 +3179,10 @@ class RadioLiveActivityManager: ObservableObject {
             isStreamSwitchHoldActive: holdAfter
         ) {
             schedulePostSettledLanguageEnsureRetriesIfNeeded(destination: destination)
+        }
+        // Settled + post-settled budget must not permanent-freeze under continuous lock.
+        if acceptedLanguage != destination {
+            await armPostQuietLongHorizonLanguageEnsureIfNeeded()
         }
     }
 
@@ -2360,29 +3284,37 @@ class RadioLiveActivityManager: ObservableObject {
                 }
             }
             self.postSettledLanguageEnsureRetryTask = nil
+            // Post-settled budget is not terminal under continuous lock — arm sparse long-horizon.
+            await self.armPostQuietLongHorizonLanguageEnsureIfNeeded()
         }
     }
 
-    /// One high-signal dual-axis ContentState push after stream-switch hold/connect has cleared
-    /// and the actor is authoritative `.playing` while owned visual still lags.
+    /// Post-hold playing soft-ensure re-arm after stream-switch hold/connect has cleared and the
+    /// actor is authoritative `.playing` while owned visual still lags.
     ///
     /// Soft playing ensure often exhausts (or cannot run usefully while hold is active) during
     /// attach, then quiet-pending defers visual-only `.playing` repair for the rest of a lock
-    /// stretch — Connecting chrome while audio is live. Call this from authoritative audible
-    /// start (``SharedPlayerManager/setPlaying()``) and soft-resume no-op reconcile so **one**
-    /// settle push can carry destination language + `.playing` visual after hold clear.
+    /// stretch — Connecting or paused chrome while audio is live. Call this from authoritative
+    /// audible start (``SharedPlayerManager/setPlaying()``) and soft-resume no-op reconcile so a
+    /// **full** soft playing-ensure budget re-runs after hold clear (not only a single ActivityKit
+    /// update — a lone settle push that immediately re-arms quiet would block the subsequent
+    /// ``ensureAuthoritativePlayingContentIfNeeded()`` from ``setPlaying()``).
     ///
-    /// **Quiet bypass (once):** Clears ``playingEnsureQuietPending`` so
-    /// ``shouldDeferRedundantPlayingPushWhileQuiet`` does not drop this push, then
-    /// ``updateCurrentActivity()``. Marks ``playingSettledAcceptanceConsumed`` while request is
-    /// ineligible so soft-resume no-ops do not re-thrash. Re-enters playing quiet when owned
-    /// visual still lags after the push while ineligible.
+    /// **Quiet re-arm (post-audible):** Clears ``playingEnsureQuietPending`` so
+    /// ``shouldDeferRedundantPlayingPushWhileQuiet`` / soft-ensure quiet gates do not drop the
+    /// post-hold soft cycle, then ``ensureAuthoritativePlayingContentIfNeeded()``. Marks
+    /// ``playingSettledAcceptanceConsumed`` while request is ineligible so soft-resume no-ops do
+    /// not re-enter the settle entry. When owned visual still lags after that cycle while
+    /// ineligible, quiet re-engages for status thrash **and** bounded delayed post-settled soft
+    /// ensure retries re-clear quiet on a longer cadence without end+request.
     ///
     /// - Precondition: Main actor; stream-switch hold should already be cleared by the caller
     ///   (policy also gates on hold/connect). Interactive ``currentActivity`` may be nil (no-op).
-    /// - Postcondition: At most one ActivityKit update for this settle cycle when policy fires;
-    ///   no end+request; does not invent `.playing` during hold/connect.
+    /// - Postcondition: When policy fires, soft playing ensure ran up to its budget; optional
+    ///   delayed retries may remain in flight while visual still lags; no end+request; does not
+    ///   invent `.playing` during hold/connect.
     /// - SeeAlso: ``shouldPushSettledPlayingAcceptance(actorVisual:ownedContentVisual:isStreamSwitchHoldActive:isConnectingPlayback:settledAcceptanceConsumed:isRequestEligible:)``,
+    ///   ``shouldSchedulePostSettledPlayingEnsureRetries(hasCurrentActivity:actorVisual:ownedContentVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
     ///   ``pushSettledLanguageAcceptanceContentIfNeeded()``,
     ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
     ///   ``SharedPlayerManager/setPlaying()``,
@@ -2424,23 +3356,30 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
-        // Clear playing quiet so the settle push is not dropped as a playing-only defer.
+        // Clear playing quiet so post-hold soft ensure gets a full budget (attach-storm quiet
+        // must not freeze soft-resume / post-audible playing after settle).
         playingEnsureQuietPending = false
         playingEnsureQuietSkipLogged = false
-        // Consume-once while ineligible — soft-resume no-ops must not re-open thrash.
+        // Consume-once while ineligible — soft-resume no-ops must not re-open the settle entry.
         if !requestEligible {
             playingSettledAcceptanceConsumed = true
         }
+        // Fresh settle cycle owns delayed retries + long-horizon for this play cycle.
+        cancelPostSettledPlayingEnsureRetries()
+        cancelPostQuietLongHorizonPlayingEnsure()
 
         #if DEBUG
         print(
-            "🔴 Live Activity settled playing acceptance push " +
+            "🔴 Live Activity settled playing acceptance soft-ensure re-arm " +
             "(actor=\(actorVisual) owned=\(String(describing: ownedVisual)); " +
-            "quiet bypass once after hold clear)"
+            "quiet cleared for full post-hold playing budget)"
         )
         #endif
 
-        await updateCurrentActivity()
+        // Full soft playing-ensure budget after hold clear — prefer multi-attempt soft path
+        // over a single dual-axis update so ActivityKit has more than one acceptance window
+        // and setPlaying's trailing ensure is not blocked by an immediate quiet re-arm.
+        await ensureAuthoritativePlayingContentIfNeeded()
 
         let acceptedVisual = currentActivity?.content.state.visualState
         if acceptedVisual == .playing {
@@ -2450,11 +3389,15 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
-        // Still lagging while locked — re-enter quiet; FG rail / contentUpdates re-arm later.
+        // Still lagging while locked — re-enter quiet for status thrash, keep pending ensure
+        // for become-active, and schedule longer-cadence soft ensure without end+request.
         let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
             areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
+        let holdAfter = await manager.isStreamSwitchPrePlayHoldActive
+        let connectingAfter = await manager.isConnectingPlayback
+        let actorAfter = await manager.currentVisualState
         if !eligibleAfter {
             playingEnsureQuietPending = true
             playingEnsureQuietSkipLogged = false
@@ -2463,9 +3406,1124 @@ class RadioLiveActivityManager: ObservableObject {
             print(
                 "🔴 Live Activity settled playing acceptance still lagging " +
                 "(owned=\(String(describing: acceptedVisual)); " +
-                "quiet re-armed; recreation remains eligibility-gated)"
+                "quiet re-armed; delayed soft ensure scheduled; recreation remains eligibility-gated)"
             )
             #endif
+        }
+        if Self.shouldSchedulePostSettledPlayingEnsureRetries(
+            hasCurrentActivity: currentActivity != nil,
+            actorVisual: actorAfter,
+            ownedContentVisual: acceptedVisual,
+            isStreamSwitchHoldActive: holdAfter,
+            isConnectingPlayback: connectingAfter
+        ) {
+            schedulePostSettledPlayingEnsureRetriesIfNeeded()
+        }
+        // Settled + post-settled budget must not permanent-freeze under continuous lock (B).
+        if acceptedVisual != .playing {
+            await armPostQuietLongHorizonPlayingEnsureIfNeeded()
+        }
+    }
+
+    /// Cancels any in-flight delayed post-settled playing soft-ensure retries.
+    ///
+    /// - SeeAlso: ``schedulePostSettledPlayingEnsureRetriesIfNeeded()``,
+    ///   ``pushSettledPlayingAcceptanceContentIfNeeded()``.
+    @MainActor
+    private func cancelPostSettledPlayingEnsureRetries() {
+        postSettledPlayingEnsureRetryTask?.cancel()
+        postSettledPlayingEnsureRetryTask = nil
+    }
+
+    /// Schedules bounded delayed soft playing ensure after post-hold settle still lags.
+    ///
+    /// Status-driven quiet correctly stops attach-storm thrash; these retries re-clear quiet
+    /// on ``postSettledPlayingEnsureDelayedIntervalsMilliseconds`` so owned visual can still
+    /// converge to `.playing` while request is ineligible — without ending the interactive
+    /// surface. Cancelled when visual matches, hold/connect re-arms, ownership ends, control
+    /// mutation, or foreground owned-surface ensure takes over.
+    ///
+    /// - Precondition: Main actor; policy already decided schedule is needed.
+    /// - Postcondition: At most one delayed retry task; each attempt may re-run soft ensure.
+    /// - SeeAlso: ``shouldSchedulePostSettledPlayingEnsureRetries(hasCurrentActivity:actorVisual:ownedContentVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
+    ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   ``postSettledPlayingEnsureMaxDelayedAttempts``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    private func schedulePostSettledPlayingEnsureRetriesIfNeeded() {
+        cancelPostSettledPlayingEnsureRetries()
+        let intervals = Self.postSettledPlayingEnsureDelayedIntervalsMilliseconds
+        let maxAttempts = min(Self.postSettledPlayingEnsureMaxDelayedAttempts, intervals.count)
+        guard maxAttempts > 0 else { return }
+
+        postSettledPlayingEnsureRetryTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for attempt in 1...maxAttempts {
+                let delayMs = intervals[attempt - 1]
+                try? await Task.sleep(for: .milliseconds(delayMs))
+                guard !Task.isCancelled else { return }
+                if SharedPlayerManager.isRunningInUITestMode { return }
+                #if DEBUG
+                if self.isRunningUnderTest { return }
+                #endif
+                guard self.currentActivity != nil else { return }
+
+                let manager = SharedPlayerManager.shared
+                let actorVisual = await manager.currentVisualState
+                let hold = await manager.isStreamSwitchPrePlayHoldActive
+                let connecting = await manager.isConnectingPlayback
+                let owned = self.currentActivity?.content.state.visualState
+                guard Self.shouldSchedulePostSettledPlayingEnsureRetries(
+                    hasCurrentActivity: self.currentActivity != nil,
+                    actorVisual: actorVisual,
+                    ownedContentVisual: owned,
+                    isStreamSwitchHoldActive: hold,
+                    isConnectingPlayback: connecting
+                ) else {
+                    // Owned converged (or hold/connect re-armed / actor left playing) — drop quiet.
+                    if owned == .playing {
+                        self.playingEnsureQuietPending = false
+                        self.playingEnsureQuietSkipLogged = false
+                        self.playingSettledAcceptanceConsumed = false
+                    }
+                    return
+                }
+
+                // Re-open one soft-ensure cycle without re-opening settle consume.
+                self.playingEnsureQuietPending = false
+                self.playingEnsureQuietSkipLogged = false
+
+                #if DEBUG
+                print(
+                    "🔴 Live Activity post-settled playing ensure retry " +
+                    "\(attempt)/\(maxAttempts) owned=\(String(describing: owned))"
+                )
+                #endif
+                await self.ensureAuthoritativePlayingContentIfNeeded()
+
+                let accepted = self.currentActivity?.content.state.visualState
+                if accepted == .playing {
+                    self.playingEnsureQuietPending = false
+                    self.playingEnsureQuietSkipLogged = false
+                    self.playingSettledAcceptanceConsumed = false
+                    return
+                }
+
+                // Still lagging — quiet status thrash until next delayed attempt or FG rail.
+                let eligible = Self.isInteractiveLiveActivityRequestEligible(
+                    areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                    isApplicationActive: UIApplication.shared.applicationState == .active
+                )
+                if !eligible {
+                    self.playingEnsureQuietPending = true
+                    self.playingEnsureQuietSkipLogged = false
+                    self.pendingInteractiveLiveActivityEnsure = true
+                }
+            }
+            self.postSettledPlayingEnsureRetryTask = nil
+            // Post-settled budget is not terminal under continuous lock — arm sparse long-horizon.
+            await self.armPostQuietLongHorizonPlayingEnsureIfNeeded()
+        }
+    }
+
+    // MARK: - Post-quiet sparse long-horizon ensure (implementation)
+
+    /// Cancels in-flight post-quiet long-horizon **playing** ensure for this freeze generation.
+    ///
+    /// - SeeAlso: ``armPostQuietLongHorizonPlayingEnsureIfNeeded()``,
+    ///   ``schedulePostQuietLongHorizonPlayingEnsure()``.
+    @MainActor
+    private func cancelPostQuietLongHorizonPlayingEnsure() {
+        postQuietLongHorizonPlayingEnsureTask?.cancel()
+        postQuietLongHorizonPlayingEnsureTask = nil
+    }
+
+    /// Cancels in-flight post-quiet long-horizon **language** ensure for this freeze generation.
+    ///
+    /// - SeeAlso: ``armPostQuietLongHorizonLanguageEnsureIfNeeded()``,
+    ///   ``schedulePostQuietLongHorizonLanguageEnsure(destination:)``.
+    @MainActor
+    private func cancelPostQuietLongHorizonLanguageEnsure() {
+        postQuietLongHorizonLanguageEnsureTask?.cancel()
+        postQuietLongHorizonLanguageEnsureTask = nil
+    }
+
+    /// Cancels in-flight post-quiet long-horizon **dual-axis** ensure for this freeze generation.
+    ///
+    /// - SeeAlso: ``armPostQuietLongHorizonDualAxisEnsureIfNeeded()``,
+    ///   ``schedulePostQuietLongHorizonDualAxisEnsure()``.
+    @MainActor
+    private func cancelPostQuietLongHorizonDualAxisEnsure() {
+        postQuietLongHorizonDualAxisEnsureTask?.cancel()
+        postQuietLongHorizonDualAxisEnsureTask = nil
+    }
+
+    /// Cancels all long-horizon rails (teardown, foreground owned-surface, optimistic mutation).
+    @MainActor
+    private func cancelAllPostQuietLongHorizonEnsure() {
+        cancelPostQuietLongHorizonPlayingEnsure()
+        cancelPostQuietLongHorizonLanguageEnsure()
+        cancelPostQuietLongHorizonDualAxisEnsure()
+    }
+
+    /// Arms sparse post-quiet long-horizon **playing** ensure when policy allows.
+    ///
+    /// Call after quiet entry, settled-still-lagging, partial acceptance re-arm, quiet defer,
+    /// or post-settled budget exhaustion while request remains ineligible and owned visual lags.
+    /// When language **also** lags, prefers the dual-axis rail (one co-push per fire) over a
+    /// single-axis playing horizon that would race a language peer.
+    ///
+    /// - Precondition: Main actor.
+    /// - Postcondition: At most one long-horizon playing task (or dual-axis peer); no end+request;
+    ///   does not invent `.playing` during hold/connect.
+    /// - SeeAlso: ``shouldArmPostQuietLongHorizonPlayingEnsure(hasCurrentActivity:isRequestEligible:longHorizonAlreadyArmed:actorVisual:lastPushedVisual:ownedContentVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
+    ///   ``armPostQuietLongHorizonDualAxisEnsureIfNeeded()``,
+    ///   ``schedulePostQuietLongHorizonPlayingEnsure()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    func armPostQuietLongHorizonPlayingEnsureIfNeeded() async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        guard currentActivity != nil else { return }
+
+        let manager = SharedPlayerManager.shared
+        let actorVisual = await manager.currentVisualState
+        let hold = await manager.isStreamSwitchPrePlayHoldActive
+        let connecting = await manager.isConnectingPlayback
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        let destination = await manager.liveActivityLanguageCodeForContentPush()
+        let languageLags = Self.shouldEnsureAuthoritativeLanguageContent(
+            destinationLanguage: destination,
+            ownedContentLanguage: currentActivity?.content.state.currentLanguage,
+            lastPushedLanguage: lastPushedContent?.currentLanguage
+        )
+        let visualLags = Self.shouldEnsureAuthoritativePlayingContent(
+            actorVisual: actorVisual,
+            streamSwitchHold: hold,
+            isConnectingPlayback: connecting,
+            lastPushedVisual: lastPushedContent?.visualState,
+            ownedVisual: currentActivity?.content.state.visualState
+        )
+        // Both axes lag → dual-axis rail owns sparse recovery (B3 fire quality).
+        if Self.shouldArmPostQuietLongHorizonDualAxisEnsure(
+            hasCurrentActivity: true,
+            isRequestEligible: requestEligible,
+            dualAxisAlreadyArmed: postQuietLongHorizonDualAxisEnsureTask != nil,
+            languageStillLags: languageLags,
+            visualStillLags: visualLags,
+            actorVisual: actorVisual,
+            isStreamSwitchHoldActive: hold,
+            isConnectingPlayback: connecting
+        ) {
+            await armPostQuietLongHorizonDualAxisEnsureIfNeeded()
+            return
+        }
+        // Dual already armed for both-lag → do not also arm single-axis playing thrash.
+        if postQuietLongHorizonDualAxisEnsureTask != nil, languageLags, visualLags {
+            return
+        }
+        guard Self.shouldArmPostQuietLongHorizonPlayingEnsure(
+            hasCurrentActivity: true,
+            isRequestEligible: requestEligible,
+            longHorizonAlreadyArmed: postQuietLongHorizonPlayingEnsureTask != nil,
+            actorVisual: actorVisual,
+            lastPushedVisual: lastPushedContent?.visualState,
+            ownedContentVisual: currentActivity?.content.state.visualState,
+            isStreamSwitchHoldActive: hold,
+            isConnectingPlayback: connecting
+        ) else {
+            return
+        }
+        // Single-axis playing residual — drop dual if only visual still lags.
+        if !languageLags {
+            cancelPostQuietLongHorizonDualAxisEnsure()
+        }
+        schedulePostQuietLongHorizonPlayingEnsure()
+    }
+
+    /// Arms sparse post-quiet long-horizon **language** ensure when policy allows.
+    ///
+    /// When visual **also** lags, prefers the dual-axis rail. New destinations start a fresh
+    /// freeze (prior language horizon cancelled; dual/language re-arm for the destination).
+    ///
+    /// - SeeAlso: ``shouldArmPostQuietLongHorizonLanguageEnsure(hasCurrentActivity:isRequestEligible:longHorizonAlreadyArmed:destinationLanguage:lastPushedLanguage:ownedContentLanguage:isStreamSwitchHoldActive:)``,
+    ///   ``armPostQuietLongHorizonDualAxisEnsureIfNeeded()``,
+    ///   ``schedulePostQuietLongHorizonLanguageEnsure(destination:)``.
+    @MainActor
+    func armPostQuietLongHorizonLanguageEnsureIfNeeded() async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        guard currentActivity != nil else { return }
+
+        let manager = SharedPlayerManager.shared
+        let destination = await manager.liveActivityLanguageCodeForContentPush()
+        let hold = await manager.isStreamSwitchPrePlayHoldActive
+        let connecting = await manager.isConnectingPlayback
+        let actorVisual = await manager.currentVisualState
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        let languageLags = Self.shouldEnsureAuthoritativeLanguageContent(
+            destinationLanguage: destination,
+            ownedContentLanguage: currentActivity?.content.state.currentLanguage,
+            lastPushedLanguage: lastPushedContent?.currentLanguage
+        )
+        let visualLags = Self.shouldEnsureAuthoritativePlayingContent(
+            actorVisual: actorVisual,
+            streamSwitchHold: hold,
+            isConnectingPlayback: connecting,
+            lastPushedVisual: lastPushedContent?.visualState,
+            ownedVisual: currentActivity?.content.state.visualState
+        )
+        if Self.shouldArmPostQuietLongHorizonDualAxisEnsure(
+            hasCurrentActivity: true,
+            isRequestEligible: requestEligible,
+            dualAxisAlreadyArmed: postQuietLongHorizonDualAxisEnsureTask != nil,
+            languageStillLags: languageLags,
+            visualStillLags: visualLags,
+            actorVisual: actorVisual,
+            isStreamSwitchHoldActive: hold,
+            isConnectingPlayback: connecting
+        ) {
+            await armPostQuietLongHorizonDualAxisEnsureIfNeeded()
+            return
+        }
+        if postQuietLongHorizonDualAxisEnsureTask != nil, languageLags, visualLags {
+            return
+        }
+        guard Self.shouldArmPostQuietLongHorizonLanguageEnsure(
+            hasCurrentActivity: true,
+            isRequestEligible: requestEligible,
+            longHorizonAlreadyArmed: postQuietLongHorizonLanguageEnsureTask != nil,
+            destinationLanguage: destination,
+            lastPushedLanguage: lastPushedContent?.currentLanguage,
+            ownedContentLanguage: currentActivity?.content.state.currentLanguage,
+            isStreamSwitchHoldActive: hold
+        ) else {
+            return
+        }
+        if !visualLags {
+            cancelPostQuietLongHorizonDualAxisEnsure()
+        }
+        schedulePostQuietLongHorizonLanguageEnsure(destination: destination)
+    }
+
+    /// Arms sparse post-quiet long-horizon **dual-axis** ensure when both axes lag.
+    ///
+    /// Cancels single-axis language/playing horizons so one dual-axis generation owns the freeze
+    /// (B3: one dual ensure per fire, not two short single-axis burns).
+    ///
+    /// - SeeAlso: ``shouldArmPostQuietLongHorizonDualAxisEnsure(hasCurrentActivity:isRequestEligible:dualAxisAlreadyArmed:languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
+    ///   ``schedulePostQuietLongHorizonDualAxisEnsure()``,
+    ///   ``ensureAuthoritativeDualAxisContentIfNeeded()``.
+    @MainActor
+    func armPostQuietLongHorizonDualAxisEnsureIfNeeded() async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        guard currentActivity != nil else { return }
+
+        let manager = SharedPlayerManager.shared
+        let destination = await manager.liveActivityLanguageCodeForContentPush()
+        let hold = await manager.isStreamSwitchPrePlayHoldActive
+        let connecting = await manager.isConnectingPlayback
+        let actorVisual = await manager.currentVisualState
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        let languageLags = Self.shouldEnsureAuthoritativeLanguageContent(
+            destinationLanguage: destination,
+            ownedContentLanguage: currentActivity?.content.state.currentLanguage,
+            lastPushedLanguage: lastPushedContent?.currentLanguage
+        )
+        let visualLags = Self.shouldEnsureAuthoritativePlayingContent(
+            actorVisual: actorVisual,
+            streamSwitchHold: hold,
+            isConnectingPlayback: connecting,
+            lastPushedVisual: lastPushedContent?.visualState,
+            ownedVisual: currentActivity?.content.state.visualState
+        )
+        guard Self.shouldArmPostQuietLongHorizonDualAxisEnsure(
+            hasCurrentActivity: true,
+            isRequestEligible: requestEligible,
+            dualAxisAlreadyArmed: postQuietLongHorizonDualAxisEnsureTask != nil,
+            languageStillLags: languageLags,
+            visualStillLags: visualLags,
+            actorVisual: actorVisual,
+            isStreamSwitchHoldActive: hold,
+            isConnectingPlayback: connecting
+        ) else {
+            return
+        }
+        // Dual-axis owns this freeze — drop single-axis peers that would double-fire.
+        cancelPostQuietLongHorizonPlayingEnsure()
+        cancelPostQuietLongHorizonLanguageEnsure()
+        postQuietLongHorizonDualAxisExhausted = false
+        schedulePostQuietLongHorizonDualAxisEnsure()
+    }
+
+    /// Schedules sparse delayed playing soft-ensure fires after quiet / settle still lags.
+    ///
+    /// Each fire clears playing quiet once, optionally dual-axis language quiet when both lag,
+    /// runs soft ensure, then re-engages quiet between fires while ineligible.
+    ///
+    /// - SeeAlso: ``postQuietLongHorizonEnsureDelayedIntervalsMilliseconds``,
+    ///   ``armPostQuietLongHorizonPlayingEnsureIfNeeded()``.
+    @MainActor
+    private func schedulePostQuietLongHorizonPlayingEnsure() {
+        cancelPostQuietLongHorizonPlayingEnsure()
+        postQuietLongHorizonPlayingEnsureGeneration &+= 1
+        let generation = postQuietLongHorizonPlayingEnsureGeneration
+        let intervals = Self.postQuietLongHorizonEnsureDelayedIntervalsMilliseconds
+        let maxAttempts = min(Self.postQuietLongHorizonEnsureMaxDelayedAttempts, intervals.count)
+        guard maxAttempts > 0 else { return }
+
+        postQuietLongHorizonPlayingEnsureTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for attempt in 1...maxAttempts {
+                let delayMs = intervals[attempt - 1]
+                try? await Task.sleep(for: .milliseconds(delayMs))
+                guard !Task.isCancelled else { return }
+                guard generation == self.postQuietLongHorizonPlayingEnsureGeneration else { return }
+                if SharedPlayerManager.isRunningInUITestMode { return }
+                #if DEBUG
+                if self.isRunningUnderTest { return }
+                #endif
+                guard self.currentActivity != nil else {
+                    self.postQuietLongHorizonPlayingEnsureTask = nil
+                    return
+                }
+
+                let manager = SharedPlayerManager.shared
+                let actorVisual = await manager.currentVisualState
+                let hold = await manager.isStreamSwitchPrePlayHoldActive
+                let connecting = await manager.isConnectingPlayback
+                let ownedVisual = self.currentActivity?.content.state.visualState
+                let lastVisual = self.lastPushedContent?.visualState
+
+                if Self.shouldCancelPostQuietLongHorizonPlayingEnsure(
+                    hasCurrentActivity: self.currentActivity != nil,
+                    ownedContentVisual: ownedVisual,
+                    actorVisual: actorVisual
+                ) {
+                    if ownedVisual == .playing {
+                        self.playingEnsureQuietPending = false
+                        self.playingEnsureQuietSkipLogged = false
+                        self.playingSettledAcceptanceConsumed = false
+                    }
+                    self.postQuietLongHorizonPlayingEnsureTask = nil
+                    return
+                }
+
+                guard Self.shouldContinuePostQuietLongHorizonPlayingEnsure(
+                    hasCurrentActivity: true,
+                    actorVisual: actorVisual,
+                    lastPushedVisual: lastVisual,
+                    ownedContentVisual: ownedVisual,
+                    isStreamSwitchHoldActive: hold,
+                    isConnectingPlayback: connecting
+                ) else {
+                    self.postQuietLongHorizonPlayingEnsureTask = nil
+                    return
+                }
+
+                // One quiet clear per fire — status thrash stays protected between fires.
+                self.playingEnsureQuietPending = false
+                self.playingEnsureQuietSkipLogged = false
+
+                let destination = await manager.liveActivityLanguageCodeForContentPush()
+                let ownedLanguage = self.currentActivity?.content.state.currentLanguage
+                let languageLags = Self.shouldEnsureAuthoritativeLanguageContent(
+                    destinationLanguage: destination,
+                    ownedContentLanguage: ownedLanguage,
+                    lastPushedLanguage: self.lastPushedContent?.currentLanguage
+                )
+                let visualLags = true
+                // Both axes lag → one dual-axis co-push (not language ensure then playing ensure).
+                if Self.shouldRunPostQuietLongHorizonDualAxisEnsure(
+                    languageStillLags: languageLags,
+                    visualStillLags: visualLags,
+                    actorVisual: actorVisual,
+                    isStreamSwitchHoldActive: hold,
+                    isConnectingPlayback: connecting
+                ) {
+                    self.languageEnsureQuietPendingDestination = nil
+                    self.languageEnsureQuietSkipLogged = false
+                    #if DEBUG
+                    print(
+                        "🔴 Live Activity post-quiet long-horizon dual-axis ensure retry " +
+                        "\(attempt)/\(maxAttempts) (via playing rail) owned=\(String(describing: ownedVisual))"
+                    )
+                    #endif
+                    await self.ensureAuthoritativeDualAxisContentIfNeeded()
+                    let acceptedAfterDual = self.currentActivity?.content.state.visualState
+                    if acceptedAfterDual == .playing {
+                        self.playingEnsureQuietPending = false
+                        self.playingEnsureQuietSkipLogged = false
+                        self.playingSettledAcceptanceConsumed = false
+                        self.dualAxisSettledAcceptanceConsumed = false
+                        self.postQuietLongHorizonDualAxisExhausted = false
+                        self.postQuietLongHorizonPlayingEnsureTask = nil
+                        return
+                    }
+                    let eligibleAfterDual = Self.isInteractiveLiveActivityRequestEligible(
+                        areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                        isApplicationActive: UIApplication.shared.applicationState == .active
+                    )
+                    if !eligibleAfterDual {
+                        self.playingEnsureQuietPending = true
+                        self.playingEnsureQuietSkipLogged = false
+                        self.pendingInteractiveLiveActivityEnsure = true
+                    }
+                    continue
+                }
+
+                #if DEBUG
+                print(
+                    "🔴 Live Activity post-quiet long-horizon playing ensure retry " +
+                    "\(attempt)/\(maxAttempts) owned=\(String(describing: ownedVisual))"
+                )
+                #endif
+
+                await self.ensureAuthoritativePlayingContentIfNeeded()
+
+                let accepted = self.currentActivity?.content.state.visualState
+                if accepted == .playing {
+                    self.playingEnsureQuietPending = false
+                    self.playingEnsureQuietSkipLogged = false
+                    self.playingSettledAcceptanceConsumed = false
+                    self.dualAxisSettledAcceptanceConsumed = false
+                    self.postQuietLongHorizonDualAxisExhausted = false
+                    self.postQuietLongHorizonPlayingEnsureTask = nil
+                    return
+                }
+
+                let eligible = Self.isInteractiveLiveActivityRequestEligible(
+                    areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                    isApplicationActive: UIApplication.shared.applicationState == .active
+                )
+                if !eligible {
+                    self.playingEnsureQuietPending = true
+                    self.playingEnsureQuietSkipLogged = false
+                    self.pendingInteractiveLiveActivityEnsure = true
+                }
+            }
+            self.postQuietLongHorizonPlayingEnsureTask = nil
+        }
+    }
+
+    /// Schedules sparse delayed language soft-ensure fires after quiet / settle still lags.
+    ///
+    /// - Parameter destination: Destination language code captured at arm time (re-checked each fire).
+    /// - SeeAlso: ``postQuietLongHorizonEnsureDelayedIntervalsMilliseconds``,
+    ///   ``armPostQuietLongHorizonLanguageEnsureIfNeeded()``.
+    @MainActor
+    private func schedulePostQuietLongHorizonLanguageEnsure(destination: String) {
+        guard !destination.isEmpty else { return }
+        cancelPostQuietLongHorizonLanguageEnsure()
+        postQuietLongHorizonLanguageEnsureGeneration &+= 1
+        let generation = postQuietLongHorizonLanguageEnsureGeneration
+        let intervals = Self.postQuietLongHorizonEnsureDelayedIntervalsMilliseconds
+        let maxAttempts = min(Self.postQuietLongHorizonEnsureMaxDelayedAttempts, intervals.count)
+        guard maxAttempts > 0 else { return }
+
+        postQuietLongHorizonLanguageEnsureTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for attempt in 1...maxAttempts {
+                let delayMs = intervals[attempt - 1]
+                try? await Task.sleep(for: .milliseconds(delayMs))
+                guard !Task.isCancelled else { return }
+                guard generation == self.postQuietLongHorizonLanguageEnsureGeneration else { return }
+                if SharedPlayerManager.isRunningInUITestMode { return }
+                #if DEBUG
+                if self.isRunningUnderTest { return }
+                #endif
+                guard self.currentActivity != nil else {
+                    self.postQuietLongHorizonLanguageEnsureTask = nil
+                    return
+                }
+
+                let manager = SharedPlayerManager.shared
+                let currentDestination = await manager.liveActivityLanguageCodeForContentPush()
+                // Destination advanced — cancel this freeze and re-arm for the new destination (B2).
+                guard currentDestination == destination else {
+                    self.postQuietLongHorizonLanguageEnsureTask = nil
+                    await self.armPostQuietLongHorizonLanguageEnsureIfNeeded()
+                    return
+                }
+                let hold = await manager.isStreamSwitchPrePlayHoldActive
+                let connecting = await manager.isConnectingPlayback
+                let actorVisual = await manager.currentVisualState
+                let ownedLanguage = self.currentActivity?.content.state.currentLanguage
+                let lastLanguage = self.lastPushedContent?.currentLanguage
+
+                if Self.shouldCancelPostQuietLongHorizonLanguageEnsure(
+                    hasCurrentActivity: self.currentActivity != nil,
+                    destinationLanguage: currentDestination,
+                    ownedContentLanguage: ownedLanguage
+                ) {
+                    if ownedLanguage == destination {
+                        self.languageEnsureQuietPendingDestination = nil
+                        self.languageEnsureQuietSkipLogged = false
+                        self.languageSettledAcceptanceConsumedDestination = nil
+                    }
+                    self.postQuietLongHorizonLanguageEnsureTask = nil
+                    return
+                }
+
+                guard Self.shouldContinuePostQuietLongHorizonLanguageEnsure(
+                    hasCurrentActivity: true,
+                    destinationLanguage: currentDestination,
+                    lastPushedLanguage: lastLanguage,
+                    ownedContentLanguage: ownedLanguage,
+                    isStreamSwitchHoldActive: hold
+                ) else {
+                    self.postQuietLongHorizonLanguageEnsureTask = nil
+                    return
+                }
+
+                self.languageEnsureQuietPendingDestination = nil
+                self.languageEnsureQuietSkipLogged = false
+
+                let ownedVisual = self.currentActivity?.content.state.visualState
+                let languageLags = true
+                let visualLags = Self.shouldEnsureAuthoritativePlayingContent(
+                    actorVisual: actorVisual,
+                    streamSwitchHold: hold,
+                    isConnectingPlayback: connecting,
+                    lastPushedVisual: self.lastPushedContent?.visualState,
+                    ownedVisual: ownedVisual
+                )
+                // Both axes lag → one dual-axis co-push (not language then playing short budgets).
+                if Self.shouldRunPostQuietLongHorizonDualAxisEnsure(
+                    languageStillLags: languageLags,
+                    visualStillLags: visualLags,
+                    actorVisual: actorVisual,
+                    isStreamSwitchHoldActive: hold,
+                    isConnectingPlayback: connecting
+                ) {
+                    self.playingEnsureQuietPending = false
+                    self.playingEnsureQuietSkipLogged = false
+                    #if DEBUG
+                    print(
+                        "🔴 Live Activity post-quiet long-horizon dual-axis ensure retry " +
+                        "\(attempt)/\(maxAttempts) (via language rail) destination=\(destination) " +
+                        "ownedLang=\(ownedLanguage ?? "nil") ownedVisual=\(String(describing: ownedVisual))"
+                    )
+                    #endif
+                    await self.ensureAuthoritativeDualAxisContentIfNeeded()
+                    let acceptedLangAfterDual = self.currentActivity?.content.state.currentLanguage
+                    if acceptedLangAfterDual == destination {
+                        self.languageEnsureQuietPendingDestination = nil
+                        self.languageEnsureQuietSkipLogged = false
+                        self.languageSettledAcceptanceConsumedDestination = nil
+                        self.postQuietLongHorizonLanguageEnsureTask = nil
+                        return
+                    }
+                    let eligibleAfterDual = Self.isInteractiveLiveActivityRequestEligible(
+                        areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                        isApplicationActive: UIApplication.shared.applicationState == .active
+                    )
+                    if !eligibleAfterDual {
+                        self.languageEnsureQuietPendingDestination = destination
+                        self.languageEnsureQuietSkipLogged = false
+                        self.pendingInteractiveLiveActivityEnsure = true
+                    }
+                    continue
+                }
+
+                #if DEBUG
+                print(
+                    "🔴 Live Activity post-quiet long-horizon language ensure retry " +
+                    "\(attempt)/\(maxAttempts) destination=\(destination) owned=\(ownedLanguage ?? "nil")"
+                )
+                #endif
+
+                await self.ensureAuthoritativeLanguageContentIfNeeded()
+
+                let accepted = self.currentActivity?.content.state.currentLanguage
+                if accepted == destination {
+                    self.languageEnsureQuietPendingDestination = nil
+                    self.languageEnsureQuietSkipLogged = false
+                    self.languageSettledAcceptanceConsumedDestination = nil
+                    self.postQuietLongHorizonLanguageEnsureTask = nil
+                    return
+                }
+
+                let eligible = Self.isInteractiveLiveActivityRequestEligible(
+                    areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                    isApplicationActive: UIApplication.shared.applicationState == .active
+                )
+                if !eligible {
+                    self.languageEnsureQuietPendingDestination = destination
+                    self.languageEnsureQuietSkipLogged = false
+                    self.pendingInteractiveLiveActivityEnsure = true
+                }
+            }
+            self.postQuietLongHorizonLanguageEnsureTask = nil
+        }
+    }
+
+    /// Schedules sparse delayed **dual-axis** soft-ensure fires after quiet / settle still lags on both axes.
+    ///
+    /// Each fire clears both quiet flags once, runs one ``ensureAuthoritativeDualAxisContentIfNeeded()``,
+    /// then re-engages quiet between fires while ineligible. Logs dual-axis retries distinctly.
+    ///
+    /// - SeeAlso: ``postQuietLongHorizonEnsureDelayedIntervalsMilliseconds``,
+    ///   ``armPostQuietLongHorizonDualAxisEnsureIfNeeded()``,
+    ///   ``ensureAuthoritativeDualAxisContentIfNeeded()``.
+    @MainActor
+    private func schedulePostQuietLongHorizonDualAxisEnsure() {
+        cancelPostQuietLongHorizonDualAxisEnsure()
+        postQuietLongHorizonDualAxisEnsureGeneration &+= 1
+        let generation = postQuietLongHorizonDualAxisEnsureGeneration
+        let intervals = Self.postQuietLongHorizonEnsureDelayedIntervalsMilliseconds
+        let maxAttempts = min(Self.postQuietLongHorizonEnsureMaxDelayedAttempts, intervals.count)
+        guard maxAttempts > 0 else { return }
+
+        postQuietLongHorizonDualAxisEnsureTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for attempt in 1...maxAttempts {
+                let delayMs = intervals[attempt - 1]
+                try? await Task.sleep(for: .milliseconds(delayMs))
+                guard !Task.isCancelled else { return }
+                guard generation == self.postQuietLongHorizonDualAxisEnsureGeneration else { return }
+                if SharedPlayerManager.isRunningInUITestMode { return }
+                #if DEBUG
+                if self.isRunningUnderTest { return }
+                #endif
+                guard self.currentActivity != nil else {
+                    self.postQuietLongHorizonDualAxisEnsureTask = nil
+                    return
+                }
+
+                let manager = SharedPlayerManager.shared
+                let destination = await manager.liveActivityLanguageCodeForContentPush()
+                let hold = await manager.isStreamSwitchPrePlayHoldActive
+                let connecting = await manager.isConnectingPlayback
+                let actorVisual = await manager.currentVisualState
+                let ownedLanguage = self.currentActivity?.content.state.currentLanguage
+                let ownedVisual = self.currentActivity?.content.state.visualState
+                let languageLags = Self.shouldEnsureAuthoritativeLanguageContent(
+                    destinationLanguage: destination,
+                    ownedContentLanguage: ownedLanguage,
+                    lastPushedLanguage: self.lastPushedContent?.currentLanguage
+                )
+                let visualLags = Self.shouldEnsureAuthoritativePlayingContent(
+                    actorVisual: actorVisual,
+                    streamSwitchHold: hold,
+                    isConnectingPlayback: connecting,
+                    lastPushedVisual: self.lastPushedContent?.visualState,
+                    ownedVisual: ownedVisual
+                )
+
+                if Self.shouldCancelPostQuietLongHorizonDualAxisEnsure(
+                    hasCurrentActivity: self.currentActivity != nil,
+                    languageStillLags: languageLags,
+                    visualStillLags: visualLags,
+                    actorVisual: actorVisual
+                ) {
+                    if !languageLags {
+                        self.languageEnsureQuietPendingDestination = nil
+                        self.languageEnsureQuietSkipLogged = false
+                        self.languageSettledAcceptanceConsumedDestination = nil
+                    }
+                    if !visualLags {
+                        self.playingEnsureQuietPending = false
+                        self.playingEnsureQuietSkipLogged = false
+                        self.playingSettledAcceptanceConsumed = false
+                        self.dualAxisSettledAcceptanceConsumed = false
+                    }
+                    self.postQuietLongHorizonDualAxisExhausted = false
+                    self.postQuietLongHorizonDualAxisEnsureTask = nil
+                    // Residual single-axis lag — hand off to single-axis rail.
+                    if languageLags {
+                        await self.armPostQuietLongHorizonLanguageEnsureIfNeeded()
+                    }
+                    if visualLags {
+                        await self.armPostQuietLongHorizonPlayingEnsureIfNeeded()
+                    }
+                    return
+                }
+
+                guard Self.shouldContinuePostQuietLongHorizonDualAxisEnsure(
+                    hasCurrentActivity: true,
+                    languageStillLags: languageLags,
+                    visualStillLags: visualLags,
+                    actorVisual: actorVisual,
+                    isStreamSwitchHoldActive: hold,
+                    isConnectingPlayback: connecting
+                ) else {
+                    // Only one axis still lags (or hold re-armed) — hand off single-axis rails.
+                    self.postQuietLongHorizonDualAxisEnsureTask = nil
+                    if languageLags {
+                        await self.armPostQuietLongHorizonLanguageEnsureIfNeeded()
+                    }
+                    if visualLags {
+                        await self.armPostQuietLongHorizonPlayingEnsureIfNeeded()
+                    }
+                    return
+                }
+
+                // One dual quiet clear per fire.
+                self.playingEnsureQuietPending = false
+                self.playingEnsureQuietSkipLogged = false
+                self.languageEnsureQuietPendingDestination = nil
+                self.languageEnsureQuietSkipLogged = false
+
+                #if DEBUG
+                print(
+                    "🔴 Live Activity post-quiet long-horizon dual-axis ensure retry " +
+                    "\(attempt)/\(maxAttempts) destination=\(destination) " +
+                    "ownedLang=\(ownedLanguage ?? "nil") ownedVisual=\(String(describing: ownedVisual))"
+                )
+                #endif
+
+                await self.ensureAuthoritativeDualAxisContentIfNeeded()
+
+                let acceptedLang = self.currentActivity?.content.state.currentLanguage
+                let acceptedVisual = self.currentActivity?.content.state.visualState
+                let stillLanguageLags = Self.shouldEnsureAuthoritativeLanguageContent(
+                    destinationLanguage: destination,
+                    ownedContentLanguage: acceptedLang,
+                    lastPushedLanguage: self.lastPushedContent?.currentLanguage
+                )
+                let stillVisualLags = Self.shouldEnsureAuthoritativePlayingContent(
+                    actorVisual: await manager.currentVisualState,
+                    streamSwitchHold: await manager.isStreamSwitchPrePlayHoldActive,
+                    isConnectingPlayback: await manager.isConnectingPlayback,
+                    lastPushedVisual: self.lastPushedContent?.visualState,
+                    ownedVisual: acceptedVisual
+                )
+                if !stillLanguageLags && !stillVisualLags {
+                    self.languageEnsureQuietPendingDestination = nil
+                    self.playingEnsureQuietPending = false
+                    self.languageSettledAcceptanceConsumedDestination = nil
+                    self.playingSettledAcceptanceConsumed = false
+                    self.dualAxisSettledAcceptanceConsumed = false
+                    self.postQuietLongHorizonDualAxisExhausted = false
+                    self.postQuietLongHorizonDualAxisEnsureTask = nil
+                    return
+                }
+
+                let eligible = Self.isInteractiveLiveActivityRequestEligible(
+                    areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                    isApplicationActive: UIApplication.shared.applicationState == .active
+                )
+                if !eligible {
+                    if stillLanguageLags {
+                        self.languageEnsureQuietPendingDestination = destination
+                        self.languageEnsureQuietSkipLogged = false
+                    }
+                    if stillVisualLags {
+                        self.playingEnsureQuietPending = true
+                        self.playingEnsureQuietSkipLogged = false
+                    }
+                    self.pendingInteractiveLiveActivityEnsure = true
+                }
+                // Last fire without acceptance → mark dual-axis exhaust for presentable recovery.
+                if attempt == maxAttempts,
+                   Self.shouldMarkDualAxisLongHorizonExhausted(
+                    languageStillLags: stillLanguageLags,
+                    visualStillLags: stillVisualLags,
+                    isRequestEligible: eligible
+                   ) {
+                    self.postQuietLongHorizonDualAxisExhausted = true
+                    self.pendingInteractiveLiveActivityEnsure = true
+                    #if DEBUG
+                    print(
+                        "🔴 Live Activity dual-axis long-horizon exhausted " +
+                        "(languageLags=\(stillLanguageLags) visualLags=\(stillVisualLags); " +
+                        "pending presentable ensure; recreation remains eligibility-gated)"
+                    )
+                    #endif
+                }
+            }
+            self.postQuietLongHorizonDualAxisEnsureTask = nil
+        }
+    }
+
+    /// Soft dual-axis ContentState ensure: destination language **and** authoritative playing visual
+    /// in one soft-push loop (not sequential single-axis budgets that each re-quiet).
+    ///
+    /// Clears both quiet flags, runs up to ``authoritativePlayingContentEnsureMaxAttempts``
+    /// ``updateCurrentActivity()`` pushes (candidate always carries both axes), and re-engages
+    /// quiet only for still-lagging axes after the budget. Does **not** invent `.playing` during
+    /// hold/connect. Does **not** end+request.
+    ///
+    /// - SeeAlso: ``pushSettledDualAxisAcceptanceContentIfNeeded()``,
+    ///   ``schedulePostQuietLongHorizonDualAxisEnsure()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    func ensureAuthoritativeDualAxisContentIfNeeded() async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        guard currentActivity != nil else { return }
+
+        let manager = SharedPlayerManager.shared
+        let hold = await manager.isStreamSwitchPrePlayHoldActive
+        let connecting = await manager.isConnectingPlayback
+        let actorVisual = await manager.currentVisualState
+        // Never invent playing during Connecting honesty window.
+        guard actorVisual == .playing, !hold, !connecting else { return }
+
+        let destination = await manager.liveActivityLanguageCodeForContentPush()
+        let languageLags = Self.shouldEnsureAuthoritativeLanguageContent(
+            destinationLanguage: destination,
+            ownedContentLanguage: currentActivity?.content.state.currentLanguage,
+            lastPushedLanguage: lastPushedContent?.currentLanguage
+        )
+        let visualLags = Self.shouldEnsureAuthoritativePlayingContent(
+            actorVisual: actorVisual,
+            streamSwitchHold: hold,
+            isConnectingPlayback: connecting,
+            lastPushedVisual: lastPushedContent?.visualState,
+            ownedVisual: currentActivity?.content.state.visualState
+        )
+        guard languageLags || visualLags else {
+            languageEnsureQuietPendingDestination = nil
+            playingEnsureQuietPending = false
+            postQuietLongHorizonDualAxisExhausted = false
+            cancelPostQuietLongHorizonDualAxisEnsure()
+            return
+        }
+
+        // Clear both quiets so updateCurrentActivity is not deferred on either axis.
+        languageEnsureQuietPendingDestination = nil
+        languageEnsureQuietSkipLogged = false
+        playingEnsureQuietPending = false
+        playingEnsureQuietSkipLogged = false
+
+        guard Self.shouldStartAuthoritativeContentEnsureSoftPushLoop(
+            softPushesAlreadyInFlight: dualAxisEnsureSoftPushesInFlight
+        ) else {
+            return
+        }
+        dualAxisEnsureSoftPushesInFlight = true
+        defer { dualAxisEnsureSoftPushesInFlight = false }
+
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+
+        for attempt in 1...Self.authoritativePlayingContentEnsureMaxAttempts {
+            guard currentActivity != nil else { return }
+
+            let loopHold = await manager.isStreamSwitchPrePlayHoldActive
+            let loopConnecting = await manager.isConnectingPlayback
+            let loopActor = await manager.currentVisualState
+            guard loopActor == .playing, !loopHold, !loopConnecting else { return }
+
+            #if DEBUG
+            print(
+                "🔴 Live Activity dual-axis ensure " +
+                "attempt=\(attempt)/\(Self.authoritativePlayingContentEnsureMaxAttempts) " +
+                "ownedLang=\(currentActivity?.content.state.currentLanguage ?? "nil") " +
+                "ownedVisual=\(String(describing: currentActivity?.content.state.visualState))"
+            )
+            #endif
+            await updateCurrentActivity()
+
+            let acceptedLang = currentActivity?.content.state.currentLanguage
+            let acceptedVisual = currentActivity?.content.state.visualState
+            let dest = await manager.liveActivityLanguageCodeForContentPush()
+            let stillLang = Self.shouldEnsureAuthoritativeLanguageContent(
+                destinationLanguage: dest,
+                ownedContentLanguage: acceptedLang,
+                lastPushedLanguage: lastPushedContent?.currentLanguage
+            )
+            let stillVisual = Self.shouldEnsureAuthoritativePlayingContent(
+                actorVisual: await manager.currentVisualState,
+                streamSwitchHold: await manager.isStreamSwitchPrePlayHoldActive,
+                isConnectingPlayback: await manager.isConnectingPlayback,
+                lastPushedVisual: lastPushedContent?.visualState,
+                ownedVisual: acceptedVisual
+            )
+            if !stillLang && !stillVisual {
+                languageEnsureQuietPendingDestination = nil
+                playingEnsureQuietPending = false
+                languageSettledAcceptanceConsumedDestination = nil
+                playingSettledAcceptanceConsumed = false
+                dualAxisSettledAcceptanceConsumed = false
+                postQuietLongHorizonDualAxisExhausted = false
+                cancelAllPostQuietLongHorizonEnsure()
+                return
+            }
+            if let delayMs = Self.softEnsureInterAttemptDelayMilliseconds(
+                attempt: attempt,
+                maxAttempts: Self.authoritativePlayingContentEnsureMaxAttempts,
+                isRequestEligible: requestEligible
+            ) {
+                await Task.yield()
+                try? await Task.sleep(for: .milliseconds(delayMs))
+            }
+        }
+
+        // Soft dual budget exhausted — re-quiet only lagging axes while ineligible.
+        let finalDest = await manager.liveActivityLanguageCodeForContentPush()
+        let finalLangLags = Self.shouldEnsureAuthoritativeLanguageContent(
+            destinationLanguage: finalDest,
+            ownedContentLanguage: currentActivity?.content.state.currentLanguage,
+            lastPushedLanguage: lastPushedContent?.currentLanguage
+        )
+        let finalVisualLags = Self.shouldEnsureAuthoritativePlayingContent(
+            actorVisual: await manager.currentVisualState,
+            streamSwitchHold: await manager.isStreamSwitchPrePlayHoldActive,
+            isConnectingPlayback: await manager.isConnectingPlayback,
+            lastPushedVisual: lastPushedContent?.visualState,
+            ownedVisual: currentActivity?.content.state.visualState
+        )
+        let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        if !eligibleAfter {
+            if finalLangLags {
+                languageEnsureQuietPendingDestination = finalDest
+                languageEnsureQuietSkipLogged = false
+            }
+            if finalVisualLags {
+                playingEnsureQuietPending = true
+                playingEnsureQuietSkipLogged = false
+            }
+            if finalLangLags || finalVisualLags {
+                pendingInteractiveLiveActivityEnsure = true
+            }
+        }
+    }
+
+    /// Post-hold dual-axis soft-ensure re-arm when owned visual is still Connecting (``.prePlay``)
+    /// while the actor is authoritative `.playing` (stream-attach prePlay stick).
+    ///
+    /// Co-pushes destination language and playing visual via ``ensureAuthoritativeDualAxisContentIfNeeded()``
+    /// so language-only then playing-only short budgets cannot re-quiet without a dual payload.
+    /// Consume-once while ineligible; arms dual-axis long-horizon when still lagging.
+    ///
+    /// - SeeAlso: ``shouldPushSettledDualAxisAcceptance(actorVisual:ownedContentVisual:destinationLanguage:isStreamSwitchHoldActive:isConnectingPlayback:settledAcceptanceConsumed:isRequestEligible:)``,
+    ///   ``ensureAuthoritativeDualAxisContentIfNeeded()``,
+    ///   ``pushSettledPlayingAcceptanceContentIfNeeded()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    func pushSettledDualAxisAcceptanceContentIfNeeded() async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        guard currentActivity != nil else { return }
+
+        let manager = SharedPlayerManager.shared
+        let actorVisual = await manager.currentVisualState
+        let hold = await manager.isStreamSwitchPrePlayHoldActive
+        let connecting = await manager.isConnectingPlayback
+        let ownedVisual = currentActivity?.content.state.visualState
+        let destination = await manager.liveActivityLanguageCodeForContentPush()
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+
+        if Self.shouldClearDualAxisSettledAcceptanceConsume(
+            settledAcceptanceConsumed: dualAxisSettledAcceptanceConsumed,
+            ownedOrSystemVisual: ownedVisual
+        ) {
+            dualAxisSettledAcceptanceConsumed = false
+        }
+
+        guard Self.shouldPushSettledDualAxisAcceptance(
+            actorVisual: actorVisual,
+            ownedContentVisual: ownedVisual,
+            destinationLanguage: destination,
+            isStreamSwitchHoldActive: hold,
+            isConnectingPlayback: connecting,
+            settledAcceptanceConsumed: dualAxisSettledAcceptanceConsumed,
+            isRequestEligible: requestEligible
+        ) else {
+            return
+        }
+
+        // Dual settle owns this prePlay cycle — cancel single-axis post-settled peers that
+        // would thrash after sequential settle, then run one dual-axis soft budget.
+        cancelPostSettledLanguageEnsureRetries()
+        cancelPostSettledPlayingEnsureRetries()
+        cancelAllPostQuietLongHorizonEnsure()
+        languageEnsureQuietPendingDestination = nil
+        languageEnsureQuietSkipLogged = false
+        playingEnsureQuietPending = false
+        playingEnsureQuietSkipLogged = false
+        if !requestEligible {
+            dualAxisSettledAcceptanceConsumed = true
+            // Peer consume markers so single-axis settle does not re-enter for the same freeze.
+            playingSettledAcceptanceConsumed = true
+            if !destination.isEmpty {
+                languageSettledAcceptanceConsumedDestination = destination
+            }
+        }
+
+        #if DEBUG
+        print(
+            "🔴 Live Activity settled dual-axis acceptance soft-ensure re-arm " +
+            "(actor=\(actorVisual) owned=\(String(describing: ownedVisual)) dest=\(destination); " +
+            "prePlay stick — co-push language + playing)"
+        )
+        #endif
+
+        await ensureAuthoritativeDualAxisContentIfNeeded()
+
+        let acceptedVisual = currentActivity?.content.state.visualState
+        let acceptedLang = currentActivity?.content.state.currentLanguage
+        let stillVisualLags = acceptedVisual == .prePlay || acceptedVisual == .userPaused
+            || (acceptedVisual != nil && acceptedVisual != .playing)
+        let stillLanguageLags = Self.shouldEnsureAuthoritativeLanguageContent(
+            destinationLanguage: destination,
+            ownedContentLanguage: acceptedLang,
+            lastPushedLanguage: lastPushedContent?.currentLanguage
+        )
+
+        if acceptedVisual == .playing && !stillLanguageLags {
+            dualAxisSettledAcceptanceConsumed = false
+            playingSettledAcceptanceConsumed = false
+            languageSettledAcceptanceConsumedDestination = nil
+            postQuietLongHorizonDualAxisExhausted = false
+            return
+        }
+
+        let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        if !eligibleAfter {
+            pendingInteractiveLiveActivityEnsure = true
+            #if DEBUG
+            print(
+                "🔴 Live Activity settled dual-axis acceptance still lagging " +
+                "(ownedVisual=\(String(describing: acceptedVisual)) ownedLang=\(acceptedLang ?? "nil"); " +
+                "dual-axis long-horizon armed; recreation remains eligibility-gated)"
+            )
+            #endif
+        }
+        // Arm dual-axis LH when both still lag; otherwise residual single-axis rails.
+        if stillLanguageLags && stillVisualLags {
+            await armPostQuietLongHorizonDualAxisEnsureIfNeeded()
+        } else {
+            if stillLanguageLags {
+                await armPostQuietLongHorizonLanguageEnsureIfNeeded()
+            }
+            if stillVisualLags {
+                await armPostQuietLongHorizonPlayingEnsureIfNeeded()
+            }
         }
     }
 
@@ -2573,7 +4631,7 @@ class RadioLiveActivityManager: ObservableObject {
             ownedContentLanguage: ownedLanguage,
             lastPushedLanguage: lastLanguage
         )
-        // Destination moved on or owned converged → drop quiet for the prior destination.
+        // Destination moved on or owned converged → drop quiet + long-horizon for the prior destination.
         if Self.shouldClearLanguageEnsureQuietPending(
             quietPendingDestination: languageEnsureQuietPendingDestination,
             destinationLanguage: destination,
@@ -2581,10 +4639,12 @@ class RadioLiveActivityManager: ObservableObject {
         ) {
             languageEnsureQuietPendingDestination = nil
             languageEnsureQuietSkipLogged = false
+            cancelPostQuietLongHorizonLanguageEnsure()
         }
         guard needsEnsure else {
             languageEnsureQuietPendingDestination = nil
             languageEnsureQuietSkipLogged = false
+            cancelPostQuietLongHorizonLanguageEnsure()
             return
         }
 
@@ -2610,6 +4670,7 @@ class RadioLiveActivityManager: ObservableObject {
                 )
             }
             #endif
+            await armPostQuietLongHorizonLanguageEnsureIfNeeded()
             return
         }
 
@@ -2660,11 +4721,21 @@ class RadioLiveActivityManager: ObservableObject {
             if acceptedLanguage == loopDestination {
                 languageEnsureQuietPendingDestination = nil
                 languageEnsureQuietSkipLogged = false
+                cancelPostQuietLongHorizonLanguageEnsure()
                 return
             }
-            if attempt < Self.authoritativeLanguageContentEnsureMaxAttempts {
+            // Eligibility-aware inter-attempt spacing (longer under continuous lock).
+            let loopEligible = Self.isInteractiveLiveActivityRequestEligible(
+                areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                isApplicationActive: UIApplication.shared.applicationState == .active
+            )
+            if let delayMs = Self.softEnsureInterAttemptDelayMilliseconds(
+                attempt: attempt,
+                maxAttempts: Self.authoritativeLanguageContentEnsureMaxAttempts,
+                isRequestEligible: loopEligible
+            ) {
                 await Task.yield()
-                try? await Task.sleep(for: .milliseconds(50))
+                try? await Task.sleep(for: .milliseconds(delayMs))
             }
         }
 
@@ -2695,6 +4766,8 @@ class RadioLiveActivityManager: ObservableObject {
                 "(destination=\(quietDestination); recreation remains eligibility-gated)"
             )
             #endif
+            // Quiet is thrash protection, not a permanent freeze under continuous lock.
+            await armPostQuietLongHorizonLanguageEnsureIfNeeded()
         }
     }
 
@@ -2900,20 +4973,27 @@ class RadioLiveActivityManager: ObservableObject {
         // AGENT NOTE: Both axes clear together — language-only unlock must not leave playing
         // quiet blocking visual recovery (and the reverse). Also clear settled language/playing
         // consume so presentable cycles can re-attempt high-signal acceptance if soft ensure
-        // still lags after unlock. Cancel delayed post-settled language retries — foreground
-        // soft ensure owns this presentable cycle.
+        // still lags after unlock. Cancel delayed post-settled + post-quiet long-horizon rails —
+        // foreground soft ensure owns this presentable cycle. Capture dual-axis LH exhaust so
+        // eligible recreation preference remains after soft ensure still fails.
+        let dualAxisExhaustedBeforePresentable = postQuietLongHorizonDualAxisExhausted
         cancelPostSettledLanguageEnsureRetries()
+        cancelPostSettledPlayingEnsureRetries()
+        cancelAllPostQuietLongHorizonEnsure()
         languageEnsureQuietPendingDestination = nil
         languageSettledAcceptanceConsumedDestination = nil
         playingEnsureQuietPending = false
         playingSettledAcceptanceConsumed = false
+        dualAxisSettledAcceptanceConsumed = false
         languageEnsureQuietSkipLogged = false
         playingEnsureQuietSkipLogged = false
+        postQuietLongHorizonDualAxisExhausted = false
         // New presentable cycle may re-announce deferred recreation if soft ensure still fails.
         lastLoggedStalledContentDiagnosticsSignature = nil
 
-        // Soft path first — never end the only card while ActivityKit may still accept updates.
-        // Language then visual so one ContentState push can co-converge both axes when possible.
+        // Soft path first — dual-axis when both lag, else language then visual.
+        // Never end the only card while ActivityKit may still accept updates.
+        await ensureAuthoritativeDualAxisContentIfNeeded()
         await ensureAuthoritativeLanguageContentIfNeeded()
         await ensureAuthoritativePlayingContentIfNeeded()
 
@@ -2947,20 +5027,30 @@ class RadioLiveActivityManager: ObservableObject {
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
 
-        guard Self.shouldRecreateAfterForegroundSoftEnsureFailed(
-            languageStillMismatches: languageStillMismatches,
-            playingStillStalled: playingStillStalled,
-            isRequestEligible: requestEligible,
-            recreationsAttempted: interactiveContentRecreationsAttempted
-        ) else {
+        let shouldRecreate =
+            Self.shouldPreferEligibleRecreateAfterDualAxisLongHorizonExhausted(
+                dualAxisExhausted: dualAxisExhaustedBeforePresentable,
+                languageStillLags: languageStillMismatches,
+                visualStillLags: playingStillStalled,
+                isRequestEligible: requestEligible,
+                recreationsAttempted: interactiveContentRecreationsAttempted
+            )
+            || Self.shouldRecreateAfterForegroundSoftEnsureFailed(
+                languageStillMismatches: languageStillMismatches,
+                playingStillStalled: playingStillStalled,
+                isRequestEligible: requestEligible,
+                recreationsAttempted: interactiveContentRecreationsAttempted
+            )
+        guard shouldRecreate else {
             return
         }
 
         #if DEBUG
         print(
             "🔴 Live Activity foreground soft ensure still lagged " +
-            "(language=\(languageStillMismatches) playing=\(playingStillStalled)); " +
-            "eligible recreation"
+            "(language=\(languageStillMismatches) playing=\(playingStillStalled)" +
+            (dualAxisExhaustedBeforePresentable ? "; dual-axis long-horizon was exhausted" : "") +
+            "); eligible recreation"
         )
         #endif
         // recreateInteractiveLiveActivityAfterStalledContent re-checks eligibility and never
@@ -2992,19 +5082,34 @@ class RadioLiveActivityManager: ObservableObject {
     func recordOptimisticToggleContent(visualState: PlayerVisualState) {
         // Control mutation re-arms playing ensure quiet and re-opens settled playing acceptance
         // so pause honesty and later soft-resume get a full post-hold settle window even after
-        // prior lock-stretch playing thrash.
+        // prior lock-stretch playing thrash. Cancel delayed post-settled playing retries for the
+        // prior play cycle — a new pause/play mutation owns recovery.
         playingEnsureQuietPending = false
         playingEnsureQuietSkipLogged = false
         playingSettledAcceptanceConsumed = false
+        dualAxisSettledAcceptanceConsumed = false
+        postQuietLongHorizonDualAxisExhausted = false
+        cancelPostSettledPlayingEnsureRetries()
+        // New pause/play mutation owns recovery — drop prior freeze long-horizon.
+        cancelPostQuietLongHorizonPlayingEnsure()
+        cancelPostQuietLongHorizonDualAxisEnsure()
         lastLoggedStalledContentDiagnosticsSignature = nil
         let metadata =
             lastPushedContent?.streamMetadata
             ?? currentActivity?.content.state.streamMetadata
             ?? SharedPlayerManager.loadPersistedStreamMetadata()
-        let language =
-            lastPushedContent?.currentLanguage
-            ?? currentActivity?.content.state.currentLanguage
-            ?? SharedPlayerManager.mainAppLiveActivityLanguageCode()
+        // Prefer stream-attach / durable mirror over lagging lastPushed language so pause after
+        // a stream switch cannot freeze prior-language suppress memory while the engine already
+        // plays the destination (device residual: lastPushed stayed prior across switch).
+        let resolved = Self.languageForOptimisticToggleContentAlignment(
+            lastPushedLanguage: lastPushedContent?.currentLanguage,
+            ownedContentLanguage: currentActivity?.content.state.currentLanguage,
+            selectedStreamLanguage: DirectStreamingPlayer.shared.selectedStream.languageCode,
+            durableLanguageMirror: SharedPlayerManager.loadLiveActivityLanguageMirror()
+        )
+        let language = resolved.isEmpty
+            ? SharedPlayerManager.mainAppLiveActivityLanguageCode()
+            : resolved
         lastPushedContent = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
             streamMetadata: metadata,
@@ -3073,11 +5178,19 @@ class RadioLiveActivityManager: ObservableObject {
         if languageSettledAcceptanceConsumedDestination != language {
             languageSettledAcceptanceConsumedDestination = nil
             cancelPostSettledLanguageEnsureRetries()
+            cancelPostQuietLongHorizonLanguageEnsure()
         }
-        // New stream-switch cycle re-arms playing ensure + settled playing acceptance.
+        // New stream-switch cycle re-arms playing ensure + settled playing/dual-axis acceptance
+        // and drops delayed playing retries + single/dual long-horizon for a prior play cycle.
+        // Fresh freeze generation for the new destination (multi-destination language stick).
         playingEnsureQuietPending = false
         playingEnsureQuietSkipLogged = false
         playingSettledAcceptanceConsumed = false
+        dualAxisSettledAcceptanceConsumed = false
+        postQuietLongHorizonDualAxisExhausted = false
+        cancelPostSettledPlayingEnsureRetries()
+        cancelPostQuietLongHorizonPlayingEnsure()
+        cancelPostQuietLongHorizonDualAxisEnsure()
         // New mutation may re-log stall diagnostics and re-announce deferred recreation once.
         lastLoggedStalledContentDiagnosticsSignature = nil
         lastPushedContent = LutheranRadioLiveActivityAttributes.ContentState(
@@ -3233,6 +5346,8 @@ class RadioLiveActivityManager: ObservableObject {
         // Defense-in-depth UI test isolation — no ActivityKit IPC under test hosts.
         if SharedPlayerManager.isRunningInUITestMode {
             cancelPostSettledLanguageEnsureRetries()
+            cancelPostSettledPlayingEnsureRetries()
+            cancelAllPostQuietLongHorizonEnsure()
             currentActivity = nil
             lastPushedContent = nil
             consecutiveStalledContentPushes = 0
@@ -3255,6 +5370,8 @@ class RadioLiveActivityManager: ObservableObject {
         #if DEBUG
         if isRunningUnderTest {
             cancelPostSettledLanguageEnsureRetries()
+            cancelPostSettledPlayingEnsureRetries()
+            cancelAllPostQuietLongHorizonEnsure()
             currentActivity = nil
             lastPushedContent = nil
             consecutiveStalledContentPushes = 0
@@ -3280,6 +5397,8 @@ class RadioLiveActivityManager: ObservableObject {
         let activities = collectActivitiesToEnd()
 
         cancelPostSettledLanguageEnsureRetries()
+        cancelPostSettledPlayingEnsureRetries()
+        cancelAllPostQuietLongHorizonEnsure()
         currentActivity = nil
         lastPushedContent = nil
         consecutiveStalledContentPushes = 0
@@ -3673,29 +5792,143 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// Keeps ``lastPushedContent`` aligned with the Live Activity surface so
     /// ``updateCurrentActivity()`` can suppress redundant `Activity.update` IPC.
-    /// Clears language-ensure quiet pending so a real acceptance moment re-arms soft
-    /// reconcile if destination still lags (or confirms convergence when it matches).
+    /// Axis-scoped heal (async): partial acceptance clears only the converged axis and
+    /// follow-through soft-ensures the lagging one — does **not** treat every yield as full heal.
+    ///
+    /// - SeeAlso: ``applySystemContentUpdateHeal(systemContent:)``,
+    ///   ``contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``.
     private func handleActivityContentUpdate(
         _ content: ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>
     ) {
         lastPushedContent = content.state
-        // System advanced content: clear stalled streak + recreation budget + ensure quiet.
-        consecutiveStalledContentPushes = 0
-        interactiveContentRecreationsAttempted = 0
-        // Any contentUpdates yield is an ActivityKit acceptance moment — drop quiet so a
-        // subsequent ensure can re-evaluate (or stay a no-op if language/visual already match).
-        // Also re-open settled language/playing acceptance for a later lag. Cancel delayed
-        // post-settled language retries when system has advanced (match or new acceptance).
-        cancelPostSettledLanguageEnsureRetries()
-        languageEnsureQuietPendingDestination = nil
-        languageSettledAcceptanceConsumedDestination = nil
-        playingEnsureQuietPending = false
-        playingSettledAcceptanceConsumed = false
-        languageEnsureQuietSkipLogged = false
-        playingEnsureQuietSkipLogged = false
-        lastLoggedStalledContentDiagnosticsSignature = nil
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(content.state.visualState)
         SharedPlayerManager.persistLiveActivityLanguageMirror(content.state.currentLanguage)
+        // Axis-aware heal needs actor SSOT (await hops) — schedule without blocking the
+        // contentUpdates consumer. Suppress memory already seeded above.
+        Task { @MainActor [weak self] in
+            await self?.applySystemContentUpdateHeal(systemContent: content.state)
+        }
+    }
+
+    /// Applies axis-scoped quiet / post-settled / stall-streak heal after system content yields.
+    ///
+    /// - Parameter systemContent: Latest `content.state` from ActivityKit.
+    /// - Postcondition: Converged axes clear quiet and cancel their post-settled tasks; lagging
+    ///   axes retain post-settled work or get follow-through soft ensure; stall streak resets
+    ///   only when the full candidate is no longer stalled. Never ends the interactive surface.
+    /// - SeeAlso: ``contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
+    ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   ``ensureAuthoritativeLanguageContentIfNeeded()``.
+    @MainActor
+    private func applySystemContentUpdateHeal(
+        systemContent: LutheranRadioLiveActivityAttributes.ContentState
+    ) async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        // Ownership may have ended between the yield and this task.
+        guard currentActivity != nil else { return }
+
+        let manager = SharedPlayerManager.shared
+        let destination = await manager.liveActivityLanguageCodeForContentPush()
+        let actorVisual = await manager.currentVisualState
+        let hold = await manager.isStreamSwitchPrePlayHoldActive
+        let connecting = await manager.isConnectingPlayback
+
+        let policy = Self.contentUpdateAxisHealPolicy(
+            systemLanguage: systemContent.currentLanguage,
+            systemVisual: systemContent.visualState,
+            destinationLanguage: destination,
+            actorVisual: actorVisual,
+            isStreamSwitchHoldActive: hold,
+            isConnectingPlayback: connecting
+        )
+
+        if policy.resetStalledStreakAndRecreationBudget {
+            consecutiveStalledContentPushes = 0
+            interactiveContentRecreationsAttempted = 0
+            lastLoggedStalledContentDiagnosticsSignature = nil
+        }
+
+        if policy.clearLanguageQuiet {
+            languageEnsureQuietPendingDestination = nil
+            languageEnsureQuietSkipLogged = false
+        }
+        if policy.clearLanguageSettleConsume {
+            languageSettledAcceptanceConsumedDestination = nil
+        }
+        if policy.cancelLanguagePostSettled {
+            cancelPostSettledLanguageEnsureRetries()
+        }
+
+        if policy.clearPlayingQuiet {
+            playingEnsureQuietPending = false
+            playingEnsureQuietSkipLogged = false
+        }
+        if policy.clearPlayingSettleConsume {
+            playingSettledAcceptanceConsumed = false
+        }
+        if policy.cancelPlayingPostSettled {
+            cancelPostSettledPlayingEnsureRetries()
+        }
+
+        #if DEBUG
+        if policy.shouldFollowThroughPlayingEnsure || policy.shouldFollowThroughLanguageEnsure {
+            print(
+                "🔴 Live Activity contentUpdates axis heal " +
+                "(langConverged=\(policy.languageConverged) playConverged=\(policy.playingConverged) " +
+                "followPlay=\(policy.shouldFollowThroughPlayingEnsure) " +
+                "followLang=\(policy.shouldFollowThroughLanguageEnsure) " +
+                "resetStreak=\(policy.resetStalledStreakAndRecreationBudget))"
+            )
+        }
+        #endif
+
+        // Language accepted with residual visual lag (device: de flag + prePlay glyph).
+        if policy.shouldFollowThroughPlayingEnsure {
+            playingEnsureQuietPending = false
+            playingEnsureQuietSkipLogged = false
+            await ensureAuthoritativePlayingContentIfNeeded()
+            let ownedVisual = currentActivity?.content.state.visualState
+            let actorAfter = await manager.currentVisualState
+            let holdAfter = await manager.isStreamSwitchPrePlayHoldActive
+            let connectingAfter = await manager.isConnectingPlayback
+            if Self.shouldSchedulePostSettledPlayingEnsureRetries(
+                hasCurrentActivity: currentActivity != nil,
+                actorVisual: actorAfter,
+                ownedContentVisual: ownedVisual,
+                isStreamSwitchHoldActive: holdAfter,
+                isConnectingPlayback: connectingAfter
+            ) {
+                schedulePostSettledPlayingEnsureRetriesIfNeeded()
+            }
+            // Keep playing long-horizon armed when visual still lags after axis follow-through.
+            if ownedVisual != .playing {
+                await armPostQuietLongHorizonPlayingEnsureIfNeeded()
+            }
+        }
+
+        // Playing accepted with residual language lag.
+        if policy.shouldFollowThroughLanguageEnsure {
+            languageEnsureQuietPendingDestination = nil
+            languageEnsureQuietSkipLogged = false
+            await ensureAuthoritativeLanguageContentIfNeeded()
+            let ownedLanguage = currentActivity?.content.state.currentLanguage
+            let destAfter = await manager.liveActivityLanguageCodeForContentPush()
+            let holdAfter = await manager.isStreamSwitchPrePlayHoldActive
+            if Self.shouldSchedulePostSettledLanguageEnsureRetries(
+                hasCurrentActivity: currentActivity != nil,
+                destinationLanguage: destAfter,
+                ownedContentLanguage: ownedLanguage,
+                isStreamSwitchHoldActive: holdAfter
+            ) {
+                schedulePostSettledLanguageEnsureRetriesIfNeeded(destination: destAfter)
+            }
+            if ownedLanguage != destAfter {
+                await armPostQuietLongHorizonLanguageEnsureIfNeeded()
+            }
+        }
     }
 
     /// Clears local activity tracking when attribute-events observation ends.
@@ -3707,6 +5940,8 @@ class RadioLiveActivityManager: ObservableObject {
         if _test_harnessSimulatesActiveActivity {
             _test_harnessSimulatesActiveActivity = false
             cancelPostSettledLanguageEnsureRetries()
+            cancelPostSettledPlayingEnsureRetries()
+            cancelAllPostQuietLongHorizonEnsure()
             currentActivity = nil
             lastPushedContent = nil
             consecutiveStalledContentPushes = 0
@@ -3727,6 +5962,8 @@ class RadioLiveActivityManager: ObservableObject {
         #endif
         guard currentActivity != nil else { return }
         cancelPostSettledLanguageEnsureRetries()
+        cancelPostSettledPlayingEnsureRetries()
+        cancelAllPostQuietLongHorizonEnsure()
         currentActivity = nil
         lastPushedContent = nil
         consecutiveStalledContentPushes = 0
@@ -3984,6 +6221,310 @@ class RadioLiveActivityManager: ObservableObject {
         )
     }
 
+    /// White-box seam: whether delayed post-settled playing soft-ensure retries should schedule.
+    func _test_shouldSchedulePostSettledPlayingEnsureRetries(
+        hasCurrentActivity: Bool,
+        actorVisual: PlayerVisualState,
+        ownedContentVisual: PlayerVisualState?,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        Self.shouldSchedulePostSettledPlayingEnsureRetries(
+            hasCurrentActivity: hasCurrentActivity,
+            actorVisual: actorVisual,
+            ownedContentVisual: ownedContentVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback
+        )
+    }
+
+    /// White-box seam: post-quiet long-horizon playing arm policy (no ActivityKit).
+    func _test_shouldArmPostQuietLongHorizonPlayingEnsure(
+        hasCurrentActivity: Bool,
+        isRequestEligible: Bool,
+        longHorizonAlreadyArmed: Bool,
+        actorVisual: PlayerVisualState,
+        lastPushedVisual: PlayerVisualState?,
+        ownedContentVisual: PlayerVisualState?,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        Self.shouldArmPostQuietLongHorizonPlayingEnsure(
+            hasCurrentActivity: hasCurrentActivity,
+            isRequestEligible: isRequestEligible,
+            longHorizonAlreadyArmed: longHorizonAlreadyArmed,
+            actorVisual: actorVisual,
+            lastPushedVisual: lastPushedVisual,
+            ownedContentVisual: ownedContentVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback
+        )
+    }
+
+    /// White-box seam: post-quiet long-horizon language arm policy (no ActivityKit).
+    func _test_shouldArmPostQuietLongHorizonLanguageEnsure(
+        hasCurrentActivity: Bool,
+        isRequestEligible: Bool,
+        longHorizonAlreadyArmed: Bool,
+        destinationLanguage: String,
+        lastPushedLanguage: String?,
+        ownedContentLanguage: String?,
+        isStreamSwitchHoldActive: Bool
+    ) -> Bool {
+        Self.shouldArmPostQuietLongHorizonLanguageEnsure(
+            hasCurrentActivity: hasCurrentActivity,
+            isRequestEligible: isRequestEligible,
+            longHorizonAlreadyArmed: longHorizonAlreadyArmed,
+            destinationLanguage: destinationLanguage,
+            lastPushedLanguage: lastPushedLanguage,
+            ownedContentLanguage: ownedContentLanguage,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive
+        )
+    }
+
+    /// White-box seam: cancel long-horizon playing policy.
+    func _test_shouldCancelPostQuietLongHorizonPlayingEnsure(
+        hasCurrentActivity: Bool,
+        ownedContentVisual: PlayerVisualState?,
+        actorVisual: PlayerVisualState
+    ) -> Bool {
+        Self.shouldCancelPostQuietLongHorizonPlayingEnsure(
+            hasCurrentActivity: hasCurrentActivity,
+            ownedContentVisual: ownedContentVisual,
+            actorVisual: actorVisual
+        )
+    }
+
+    /// White-box seam: cancel long-horizon language policy.
+    func _test_shouldCancelPostQuietLongHorizonLanguageEnsure(
+        hasCurrentActivity: Bool,
+        destinationLanguage: String,
+        ownedContentLanguage: String?
+    ) -> Bool {
+        Self.shouldCancelPostQuietLongHorizonLanguageEnsure(
+            hasCurrentActivity: hasCurrentActivity,
+            destinationLanguage: destinationLanguage,
+            ownedContentLanguage: ownedContentLanguage
+        )
+    }
+
+    /// White-box seam: dual-axis long-horizon fire policy.
+    func _test_shouldRunPostQuietLongHorizonDualAxisEnsure(
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        actorVisual: PlayerVisualState,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        Self.shouldRunPostQuietLongHorizonDualAxisEnsure(
+            languageStillLags: languageStillLags,
+            visualStillLags: visualStillLags,
+            actorVisual: actorVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback
+        )
+    }
+
+    /// White-box seam: clear language quiet on dual-axis long-horizon playing fire.
+    func _test_shouldClearLanguageQuietForDualAxisLongHorizonFire(
+        languageQuietPending: Bool,
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        actorVisual: PlayerVisualState,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        Self.shouldClearLanguageQuietForDualAxisLongHorizonFire(
+            languageQuietPending: languageQuietPending,
+            languageStillLags: languageStillLags,
+            visualStillLags: visualStillLags,
+            actorVisual: actorVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback
+        )
+    }
+
+    /// White-box seam: clear playing quiet on dual-axis long-horizon language fire.
+    func _test_shouldClearPlayingQuietForDualAxisLongHorizonFire(
+        playingQuietPending: Bool,
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        actorVisual: PlayerVisualState,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        Self.shouldClearPlayingQuietForDualAxisLongHorizonFire(
+            playingQuietPending: playingQuietPending,
+            languageStillLags: languageStillLags,
+            visualStillLags: visualStillLags,
+            actorVisual: actorVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback
+        )
+    }
+
+    /// White-box seam: arm playing long-horizon after quiet defer (C4).
+    func _test_shouldArmPostQuietLongHorizonPlayingEnsureAfterQuietDefer(
+        didDeferPlayingPushWhileQuiet: Bool,
+        hasCurrentActivity: Bool,
+        isRequestEligible: Bool,
+        longHorizonAlreadyArmed: Bool,
+        actorVisual: PlayerVisualState,
+        lastPushedVisual: PlayerVisualState?,
+        ownedContentVisual: PlayerVisualState?,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        Self.shouldArmPostQuietLongHorizonPlayingEnsureAfterQuietDefer(
+            didDeferPlayingPushWhileQuiet: didDeferPlayingPushWhileQuiet,
+            hasCurrentActivity: hasCurrentActivity,
+            isRequestEligible: isRequestEligible,
+            longHorizonAlreadyArmed: longHorizonAlreadyArmed,
+            actorVisual: actorVisual,
+            lastPushedVisual: lastPushedVisual,
+            ownedContentVisual: ownedContentVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback
+        )
+    }
+
+    /// White-box seam: whether playing long-horizon task is armed (task non-nil).
+    func _test_postQuietLongHorizonPlayingEnsureArmed() -> Bool {
+        postQuietLongHorizonPlayingEnsureTask != nil
+    }
+
+    /// White-box seam: whether language long-horizon task is armed (task non-nil).
+    func _test_postQuietLongHorizonLanguageEnsureArmed() -> Bool {
+        postQuietLongHorizonLanguageEnsureTask != nil
+    }
+
+    /// White-box seam: whether dual-axis long-horizon task is armed (task non-nil).
+    func _test_postQuietLongHorizonDualAxisEnsureArmed() -> Bool {
+        postQuietLongHorizonDualAxisEnsureTask != nil
+    }
+
+    /// White-box seam: dual-axis long-horizon arm policy.
+    func _test_shouldArmPostQuietLongHorizonDualAxisEnsure(
+        hasCurrentActivity: Bool,
+        isRequestEligible: Bool,
+        dualAxisAlreadyArmed: Bool,
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        actorVisual: PlayerVisualState,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> Bool {
+        Self.shouldArmPostQuietLongHorizonDualAxisEnsure(
+            hasCurrentActivity: hasCurrentActivity,
+            isRequestEligible: isRequestEligible,
+            dualAxisAlreadyArmed: dualAxisAlreadyArmed,
+            languageStillLags: languageStillLags,
+            visualStillLags: visualStillLags,
+            actorVisual: actorVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback
+        )
+    }
+
+    /// White-box seam: dual-axis long-horizon cancel policy.
+    func _test_shouldCancelPostQuietLongHorizonDualAxisEnsure(
+        hasCurrentActivity: Bool,
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        actorVisual: PlayerVisualState
+    ) -> Bool {
+        Self.shouldCancelPostQuietLongHorizonDualAxisEnsure(
+            hasCurrentActivity: hasCurrentActivity,
+            languageStillLags: languageStillLags,
+            visualStillLags: visualStillLags,
+            actorVisual: actorVisual
+        )
+    }
+
+    /// White-box seam: dual-axis long-horizon exhaust mark policy.
+    func _test_shouldMarkDualAxisLongHorizonExhausted(
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldMarkDualAxisLongHorizonExhausted(
+            languageStillLags: languageStillLags,
+            visualStillLags: visualStillLags,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: eligible recreate after dual-axis long-horizon exhaust.
+    func _test_shouldPreferEligibleRecreateAfterDualAxisLongHorizonExhausted(
+        dualAxisExhausted: Bool,
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        isRequestEligible: Bool,
+        recreationsAttempted: Int
+    ) -> Bool {
+        Self.shouldPreferEligibleRecreateAfterDualAxisLongHorizonExhausted(
+            dualAxisExhausted: dualAxisExhausted,
+            languageStillLags: languageStillLags,
+            visualStillLags: visualStillLags,
+            isRequestEligible: isRequestEligible,
+            recreationsAttempted: recreationsAttempted
+        )
+    }
+
+    /// White-box seam: settled dual-axis acceptance (prePlay stick) policy.
+    func _test_shouldPushSettledDualAxisAcceptance(
+        actorVisual: PlayerVisualState,
+        ownedContentVisual: PlayerVisualState?,
+        destinationLanguage: String,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool,
+        settledAcceptanceConsumed: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldPushSettledDualAxisAcceptance(
+            actorVisual: actorVisual,
+            ownedContentVisual: ownedContentVisual,
+            destinationLanguage: destinationLanguage,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback,
+            settledAcceptanceConsumed: settledAcceptanceConsumed,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: dual-axis settled consume clear policy.
+    func _test_shouldClearDualAxisSettledAcceptanceConsume(
+        settledAcceptanceConsumed: Bool,
+        ownedOrSystemVisual: PlayerVisualState?
+    ) -> Bool {
+        Self.shouldClearDualAxisSettledAcceptanceConsume(
+            settledAcceptanceConsumed: settledAcceptanceConsumed,
+            ownedOrSystemVisual: ownedOrSystemVisual
+        )
+    }
+
+    /// White-box seam: cancel all long-horizon rails (test sanitization).
+    func _test_cancelAllPostQuietLongHorizonEnsure() {
+        cancelAllPostQuietLongHorizonEnsure()
+        postQuietLongHorizonDualAxisExhausted = false
+        dualAxisSettledAcceptanceConsumed = false
+    }
+
+    /// White-box seam: optimistic toggle language alignment (no ActivityKit).
+    func _test_languageForOptimisticToggleContentAlignment(
+        lastPushedLanguage: String?,
+        ownedContentLanguage: String?,
+        selectedStreamLanguage: String,
+        durableLanguageMirror: String?
+    ) -> String {
+        Self.languageForOptimisticToggleContentAlignment(
+            lastPushedLanguage: lastPushedLanguage,
+            ownedContentLanguage: ownedContentLanguage,
+            selectedStreamLanguage: selectedStreamLanguage,
+            durableLanguageMirror: durableLanguageMirror
+        )
+    }
+
     /// White-box seam: read settled playing acceptance consume marker (no ActivityKit).
     func _test_playingSettledAcceptanceConsumedValue() -> Bool {
         playingSettledAcceptanceConsumed
@@ -4150,6 +6691,76 @@ class RadioLiveActivityManager: ObservableObject {
         accepted: LutheranRadioLiveActivityAttributes.ContentState
     ) -> Bool {
         Self.isStalledLiveActivityContentPush(candidate: candidate, accepted: accepted)
+    }
+
+    /// White-box seam: stall streak reset only on non-stalled acceptance.
+    func _test_shouldResetStalledContentStreak(
+        candidate: LutheranRadioLiveActivityAttributes.ContentState,
+        accepted: LutheranRadioLiveActivityAttributes.ContentState
+    ) -> Bool {
+        Self.shouldResetStalledContentStreak(candidate: candidate, accepted: accepted)
+    }
+
+    /// White-box seam: soft-ensure inter-attempt delay policy.
+    func _test_softEnsureInterAttemptDelayMilliseconds(
+        attempt: Int,
+        maxAttempts: Int,
+        isRequestEligible: Bool
+    ) -> UInt64? {
+        Self.softEnsureInterAttemptDelayMilliseconds(
+            attempt: attempt,
+            maxAttempts: maxAttempts,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: partial language acceptance re-arms playing ensure.
+    func _test_shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
+        candidateLanguage: String,
+        acceptedLanguage: String,
+        candidateVisual: PlayerVisualState,
+        acceptedVisual: PlayerVisualState
+    ) -> Bool {
+        Self.shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
+            candidateLanguage: candidateLanguage,
+            acceptedLanguage: acceptedLanguage,
+            candidateVisual: candidateVisual,
+            acceptedVisual: acceptedVisual
+        )
+    }
+
+    /// White-box seam: partial visual acceptance re-arms language ensure.
+    func _test_shouldRearmLanguageEnsureAfterPartialVisualAcceptance(
+        candidateLanguage: String,
+        acceptedLanguage: String,
+        candidateVisual: PlayerVisualState,
+        acceptedVisual: PlayerVisualState
+    ) -> Bool {
+        Self.shouldRearmLanguageEnsureAfterPartialVisualAcceptance(
+            candidateLanguage: candidateLanguage,
+            acceptedLanguage: acceptedLanguage,
+            candidateVisual: candidateVisual,
+            acceptedVisual: acceptedVisual
+        )
+    }
+
+    /// White-box seam: axis-scoped contentUpdates heal policy.
+    func _test_contentUpdateAxisHealPolicy(
+        systemLanguage: String,
+        systemVisual: PlayerVisualState,
+        destinationLanguage: String,
+        actorVisual: PlayerVisualState,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool
+    ) -> ContentUpdateAxisHealPolicy {
+        Self.contentUpdateAxisHealPolicy(
+            systemLanguage: systemLanguage,
+            systemVisual: systemVisual,
+            destinationLanguage: destinationLanguage,
+            actorVisual: actorVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback
+        )
     }
 
     /// White-box seam: recreate decision after a stalled content-push streak (streak/cap only).

@@ -1340,6 +1340,11 @@ extension SharedPlayerManager {
         // push with playing-quiet bypass once per play cycle while ineligible (consume-once
         // stops soft-resume thrash). Soft playing ensure remains a secondary soft budget when
         // quiet is not engaged; hold/connect still block inventing `.playing`. No end+request.
+        // Dual-axis settle first when owned visual is still Connecting (``.prePlay``) after
+        // stream attach — co-pushes destination language + playing so sequential single-axis
+        // short budgets cannot re-quiet without a dual payload. Soft-resume from ``.userPaused``
+        // still uses single-axis settled playing. Never invents `.playing` during hold/connect.
+        await RadioLiveActivityManager.shared.pushSettledDualAxisAcceptanceContentIfNeeded()
         await RadioLiveActivityManager.shared.pushSettledLanguageAcceptanceContentIfNeeded()
         await RadioLiveActivityManager.shared.pushSettledPlayingAcceptanceContentIfNeeded()
         await RadioLiveActivityManager.shared.ensureAuthoritativePlayingContentIfNeeded()
