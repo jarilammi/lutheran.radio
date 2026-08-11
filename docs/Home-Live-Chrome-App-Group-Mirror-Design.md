@@ -34,7 +34,7 @@ The incomplete half of that contract is live **cross-process paint**:
 | Surface | How it sees chrome today | Works while main is alive? |
 |---------|--------------------------|----------------------------|
 | Main app UI | Actor `currentVisualState` + session RAM | Yes |
-| Live Activity | ActivityKit `ContentState` + LA durable mirrors (not home-gated) | Yes when ActivityKit accepts; some widget playing switches while request-ineligible may lag language until become-active (home paint is independent) |
+| Live Activity | ActivityKit `ContentState` + LA durable mirrors (not home-gated) | Yes when ActivityKit accepts; continuous-lock lag (language/visual) may persist until become-active — **home paint is independent** and does not cause or heal LA acceptance residual |
 | Home / Control **Provider** | `loadPersistedWidgetState()` (**process-local RAM**) else factory `.prePlay` | **No** for main-app-driven transitions |
 | Program title on home | Session RAM then privacy-gated `homeWidgetStreamMetadata` | Yes (pattern to copy) |
 
@@ -55,7 +55,7 @@ Give home and Control **Providers** a **privacy-gated, short-lived, extension-re
 
 | Non-goal | Why |
 |----------|-----|
-| Fix LA lock-stretch ContentState acceptance | Separate ActivityKit surface; LA already has ContentState + ungated durable mirrors |
+| Fix LA lock-stretch ContentState acceptance | Separate ActivityKit surface; thrash smart-loosen shipped; acceptance residual still open under continuous lock — see [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) |
 | Collapse dual-path `WidgetRefreshManager` | Non-forcing architecture stays; mirror reduces *need* for complex execute-time authority later |
 | Fold instant-feedback triple “for simplicity” as the only fix | Instant feedback is language-only and ~15 s; not authoritative settle chrome |
 | Reintroduce full on-disk `PersistedWidgetState` blob | Too large; cold-launch restore temptation; OI-1 regression |
@@ -565,7 +565,7 @@ Self-contained manual checklist for §14. **Do not commit device logs**; absorb 
 
 Required delivery for this design is **PR1–PR4 + §14 eyes-on**. PR5 and interactive LIVE / open-host are follow-ons (now shipped).
 
-Do **not** mix Live Activity lock-stretch acceptance work into home live-chrome paint fixes.
+Do **not** mix Live Activity lock-stretch acceptance work into home live-chrome paint fixes. Installing or removing home widgets does **not** heal system-held LA `ContentState` lag under continuous lock (home WRM honesty ≠ ActivityKit acceptance).
 
 ---
 
