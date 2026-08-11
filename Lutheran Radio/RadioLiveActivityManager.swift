@@ -178,6 +178,23 @@ import WidgetSurface
 /// ``updateCurrentActivity()`` on true mutations (setPlaying, stop, metadata, switch) is
 /// unchanged.
 ///
+/// ## Continuous-lock ensure thrash smart-loosen (freeze generation + partial coarsen)
+/// Soft ensure, post-settled, partial re-arm, and long-horizon rails remain available, but under
+/// continuous lock they must not independently clear quiet and re-burn ActivityKit after every
+/// failed push. **Freeze-generation soft budget:** after a soft ensure cycle exhausts while
+/// request is ineligible, mark the freeze soft budget exhausted and keep quiet as cool-down
+/// until mutation, eligibility / become-active, or sparse long-horizon — not every partial
+/// re-arm. **Partial re-arm coarsen:** ``shouldRearmPlayingEnsureAfterPartialLanguageAcceptance``
+/// requires language **newly** converged this update (``didLanguageNewlyConverge``); same-stream
+/// visual stall (language already matched before the push) must not clear quiet, schedule
+/// post-settled, or re-arm long-horizon. True language-new wins get **one** delayed post-settled
+/// visual follow-through per freeze generation. Nested post-settled after soft-budget exhaust
+/// while ineligible is skipped for same-stream stalls (long-horizon owns residual). Eligible
+/// presentable cycles still soft-ensure fully; after freeze soft-budget and/or dual-axis
+/// long-horizon exhaust, become-active prefers eligible recreation when soft ensure still lags
+/// — **never** end only interactive LA solely for lag while request ineligible. Does **not**
+/// claim full ActivityKit continuous-lock paint guarantee.
+///
 /// ## Test Isolation
 /// All real Activity creation/update/timer paths are short-circuited under
 /// `isRunningUnderTest` (and the UITestMode SSOT) so that `xcodebuild test`
@@ -544,6 +561,33 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// Collapse concurrent dual-axis soft-push loops (same thrash shape as single-axis in-flight).
     private var dualAxisEnsureSoftPushesInFlight = false
+
+    /// Whether the continuous-lock ensure freeze soft budget already exhausted while request
+    /// was ineligible (quiet cool-down for this freeze generation).
+    ///
+    /// When true, same-stream partial re-arm must not clear quiet / nest post-settled; true
+    /// language-new partial wins still get **one** post-settled follow-through via
+    /// ``contentEnsureFreezePartialPostSettledScheduled``. Reset on play/toggle/switch mutation
+    /// and presentable foreground ensure. Never ends the interactive surface while ineligible.
+    ///
+    /// - SeeAlso: ``markContentEnsureFreezeSoftBudgetExhausted()``,
+    ///   ``resetContentEnsureFreezeGeneration()``,
+    ///   ``shouldSchedulePostSettledPlayingEnsureAfterSoftBudgetExhaust(baseShouldSchedule:isRequestEligible:languageNewlyConvergedThisFreeze:partialPostSettledAlreadyScheduled:)``.
+    private var contentEnsureFreezeSoftBudgetExhausted = false
+
+    /// Whether one true-partial delayed post-settled follow-through already scheduled for this
+    /// freeze generation (language-new or visual-new win). Prevents nested post-settled storms.
+    private var contentEnsureFreezePartialPostSettledScheduled = false
+
+    /// Destination language newly converged during this freeze generation (true partial win).
+    ///
+    /// Gates one post-settled visual follow-through after soft-budget exhaust while ineligible.
+    private var contentEnsureFreezeLanguageNewlyConverged = false
+
+    /// Playing visual newly converged during this freeze generation (true partial visual win).
+    ///
+    /// Gates one post-settled language follow-through after soft-budget exhaust while ineligible.
+    private var contentEnsureFreezeVisualNewlyConverged = false
 
     /// Inter-attempt sleep (ms) between soft-ensure pushes while interactive request is **eligible**.
     ///
@@ -1116,52 +1160,82 @@ class RadioLiveActivityManager: ObservableObject {
             playingSettledAcceptanceConsumed = false
         }
 
-        // Partial acceptance: language landed while visual still lags authoritative playing —
-        // re-arm playing quiet and schedule delayed playing ensure (do not call ensure inline;
-        // this path may already be inside a soft-push loop). Symmetric for language after
-        // visual-only acceptance. Never invent .playing; never end while ineligible.
-        if Self.shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
+        // Partial acceptance coarsen: only **true** language-new / visual-new wins re-arm.
+        // Same-stream visual stall (language already matched before the push) must not clear
+        // quiet, nest post-settled, or re-arm long-horizon — continuous-lock thrash amplifier.
+        // Do not call ensure inline (may already be inside a soft-push loop). Never invent
+        // .playing; never end while ineligible.
+        let partialLanguageRearm = Self.shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
             candidateLanguage: candidate.currentLanguage,
             acceptedLanguage: accepted.currentLanguage,
             candidateVisual: candidate.visualState,
-            acceptedVisual: accepted.visualState
+            acceptedVisual: accepted.visualState,
+            preUpdateOwnedLanguage: ownedLanguage
+        )
+        if partialLanguageRearm {
+            contentEnsureFreezeLanguageNewlyConverged = true
+        }
+        if Self.shouldClearPlayingEnsureQuietForPartialRearm(
+            shouldRearmFromPartialPolicy: partialLanguageRearm,
+            freezeSoftBudgetExhausted: contentEnsureFreezeSoftBudgetExhausted,
+            partialPostSettledAlreadyScheduled: contentEnsureFreezePartialPostSettledScheduled,
+            isRequestEligible: requestEligibleForQuiet
         ) {
             playingEnsureQuietPending = false
             playingEnsureQuietSkipLogged = false
-            if !playingEnsureSoftPushesInFlight {
+            if Self.shouldSchedulePostSettledAfterPartialLanguageWin(
+                shouldRearmFromPartialPolicy: partialLanguageRearm,
+                softPushesInFlight: playingEnsureSoftPushesInFlight,
+                partialPostSettledAlreadyScheduled: contentEnsureFreezePartialPostSettledScheduled,
+                isRequestEligible: requestEligibleForQuiet
+            ) {
                 schedulePostSettledPlayingEnsureRetriesIfNeeded()
+                contentEnsureFreezePartialPostSettledScheduled = true
             }
-            // Partial language win must keep/re-arm playing long-horizon (C2) — do not cancel it.
+            // True language-new win keeps/re-arms playing long-horizon — do not cancel it.
             await armPostQuietLongHorizonPlayingEnsureIfNeeded()
             #if DEBUG
             print(
-                "🔴 Live Activity partial acceptance — language matched; " +
+                "🔴 Live Activity partial acceptance — language newly converged; " +
                 "re-armed playing ensure (owned visual=\(accepted.visualState))"
             )
             #endif
         }
-        if Self.shouldRearmLanguageEnsureAfterPartialVisualAcceptance(
+        let partialVisualRearm = Self.shouldRearmLanguageEnsureAfterPartialVisualAcceptance(
             candidateLanguage: candidate.currentLanguage,
             acceptedLanguage: accepted.currentLanguage,
             candidateVisual: candidate.visualState,
-            acceptedVisual: accepted.visualState
-        ) {
-            languageEnsureQuietPendingDestination = nil
-            languageEnsureQuietSkipLogged = false
-            if !languageEnsureSoftPushesInFlight,
-               !candidate.currentLanguage.isEmpty {
-                schedulePostSettledLanguageEnsureRetriesIfNeeded(
-                    destination: candidate.currentLanguage
+            acceptedVisual: accepted.visualState,
+            preUpdateOwnedVisual: ownedVisual
+        )
+        if partialVisualRearm {
+            contentEnsureFreezeVisualNewlyConverged = true
+        }
+        if partialVisualRearm {
+            let allowLanguageQuietClear =
+                requestEligibleForQuiet
+                || !contentEnsureFreezeSoftBudgetExhausted
+                || !contentEnsureFreezePartialPostSettledScheduled
+            if allowLanguageQuietClear {
+                languageEnsureQuietPendingDestination = nil
+                languageEnsureQuietSkipLogged = false
+                if !languageEnsureSoftPushesInFlight,
+                   !candidate.currentLanguage.isEmpty,
+                   !contentEnsureFreezePartialPostSettledScheduled || requestEligibleForQuiet {
+                    schedulePostSettledLanguageEnsureRetriesIfNeeded(
+                        destination: candidate.currentLanguage
+                    )
+                    contentEnsureFreezePartialPostSettledScheduled = true
+                }
+                // True visual-new win keeps/re-arms language long-horizon.
+                await armPostQuietLongHorizonLanguageEnsureIfNeeded()
+                #if DEBUG
+                print(
+                    "🔴 Live Activity partial acceptance — visual newly converged; " +
+                    "re-armed language ensure (owned language=\(accepted.currentLanguage))"
                 )
+                #endif
             }
-            // Partial visual win must keep/re-arm language long-horizon (C3).
-            await armPostQuietLongHorizonLanguageEnsureIfNeeded()
-            #if DEBUG
-            print(
-                "🔴 Live Activity partial acceptance — visual matched; " +
-                "re-armed language ensure (owned language=\(accepted.currentLanguage))"
-            )
-            #endif
         }
 
         let contentStalled = Self.isStalledLiveActivityContentPush(
@@ -1360,37 +1434,194 @@ class RadioLiveActivityManager: ObservableObject {
         return delays[delays.count - 1]
     }
 
-    /// Whether language matched while visual still needs authoritative `.playing` repair.
+    /// Whether owned language **newly** converged to the candidate destination this update.
     ///
-    /// Device residual: system accepts destination language with Connecting (``.prePlay``) or
-    /// pause chrome while audio is already playing — re-arm playing ensure without treating
+    /// - Parameters:
+    ///   - preUpdateOwnedLanguage: System-held language **before** the `Activity.update`.
+    ///   - acceptedLanguage: System-held language after the update (or contentUpdates yield).
+    ///   - candidateLanguage: Destination language submitted / actor SSOT.
+    /// - Returns: `true` when accepted equals non-empty candidate and pre-update owned differed.
+    /// - SeeAlso: ``shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(candidateLanguage:acceptedLanguage:candidateVisual:acceptedVisual:preUpdateOwnedLanguage:)``.
+    static func didLanguageNewlyConverge(
+        preUpdateOwnedLanguage: String,
+        acceptedLanguage: String,
+        candidateLanguage: String
+    ) -> Bool {
+        guard !candidateLanguage.isEmpty else { return false }
+        guard acceptedLanguage == candidateLanguage else { return false }
+        return preUpdateOwnedLanguage != candidateLanguage
+    }
+
+    /// Whether owned visual **newly** converged to the candidate visual this update.
+    ///
+    /// - SeeAlso: ``shouldRearmLanguageEnsureAfterPartialVisualAcceptance(candidateLanguage:acceptedLanguage:candidateVisual:acceptedVisual:preUpdateOwnedVisual:)``.
+    static func didVisualNewlyConverge(
+        preUpdateOwnedVisual: PlayerVisualState,
+        acceptedVisual: PlayerVisualState,
+        candidateVisual: PlayerVisualState
+    ) -> Bool {
+        guard acceptedVisual == candidateVisual else { return false }
+        return preUpdateOwnedVisual != candidateVisual
+    }
+
+    /// Whether language **newly** converged while visual still needs authoritative `.playing` repair.
+    ///
+    /// True partial win: system advances destination language with Connecting (``.prePlay``) or
+    /// pause chrome while audio is already playing — re-arm playing ensure once without treating
     /// the language win as a full surface heal.
     ///
-    /// - SeeAlso: ``contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
-    ///   ``updateCurrentActivity()``.
+    /// Same-stream visual stall (language already matched **before** the push) must **not**
+    /// re-arm: every failed playing push previously cleared quiet, scheduled post-settled, and
+    /// armed long-horizon — continuous-lock thrash without improving ActivityKit acceptance.
+    ///
+    /// - Parameters:
+    ///   - preUpdateOwnedLanguage: System-held language before the update (required for coarsen).
+    /// - SeeAlso: ``didLanguageNewlyConverge(preUpdateOwnedLanguage:acceptedLanguage:candidateLanguage:)``,
+    ///   ``contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:priorObservedLanguage:priorObservedVisual:)``,
+    ///   ``updateCurrentActivity()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
         candidateLanguage: String,
         acceptedLanguage: String,
         candidateVisual: PlayerVisualState,
-        acceptedVisual: PlayerVisualState
+        acceptedVisual: PlayerVisualState,
+        preUpdateOwnedLanguage: String
     ) -> Bool {
-        guard !candidateLanguage.isEmpty, acceptedLanguage == candidateLanguage else { return false }
+        guard didLanguageNewlyConverge(
+            preUpdateOwnedLanguage: preUpdateOwnedLanguage,
+            acceptedLanguage: acceptedLanguage,
+            candidateLanguage: candidateLanguage
+        ) else { return false }
         guard candidateVisual == .playing else { return false }
         return acceptedVisual != .playing
     }
 
-    /// Whether visual matched while language still lags destination.
+    /// Whether visual **newly** converged while language still lags destination.
     ///
-    /// - SeeAlso: ``shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(candidateLanguage:acceptedLanguage:candidateVisual:acceptedVisual:)``.
+    /// Same-axis stall (visual already matched before the push) must not re-arm language ensure.
+    ///
+    /// - SeeAlso: ``shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(candidateLanguage:acceptedLanguage:candidateVisual:acceptedVisual:preUpdateOwnedLanguage:)``,
+    ///   ``didVisualNewlyConverge(preUpdateOwnedVisual:acceptedVisual:candidateVisual:)``.
     static func shouldRearmLanguageEnsureAfterPartialVisualAcceptance(
         candidateLanguage: String,
         acceptedLanguage: String,
         candidateVisual: PlayerVisualState,
-        acceptedVisual: PlayerVisualState
+        acceptedVisual: PlayerVisualState,
+        preUpdateOwnedVisual: PlayerVisualState
     ) -> Bool {
-        guard candidateVisual == acceptedVisual else { return false }
+        guard didVisualNewlyConverge(
+            preUpdateOwnedVisual: preUpdateOwnedVisual,
+            acceptedVisual: acceptedVisual,
+            candidateVisual: candidateVisual
+        ) else { return false }
         guard !candidateLanguage.isEmpty else { return false }
         return acceptedLanguage != candidateLanguage
+    }
+
+    /// Whether a true partial re-arm may clear playing quiet for one follow-through.
+    ///
+    /// - Parameters:
+    ///   - shouldRearmFromPartialPolicy: ``shouldRearmPlayingEnsureAfterPartialLanguageAcceptance``.
+    ///   - freezeSoftBudgetExhausted: Soft ensure already exhausted this freeze while ineligible.
+    ///   - partialPostSettledAlreadyScheduled: One true-partial post-settled already used.
+    ///   - isRequestEligible: Presentable / eligible cycles always allow quiet clear.
+    /// - Returns: `true` when quiet may clear for partial follow-through.
+    /// - SeeAlso: ``shouldSchedulePostSettledAfterPartialLanguageWin(shouldRearmFromPartialPolicy:softPushesInFlight:partialPostSettledAlreadyScheduled:isRequestEligible:)``.
+    static func shouldClearPlayingEnsureQuietForPartialRearm(
+        shouldRearmFromPartialPolicy: Bool,
+        freezeSoftBudgetExhausted: Bool,
+        partialPostSettledAlreadyScheduled: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard shouldRearmFromPartialPolicy else { return false }
+        if isRequestEligible { return true }
+        if freezeSoftBudgetExhausted && partialPostSettledAlreadyScheduled {
+            return false
+        }
+        return true
+    }
+
+    /// Whether to schedule **one** delayed post-settled playing ensure after a true language-new win.
+    ///
+    /// - Note: Never schedules mid soft-push loop (``softPushesInFlight``); never nests a second
+    ///   post-settled while ineligible after the freeze already used its partial follow-through.
+    static func shouldSchedulePostSettledAfterPartialLanguageWin(
+        shouldRearmFromPartialPolicy: Bool,
+        softPushesInFlight: Bool,
+        partialPostSettledAlreadyScheduled: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard shouldRearmFromPartialPolicy else { return false }
+        guard !softPushesInFlight else { return false }
+        if partialPostSettledAlreadyScheduled && !isRequestEligible { return false }
+        return true
+    }
+
+    /// Whether nested post-settled playing ensure may arm after soft-budget exhaust while locked.
+    ///
+    /// Eligible cycles keep post-settled for unlock heal. While ineligible, only a **true**
+    /// language-new partial win (not yet follow-throughed) may schedule post-settled; same-stream
+    /// visual stall skips nested post-settled so sparse long-horizon owns residual.
+    ///
+    /// - SeeAlso: ``shouldSchedulePostSettledPlayingEnsureRetries(hasCurrentActivity:actorVisual:ownedContentVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
+    ///   ``armPostQuietLongHorizonPlayingEnsureIfNeeded()``.
+    static func shouldSchedulePostSettledPlayingEnsureAfterSoftBudgetExhaust(
+        baseShouldSchedule: Bool,
+        isRequestEligible: Bool,
+        languageNewlyConvergedThisFreeze: Bool,
+        partialPostSettledAlreadyScheduled: Bool
+    ) -> Bool {
+        guard baseShouldSchedule else { return false }
+        if isRequestEligible { return true }
+        if languageNewlyConvergedThisFreeze && !partialPostSettledAlreadyScheduled {
+            return true
+        }
+        return false
+    }
+
+    /// Whether nested post-settled language ensure may arm after soft-budget exhaust while locked.
+    ///
+    /// Symmetric to playing: true visual-new partial win gets one language follow-through;
+    /// pure language stall under continuous lock prefers long-horizon over nested post-settled.
+    static func shouldSchedulePostSettledLanguageEnsureAfterSoftBudgetExhaust(
+        baseShouldSchedule: Bool,
+        isRequestEligible: Bool,
+        visualNewlyConvergedThisFreeze: Bool,
+        partialPostSettledAlreadyScheduled: Bool
+    ) -> Bool {
+        guard baseShouldSchedule else { return false }
+        if isRequestEligible { return true }
+        if visualNewlyConvergedThisFreeze && !partialPostSettledAlreadyScheduled {
+            return true
+        }
+        return false
+    }
+
+    /// Whether eligible-only recreation after foreground soft ensure should prefer hard heal
+    /// after continuous-lock freeze soft-budget and/or dual-axis long-horizon exhaust.
+    ///
+    /// Strengthens presentable recovery when mid-lock soft budgets already burned without owned
+    /// acceptance — still **never** recreates while request is ineligible.
+    ///
+    /// - SeeAlso: ``shouldPreferEligibleRecreateAfterDualAxisLongHorizonExhausted(dualAxisExhausted:languageStillLags:visualStillLags:isRequestEligible:recreationsAttempted:maxRecreations:)``,
+    ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``.
+    static func shouldPreferEligibleRecreateAfterContentEnsureFreezeExhausted(
+        freezeSoftBudgetExhausted: Bool,
+        dualAxisExhausted: Bool,
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        isRequestEligible: Bool,
+        recreationsAttempted: Int,
+        maxRecreations: Int = RadioLiveActivityManager.maxInteractiveContentRecreations
+    ) -> Bool {
+        guard freezeSoftBudgetExhausted || dualAxisExhausted else { return false }
+        return shouldRecreateAfterForegroundSoftEnsureFailed(
+            languageStillMismatches: languageStillLags,
+            playingStillStalled: visualStillLags,
+            isRequestEligible: isRequestEligible,
+            recreationsAttempted: recreationsAttempted,
+            maxRecreations: maxRecreations
+        )
     }
 
     /// Axis-scoped heal decisions after a system `contentUpdates` yield or equivalent observation.
@@ -1432,15 +1663,23 @@ class RadioLiveActivityManager: ObservableObject {
     ///   - actorVisual: ``SharedPlayerManager/currentVisualState``.
     ///   - isStreamSwitchHoldActive: Stream-switch Connecting hold.
     ///   - isConnectingPlayback: Play-start pipeline Connecting.
+    ///   - priorObservedLanguage: Language observed before this yield (``lastPushedContent``
+    ///     prior, or pre-update owned). When non-nil, playing follow-through requires language
+    ///     **newly** converged (coarsen same-stream contentUpdates thrash).
+    ///   - priorObservedVisual: Visual observed before this yield; when non-nil, language
+    ///     follow-through requires playing visual **newly** converged.
     /// - Returns: Axis-scoped heal policy (never invents `.playing` during hold/connect).
-    /// - SeeAlso: ``ContentUpdateAxisHealPolicy``, ``applySystemContentUpdateHeal(systemContent:)``.
+    /// - SeeAlso: ``ContentUpdateAxisHealPolicy``, ``applySystemContentUpdateHeal(systemContent:priorObservedLanguage:priorObservedVisual:)``,
+    ///   ``didLanguageNewlyConverge(preUpdateOwnedLanguage:acceptedLanguage:candidateLanguage:)``.
     static func contentUpdateAxisHealPolicy(
         systemLanguage: String,
         systemVisual: PlayerVisualState,
         destinationLanguage: String,
         actorVisual: PlayerVisualState,
         isStreamSwitchHoldActive: Bool,
-        isConnectingPlayback: Bool
+        isConnectingPlayback: Bool,
+        priorObservedLanguage: String? = nil,
+        priorObservedVisual: PlayerVisualState? = nil
     ) -> ContentUpdateAxisHealPolicy {
         let effectiveVisual: PlayerVisualState =
             (isStreamSwitchHoldActive || isConnectingPlayback) ? .prePlay : actorVisual
@@ -1465,14 +1704,28 @@ class RadioLiveActivityManager: ObservableObject {
         )
         let resetStreak = shouldResetStalledContentStreak(candidate: candidate, accepted: accepted)
 
+        // Coarsen: true partial follow-through only when the axis newly converged this yield.
+        // When prior is unknown (nil), keep follow-through so first observation of convergence
+        // still heals the lagging axis (cold / missing suppress memory).
+        let languageNewlyConverged: Bool = {
+            guard languageConverged else { return false }
+            guard let prior = priorObservedLanguage else { return true }
+            return prior != destinationLanguage
+        }()
+        let playingNewlyConverged: Bool = {
+            guard playingConverged else { return false }
+            guard let prior = priorObservedVisual else { return true }
+            return prior != .playing
+        }()
+
         let followPlaying =
-            languageConverged
+            languageNewlyConverged
             && !playingConverged
             && !isStreamSwitchHoldActive
             && !isConnectingPlayback
             && actorVisual == .playing
         let followLanguage =
-            playingConverged
+            playingNewlyConverged
             && !languageConverged
             && !destinationLanguage.isEmpty
 
@@ -3028,11 +3281,11 @@ class RadioLiveActivityManager: ObservableObject {
             playingEnsureQuietPending = true
             playingEnsureQuietSkipLogged = false
             // Keep pending ensure so become-active owned-surface path re-arms recovery.
-            pendingInteractiveLiveActivityEnsure = true
+            markContentEnsureFreezeSoftBudgetExhausted()
             #if DEBUG
             print(
                 "🔴 Live Activity playing ensure quiet pending after max attempts " +
-                "(recreation remains eligibility-gated)"
+                "(recreation remains eligibility-gated; freeze soft budget exhausted)"
             )
             #endif
             // Quiet is thrash protection, not a permanent freeze under continuous lock.
@@ -3040,19 +3293,44 @@ class RadioLiveActivityManager: ObservableObject {
         }
     }
 
+    /// Marks continuous-lock freeze soft budget exhausted and keeps become-active pending ensure.
+    ///
+    /// - SeeAlso: ``resetContentEnsureFreezeGeneration()``,
+    ///   ``contentEnsureFreezeSoftBudgetExhausted``.
+    @MainActor
+    private func markContentEnsureFreezeSoftBudgetExhausted() {
+        contentEnsureFreezeSoftBudgetExhausted = true
+        pendingInteractiveLiveActivityEnsure = true
+    }
+
+    /// Opens a fresh continuous-lock ensure freeze generation (mutation / presentable cycle).
+    ///
+    /// - SeeAlso: ``markContentEnsureFreezeSoftBudgetExhausted()``,
+    ///   ``rearmPlayingEnsureQuietPending()``.
+    @MainActor
+    private func resetContentEnsureFreezeGeneration() {
+        contentEnsureFreezeSoftBudgetExhausted = false
+        contentEnsureFreezePartialPostSettledScheduled = false
+        contentEnsureFreezeLanguageNewlyConverged = false
+        contentEnsureFreezeVisualNewlyConverged = false
+    }
+
     /// Clears playing ensure quiet so the next soft-ensure cycle gets a full soft budget.
     ///
     /// Call on authoritative play mutations (``setPlaying`` / soft-resume ensure) so a prior
     /// lock-stretch exhaustion cannot block a high-priority visual reconcile after audible
-    /// start. Does not invent `.playing` during hold — ensure gates still apply.
+    /// start. Resets freeze-generation bookkeeping so the mutation opens a new soft budget.
+    /// Does not invent `.playing` during hold — ensure gates still apply.
     ///
     /// - SeeAlso: ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   ``resetContentEnsureFreezeGeneration()``,
     ///   ``recordOptimisticToggleContent(visualState:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @MainActor
     func rearmPlayingEnsureQuietPending() {
         playingEnsureQuietPending = false
         playingEnsureQuietSkipLogged = false
+        resetContentEnsureFreezeGeneration()
     }
 
     /// Post-hold language soft-ensure re-arm after stream-switch hold has cleared.
@@ -3163,24 +3441,32 @@ class RadioLiveActivityManager: ObservableObject {
         if !eligibleAfter, !destination.isEmpty {
             languageEnsureQuietPendingDestination = destination
             languageEnsureQuietSkipLogged = false
-            pendingInteractiveLiveActivityEnsure = true
+            markContentEnsureFreezeSoftBudgetExhausted()
             #if DEBUG
             print(
                 "🔴 Live Activity settled language acceptance still lagging " +
                 "(destination=\(destination) owned=\(acceptedLanguage ?? "nil"); " +
-                "quiet re-armed; delayed soft ensure scheduled; recreation remains eligibility-gated)"
+                "quiet re-armed; freeze soft budget exhausted; recreation remains eligibility-gated)"
             )
             #endif
         }
-        if Self.shouldSchedulePostSettledLanguageEnsureRetries(
+        // Nested post-settled only for true visual-new partial wins while ineligible.
+        let baseLanguagePostSettled = Self.shouldSchedulePostSettledLanguageEnsureRetries(
             hasCurrentActivity: currentActivity != nil,
             destinationLanguage: destination,
             ownedContentLanguage: acceptedLanguage,
             isStreamSwitchHoldActive: holdAfter
+        )
+        if Self.shouldSchedulePostSettledLanguageEnsureAfterSoftBudgetExhaust(
+            baseShouldSchedule: baseLanguagePostSettled,
+            isRequestEligible: eligibleAfter,
+            visualNewlyConvergedThisFreeze: contentEnsureFreezeVisualNewlyConverged,
+            partialPostSettledAlreadyScheduled: contentEnsureFreezePartialPostSettledScheduled
         ) {
             schedulePostSettledLanguageEnsureRetriesIfNeeded(destination: destination)
+            contentEnsureFreezePartialPostSettledScheduled = true
         }
-        // Settled + post-settled budget must not permanent-freeze under continuous lock.
+        // Settled soft budget must not permanent-freeze under continuous lock — sparse LH.
         if acceptedLanguage != destination {
             await armPostQuietLongHorizonLanguageEnsureIfNeeded()
         }
@@ -3401,25 +3687,34 @@ class RadioLiveActivityManager: ObservableObject {
         if !eligibleAfter {
             playingEnsureQuietPending = true
             playingEnsureQuietSkipLogged = false
-            pendingInteractiveLiveActivityEnsure = true
+            markContentEnsureFreezeSoftBudgetExhausted()
             #if DEBUG
             print(
                 "🔴 Live Activity settled playing acceptance still lagging " +
                 "(owned=\(String(describing: acceptedVisual)); " +
-                "quiet re-armed; delayed soft ensure scheduled; recreation remains eligibility-gated)"
+                "quiet re-armed; freeze soft budget exhausted; recreation remains eligibility-gated)"
             )
             #endif
         }
-        if Self.shouldSchedulePostSettledPlayingEnsureRetries(
+        // Nested post-settled only for true language-new partial wins while ineligible;
+        // same-stream visual stall skips post-settled (long-horizon owns residual).
+        let basePostSettled = Self.shouldSchedulePostSettledPlayingEnsureRetries(
             hasCurrentActivity: currentActivity != nil,
             actorVisual: actorAfter,
             ownedContentVisual: acceptedVisual,
             isStreamSwitchHoldActive: holdAfter,
             isConnectingPlayback: connectingAfter
+        )
+        if Self.shouldSchedulePostSettledPlayingEnsureAfterSoftBudgetExhaust(
+            baseShouldSchedule: basePostSettled,
+            isRequestEligible: eligibleAfter,
+            languageNewlyConvergedThisFreeze: contentEnsureFreezeLanguageNewlyConverged,
+            partialPostSettledAlreadyScheduled: contentEnsureFreezePartialPostSettledScheduled
         ) {
             schedulePostSettledPlayingEnsureRetriesIfNeeded()
+            contentEnsureFreezePartialPostSettledScheduled = true
         }
-        // Settled + post-settled budget must not permanent-freeze under continuous lock (B).
+        // Settled soft budget must not permanent-freeze under continuous lock — sparse LH.
         if acceptedVisual != .playing {
             await armPostQuietLongHorizonPlayingEnsureIfNeeded()
         }
@@ -4400,7 +4695,7 @@ class RadioLiveActivityManager: ObservableObject {
                 playingEnsureQuietSkipLogged = false
             }
             if finalLangLags || finalVisualLags {
-                pendingInteractiveLiveActivityEnsure = true
+                markContentEnsureFreezeSoftBudgetExhausted()
             }
         }
     }
@@ -4455,7 +4750,8 @@ class RadioLiveActivityManager: ObservableObject {
         }
 
         // Dual settle owns this prePlay cycle — cancel single-axis post-settled peers that
-        // would thrash after sequential settle, then run one dual-axis soft budget.
+        // would thrash after sequential settle, then run one dual-axis soft budget. Fresh
+        // freeze soft budget for this attach settle so thrash smart-loosen does not starve it.
         cancelPostSettledLanguageEnsureRetries()
         cancelPostSettledPlayingEnsureRetries()
         cancelAllPostQuietLongHorizonEnsure()
@@ -4463,6 +4759,7 @@ class RadioLiveActivityManager: ObservableObject {
         languageEnsureQuietSkipLogged = false
         playingEnsureQuietPending = false
         playingEnsureQuietSkipLogged = false
+        resetContentEnsureFreezeGeneration()
         if !requestEligible {
             dualAxisSettledAcceptanceConsumed = true
             // Peer consume markers so single-axis settle does not re-enter for the same freeze.
@@ -4759,11 +5056,12 @@ class RadioLiveActivityManager: ObservableObject {
             languageEnsureQuietPendingDestination = quietDestination
             languageEnsureQuietSkipLogged = false
             // Keep pending ensure so become-active owned-surface path re-arms recovery.
-            pendingInteractiveLiveActivityEnsure = true
+            markContentEnsureFreezeSoftBudgetExhausted()
             #if DEBUG
             print(
                 "🔴 Live Activity language ensure quiet pending after max attempts " +
-                "(destination=\(quietDestination); recreation remains eligibility-gated)"
+                "(destination=\(quietDestination); freeze soft budget exhausted; " +
+                "recreation remains eligibility-gated)"
             )
             #endif
             // Quiet is thrash protection, not a permanent freeze under continuous lock.
@@ -4974,9 +5272,11 @@ class RadioLiveActivityManager: ObservableObject {
         // quiet blocking visual recovery (and the reverse). Also clear settled language/playing
         // consume so presentable cycles can re-attempt high-signal acceptance if soft ensure
         // still lags after unlock. Cancel delayed post-settled + post-quiet long-horizon rails —
-        // foreground soft ensure owns this presentable cycle. Capture dual-axis LH exhaust so
-        // eligible recreation preference remains after soft ensure still fails.
+        // foreground soft ensure owns this presentable cycle. Capture dual-axis LH exhaust +
+        // freeze soft-budget exhaust so eligible recreation preference remains after soft ensure
+        // still fails.
         let dualAxisExhaustedBeforePresentable = postQuietLongHorizonDualAxisExhausted
+        let freezeSoftBudgetExhaustedBeforePresentable = contentEnsureFreezeSoftBudgetExhausted
         cancelPostSettledLanguageEnsureRetries()
         cancelPostSettledPlayingEnsureRetries()
         cancelAllPostQuietLongHorizonEnsure()
@@ -4988,6 +5288,7 @@ class RadioLiveActivityManager: ObservableObject {
         languageEnsureQuietSkipLogged = false
         playingEnsureQuietSkipLogged = false
         postQuietLongHorizonDualAxisExhausted = false
+        resetContentEnsureFreezeGeneration()
         // New presentable cycle may re-announce deferred recreation if soft ensure still fails.
         lastLoggedStalledContentDiagnosticsSignature = nil
 
@@ -5028,7 +5329,8 @@ class RadioLiveActivityManager: ObservableObject {
         )
 
         let shouldRecreate =
-            Self.shouldPreferEligibleRecreateAfterDualAxisLongHorizonExhausted(
+            Self.shouldPreferEligibleRecreateAfterContentEnsureFreezeExhausted(
+                freezeSoftBudgetExhausted: freezeSoftBudgetExhaustedBeforePresentable,
                 dualAxisExhausted: dualAxisExhaustedBeforePresentable,
                 languageStillLags: languageStillMismatches,
                 visualStillLags: playingStillStalled,
@@ -5050,6 +5352,7 @@ class RadioLiveActivityManager: ObservableObject {
             "🔴 Live Activity foreground soft ensure still lagged " +
             "(language=\(languageStillMismatches) playing=\(playingStillStalled)" +
             (dualAxisExhaustedBeforePresentable ? "; dual-axis long-horizon was exhausted" : "") +
+            (freezeSoftBudgetExhaustedBeforePresentable ? "; freeze soft budget was exhausted" : "") +
             "); eligible recreation"
         )
         #endif
@@ -5083,12 +5386,14 @@ class RadioLiveActivityManager: ObservableObject {
         // Control mutation re-arms playing ensure quiet and re-opens settled playing acceptance
         // so pause honesty and later soft-resume get a full post-hold settle window even after
         // prior lock-stretch playing thrash. Cancel delayed post-settled playing retries for the
-        // prior play cycle — a new pause/play mutation owns recovery.
+        // prior play cycle — a new pause/play mutation owns recovery. Fresh freeze generation
+        // soft budget so continuous-lock thrash smart-loosen does not starve a real mutation.
         playingEnsureQuietPending = false
         playingEnsureQuietSkipLogged = false
         playingSettledAcceptanceConsumed = false
         dualAxisSettledAcceptanceConsumed = false
         postQuietLongHorizonDualAxisExhausted = false
+        resetContentEnsureFreezeGeneration()
         cancelPostSettledPlayingEnsureRetries()
         // New pause/play mutation owns recovery — drop prior freeze long-horizon.
         cancelPostQuietLongHorizonPlayingEnsure()
@@ -5188,6 +5493,7 @@ class RadioLiveActivityManager: ObservableObject {
         playingSettledAcceptanceConsumed = false
         dualAxisSettledAcceptanceConsumed = false
         postQuietLongHorizonDualAxisExhausted = false
+        resetContentEnsureFreezeGeneration()
         cancelPostSettledPlayingEnsureRetries()
         cancelPostQuietLongHorizonPlayingEnsure()
         cancelPostQuietLongHorizonDualAxisEnsure()
@@ -5800,28 +6106,42 @@ class RadioLiveActivityManager: ObservableObject {
     private func handleActivityContentUpdate(
         _ content: ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>
     ) {
+        // Capture prior suppress memory **before** overwrite so axis heal can coarsen
+        // same-stream contentUpdates thrash (language already matched, visual still lags).
+        let priorLanguage = lastPushedContent?.currentLanguage
+        let priorVisual = lastPushedContent?.visualState
         lastPushedContent = content.state
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(content.state.visualState)
         SharedPlayerManager.persistLiveActivityLanguageMirror(content.state.currentLanguage)
         // Axis-aware heal needs actor SSOT (await hops) — schedule without blocking the
         // contentUpdates consumer. Suppress memory already seeded above.
         Task { @MainActor [weak self] in
-            await self?.applySystemContentUpdateHeal(systemContent: content.state)
+            await self?.applySystemContentUpdateHeal(
+                systemContent: content.state,
+                priorObservedLanguage: priorLanguage,
+                priorObservedVisual: priorVisual
+            )
         }
     }
 
     /// Applies axis-scoped quiet / post-settled / stall-streak heal after system content yields.
     ///
-    /// - Parameter systemContent: Latest `content.state` from ActivityKit.
+    /// - Parameters:
+    ///   - systemContent: Latest `content.state` from ActivityKit.
+    ///   - priorObservedLanguage: Language before this yield (coarsen same-stream thrash).
+    ///   - priorObservedVisual: Visual before this yield.
     /// - Postcondition: Converged axes clear quiet and cancel their post-settled tasks; lagging
-    ///   axes retain post-settled work or get follow-through soft ensure; stall streak resets
-    ///   only when the full candidate is no longer stalled. Never ends the interactive surface.
-    /// - SeeAlso: ``contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
+    ///   axes retain post-settled work or get **true-new** follow-through soft ensure; stall
+    ///   streak resets only when the full candidate is no longer stalled. Never ends the
+    ///   interactive surface.
+    /// - SeeAlso: ``contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:priorObservedLanguage:priorObservedVisual:)``,
     ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
     ///   ``ensureAuthoritativeLanguageContentIfNeeded()``.
     @MainActor
     private func applySystemContentUpdateHeal(
-        systemContent: LutheranRadioLiveActivityAttributes.ContentState
+        systemContent: LutheranRadioLiveActivityAttributes.ContentState,
+        priorObservedLanguage: String?,
+        priorObservedVisual: PlayerVisualState?
     ) async {
         if SharedPlayerManager.isRunningInUITestMode { return }
         #if DEBUG
@@ -5835,6 +6155,10 @@ class RadioLiveActivityManager: ObservableObject {
         let actorVisual = await manager.currentVisualState
         let hold = await manager.isStreamSwitchPrePlayHoldActive
         let connecting = await manager.isConnectingPlayback
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
 
         let policy = Self.contentUpdateAxisHealPolicy(
             systemLanguage: systemContent.currentLanguage,
@@ -5842,7 +6166,9 @@ class RadioLiveActivityManager: ObservableObject {
             destinationLanguage: destination,
             actorVisual: actorVisual,
             isStreamSwitchHoldActive: hold,
-            isConnectingPlayback: connecting
+            isConnectingPlayback: connecting,
+            priorObservedLanguage: priorObservedLanguage,
+            priorObservedVisual: priorObservedVisual
         )
 
         if policy.resetStalledStreakAndRecreationBudget {
@@ -5885,47 +6211,83 @@ class RadioLiveActivityManager: ObservableObject {
         }
         #endif
 
-        // Language accepted with residual visual lag (device: de flag + prePlay glyph).
+        // True language-new win with residual visual lag (device: de flag + prePlay glyph).
+        // Same-stream contentUpdates (language already matched) skip follow-through thrash.
         if policy.shouldFollowThroughPlayingEnsure {
-            playingEnsureQuietPending = false
-            playingEnsureQuietSkipLogged = false
-            await ensureAuthoritativePlayingContentIfNeeded()
-            let ownedVisual = currentActivity?.content.state.visualState
-            let actorAfter = await manager.currentVisualState
-            let holdAfter = await manager.isStreamSwitchPrePlayHoldActive
-            let connectingAfter = await manager.isConnectingPlayback
-            if Self.shouldSchedulePostSettledPlayingEnsureRetries(
-                hasCurrentActivity: currentActivity != nil,
-                actorVisual: actorAfter,
-                ownedContentVisual: ownedVisual,
-                isStreamSwitchHoldActive: holdAfter,
-                isConnectingPlayback: connectingAfter
-            ) {
-                schedulePostSettledPlayingEnsureRetriesIfNeeded()
-            }
-            // Keep playing long-horizon armed when visual still lags after axis follow-through.
-            if ownedVisual != .playing {
+            contentEnsureFreezeLanguageNewlyConverged = true
+            let allowFollowThrough = Self.shouldClearPlayingEnsureQuietForPartialRearm(
+                shouldRearmFromPartialPolicy: true,
+                freezeSoftBudgetExhausted: contentEnsureFreezeSoftBudgetExhausted,
+                partialPostSettledAlreadyScheduled: contentEnsureFreezePartialPostSettledScheduled,
+                isRequestEligible: requestEligible
+            )
+            if allowFollowThrough {
+                playingEnsureQuietPending = false
+                playingEnsureQuietSkipLogged = false
+                await ensureAuthoritativePlayingContentIfNeeded()
+                let ownedVisual = currentActivity?.content.state.visualState
+                let actorAfter = await manager.currentVisualState
+                let holdAfter = await manager.isStreamSwitchPrePlayHoldActive
+                let connectingAfter = await manager.isConnectingPlayback
+                let baseSchedule = Self.shouldSchedulePostSettledPlayingEnsureRetries(
+                    hasCurrentActivity: currentActivity != nil,
+                    actorVisual: actorAfter,
+                    ownedContentVisual: ownedVisual,
+                    isStreamSwitchHoldActive: holdAfter,
+                    isConnectingPlayback: connectingAfter
+                )
+                if Self.shouldSchedulePostSettledPlayingEnsureAfterSoftBudgetExhaust(
+                    baseShouldSchedule: baseSchedule,
+                    isRequestEligible: requestEligible,
+                    languageNewlyConvergedThisFreeze: true,
+                    partialPostSettledAlreadyScheduled: contentEnsureFreezePartialPostSettledScheduled
+                ) {
+                    schedulePostSettledPlayingEnsureRetriesIfNeeded()
+                    contentEnsureFreezePartialPostSettledScheduled = true
+                }
+                // Keep playing long-horizon armed when visual still lags after axis follow-through.
+                if ownedVisual != .playing {
+                    await armPostQuietLongHorizonPlayingEnsureIfNeeded()
+                }
+            } else if systemContent.visualState != .playing {
+                // Quiet cool-down — residual visual lag waits for mutation / eligibility / LH.
                 await armPostQuietLongHorizonPlayingEnsureIfNeeded()
             }
         }
 
-        // Playing accepted with residual language lag.
+        // True visual-new win with residual language lag.
         if policy.shouldFollowThroughLanguageEnsure {
-            languageEnsureQuietPendingDestination = nil
-            languageEnsureQuietSkipLogged = false
-            await ensureAuthoritativeLanguageContentIfNeeded()
-            let ownedLanguage = currentActivity?.content.state.currentLanguage
-            let destAfter = await manager.liveActivityLanguageCodeForContentPush()
-            let holdAfter = await manager.isStreamSwitchPrePlayHoldActive
-            if Self.shouldSchedulePostSettledLanguageEnsureRetries(
-                hasCurrentActivity: currentActivity != nil,
-                destinationLanguage: destAfter,
-                ownedContentLanguage: ownedLanguage,
-                isStreamSwitchHoldActive: holdAfter
-            ) {
-                schedulePostSettledLanguageEnsureRetriesIfNeeded(destination: destAfter)
-            }
-            if ownedLanguage != destAfter {
+            contentEnsureFreezeVisualNewlyConverged = true
+            let allowLanguageFollowThrough =
+                requestEligible
+                || !contentEnsureFreezeSoftBudgetExhausted
+                || !contentEnsureFreezePartialPostSettledScheduled
+            if allowLanguageFollowThrough {
+                languageEnsureQuietPendingDestination = nil
+                languageEnsureQuietSkipLogged = false
+                await ensureAuthoritativeLanguageContentIfNeeded()
+                let ownedLanguage = currentActivity?.content.state.currentLanguage
+                let destAfter = await manager.liveActivityLanguageCodeForContentPush()
+                let holdAfter = await manager.isStreamSwitchPrePlayHoldActive
+                let baseLangSchedule = Self.shouldSchedulePostSettledLanguageEnsureRetries(
+                    hasCurrentActivity: currentActivity != nil,
+                    destinationLanguage: destAfter,
+                    ownedContentLanguage: ownedLanguage,
+                    isStreamSwitchHoldActive: holdAfter
+                )
+                if Self.shouldSchedulePostSettledLanguageEnsureAfterSoftBudgetExhaust(
+                    baseShouldSchedule: baseLangSchedule,
+                    isRequestEligible: requestEligible,
+                    visualNewlyConvergedThisFreeze: true,
+                    partialPostSettledAlreadyScheduled: contentEnsureFreezePartialPostSettledScheduled
+                ) {
+                    schedulePostSettledLanguageEnsureRetriesIfNeeded(destination: destAfter)
+                    contentEnsureFreezePartialPostSettledScheduled = true
+                }
+                if ownedLanguage != destAfter {
+                    await armPostQuietLongHorizonLanguageEnsureIfNeeded()
+                }
+            } else if systemContent.currentLanguage != destination {
                 await armPostQuietLongHorizonLanguageEnsureIfNeeded()
             }
         }
@@ -6714,33 +7076,99 @@ class RadioLiveActivityManager: ObservableObject {
         )
     }
 
-    /// White-box seam: partial language acceptance re-arms playing ensure.
+    /// White-box seam: true language-new partial acceptance re-arms playing ensure.
     func _test_shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
         candidateLanguage: String,
         acceptedLanguage: String,
         candidateVisual: PlayerVisualState,
-        acceptedVisual: PlayerVisualState
+        acceptedVisual: PlayerVisualState,
+        preUpdateOwnedLanguage: String
     ) -> Bool {
         Self.shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
             candidateLanguage: candidateLanguage,
             acceptedLanguage: acceptedLanguage,
             candidateVisual: candidateVisual,
-            acceptedVisual: acceptedVisual
+            acceptedVisual: acceptedVisual,
+            preUpdateOwnedLanguage: preUpdateOwnedLanguage
         )
     }
 
-    /// White-box seam: partial visual acceptance re-arms language ensure.
+    /// White-box seam: true visual-new partial acceptance re-arms language ensure.
     func _test_shouldRearmLanguageEnsureAfterPartialVisualAcceptance(
         candidateLanguage: String,
         acceptedLanguage: String,
         candidateVisual: PlayerVisualState,
-        acceptedVisual: PlayerVisualState
+        acceptedVisual: PlayerVisualState,
+        preUpdateOwnedVisual: PlayerVisualState
     ) -> Bool {
         Self.shouldRearmLanguageEnsureAfterPartialVisualAcceptance(
             candidateLanguage: candidateLanguage,
             acceptedLanguage: acceptedLanguage,
             candidateVisual: candidateVisual,
-            acceptedVisual: acceptedVisual
+            acceptedVisual: acceptedVisual,
+            preUpdateOwnedVisual: preUpdateOwnedVisual
+        )
+    }
+
+    /// White-box seam: language newly converged this update.
+    func _test_didLanguageNewlyConverge(
+        preUpdateOwnedLanguage: String,
+        acceptedLanguage: String,
+        candidateLanguage: String
+    ) -> Bool {
+        Self.didLanguageNewlyConverge(
+            preUpdateOwnedLanguage: preUpdateOwnedLanguage,
+            acceptedLanguage: acceptedLanguage,
+            candidateLanguage: candidateLanguage
+        )
+    }
+
+    /// White-box seam: partial quiet-clear gate under freeze soft-budget exhaust.
+    func _test_shouldClearPlayingEnsureQuietForPartialRearm(
+        shouldRearmFromPartialPolicy: Bool,
+        freezeSoftBudgetExhausted: Bool,
+        partialPostSettledAlreadyScheduled: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldClearPlayingEnsureQuietForPartialRearm(
+            shouldRearmFromPartialPolicy: shouldRearmFromPartialPolicy,
+            freezeSoftBudgetExhausted: freezeSoftBudgetExhausted,
+            partialPostSettledAlreadyScheduled: partialPostSettledAlreadyScheduled,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: post-settled after soft-budget exhaust (playing).
+    func _test_shouldSchedulePostSettledPlayingEnsureAfterSoftBudgetExhaust(
+        baseShouldSchedule: Bool,
+        isRequestEligible: Bool,
+        languageNewlyConvergedThisFreeze: Bool,
+        partialPostSettledAlreadyScheduled: Bool
+    ) -> Bool {
+        Self.shouldSchedulePostSettledPlayingEnsureAfterSoftBudgetExhaust(
+            baseShouldSchedule: baseShouldSchedule,
+            isRequestEligible: isRequestEligible,
+            languageNewlyConvergedThisFreeze: languageNewlyConvergedThisFreeze,
+            partialPostSettledAlreadyScheduled: partialPostSettledAlreadyScheduled
+        )
+    }
+
+    /// White-box seam: eligible recreate after freeze soft-budget / dual-axis exhaust.
+    func _test_shouldPreferEligibleRecreateAfterContentEnsureFreezeExhausted(
+        freezeSoftBudgetExhausted: Bool,
+        dualAxisExhausted: Bool,
+        languageStillLags: Bool,
+        visualStillLags: Bool,
+        isRequestEligible: Bool,
+        recreationsAttempted: Int = 0
+    ) -> Bool {
+        Self.shouldPreferEligibleRecreateAfterContentEnsureFreezeExhausted(
+            freezeSoftBudgetExhausted: freezeSoftBudgetExhausted,
+            dualAxisExhausted: dualAxisExhausted,
+            languageStillLags: languageStillLags,
+            visualStillLags: visualStillLags,
+            isRequestEligible: isRequestEligible,
+            recreationsAttempted: recreationsAttempted
         )
     }
 
@@ -6751,7 +7179,9 @@ class RadioLiveActivityManager: ObservableObject {
         destinationLanguage: String,
         actorVisual: PlayerVisualState,
         isStreamSwitchHoldActive: Bool,
-        isConnectingPlayback: Bool
+        isConnectingPlayback: Bool,
+        priorObservedLanguage: String? = nil,
+        priorObservedVisual: PlayerVisualState? = nil
     ) -> ContentUpdateAxisHealPolicy {
         Self.contentUpdateAxisHealPolicy(
             systemLanguage: systemLanguage,
@@ -6759,7 +7189,9 @@ class RadioLiveActivityManager: ObservableObject {
             destinationLanguage: destinationLanguage,
             actorVisual: actorVisual,
             isStreamSwitchHoldActive: isStreamSwitchHoldActive,
-            isConnectingPlayback: isConnectingPlayback
+            isConnectingPlayback: isConnectingPlayback,
+            priorObservedLanguage: priorObservedLanguage,
+            priorObservedVisual: priorObservedVisual
         )
     }
 

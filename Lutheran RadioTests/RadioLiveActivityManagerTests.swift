@@ -1534,15 +1534,17 @@ class RadioLiveActivityManagerTests: XCTestCase {
             "Post-settled residual Connecting must still arm long-horizon playing"
         )
 
-        // (5) Partial language acceptance keeps/re-arms playing long-horizon (does not cancel).
-        // Axis heal policy: language win must follow through playing and not cancel playing rails.
+        // (5) True language-new partial acceptance keeps/re-arms playing long-horizon (does not cancel).
+        // Axis heal policy: newly converged language must follow through playing and not cancel playing rails.
         let languageOnly = manager._test_contentUpdateAxisHealPolicy(
             systemLanguage: "de",
             systemVisual: .prePlay,
             destinationLanguage: "de",
             actorVisual: .playing,
             isStreamSwitchHoldActive: false,
-            isConnectingPlayback: false
+            isConnectingPlayback: false,
+            priorObservedLanguage: "sv",
+            priorObservedVisual: .prePlay
         )
         XCTAssertTrue(languageOnly.shouldFollowThroughPlayingEnsure)
         XCTAssertFalse(
@@ -2702,31 +2704,45 @@ class RadioLiveActivityManagerTests: XCTestCase {
             "No delay after final soft-ensure attempt"
         )
 
-        // Partial language acceptance re-arms playing; reverse re-arms language.
+        // True language-new partial acceptance re-arms playing; reverse re-arms language.
+        // Same-stream visual stall (language already matched before push) must NOT re-arm.
         XCTAssertTrue(
             manager._test_shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
                 candidateLanguage: "de",
                 acceptedLanguage: "de",
                 candidateVisual: .playing,
-                acceptedVisual: .prePlay
+                acceptedVisual: .prePlay,
+                preUpdateOwnedLanguage: "sv"
             ),
-            "Language match with Connecting residual must re-arm playing ensure"
+            "Language newly converged with Connecting residual must re-arm playing ensure"
         )
         XCTAssertTrue(
             manager._test_shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
                 candidateLanguage: "de",
                 acceptedLanguage: "de",
                 candidateVisual: .playing,
-                acceptedVisual: .userPaused
+                acceptedVisual: .userPaused,
+                preUpdateOwnedLanguage: "sv"
             ),
-            "Language match with pause residual must re-arm playing ensure"
+            "Language newly converged with pause residual must re-arm playing ensure"
+        )
+        XCTAssertFalse(
+            manager._test_shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
+                candidateLanguage: "de",
+                acceptedLanguage: "de",
+                candidateVisual: .playing,
+                acceptedVisual: .userPaused,
+                preUpdateOwnedLanguage: "de"
+            ),
+            "Same-stream visual stall (language already matched) must not re-arm playing ensure"
         )
         XCTAssertFalse(
             manager._test_shouldRearmPlayingEnsureAfterPartialLanguageAcceptance(
                 candidateLanguage: "de",
                 acceptedLanguage: "sv",
                 candidateVisual: .playing,
-                acceptedVisual: .prePlay
+                acceptedVisual: .prePlay,
+                preUpdateOwnedLanguage: "sv"
             ),
             "Language still lagging is not partial language acceptance"
         )
@@ -2735,7 +2751,8 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 candidateLanguage: "de",
                 acceptedLanguage: "de",
                 candidateVisual: .playing,
-                acceptedVisual: .playing
+                acceptedVisual: .playing,
+                preUpdateOwnedLanguage: "sv"
             ),
             "Full playing match must not re-arm playing ensure"
         )
@@ -2744,28 +2761,42 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 candidateLanguage: "et",
                 acceptedLanguage: "sv",
                 candidateVisual: .playing,
-                acceptedVisual: .playing
+                acceptedVisual: .playing,
+                preUpdateOwnedVisual: .userPaused
             ),
-            "Visual match with language lag must re-arm language ensure"
+            "Visual newly converged with language lag must re-arm language ensure"
+        )
+        XCTAssertFalse(
+            manager._test_shouldRearmLanguageEnsureAfterPartialVisualAcceptance(
+                candidateLanguage: "et",
+                acceptedLanguage: "sv",
+                candidateVisual: .playing,
+                acceptedVisual: .playing,
+                preUpdateOwnedVisual: .playing
+            ),
+            "Same-axis visual stall (visual already matched) must not re-arm language ensure"
         )
         XCTAssertFalse(
             manager._test_shouldRearmLanguageEnsureAfterPartialVisualAcceptance(
                 candidateLanguage: "et",
                 acceptedLanguage: "et",
                 candidateVisual: .playing,
-                acceptedVisual: .playing
+                acceptedVisual: .playing,
+                preUpdateOwnedVisual: .userPaused
             ),
             "Full language match must not re-arm language ensure"
         )
 
-        // contentUpdates axis heal: language-only progress (German partial).
+        // contentUpdates axis heal: language-only progress (German partial — newly converged).
         let languageOnly = manager._test_contentUpdateAxisHealPolicy(
             systemLanguage: "de",
             systemVisual: .prePlay,
             destinationLanguage: "de",
             actorVisual: .playing,
             isStreamSwitchHoldActive: false,
-            isConnectingPlayback: false
+            isConnectingPlayback: false,
+            priorObservedLanguage: "sv",
+            priorObservedVisual: .prePlay
         )
         XCTAssertTrue(languageOnly.languageConverged)
         XCTAssertFalse(languageOnly.playingConverged)
@@ -2793,7 +2824,9 @@ class RadioLiveActivityManagerTests: XCTestCase {
             destinationLanguage: "de",
             actorVisual: .playing,
             isStreamSwitchHoldActive: false,
-            isConnectingPlayback: false
+            isConnectingPlayback: false,
+            priorObservedLanguage: "sv",
+            priorObservedVisual: .prePlay
         )
         XCTAssertTrue(full.languageConverged)
         XCTAssertTrue(full.playingConverged)
@@ -2803,30 +2836,51 @@ class RadioLiveActivityManagerTests: XCTestCase {
         XCTAssertFalse(full.shouldFollowThroughPlayingEnsure)
         XCTAssertFalse(full.shouldFollowThroughLanguageEnsure)
 
-        // No progress → leave quiet/post-settled/streak alone.
-        let none = manager._test_contentUpdateAxisHealPolicy(
+        // Playing newly accepted with residual language lag → language follow-through.
+        let playingNewLangLag = manager._test_contentUpdateAxisHealPolicy(
             systemLanguage: "sv",
             systemVisual: .playing,
             destinationLanguage: "et",
             actorVisual: .playing,
             isStreamSwitchHoldActive: false,
-            isConnectingPlayback: false
+            isConnectingPlayback: false,
+            priorObservedLanguage: "sv",
+            priorObservedVisual: .userPaused
         )
-        XCTAssertFalse(none.languageConverged)
-        XCTAssertTrue(none.playingConverged)
+        XCTAssertFalse(playingNewLangLag.languageConverged)
+        XCTAssertTrue(playingNewLangLag.playingConverged)
         XCTAssertFalse(
-            none.resetStalledStreakAndRecreationBudget,
+            playingNewLangLag.resetStalledStreakAndRecreationBudget,
             "Language lag keeps stall bookkeeping"
         )
-        XCTAssertFalse(none.clearLanguageQuiet)
-        XCTAssertFalse(none.cancelLanguagePostSettled)
-        XCTAssertTrue(none.clearPlayingQuiet)
-        XCTAssertTrue(none.cancelPlayingPostSettled)
+        XCTAssertFalse(playingNewLangLag.clearLanguageQuiet)
+        XCTAssertFalse(playingNewLangLag.cancelLanguagePostSettled)
+        XCTAssertTrue(playingNewLangLag.clearPlayingQuiet)
+        XCTAssertTrue(playingNewLangLag.cancelPlayingPostSettled)
         XCTAssertTrue(
-            none.shouldFollowThroughLanguageEnsure,
-            "Playing win with language lag must follow through language ensure"
+            playingNewLangLag.shouldFollowThroughLanguageEnsure,
+            "Playing newly converged with language lag must follow through language ensure"
         )
-        XCTAssertFalse(none.shouldFollowThroughPlayingEnsure)
+        XCTAssertFalse(playingNewLangLag.shouldFollowThroughPlayingEnsure)
+
+        // Same-stream contentUpdates (language already de, visual still prePlay) must NOT
+        // re-follow-through playing ensure (thrash coarsen).
+        let sameStreamStall = manager._test_contentUpdateAxisHealPolicy(
+            systemLanguage: "de",
+            systemVisual: .prePlay,
+            destinationLanguage: "de",
+            actorVisual: .playing,
+            isStreamSwitchHoldActive: false,
+            isConnectingPlayback: false,
+            priorObservedLanguage: "de",
+            priorObservedVisual: .prePlay
+        )
+        XCTAssertTrue(sameStreamStall.languageConverged)
+        XCTAssertFalse(sameStreamStall.playingConverged)
+        XCTAssertFalse(
+            sameStreamStall.shouldFollowThroughPlayingEnsure,
+            "Language already matched before yield must not thrash playing follow-through"
+        )
 
         // Hold/connect: never invent playing follow-through.
         let hold = manager._test_contentUpdateAxisHealPolicy(
@@ -2835,7 +2889,9 @@ class RadioLiveActivityManagerTests: XCTestCase {
             destinationLanguage: "de",
             actorVisual: .playing,
             isStreamSwitchHoldActive: true,
-            isConnectingPlayback: false
+            isConnectingPlayback: false,
+            priorObservedLanguage: "sv",
+            priorObservedVisual: .prePlay
         )
         XCTAssertTrue(hold.languageConverged)
         XCTAssertTrue(hold.visualConverged, "Hold forces effective Connecting match")
@@ -2843,6 +2899,163 @@ class RadioLiveActivityManagerTests: XCTestCase {
         XCTAssertFalse(
             hold.shouldFollowThroughPlayingEnsure,
             "Must not follow through playing ensure during stream-switch hold"
+        )
+    }
+
+    /// Continuous-lock ensure thrash smart-loosen: freeze soft-budget + partial coarsen pure policies.
+    ///
+    /// Protects device residual after dual-axis ship: same-stream soft-resume churn must not
+    /// clear quiet / nest post-settled on every failed playing push; true language-new wins get
+    /// one follow-through; eligible recreate after freeze soft-budget exhaust never while
+    /// request-ineligible. Does **not** claim full ActivityKit lock guarantee.
+    func testContentEnsureFreezeThrashSmartLoosenPolicies() {
+        // Language newly converge helpers.
+        XCTAssertTrue(
+            manager._test_didLanguageNewlyConverge(
+                preUpdateOwnedLanguage: "sv",
+                acceptedLanguage: "et",
+                candidateLanguage: "et"
+            ),
+            "Destination newly accepted is a true language converge"
+        )
+        XCTAssertFalse(
+            manager._test_didLanguageNewlyConverge(
+                preUpdateOwnedLanguage: "et",
+                acceptedLanguage: "et",
+                candidateLanguage: "et"
+            ),
+            "Language already matched is not a new converge"
+        )
+
+        // Quiet clear for partial re-arm under freeze soft-budget exhaust.
+        XCTAssertTrue(
+            manager._test_shouldClearPlayingEnsureQuietForPartialRearm(
+                shouldRearmFromPartialPolicy: true,
+                freezeSoftBudgetExhausted: false,
+                partialPostSettledAlreadyScheduled: false,
+                isRequestEligible: false
+            ),
+            "True partial win before soft-budget exhaust may clear quiet"
+        )
+        XCTAssertTrue(
+            manager._test_shouldClearPlayingEnsureQuietForPartialRearm(
+                shouldRearmFromPartialPolicy: true,
+                freezeSoftBudgetExhausted: true,
+                partialPostSettledAlreadyScheduled: false,
+                isRequestEligible: false
+            ),
+            "True partial win after soft-budget exhaust may clear quiet once for follow-through"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearPlayingEnsureQuietForPartialRearm(
+                shouldRearmFromPartialPolicy: true,
+                freezeSoftBudgetExhausted: true,
+                partialPostSettledAlreadyScheduled: true,
+                isRequestEligible: false
+            ),
+            "Second partial quiet clear while ineligible after follow-through already used must not thrash"
+        )
+        XCTAssertTrue(
+            manager._test_shouldClearPlayingEnsureQuietForPartialRearm(
+                shouldRearmFromPartialPolicy: true,
+                freezeSoftBudgetExhausted: true,
+                partialPostSettledAlreadyScheduled: true,
+                isRequestEligible: true
+            ),
+            "Eligible / presentable cycles may always clear quiet for partial follow-through"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearPlayingEnsureQuietForPartialRearm(
+                shouldRearmFromPartialPolicy: false,
+                freezeSoftBudgetExhausted: false,
+                partialPostSettledAlreadyScheduled: false,
+                isRequestEligible: false
+            ),
+            "Same-stream stall (no re-arm policy) must not clear quiet"
+        )
+
+        // Nested post-settled after soft-budget exhaust: only true language-new while ineligible.
+        XCTAssertFalse(
+            manager._test_shouldSchedulePostSettledPlayingEnsureAfterSoftBudgetExhaust(
+                baseShouldSchedule: true,
+                isRequestEligible: false,
+                languageNewlyConvergedThisFreeze: false,
+                partialPostSettledAlreadyScheduled: false
+            ),
+            "Same-stream visual stall after soft budget must skip nested post-settled"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSchedulePostSettledPlayingEnsureAfterSoftBudgetExhaust(
+                baseShouldSchedule: true,
+                isRequestEligible: false,
+                languageNewlyConvergedThisFreeze: true,
+                partialPostSettledAlreadyScheduled: false
+            ),
+            "True language-new win may schedule one post-settled after soft budget"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSchedulePostSettledPlayingEnsureAfterSoftBudgetExhaust(
+                baseShouldSchedule: true,
+                isRequestEligible: false,
+                languageNewlyConvergedThisFreeze: true,
+                partialPostSettledAlreadyScheduled: true
+            ),
+            "Second nested post-settled while ineligible must not schedule"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSchedulePostSettledPlayingEnsureAfterSoftBudgetExhaust(
+                baseShouldSchedule: true,
+                isRequestEligible: true,
+                languageNewlyConvergedThisFreeze: false,
+                partialPostSettledAlreadyScheduled: false
+            ),
+            "Eligible cycles keep post-settled for unlock heal"
+        )
+
+        // Eligible hard heal after freeze soft-budget exhaust (never while ineligible).
+        XCTAssertTrue(
+            manager._test_shouldPreferEligibleRecreateAfterContentEnsureFreezeExhausted(
+                freezeSoftBudgetExhausted: true,
+                dualAxisExhausted: false,
+                languageStillLags: false,
+                visualStillLags: true,
+                isRequestEligible: true,
+                recreationsAttempted: 0
+            ),
+            "Freeze soft-budget exhaust + visual lag + eligible may prefer recreation"
+        )
+        XCTAssertFalse(
+            manager._test_shouldPreferEligibleRecreateAfterContentEnsureFreezeExhausted(
+                freezeSoftBudgetExhausted: true,
+                dualAxisExhausted: false,
+                languageStillLags: false,
+                visualStillLags: true,
+                isRequestEligible: false,
+                recreationsAttempted: 0
+            ),
+            "Never end-only-interactive while request ineligible solely for freeze lag"
+        )
+        XCTAssertFalse(
+            manager._test_shouldPreferEligibleRecreateAfterContentEnsureFreezeExhausted(
+                freezeSoftBudgetExhausted: false,
+                dualAxisExhausted: false,
+                languageStillLags: true,
+                visualStillLags: true,
+                isRequestEligible: true,
+                recreationsAttempted: 0
+            ),
+            "Without freeze or dual-axis exhaust, preference path stays off"
+        )
+        XCTAssertTrue(
+            manager._test_shouldPreferEligibleRecreateAfterContentEnsureFreezeExhausted(
+                freezeSoftBudgetExhausted: false,
+                dualAxisExhausted: true,
+                languageStillLags: true,
+                visualStillLags: false,
+                isRequestEligible: true,
+                recreationsAttempted: 0
+            ),
+            "Dual-axis long-horizon exhaust alone still prefers eligible recreate"
         )
     }
 
