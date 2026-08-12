@@ -796,6 +796,14 @@
 				gag,
 				nl,
 				es,
+				el,
+				sq,
+				bg,
+				ro,
+				hu,
+				cs,
+				sl,
+				hr,
 			);
 			mainGroup = B7AFC6A32CCD7D0A00BDDD83;
 			minimizedProjectReferenceProxies = 1;
