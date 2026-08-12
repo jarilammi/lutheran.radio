@@ -15,6 +15,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -144,6 +150,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld Sprachen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld γλώσσες"
           }
         },
         "en" : {
@@ -276,6 +288,12 @@
             "value" : "Doppelt tippen, um Audioausgabegerät auszuwählen"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Πατήστε δύο φορές για επιλογή συσκευής εξόδου ήχου"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -404,6 +422,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zeigt Informationen zum aktuellen Radioprogramm"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Εμφανίζει πληροφορίες για το τρέχον ραδιοφωνικό πρόγραμμα"
           }
         },
         "en" : {
@@ -536,6 +560,12 @@
             "value" : "Schaltet die Wiedergabe des Radiostreams ein und aus"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Εναλλάσσει την αναπαραγωγή της ραδιοφωνικής ροής"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -664,6 +694,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wählen Sie, nach welcher Zeit die Wiedergabe stoppt"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Επιλέξτε πόσο χρόνο μέχρι να σταματήσει η αναπαραγωγή"
           }
         },
         "en" : {
@@ -796,6 +832,12 @@
             "value" : "Regelt die Wiedergabelautstärke"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ρυθμίζει την ένταση αναπαραγωγής"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -921,6 +963,12 @@
           }
         },
         "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "el" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -1057,6 +1105,12 @@
             "value" : "Lutheran Radio Logo"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Λογότυπο Lutheran Radio"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1185,6 +1239,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausieren"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Παύση"
           }
         },
         "en" : {
@@ -1318,6 +1378,12 @@
             "value" : "Foto von %@"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Φωτογραφία: %@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1446,6 +1512,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abspielen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αναπαραγωγή"
           }
         },
         "en" : {
@@ -1578,6 +1650,12 @@
             "value" : "Schlaf-Timer"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Χρονοδιακόπτης ύπνου"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1706,6 +1784,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lautstärke"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ένταση"
           }
         },
         "en" : {
@@ -1838,6 +1922,12 @@
             "value" : "%d Prozent"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d τοις εκατό"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1966,6 +2056,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fortfahren"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Συνέχεια"
           }
         },
         "en" : {
@@ -2098,6 +2194,12 @@
             "value" : "Wieder"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Επανάληψη"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2226,6 +2328,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Für diese Sitzung zulassen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Να επιτραπεί για αυτήν την περίοδο"
           }
         },
         "en" : {
@@ -2358,6 +2466,12 @@
             "value" : "Immer zulassen"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Να επιτρέπεται πάντα"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2486,6 +2600,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nicht jetzt"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Όχι τώρα"
           }
         },
         "en" : {
@@ -2618,6 +2738,12 @@
             "value" : "Löschen"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Εκκαθάριση"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2746,6 +2872,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gelöscht"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Έγινε εκκαθάριση"
           }
         },
         "en" : {
@@ -2878,6 +3010,12 @@
             "value" : "Dadurch wird die Wiedergabe gestoppt, Widget- und Live-Activity-Daten entfernt und der letzte Hörstatus von diesem Gerät gelöscht. Die Aktion kann nicht rückgängig gemacht werden."
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αυτό θα σταματήσει την αναπαραγωγή, θα αφαιρέσει τα δεδομένα γραφικού στοιχείου και Ζωντανής δραστηριότητας και θα διαγράψει την πρόσφατη κατάσταση ακρόασης από αυτήν τη συσκευή. Η ενέργεια δεν μπορεί να αναιρεθεί."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3008,6 +3146,12 @@
             "value" : "Lokalen Wiedergabestatus löschen"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Εκκαθάριση τοπικής κατάστασης αναπαραγωγής"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3136,6 +3280,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Konfiguration für Lutheran Radio Widget."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Διαμόρφωση για το γραφικό στοιχείο Lutheran Radio."
           }
         },
         "en" : {
@@ -3269,6 +3419,12 @@
             "value" : "Verbindungsfehler"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Σφάλμα σύνδεσης"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3400,6 +3556,12 @@
             "value" : "Steuern Sie die Wiedergabe von Lutheran Radio und sehen Sie die aktuelle Station."
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ελέγξτε την αναπαραγωγή του Lutheran Radio και δείτε τον τρέχοντα σταθμό."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3528,6 +3690,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steuern Sie die Wiedergabe und wechseln Sie zwischen Sprachstreams."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ελέγξτε την αναπαραγωγή και αλλάξτε μεταξύ ροών γλώσσας."
           }
         },
         "en" : {
@@ -3661,6 +3829,12 @@
             "value" : "Lautstärke verringern"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Μείωση έντασης"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3792,6 +3966,12 @@
             "value" : "Lautstärke erhöhen"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αύξηση έντασης"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3920,6 +4100,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spielt"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αναπαράγεται"
           }
         },
         "en" : {
@@ -4053,6 +4239,12 @@
             "value" : "Sprache"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Γλώσσα"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4181,6 +4373,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sprachcode"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Κωδικός γλώσσας"
           }
         },
         "en" : {
@@ -4314,6 +4512,12 @@
             "value" : "Englisch"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αγγλικά"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4443,6 +4647,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estnisch"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Εσθονικά"
           }
         },
         "en" : {
@@ -4576,6 +4786,12 @@
             "value" : "Finnisch"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Φινλανδικά"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4705,6 +4921,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deutsch"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Γερμανικά"
           }
         },
         "en" : {
@@ -4838,6 +5060,12 @@
             "value" : "Schwedisch"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Σουηδικά"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4967,6 +5195,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Livestream"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Ζωντανή μετάδοση"
           }
         },
         "en" : {
@@ -5100,6 +5334,12 @@
             "value" : "Nur lokal"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Μόνο τοπικά"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5226,6 +5466,12 @@
           }
         },
         "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "el" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -5361,6 +5607,12 @@
             "value" : "Die App verwendet mobile Daten, was je nach Ihrem Datentarif Kosten verursachen kann."
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Η εφαρμογή χρησιμοποιεί δεδομένα κινητής, κάτι που ενδέχεται να επιφέρει χρεώσεις ανάλογα με το πρόγραμμα δεδομένων σας."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5489,6 +5741,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobile Datennutzung"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Χρήση δεδομένων κινητής"
           }
         },
         "en" : {
@@ -5621,6 +5879,12 @@
             "value" : "Keine Titelinformation"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Δεν υπάρχουν πληροφορίες κομματιού"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5751,6 +6015,12 @@
             "value" : "Läuft gerade"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Τώρα παίζει"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5876,6 +6146,12 @@
           }
         },
         "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "el" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -6012,6 +6288,12 @@
             "value" : "Zuerst App öffnen"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ανοίξτε πρώτα την εφαρμογή"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6142,6 +6424,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio pausieren"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Παύση Lutheran Radio"
           }
         },
         "en" : {
@@ -6275,6 +6563,12 @@
             "value" : "Lutheran Radio-Wiedergabe pausieren."
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Παύση αναπαραγωγής Lutheran Radio."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6403,6 +6697,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abspielen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αναπαραγωγή"
           }
         },
         "en" : {
@@ -6536,6 +6836,12 @@
             "value" : "Lutheran Radio abspielen"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αναπαραγωγή Lutheran Radio"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6664,6 +6970,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio abspielen oder pausieren."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αναπαραγωγή ή παύση του Lutheran Radio."
           }
         },
         "en" : {
@@ -6797,6 +7109,12 @@
             "value" : "Lutheran Radio abspielen oder fortsetzen."
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αναπαραγωγή ή συνέχιση του Lutheran Radio."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6927,6 +7245,12 @@
             "value" : "Die Wiedergabe kann aufgrund eines Fehlers bei der Sicherheitsüberprüfung nicht gestartet werden. Bitte überprüfen Sie Ihre Internetverbindung und stellen Sie sicher, dass die App aktuell ist. Wenn das Problem weiterhin besteht, starten Sie die App neu und versuchen Sie es erneut."
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Δεν είναι δυνατή η έναρξη της αναπαραγωγής λόγω αποτυχίας επαλήθευσης ασφαλείας. Ελέγξτε τη σύνδεσή σας στο διαδίκτυο και βεβαιωθείτε ότι η εφαρμογή είναι ενημερωμένη. Αν το πρόβλημα συνεχίζεται, επανεκκινήστε την εφαρμογή και δοκιμάστε ξανά."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7055,6 +7379,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sicherheitsvalidierung fehlgeschlagen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αποτυχία επαλήθευσης ασφαλείας"
           }
         },
         "en" : {
@@ -7188,6 +7518,12 @@
             "value" : "Auswählen %@"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Επιλογή %@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7316,6 +7652,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Noch %d Minuten"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Απομένουν %d λεπτά"
           }
         },
         "en" : {
@@ -7448,6 +7790,12 @@
             "value" : "Timer abbrechen"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ακύρωση χρονοδιακόπτη"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7576,6 +7924,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 Minuten"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 λεπτά"
           }
         },
         "en" : {
@@ -7708,6 +8062,12 @@
             "value" : "30 Minuten"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 λεπτά"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7836,6 +8196,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 Minuten"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 λεπτά"
           }
         },
         "en" : {
@@ -7968,6 +8334,12 @@
             "value" : "60 Minuten"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 λεπτά"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8096,6 +8468,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Schlaf-Timer"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Χρονοδιακόπτης ύπνου"
           }
         },
         "en" : {
@@ -8228,6 +8606,12 @@
             "value" : "Die Streaming-Server haben ihre SSL-Zertifikate erneuert. Die App läuft im Kompatibilitätsmodus. Bitte aktualisieren Sie auf die neueste Version, wenn verfügbar, für optimale Sicherheit."
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Οι διακομιστές ροής έχουν ανανεώσει τα πιστοποιητικά SSL τους. Η εφαρμογή λειτουργεί σε λειτουργία συμβατότητας. Ενημερώστε στην πιο πρόσφατη έκδοση όταν είναι διαθέσιμη για βέλτιστη ασφάλεια."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8356,6 +8740,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zertifikat aktualisiert"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το πιστοποιητικό ενημερώθηκε"
           }
         },
         "en" : {
@@ -8489,6 +8879,12 @@
             "value" : "Starten oder fortsetzen Sie die Wiedergabe von Lutheran Radio."
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Έναρξη ή συνέχιση αναπαραγωγής Lutheran Radio."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8617,6 +9013,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Starten oder stoppen Sie die Wiedergabe von Lutheran Radio."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Έναρξη ή διακοπή αναπαραγωγής Lutheran Radio."
           }
         },
         "en" : {
@@ -8749,6 +9151,12 @@
             "value" : "Puffer"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Φόρτωση"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8877,6 +9285,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verbinden"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Σύνδεση"
           }
         },
         "en" : {
@@ -9009,6 +9423,12 @@
             "value" : "Fehler"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αποτυχία"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9139,6 +9559,12 @@
             "value" : "Offline"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Εκτός σύνδεσης"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9267,6 +9693,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pause"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Παύση"
           }
         },
         "en" : {
@@ -9400,6 +9832,12 @@
             "value" : "Pausiert – Anruf aktiv"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Σε παύση – Ενεργή κλήση"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9529,6 +9967,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wiedergabe fehlgeschlagen: %@"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αποτυχία αναπαραγωγής: %@"
           }
         },
         "en" : {
@@ -9662,6 +10106,12 @@
             "value" : "Abspielen"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αναπαραγωγή"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9790,6 +10240,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sicherheit"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ασφάλεια"
           }
         },
         "en" : {
@@ -9922,6 +10378,12 @@
             "value" : "SSL-Zertifikat erneuert - App bald aktualisieren"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ανανεώθηκε το πιστοποιητικό SSL - ενημερώστε σύντομα την εφαρμογή"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10050,6 +10512,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gestoppt"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Διακοπή"
           }
         },
         "en" : {
@@ -10182,6 +10650,12 @@
             "value" : "Aus"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Εκτός"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10310,6 +10784,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gerät heiß"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Θερμή συσκευή"
           }
         },
         "en" : {
@@ -10442,6 +10922,12 @@
             "value" : "Die Sendung ist vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut."
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Η εκπομπή δεν είναι προσωρινά διαθέσιμη. Δοκιμάστε ξανά αργότερα."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10570,6 +11056,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sendung nicht verfügbar"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Η εκπομπή δεν είναι διαθέσιμη"
           }
         },
         "en" : {
@@ -10703,6 +11195,12 @@
             "value" : "Lutheran Radio-Sprachstream wechseln."
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αλλαγή ροής γλώσσας Lutheran Radio."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10831,6 +11329,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stream wechseln"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αλλαγή ροής"
           }
         },
         "en" : {
@@ -10964,6 +11468,12 @@
             "value" : "Zu %@ wechseln"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αλλαγή σε %@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11092,6 +11602,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zu einem anderen Sprachstream von Live-Aktivität wechseln."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αλλαγή σε διαφορετική ροή γλώσσας από τη Ζωντανή δραστηριότητα."
           }
         },
         "en" : {
@@ -11224,6 +11740,12 @@
             "value" : "Zu einem anderen Sprachstream wechseln."
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αλλαγή σε διαφορετική ροή γλώσσας."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11353,6 +11875,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zu %@ gewechselt"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αλλαγή σε %@"
           }
         },
         "en" : {
@@ -11487,6 +12015,12 @@
             "value" : "Zum Öffnen tippen"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Πατήστε για άνοιγμα"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11616,6 +12150,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio umschalten"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Εναλλαγή Lutheran Radio"
           }
         },
         "en" : {
@@ -11748,6 +12288,12 @@
             "value" : "Lutheran Radio Wiedergabe umschalten"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Εναλλαγή αναπαραγωγής Lutheran Radio"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11876,6 +12422,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wiedergabe/Pause von Live-Aktivität umschalten."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Εναλλαγή αναπαραγωγής/παύσης από τη Ζωντανή δραστηριότητα."
           }
         },
         "en" : {
@@ -12009,6 +12561,12 @@
             "value" : "Wiedergabe umschalten"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Εναλλαγή αναπαραγωγής"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12139,6 +12697,12 @@
             "value" : "Lautstärke auf %d Prozent eingestellt"
           }
         },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Η ένταση ορίστηκε στο %d τοις εκατό"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12267,6 +12831,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget-Konfiguration"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Διαμόρφωση γραφικού στοιχείου"
           }
         },
         "en" : {
