@@ -57,7 +57,7 @@ public struct WidgetNowPlayingDisplayModel: Equatable, Sendable {
 /// Returns the localized "X · Live Stream" fallback when no ICY program title is present.
 ///
 /// Uses catalog key `live_activity_program_fallback` from the app/widget `Localizable`
-/// table (all 26 languages). The key is marked `extractionState: manual` in
+/// table (all 27 languages). The key is marked `extractionState: manual` in
 /// `Localizable.xcstrings` because this call site lives in the `WidgetSurface` framework;
 /// Xcode auto-extraction only scans the catalog-owning targets and would otherwise mark
 /// the entry stale despite live usage.

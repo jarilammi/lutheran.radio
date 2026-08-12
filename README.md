@@ -33,6 +33,7 @@ The app is fully localized in the following languages:
 - English (en)
 - Albanian (sq)
 - Bulgarian (bg)
+- Czech (cs)
 - Danish (da)
 - Dutch (nl)
 - Estonian (et)
