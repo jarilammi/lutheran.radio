@@ -41,6 +41,7 @@ The app is fully localized in the following languages:
 - Gagauz (gag)
 - German (de)
 - Greek (el)
+- Hungarian (hu)
 - Icelandic (is)
 - Kalaallisut (kl)
 - Latvian (lv)

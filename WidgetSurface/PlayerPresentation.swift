@@ -213,7 +213,7 @@ public extension PlayerVisualState {
     /// - Important: Keep `PlayerVisualState` focused on policy and semantics
     ///   (resurrection, auto-play, sticky pauses). Presentation details live here.
     /// - Returns: A value-type struct suitable for direct use as a SwiftUI view input.
-    /// - Note: Uses the same localized keys as `PlaybackControlsView` so all 25 languages stay in sync.
+    /// - Note: Uses the same localized keys as `PlaybackControlsView` so all 26 languages stay in sync.
     /// - SeeAlso: ``PlayerStatusPresentation``, ``makeControlPresentation()``,
     ///   ``PlayerControlPresentation``, ``PlayerVisualChromePalette``,
     ///   ``PlayerViewModel/statusPresentation``,

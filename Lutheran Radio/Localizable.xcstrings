@@ -69,6 +69,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -222,6 +228,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld dil"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld nyelv"
           }
         },
         "is" : {
@@ -378,6 +390,12 @@
             "value" : "Ses çıxış cihazını seçmek için iki defa bas"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koppintson duplán a hangkimeneti eszköz kiválasztásához"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -530,6 +548,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hazırki radyo programına dair malümat gösterer"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A jelenlegi rádióműsor információit jeleníti meg"
           }
         },
         "is" : {
@@ -686,6 +710,12 @@
             "value" : "Radyo stream-inin oynatılmasını açar/kapatır"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ki- és bekapcsolja a rádióadás lejátszását"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -838,6 +868,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oynatmanın ne zaman duracağını seçin"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Válassza ki, mennyi idő múlva álljon le a lejátszás"
           }
         },
         "is" : {
@@ -994,6 +1030,12 @@
             "value" : "Oynatma ses seviyesini ayarlar"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A lejátszás hangerőjét állítja"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1143,6 +1185,12 @@
           }
         },
         "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "hu" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -1303,6 +1351,12 @@
             "value" : "Lutheran Radio Logo"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio logó"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1455,6 +1509,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duraklat"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szünet"
           }
         },
         "is" : {
@@ -1612,6 +1672,12 @@
             "value" : "Foto %@"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ fényképe"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1764,6 +1830,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oynat"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lejátszás"
           }
         },
         "is" : {
@@ -1920,6 +1992,12 @@
             "value" : "Uyku zamanlayıcısı"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elalvási időzítő"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2072,6 +2150,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ses"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hangerő"
           }
         },
         "is" : {
@@ -2228,6 +2312,12 @@
             "value" : "%d faiz"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d százalék"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2380,6 +2470,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Devam et"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folytatás"
           }
         },
         "is" : {
@@ -2536,6 +2632,12 @@
             "value" : "Tekrar dene"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Újra"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2688,6 +2790,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bu oturum üçin izin ver"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Engedélyezés erre a munkamenetre"
           }
         },
         "is" : {
@@ -2844,6 +2952,12 @@
             "value" : "Daima izin ver"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mindig engedélyezés"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2996,6 +3110,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Şindi yok"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Most nem"
           }
         },
         "is" : {
@@ -3152,6 +3272,12 @@
             "value" : "Temizle"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Törlés"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3304,6 +3430,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Temizlendi"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Törölve"
           }
         },
         "is" : {
@@ -3460,6 +3592,12 @@
             "value" : "Bu, oynatmayı durdurur, widget ve Live Activity verilerini kaldırır ve bu cihazdan son dinleme durumunu temizler. İşlem geri alınamaz."
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ez leállítja a lejátszást, eltávolítja a widget és az élő tevékenység adatait, és törli a közelmúltbeli hallgatási állapotot erről az eszközről. A művelet nem vonható vissza."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3614,6 +3752,12 @@
             "value" : "Lokal oynatma durumunu temizle"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Helyi lejátszási állapot törlése"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3766,6 +3910,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio widget konfiguratsiyası."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Lutheran Radio widget beállításai."
           }
         },
         "is" : {
@@ -3923,6 +4073,12 @@
             "value" : "Bağlantı hatası"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kapcsolati hiba"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4078,6 +4234,12 @@
             "value" : "Lutheran Radio oynatılmasını kontrol et ve cari stansiyanı gör."
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Irányítsa a Lutheran Radio lejátszását, és tekintse meg az aktuális adást."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4230,6 +4392,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oynatmayı kontrol et ve dil stream-leri arasında geçiş yap."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Irányítsa a lejátszást, és váltson a nyelvi adások között."
           }
         },
         "is" : {
@@ -4387,6 +4555,12 @@
             "value" : "Sesi azalt"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hangerő csökkentése"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4542,6 +4716,12 @@
             "value" : "Sesi artır"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hangerő növelése"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4694,6 +4874,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oynatılıyor"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lejátszás alatt"
           }
         },
         "is" : {
@@ -4851,6 +5037,12 @@
             "value" : "Dil"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nyelv"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5003,6 +5195,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dil kodu"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nyelvkód"
           }
         },
         "is" : {
@@ -5160,6 +5358,12 @@
             "value" : "İngilizce"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angol"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5313,6 +5517,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estonca"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Észt"
           }
         },
         "is" : {
@@ -5470,6 +5680,12 @@
             "value" : "Fince"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finn"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5623,6 +5839,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Almanca"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Német"
           }
         },
         "is" : {
@@ -5780,6 +6002,12 @@
             "value" : "İsveççe"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svéd"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5933,6 +6161,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Canlı yayın"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Élő adás"
           }
         },
         "is" : {
@@ -6090,6 +6324,12 @@
             "value" : "Yalnızca lokal"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Csak helyi"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6240,6 +6480,12 @@
           }
         },
         "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "hu" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -6399,6 +6645,12 @@
             "value" : "Uygulama mobil veri kullanıyor, bu da veri tarifenize göre masraf çıxarabilir."
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az app mobiladatot használ, ami a díjcsomagjától függően költségekkel járhat."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6551,6 +6803,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobil veri kullanımı"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mobiladat-használat"
           }
         },
         "is" : {
@@ -6707,6 +6965,12 @@
             "value" : "Parça bilgisi yok"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nincs számadat"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6859,6 +7123,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Şimdi oynatılıyor"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Most szól"
           }
         },
         "is" : {
@@ -7015,6 +7285,12 @@
             "value" : "Tamam"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7168,6 +7444,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Önce uygulamayı aç"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Először nyissa meg az appot"
           }
         },
         "is" : {
@@ -7326,6 +7608,12 @@
             "value" : "Lutheran Radio duraklat"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio szüneteltetése"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7481,6 +7769,12 @@
             "value" : "Lutheran Radio oynatmayı duraklat."
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Lutheran Radio lejátszásának szüneteltetése."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7633,6 +7927,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oynat"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lejátszás"
           }
         },
         "is" : {
@@ -7790,6 +8090,12 @@
             "value" : "Lutheran Radio oynat"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio lejátszása"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7942,6 +8248,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio'yu oynat yahut duraklat."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio lejátszása vagy szüneteltetése."
           }
         },
         "is" : {
@@ -8099,6 +8411,12 @@
             "value" : "Lutheran Radio oynat veya devam ettir."
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio lejátszása vagy folytatása."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8253,6 +8571,12 @@
             "value" : "Güvenlik doğrulama hatası sebebinden oynatma başlatılamıyor. Lütfen internet bağlantınızı kontrol edin ve uygulamanın güncel olduğundan emin olun. Sorun devam ederse uygulamayı yeniden başlatın ve tekrar deneyin."
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A lejátszás nem indítható biztonsági ellenőrzési hiba miatt. Ellenőrizze az internetkapcsolatot, és győződjön meg arról, hogy az app naprakész. Ha a probléma továbbra is fennáll, indítsa újra az appot, és próbálja meg újra."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8405,6 +8729,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Güvenlik doğrulaması başarısız oldu"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A biztonsági ellenőrzés sikertelen"
           }
         },
         "is" : {
@@ -8562,6 +8892,12 @@
             "value" : "Seç %@"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kiválasztása"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8714,6 +9050,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d dakika kaldı"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d perc van hátra"
           }
         },
         "is" : {
@@ -8870,6 +9212,12 @@
             "value" : "Zamanlayıcıyı iptal et"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Időzítő törlése"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9022,6 +9370,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 dakika"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 perc"
           }
         },
         "is" : {
@@ -9178,6 +9532,12 @@
             "value" : "30 dakika"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 perc"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9330,6 +9690,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 dakika"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 perc"
           }
         },
         "is" : {
@@ -9486,6 +9852,12 @@
             "value" : "60 dakika"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 perc"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9638,6 +10010,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uyku zamanlayıcısı"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elalvási időzítő"
           }
         },
         "is" : {
@@ -9794,6 +10172,12 @@
             "value" : "Streaming serverleri SSL sertifikalarını yeniledi. Uygulama uyumluluk modunda çalışıyor. En yeni versiyona güncellemenizi tavsiye ederiz."
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A streamingszerverek megújították az SSL-tanúsítványaikat. Az app kompatibilitási módban működik. A lehető legjobb biztonság érdekében frissítsen a legújabb verzióra, amint elérhető."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9946,6 +10330,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sertifika yenilendi"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tanúsítvány frissítve"
           }
         },
         "is" : {
@@ -10103,6 +10493,12 @@
             "value" : "Lutheran Radio oynatılmasını başlat yahut devam et."
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Lutheran Radio lejátszásának indítása vagy folytatása."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10255,6 +10651,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio oynatılmasını başlat yahut durdur."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Lutheran Radio lejátszásának indítása vagy leállítása."
           }
         },
         "is" : {
@@ -10411,6 +10813,12 @@
             "value" : "Tampon"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puffer"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10563,6 +10971,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bağlan"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Csatlakozás"
           }
         },
         "is" : {
@@ -10719,6 +11133,12 @@
             "value" : "Başarısız"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiba"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10868,6 +11288,12 @@
           }
         },
         "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        },
+        "hu" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Offline"
@@ -11027,6 +11453,12 @@
             "value" : "Duraklat"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szünet"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11180,6 +11612,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duraklatıldı – Çağrı aktif"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szünet – Hívás folyamatban"
           }
         },
         "is" : {
@@ -11337,6 +11775,12 @@
             "value" : "Oynatma başarısız oldu: %@"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lejátszás sikertelen: %@"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11490,6 +11934,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oynat"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lejátszás"
           }
         },
         "is" : {
@@ -11646,6 +12096,12 @@
             "value" : "Güvenlik"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Biztonság"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11798,6 +12254,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SSL sertifikası yenilendi – uygulamayı yakında güncelle"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-tanúsítvány megújítva – frissítse hamarosan az appot"
           }
         },
         "is" : {
@@ -11954,6 +12416,12 @@
             "value" : "Durduruldu"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leállítva"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12106,6 +12574,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kapalı"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ki"
           }
         },
         "is" : {
@@ -12262,6 +12736,12 @@
             "value" : "Cihaz ısındı"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forró eszköz"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12416,6 +12896,12 @@
             "value" : "Yayın geçici olarak mevcut değil. Lütfen daha sonra tekrar deneyin."
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az adás átmenetileg nem érhető el. Próbálja meg később újra."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12568,6 +13054,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yayın mevcut değil"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az adás nem érhető el"
           }
         },
         "is" : {
@@ -12725,6 +13217,12 @@
             "value" : "Lutheran Radio dil akışını değiştir."
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Lutheran Radio nyelvi adásának váltása."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12877,6 +13375,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stream değiştir"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adás váltása"
           }
         },
         "is" : {
@@ -13034,6 +13538,12 @@
             "value" : "Geç %@"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Váltás erre: %@"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13186,6 +13696,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Live Activity'den farklı bir dil stream-ine geçiş yap."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Váltás másik nyelvi adásra az élő tevékenységből."
           }
         },
         "is" : {
@@ -13342,6 +13858,12 @@
             "value" : "Farklı bir dil stream-ine geçiş yap."
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Váltás másik nyelvi adásra."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13495,6 +14017,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ diline geçiş yapıldı"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Átváltva: %@"
           }
         },
         "is" : {
@@ -13653,6 +14181,12 @@
             "value" : "Açmak için tıkla"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koppintson a megnyitáshoz"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13806,6 +14340,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio'yu aç/kapat"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio átkapcsolása"
           }
         },
         "is" : {
@@ -13962,6 +14502,12 @@
             "value" : "Lutheran Radio oynatılmasını aç/kapat"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio lejátszás átkapcsolása"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14114,6 +14660,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Live Activity'den oynat/duraklat."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lejátszás/szünet átkapcsolása az élő tevékenységből."
           }
         },
         "is" : {
@@ -14271,6 +14823,12 @@
             "value" : "Oynatmayı aç/kapat"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lejátszás átkapcsolása"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14425,6 +14983,12 @@
             "value" : "Ses seviyesi %d faize ayarlandı"
           }
         },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hangerő %d százalékra állítva"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14577,6 +15141,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget konfiguratsiyası"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Widgetbeállítások"
           }
         },
         "is" : {
