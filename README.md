@@ -49,6 +49,7 @@ The app is fully localized in the following languages:
 - Norwegian Bokmål (nb)
 - Norwegian Nynorsk (nn)
 - Polish (pl)
+- Romanian (ro)
 - Russian (ru)
 - Slovak (sk)
 - Spanish (es)

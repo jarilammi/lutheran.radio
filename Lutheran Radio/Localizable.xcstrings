@@ -117,6 +117,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -264,6 +270,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld języków"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld limbi"
           }
         },
         "ru" : {
@@ -414,6 +426,12 @@
             "value" : "Dotknij dwukrotnie, aby wybrać urządzenie wyjścia audio"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atinge de două ori pentru a selecta dispozitivul de ieșire audio"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -560,6 +578,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wyświetla informacje o bieżącym programie radiowym"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afișează informații despre programul radio actual"
           }
         },
         "ru" : {
@@ -710,6 +734,12 @@
             "value" : "Przełącza odtwarzanie strumienia radiowego"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comută redarea fluxului radio"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -856,6 +886,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wybierz, za ile odtwarzanie się zatrzyma"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alege după cât timp se oprește redarea"
           }
         },
         "ru" : {
@@ -1006,6 +1042,12 @@
             "value" : "Reguluje głośność odtwarzania"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustează volumul de redare"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1149,6 +1191,12 @@
           }
         },
         "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "ro" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -1303,6 +1351,12 @@
             "value" : "Logo Lutheran Radio"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logo Lutheran Radio"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1449,6 +1503,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauza"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Întrerupe"
           }
         },
         "ru" : {
@@ -1600,6 +1660,12 @@
             "value" : "Zdjęcie %@"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotografie cu %@"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1746,6 +1812,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwórz"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redă"
           }
         },
         "ru" : {
@@ -1896,6 +1968,12 @@
             "value" : "Wyłącznik czasowy"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temporizator de somn"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2042,6 +2120,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Głośność"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volum"
           }
         },
         "ru" : {
@@ -2192,6 +2276,12 @@
             "value" : "%d procent"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d la sută"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2338,6 +2428,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kontynuuj"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuă"
           }
         },
         "ru" : {
@@ -2488,6 +2584,12 @@
             "value" : "Ponów"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reîncearcă"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2634,6 +2736,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zezwalaj na tę sesję"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permite pentru această sesiune"
           }
         },
         "ru" : {
@@ -2784,6 +2892,12 @@
             "value" : "Zawsze zezwalaj"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permite întotdeauna"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2930,6 +3044,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nie teraz"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nu acum"
           }
         },
         "ru" : {
@@ -3080,6 +3200,12 @@
             "value" : "Wyczyść"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Șterge"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3226,6 +3352,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wyczyszczono"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Șters"
           }
         },
         "ru" : {
@@ -3376,6 +3508,12 @@
             "value" : "Spowoduje to zatrzymanie odtwarzania, usunięcie danych widżetu i Live Activity oraz wyczyszczenie ostatniego stanu słuchania z tego urządzenia. Tej czynności nie można cofnąć."
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aceasta va opri redarea, va elimina datele widgetului și ale Activității live și va șterge starea recentă de ascultare de pe acest dispozitiv. Acțiunea nu poate fi anulată."
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3524,6 +3662,12 @@
             "value" : "Wyczyść lokalny stan odtwarzania"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Șterge starea locală de redare"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3670,6 +3814,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Konfiguracja widżetu Lutheran Radio."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configurare pentru widgetul Lutheran Radio."
           }
         },
         "ru" : {
@@ -3821,6 +3971,12 @@
             "value" : "Błąd połączenia"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eroare de conexiune"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3970,6 +4126,12 @@
             "value" : "Kontroluj odtwarzanie Lutheran Radio i zobacz bieżącą stację."
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controlează redarea Lutheran Radio și vezi postul actual."
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4116,6 +4278,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kontroluj odtwarzanie i przełączaj się między strumieniami językowymi."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controlează redarea și comută între fluxurile de limbi."
           }
         },
         "ru" : {
@@ -4267,6 +4435,12 @@
             "value" : "Zmniejsz głośność"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scade volumul"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4416,6 +4590,12 @@
             "value" : "Zwiększ głośność"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crește volumul"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4562,6 +4742,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwarza"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se redă"
           }
         },
         "ru" : {
@@ -4713,6 +4899,12 @@
             "value" : "Język"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limbă"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4859,6 +5051,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kod języka"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cod de limbă"
           }
         },
         "ru" : {
@@ -5010,6 +5208,12 @@
             "value" : "Angielski"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Engleză"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5157,6 +5361,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estoński"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estonă"
           }
         },
         "ru" : {
@@ -5308,6 +5518,12 @@
             "value" : "Fiński"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finlandeză"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5455,6 +5671,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Niemiecki"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Germană"
           }
         },
         "ru" : {
@@ -5606,6 +5828,12 @@
             "value" : "Szwedzki"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suedeză"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5753,6 +5981,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Transmisja na żywo"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Transmisiune live"
           }
         },
         "ru" : {
@@ -5904,6 +6138,12 @@
             "value" : "Tylko lokalnie"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doar local"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6048,6 +6288,12 @@
           }
         },
         "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "ro" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -6201,6 +6447,12 @@
             "value" : "Aplikacja używa danych mobilnych, co może generować koszty w zależności od Twojego planu taryfowego."
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aplicația folosește date mobile, ceea ce poate genera costuri în funcție de planul tău de date."
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6347,6 +6599,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Użycie danych mobilnych"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilizare date mobile"
           }
         },
         "ru" : {
@@ -6497,6 +6755,12 @@
             "value" : "Brak informacji o utworze"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicio informație despre piesă"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6643,6 +6907,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Teraz gra"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "În redare"
           }
         },
         "ru" : {
@@ -6793,6 +7063,12 @@
             "value" : "Dobrze"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6940,6 +7216,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Najpierw otwórz aplikację"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deschide mai întâi aplicația"
           }
         },
         "ru" : {
@@ -7092,6 +7374,12 @@
             "value" : "Wstrzymaj Lutheran Radio"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Întrerupe Lutheran Radio"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7241,6 +7529,12 @@
             "value" : "Wstrzymaj odtwarzanie Lutheran Radio."
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Întrerupe redarea Lutheran Radio."
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7387,6 +7681,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwórz"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redă"
           }
         },
         "ru" : {
@@ -7538,6 +7838,12 @@
             "value" : "Odtwórz Lutheran Radio"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redă Lutheran Radio"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7684,6 +7990,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwarzaj lub zatrzymaj Lutheran Radio."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redă sau întrerupe Lutheran Radio."
           }
         },
         "ru" : {
@@ -7835,6 +8147,12 @@
             "value" : "Odtwórz lub wznów Lutheran Radio."
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redă sau reia Lutheran Radio."
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7983,6 +8301,12 @@
             "value" : "Nie można rozpocząć odtwarzania z powodu niepowodzenia weryfikacji bezpieczeństwa. Proszę sprawdzić połączenie internetowe i upewnić się, że aplikacja jest zaktualizowana. Jeśli problem nadal występuje, uruchom ponownie aplikację i spróbuj jeszcze raz."
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redarea nu poate fi pornită din cauza unei erori de validare a securității. Verifică conexiunea la internet și asigură-te că aplicația este actualizată. Dacă problema persistă, repornește aplicația și încearcă din nou."
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8129,6 +8453,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Weryfikacja zabezpieczeń nie powiodła się"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Validarea de securitate a eșuat"
           }
         },
         "ru" : {
@@ -8280,6 +8610,12 @@
             "value" : "Wybierz %@"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selectează %@"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8426,6 +8762,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pozostało %d min"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d minute rămase"
           }
         },
         "ru" : {
@@ -8576,6 +8918,12 @@
             "value" : "Anuluj wyłącznik"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anulează temporizatorul"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8722,6 +9070,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minut"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minute"
           }
         },
         "ru" : {
@@ -8872,6 +9226,12 @@
             "value" : "30 minut"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 de minute"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9018,6 +9378,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 minut"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 de minute"
           }
         },
         "ru" : {
@@ -9168,6 +9534,12 @@
             "value" : "60 minut"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 de minute"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9314,6 +9686,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wyłącznik czasowy"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temporizator de somn"
           }
         },
         "ru" : {
@@ -9464,6 +9842,12 @@
             "value" : "Serwery streamingowe odnowiły swoje certyfikaty SSL. Aplikacja działa w trybie kompatybilności. Prosimy o aktualizację do najnowszej wersji, gdy będzie dostępna, dla optymalnego bezpieczeństwa."
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Serverele de streaming și-au reînnoit certificatele SSL. Aplicația funcționează în modul de compatibilitate. Actualizează la cea mai recentă versiune când este disponibilă pentru o securitate optimă."
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9610,6 +9994,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Certyfikat zaktualizowany"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certificat actualizat"
           }
         },
         "ru" : {
@@ -9761,6 +10151,12 @@
             "value" : "Rozpocznij lub wznów odtwarzanie Lutheran Radio."
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pornește sau reia redarea Lutheran Radio."
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9907,6 +10303,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rozpocznij lub zatrzymaj odtwarzanie Lutheran Radio."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pornește sau oprește redarea Lutheran Radio."
           }
         },
         "ru" : {
@@ -10057,6 +10459,12 @@
             "value" : "Bufor"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buffer"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10203,6 +10611,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Łączy"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectare"
           }
         },
         "ru" : {
@@ -10353,6 +10767,12 @@
             "value" : "Niepowodzenie"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eșuat"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10496,6 +10916,12 @@
           }
         },
         "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        },
+        "ro" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Offline"
@@ -10649,6 +11075,12 @@
             "value" : "Pauza"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauză"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10796,6 +11228,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wstrzymane – Trwa połączenie"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Întrerupt – Apel activ"
           }
         },
         "ru" : {
@@ -10947,6 +11385,12 @@
             "value" : "Odtwarzanie nie powiodło się: %@"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redarea a eșuat: %@"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11094,6 +11538,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gra"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redă"
           }
         },
         "ru" : {
@@ -11244,6 +11694,12 @@
             "value" : "Bezpieczeństwo"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Securitate"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11390,6 +11846,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Certyfikat SSL odnowiony - zaktualizuj aplikację wkrótce"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certificat SSL reînnoit – actualizează aplicația în curând"
           }
         },
         "ru" : {
@@ -11540,6 +12002,12 @@
             "value" : "Zatrzymano"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oprit"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11686,6 +12154,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wył"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oprit"
           }
         },
         "ru" : {
@@ -11836,6 +12310,12 @@
             "value" : "Za gorące"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispozitiv fierbinte"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11984,6 +12464,12 @@
             "value" : "Emisja jest tymczasowo niedostępna. Spróbuj ponownie później."
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transmisiunea nu este disponibilă temporar. Încearcă din nou mai târziu."
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12130,6 +12616,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Emisja niedostępna"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transmisiune indisponibilă"
           }
         },
         "ru" : {
@@ -12281,6 +12773,12 @@
             "value" : "Przełącz strumień językowy Lutheran Radio."
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comută fluxul de limbă Lutheran Radio."
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12427,6 +12925,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Przełącz strumień"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comută fluxul"
           }
         },
         "ru" : {
@@ -12578,6 +13082,12 @@
             "value" : "Przełącz na %@"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comută la %@"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12724,6 +13234,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Przełącz na inny strumień językowy z Aktywności na żywo."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comută la un alt flux de limbă din Activitatea live."
           }
         },
         "ru" : {
@@ -12874,6 +13390,12 @@
             "value" : "Przełącz na inny strumień językowy."
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comută la un alt flux de limbă."
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13021,6 +13543,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Przełączono na %@"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comutat la %@"
           }
         },
         "ru" : {
@@ -13173,6 +13701,12 @@
             "value" : "Stuknij, aby otworzyć"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atinge pentru a deschide"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13320,6 +13854,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Przełącz Lutheran Radio"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comută Lutheran Radio"
           }
         },
         "ru" : {
@@ -13470,6 +14010,12 @@
             "value" : "Przełącz odtwarzanie Lutheran Radio"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comută redarea Lutheran Radio"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13616,6 +14162,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Przełącz odtwarzanie/pauzę z Aktywności na żywo."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comută redare/pauză din Activitatea live."
           }
         },
         "ru" : {
@@ -13767,6 +14319,12 @@
             "value" : "Przełącz odtwarzanie"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comută redarea"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13915,6 +14473,12 @@
             "value" : "Głośność ustawiona na %d procent"
           }
         },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volum setat la %d la sută"
+          }
+        },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14061,6 +14625,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Konfiguracja widżetu"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configurare widget"
           }
         },
         "ru" : {
