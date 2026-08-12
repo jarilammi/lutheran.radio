@@ -83,7 +83,7 @@ import WidgetSurface
 /// and interaction settle windows live on that sleep-timer domain.
 ///
 /// String revival note: `sleep_timer_sheet_title` is materialized here (and also used directly
-/// in the dialog) to keep the localization entry live across all 28 languages.
+/// in the dialog) to keep the localization entry live across all 29 languages.
 ///
 /// - SeeAlso: ``PlayerViewModel``, `PlaybackControlsView`, `LanguageSelectorView`,
 ///   `NowPlayingMetadataView`, `VolumeAndAirPlayRow`, `ViewController`,
@@ -237,7 +237,7 @@ struct RadioPlayerView: View {
 ///   `MPVolumeView` (see `SystemVolumeRepresentable.makeUIView`) to keep the existing
 ///   `app.sliders["volumeSlider"]` / descendant UI tests passing without modification.
 /// - Label (`accessibility_label_volume`) and hint (`accessibility_hint_volume`) on the
-///   SwiftUI wrapper (all 28 languages).
+///   SwiftUI wrapper (all 29 languages).
 /// - Value (`accessibility_value_volume`, e.g. "50 percent") kept live on the UIKit slider
 ///   and mirrored on the SwiftUI wrapper so VO speaks a localized percent.
 /// - Named custom actions `increase_volume` / `decrease_volume` step system volume by 10%
@@ -329,7 +329,7 @@ struct VolumeAndAirPlayRow: View {
 ///
 /// Revives the localization cluster orphaned when the UIKit `volumeSlider` was removed in
 /// favor of ``MPVolumeView`` (`accessibility_value_volume`, `increase_volume`,
-/// `decrease_volume`, `volume_set_to`). All 28 language translations remain in
+/// `decrease_volume`, `volume_set_to`). All 29 language translations remain in
 /// `Localizable.xcstrings`.
 ///
 /// - Important: Never routes through `DirectStreamingPlayer.setVolume` (AVPlayer internal

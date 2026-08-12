@@ -75,6 +75,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -246,6 +252,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld dil"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld jezika"
           }
         },
         "hu" : {
@@ -420,6 +432,12 @@
             "value" : "Ses çıxış cihazını seçmek için iki defa bas"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dvaput dodirnite za odabir izlaznog audio uređaja"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -590,6 +608,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hazırki radyo programına dair malümat gösterer"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prikazuje informacije o trenutačnom radijskom programu"
           }
         },
         "hu" : {
@@ -764,6 +788,12 @@
             "value" : "Radyo stream-inin oynatılmasını açar/kapatır"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uključuje ili pauzira reprodukciju radijskog streama"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -934,6 +964,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oynatmanın ne zaman duracağını seçin"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odaberite koliko dugo do zaustavljanja reprodukcije"
           }
         },
         "hu" : {
@@ -1108,6 +1144,12 @@
             "value" : "Oynatma ses seviyesini ayarlar"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prilagođava glasnoću reprodukcije"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1275,6 +1317,12 @@
           }
         },
         "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "hr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -1453,6 +1501,12 @@
             "value" : "Lutheran Radio Logo"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logotip Lutheran Radio"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1623,6 +1677,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duraklat"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauziraj"
           }
         },
         "hu" : {
@@ -1798,6 +1858,12 @@
             "value" : "Foto %@"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotografija %@"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1968,6 +2034,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oynat"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduciraj"
           }
         },
         "hu" : {
@@ -2142,6 +2214,12 @@
             "value" : "Uyku zamanlayıcısı"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timer za spavanje"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2312,6 +2390,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ses"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glasnoća"
           }
         },
         "hu" : {
@@ -2486,6 +2570,12 @@
             "value" : "%d faiz"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d posto"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2656,6 +2746,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Devam et"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nastavi"
           }
         },
         "hu" : {
@@ -2830,6 +2926,12 @@
             "value" : "Tekrar dene"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pokušaj ponovno"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3000,6 +3102,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bu oturum üçin izin ver"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dopusti za ovu sesiju"
           }
         },
         "hu" : {
@@ -3174,6 +3282,12 @@
             "value" : "Daima izin ver"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uvijek dopusti"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3344,6 +3458,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Şindi yok"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ne sada"
           }
         },
         "hu" : {
@@ -3518,6 +3638,12 @@
             "value" : "Temizle"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Obriši"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3688,6 +3814,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Temizlendi"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Obrisano"
           }
         },
         "hu" : {
@@ -3862,6 +3994,12 @@
             "value" : "Bu, oynatmayı durdurur, widget ve Live Activity verilerini kaldırır ve bu cihazdan son dinleme durumunu temizler. İşlem geri alınamaz."
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovo će zaustaviti reprodukciju, ukloniti podatke widgeta i Aktivnosti uživo te obrisati nedavno stanje slušanja s ovog uređaja. Radnju nije moguće poništiti."
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4034,6 +4172,12 @@
             "value" : "Lokal oynatma durumunu temizle"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Obriši lokalno stanje reprodukcije"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4204,6 +4348,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio widget konfiguratsiyası."
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfiguracija widgeta Lutheran Radio."
           }
         },
         "hu" : {
@@ -4379,6 +4529,12 @@
             "value" : "Bağlantı hatası"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pogreška veze"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4552,6 +4708,12 @@
             "value" : "Lutheran Radio oynatılmasını kontrol et ve cari stansiyanı gör."
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upravljajte reprodukcijom Lutheran Radio i pogledajte trenutačnu postaju."
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4722,6 +4884,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oynatmayı kontrol et ve dil stream-leri arasında geçiş yap."
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upravljajte reprodukcijom i prebacujte se između jezičnih streamova."
           }
         },
         "hu" : {
@@ -4897,6 +5065,12 @@
             "value" : "Sesi azalt"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Smanji glasnoću"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5070,6 +5244,12 @@
             "value" : "Sesi artır"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Povećaj glasnoću"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5240,6 +5420,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oynatılıyor"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducira se"
           }
         },
         "hu" : {
@@ -5415,6 +5601,12 @@
             "value" : "Dil"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jezik"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5585,6 +5777,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dil kodu"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kod jezika"
           }
         },
         "hu" : {
@@ -5760,6 +5958,12 @@
             "value" : "İngilizce"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Engleski"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5931,6 +6135,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estonca"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estonski"
           }
         },
         "hu" : {
@@ -6106,6 +6316,12 @@
             "value" : "Fince"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finski"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6277,6 +6493,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Almanca"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Njemački"
           }
         },
         "hu" : {
@@ -6452,6 +6674,12 @@
             "value" : "İsveççe"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Švedski"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6623,6 +6851,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Canlı yayın"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Prijenos uživo"
           }
         },
         "hu" : {
@@ -6798,6 +7032,12 @@
             "value" : "Yalnızca lokal"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Samo lokalno"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6966,6 +7206,12 @@
           }
         },
         "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "hr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -7143,6 +7389,12 @@
             "value" : "Uygulama mobil veri kullanıyor, bu da veri tarifenize göre masraf çıxarabilir."
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aplikacija koristi mobilne podatke, što može uzrokovati dodatne troškove ovisno o vašoj tarifi."
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7313,6 +7565,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobil veri kullanımı"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upotreba mobilnih podataka"
           }
         },
         "hu" : {
@@ -7487,6 +7745,12 @@
             "value" : "Parça bilgisi yok"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nema informacija o skladbi"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7657,6 +7921,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Şimdi oynatılıyor"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sada se reproducira"
           }
         },
         "hu" : {
@@ -7831,6 +8101,12 @@
             "value" : "Tamam"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "U redu"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8002,6 +8278,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Önce uygulamayı aç"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prvo otvorite aplikaciju"
           }
         },
         "hu" : {
@@ -8178,6 +8460,12 @@
             "value" : "Lutheran Radio duraklat"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauziraj Lutheran Radio"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8351,6 +8639,12 @@
             "value" : "Lutheran Radio oynatmayı duraklat."
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauziraj reprodukciju Lutheran Radio."
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8521,6 +8815,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oynat"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduciraj"
           }
         },
         "hu" : {
@@ -8696,6 +8996,12 @@
             "value" : "Lutheran Radio oynat"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduciraj Lutheran Radio"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8866,6 +9172,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio'yu oynat yahut duraklat."
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduciraj ili pauziraj Lutheran Radio."
           }
         },
         "hu" : {
@@ -9041,6 +9353,12 @@
             "value" : "Lutheran Radio oynat veya devam ettir."
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduciraj ili nastavi Lutheran Radio."
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9213,6 +9531,12 @@
             "value" : "Güvenlik doğrulama hatası sebebinden oynatma başlatılamıyor. Lütfen internet bağlantınızı kontrol edin ve uygulamanın güncel olduğundan emin olun. Sorun devam ederse uygulamayı yeniden başlatın ve tekrar deneyin."
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reprodukciju nije moguće pokrenuti zbog neuspjele sigurnosne provjere. Provjerite internetsku vezu i uvjerite se da je aplikacija ažurirana. Ako se problem nastavi, ponovno pokrenite aplikaciju i pokušajte ponovno."
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9383,6 +9707,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Güvenlik doğrulaması başarısız oldu"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sigurnosna provjera nije uspjela"
           }
         },
         "hu" : {
@@ -9558,6 +9888,12 @@
             "value" : "Seç %@"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odaberi %@"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9728,6 +10064,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d dakika kaldı"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Još %d minuta"
           }
         },
         "hu" : {
@@ -9902,6 +10244,12 @@
             "value" : "Zamanlayıcıyı iptal et"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otkaži timer"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10072,6 +10420,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 dakika"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minuta"
           }
         },
         "hu" : {
@@ -10246,6 +10600,12 @@
             "value" : "30 dakika"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 minuta"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10416,6 +10776,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 dakika"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 minuta"
           }
         },
         "hu" : {
@@ -10590,6 +10956,12 @@
             "value" : "60 dakika"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 minuta"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10760,6 +11132,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uyku zamanlayıcısı"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timer za spavanje"
           }
         },
         "hu" : {
@@ -10934,6 +11312,12 @@
             "value" : "Streaming serverleri SSL sertifikalarını yeniledi. Uygulama uyumluluk modunda çalışıyor. En yeni versiyona güncellemenizi tavsiye ederiz."
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poslužitelji za streaming obnovili su svoje SSL certifikate. Aplikacija radi u načinu kompatibilnosti. Ažurirajte na najnoviju verziju kada bude dostupna radi optimalne sigurnosti."
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11104,6 +11488,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sertifika yenilendi"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certifikat je ažuriran"
           }
         },
         "hu" : {
@@ -11279,6 +11669,12 @@
             "value" : "Lutheran Radio oynatılmasını başlat yahut devam et."
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pokrenite ili nastavite reprodukciju Lutheran Radio."
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11449,6 +11845,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio oynatılmasını başlat yahut durdur."
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pokrenite ili zaustavite reprodukciju Lutheran Radio."
           }
         },
         "hu" : {
@@ -11623,6 +12025,12 @@
             "value" : "Tampon"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Učitavanje"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11793,6 +12201,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bağlan"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Povezivanje"
           }
         },
         "hu" : {
@@ -11967,6 +12381,12 @@
             "value" : "Başarısız"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuspješno"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12139,6 +12559,12 @@
             "value" : "Offline"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Izvan mreže"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12309,6 +12735,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duraklat"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauzirano"
           }
         },
         "hu" : {
@@ -12484,6 +12916,12 @@
             "value" : "Duraklatıldı – Çağrı aktif"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauzirano – aktivan poziv"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12655,6 +13093,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oynatma başarısız oldu: %@"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reprodukcija nije uspjela: %@"
           }
         },
         "hu" : {
@@ -12830,6 +13274,12 @@
             "value" : "Oynat"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducira se"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13000,6 +13450,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Güvenlik"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sigurnost"
           }
         },
         "hu" : {
@@ -13174,6 +13630,12 @@
             "value" : "SSL sertifikası yenilendi – uygulamayı yakında güncelle"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL certifikat obnovljen – uskoro ažurirajte aplikaciju"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13344,6 +13806,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Durduruldu"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zaustavljeno"
           }
         },
         "hu" : {
@@ -13518,6 +13986,12 @@
             "value" : "Kapalı"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isključeno"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13688,6 +14162,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cihaz ısındı"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uređaj se pregrijava"
           }
         },
         "hu" : {
@@ -13862,6 +14342,12 @@
             "value" : "Yayın geçici olarak mevcut değil. Lütfen daha sonra tekrar deneyin."
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Emitiranje trenutačno nije dostupno. Pokušajte ponovno kasnije."
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14032,6 +14518,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yayın mevcut değil"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Emitiranje nije dostupno"
           }
         },
         "hu" : {
@@ -14207,6 +14699,12 @@
             "value" : "Lutheran Radio dil akışını değiştir."
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prebaci jezični stream Lutheran Radio."
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14377,6 +14875,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stream değiştir"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prebaci stream"
           }
         },
         "hu" : {
@@ -14552,6 +15056,12 @@
             "value" : "Geç %@"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prebaci na %@"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14722,6 +15232,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Live Activity'den farklı bir dil stream-ine geçiş yap."
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prebaci na drugi jezični stream iz Aktivnosti uživo."
           }
         },
         "hu" : {
@@ -14896,6 +15412,12 @@
             "value" : "Farklı bir dil stream-ine geçiş yap."
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prebaci na drugi jezični stream."
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15067,6 +15589,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ diline geçiş yapıldı"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prebačeno na %@"
           }
         },
         "hu" : {
@@ -15243,6 +15771,12 @@
             "value" : "Açmak için tıkla"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dodirnite za otvaranje"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15414,6 +15948,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio'yu aç/kapat"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uključi/isključi Lutheran Radio"
           }
         },
         "hu" : {
@@ -15588,6 +16128,12 @@
             "value" : "Lutheran Radio oynatılmasını aç/kapat"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uključi/isključi reprodukciju Lutheran Radio"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15758,6 +16304,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Live Activity'den oynat/duraklat."
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uključi ili pauziraj reprodukciju iz Aktivnosti uživo."
           }
         },
         "hu" : {
@@ -15933,6 +16485,12 @@
             "value" : "Oynatmayı aç/kapat"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uključi/isključi reprodukciju"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16105,6 +16663,12 @@
             "value" : "Ses seviyesi %d faize ayarlandı"
           }
         },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glasnoća postavljena na %d posto"
+          }
+        },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16275,6 +16839,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget konfiguratsiyası"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfiguracija widgeta"
           }
         },
         "hu" : {
