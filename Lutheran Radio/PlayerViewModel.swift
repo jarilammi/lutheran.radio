@@ -478,7 +478,7 @@ final class PlayerViewModel {
         // previous inline site in PlaybackControlsView). The format is trusted
         // (Localizable.xcstrings) and the argument is a simple Int. Required under
         // SWIFT_STRICT_MEMORY_SAFETY=YES; the `unsafe` marker satisfies the compiler while
-        // preserving localized pluralization/positioning across all 27 languages.
+        // preserving localized pluralization/positioning across all 28 languages.
         return unsafe String(
             format: String(localized: "sleep_timer_accessibility_remaining", table: "Localizable"),
             minutes
@@ -508,7 +508,7 @@ extension PlayerViewModel {
     ///
     /// - No actor access or side effects occur.
     /// - Action closures are wired to simple prints so you can exercise buttons in the canvas.
-    /// - All 27 languages and all visual states are valid; the mock does not enforce stream count.
+    /// - All 28 languages and all visual states are valid; the mock does not enforce stream count.
     ///
     /// - Parameters:
     ///   - visualState: Initial `PlayerVisualState` for the mock.

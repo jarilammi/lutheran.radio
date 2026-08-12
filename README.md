@@ -54,6 +54,7 @@ The app is fully localized in the following languages:
 - Romanian (ro)
 - Russian (ru)
 - Slovak (sk)
+- Slovenian (sl)
 - Spanish (es)
 - Swedish (sv)
 - Tornedalen Finnish (fit)
