@@ -69,6 +69,8 @@ The app is fully localized in the following languages:
 </tr>
 </table>
 
+Count strings (`%lld languages`, `sleep_timer_accessibility_remaining`, `accessibility_value_volume`, `volume_set_to`) use String Catalog `variations.plural` with the CLDR categories required by each locale (for example Polish/Russian `one`/`few`/`many`/`other`, Croatian `one`/`few`/`other`, Lithuanian `one`/`few`/`many`/`other`). Call sites must pass the number through `String(localized:defaultValue:)` interpolation or `LocalizedStringResource` interpolation. `String(format: String(localized:), n)` resolves the catalog to `other` before the number is known and cannot inflect (“1 minutes remaining”).
+
 ## Local Development and Contributing
 
 ### AI Coding Instructions

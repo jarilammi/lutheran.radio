@@ -127,11 +127,11 @@ struct LanguageSelectorView: View {
 
     private func makeAccessibilityLabel(for stream: DirectStreamingPlayer.Stream) -> String {
         // SAFETY: String(format:) with a catalog-provided format string is the established
-        // pattern for placeholder-bearing VoiceOver strings across the 21-language catalog.
-        // The format originates from Localizable.xcstrings (trusted) and the argument is a
-        // plain String. This is required to satisfy SWIFT_STRICT_MEMORY_SAFETY while keeping
-        // correct pluralization/positioning per language. See identical pattern in
-        // PlaybackControlsView.swift and RadioPlayerCoordinator.
+        // pattern for placeholder-bearing VoiceOver strings (`select_language_accessibility`
+        // is "Select %@" — argument positioning, not a count/plural). The format originates
+        // from Localizable.xcstrings (trusted) and the argument is a plain String. Required
+        // under SWIFT_STRICT_MEMORY_SAFETY. Count strings use interpolation instead so
+        // String Catalog variations.plural can select a CLDR category.
         unsafe String(
             format: String(localized: "select_language_accessibility", defaultValue: "Select %@", table: "Localizable", comment: "Accessibility label for language flag button. %@ is the language name."),
             stream.language

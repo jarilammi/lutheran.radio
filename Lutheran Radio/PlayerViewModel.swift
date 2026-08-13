@@ -460,28 +460,24 @@ final class PlayerViewModel {
     /// Localized accessibility value for the sleep timer control when a timer is active.
     ///
     /// Returns a formatted string such as "12 minutes remaining" (via the catalog key
-    /// "sleep_timer_accessibility_remaining") when `sleepTimerRemaining > 0`; otherwise nil.
+    /// `sleep_timer_accessibility_remaining`) when `sleepTimerRemaining > 0`; otherwise nil.
     ///
     /// - Note: This computed property owns the derivation so view bodies stay focused on
-    ///   layout and modifiers only. The rounding (remaining + 59)/60 to whole minutes and
-    ///   the unsafe String(format:) pattern match the prior inline implementation and the
-    ///   established VoiceOver revival approach used elsewhere for catalog strings.
+    ///   layout and modifiers only. Rounding is `(remaining + 59) / 60`, floored to at least
+    ///   one minute. The minute count is interpolated into `String(localized:defaultValue:)`
+    ///   so String Catalog `variations.plural` can select the CLDR category for the locale.
+    ///   `String(format: String(localized:), n)` cannot do that — localization runs before
+    ///   the number is known and the catalog stays on `other` ("1 minutes remaining").
     /// - SeeAlso: `sleepTimerRemaining`, PlaybackControlsView (the .accessibilityValue site),
-    ///   `String(localized: "sleep_timer_accessibility_remaining"...)`, CODING_AGENT.md
-    ///   (Documentation & Comment Standards, cached derived values on @Observable models).
+    ///   `Localizable.xcstrings` (`sleep_timer_accessibility_remaining`), CODING_AGENT.md
+    ///   (Localization, cached derived values on @Observable models).
     var sleepTimerAccessibilityValue: String? {
         guard let remaining = sleepTimerRemaining, remaining > 0 else { return nil }
         let minutes = max(1, Int((remaining + 59) / 60))
-        // SAFETY: String(format:) with a catalog-provided format string containing %d
-        // is the established pattern in this codebase for placeholder-bearing VoiceOver
-        // strings (see announceSwitchedToLanguage in RadioPlayerCoordinator.swift and the
-        // previous inline site in PlaybackControlsView). The format is trusted
-        // (Localizable.xcstrings) and the argument is a simple Int. Required under
-        // SWIFT_STRICT_MEMORY_SAFETY=YES; the `unsafe` marker satisfies the compiler while
-        // preserving localized pluralization/positioning across all 29 languages.
-        return unsafe String(
-            format: String(localized: "sleep_timer_accessibility_remaining", table: "Localizable"),
-            minutes
+        return String(
+            localized: "sleep_timer_accessibility_remaining",
+            defaultValue: "\(minutes) minutes remaining",
+            table: "Localizable"
         )
     }
 

@@ -180,180 +180,624 @@
       }
     },
     "%lld languages" : {
-      "comment" : "Numeric format for the count of language choices in Siri / Shortcuts pickers (RadioLanguageEntity TypeDisplayRepresentation).",
+      "comment" : "Numeric format for the count of language choices in Siri / Shortcuts pickers (RadioLanguageEntity TypeDisplayRepresentation). String Catalog variations.plural — one/few/many/two/zero as required by each locale. Call site is LocalizedStringResource interpolation; do not flatten back to a single stringUnit.",
       "localizations" : {
         "bg" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld езика"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld език"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld езика"
+                }
+              }
+            }
           }
         },
         "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld jazyků"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jazyky"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jazyka"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jazyk"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jazyků"
+                }
+              }
+            }
           }
         },
         "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld sprog"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sprog"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sprog"
+                }
+              }
+            }
           }
         },
         "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld Sprachen"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Sprache"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Sprachen"
+                }
+              }
+            }
           }
         },
         "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld γλώσσες"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld γλώσσα"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld γλώσσες"
+                }
+              }
+            }
           }
         },
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld languages"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld language"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld languages"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld idiomas"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld idioma"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld idiomas"
+                }
+              }
+            }
           }
         },
         "et" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld keelt"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld keel"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld keelt"
+                }
+              }
+            }
           }
         },
         "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld kieltä"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld kieli"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld kieltä"
+                }
+              }
+            }
           }
         },
         "fit" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld kieltä"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld kieli"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld kieltä"
+                }
+              }
+            }
           }
         },
         "fo" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld mál"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld mál"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld mál"
+                }
+              }
+            }
           }
         },
         "gag" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld dil"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld dil"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld dil"
+                }
+              }
+            }
           }
         },
         "hr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld jezika"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jezika"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jezik"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jezika"
+                }
+              }
+            }
           }
         },
         "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld nyelv"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nyelv"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nyelv"
+                }
+              }
+            }
           }
         },
         "is" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld tungumál"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld tungumál"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld tungumál"
+                }
+              }
+            }
           }
         },
         "kl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld oqaatsit"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld oqaaseq"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld oqaatsit"
+                }
+              }
+            }
           }
         },
         "lt" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld kalbos"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld kalbos"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld kalbos"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld kalba"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld kalbų"
+                }
+              }
+            }
           }
         },
         "lv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld valodas"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld valoda"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld valodas"
+                }
+              },
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld valodu"
+                }
+              }
+            }
           }
         },
         "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld språk"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld språk"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld språk"
+                }
+              }
+            }
           }
         },
         "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld talen"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld taal"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld talen"
+                }
+              }
+            }
           }
         },
         "nn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld språk"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld språk"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld språk"
+                }
+              }
+            }
           }
         },
         "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld języków"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld języki"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld języków"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld język"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld języka"
+                }
+              }
+            }
           }
         },
         "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld limbi"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld limbi"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld limbă"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de limbi"
+                }
+              }
+            }
           }
         },
         "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld языков"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld языка"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld языков"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld язык"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld языка"
+                }
+              }
+            }
           }
         },
         "se" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld giela"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld giella"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld giela"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld giela"
+                }
+              }
+            }
           }
         },
         "sk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld jazykov"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jazyky"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jazyka"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jazyk"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jazykov"
+                }
+              }
+            }
           }
         },
         "sl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld jezikov"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jeziki"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jezik"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jezikov"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jezika"
+                }
+              }
+            }
           }
         },
         "sq" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld gjuhë"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld gjuhë"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld gjuhë"
+                }
+              }
+            }
           }
         },
         "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld språk"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld språk"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld språk"
+                }
+              }
+            }
           }
         }
       }
@@ -429,7 +873,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ses çıxış cihazını seçmek için iki defa bas"
+            "value" : "Ses çıkış aletini seçmää üçin iki kerä bas"
           }
         },
         "hr" : {
@@ -607,7 +1051,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hazırki radyo programına dair malümat gösterer"
+            "value" : "Şindiki radio programmasına dair malumat gösterer"
           }
         },
         "hr" : {
@@ -785,7 +1229,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Radyo stream-inin oynatılmasını açar/kapatır"
+            "value" : "Radio yayınını çalêr yaki pauza eer"
           }
         },
         "hr" : {
@@ -963,7 +1407,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oynatmanın ne zaman duracağını seçin"
+            "value" : "Çalmaanın ne zaman duraceenı seç"
           }
         },
         "hr" : {
@@ -1141,7 +1585,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oynatma ses seviyesini ayarlar"
+            "value" : "Çalmaa sesini ayarlêr"
           }
         },
         "hr" : {
@@ -1427,7 +1871,7 @@
       }
     },
     "accessibility_label_lutheran_radio_logo" : {
-      "comment" : "Accessibility label for the placeholder logo image.",
+      "comment" : "Accessibility label for the placeholder logo image. Keep the brand name Lutheran Radio; localize the word for logo.",
       "localizations" : {
         "bg" : {
           "stringUnit" : {
@@ -1444,13 +1888,13 @@
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio Logo"
+            "value" : "Lutheran Radio-logo"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio Logo"
+            "value" : "Lutheran Radio-Logo"
           }
         },
         "el" : {
@@ -1492,13 +1936,13 @@
         "fo" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio Logo"
+            "value" : "Lutheran Radio-logo"
           }
         },
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio Logo"
+            "value" : "Lutheran Radio logosu"
           }
         },
         "hr" : {
@@ -1516,13 +1960,13 @@
         "is" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio Logo"
+            "value" : "Merki Lutheran Radio"
           }
         },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio Logo"
+            "value" : "Lutheran Radio logo"
           }
         },
         "lt" : {
@@ -1540,7 +1984,7 @@
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio Logo"
+            "value" : "Lutheran Radio-logo"
           }
         },
         "nl" : {
@@ -1552,7 +1996,7 @@
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio Logo"
+            "value" : "Lutheran Radio-logo"
           }
         },
         "pl" : {
@@ -1676,7 +2120,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Duraklat"
+            "value" : "Pauza"
           }
         },
         "hr" : {
@@ -2033,7 +2477,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oynat"
+            "value" : "Çal"
           }
         },
         "hr" : {
@@ -2211,7 +2655,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uyku zamanlayıcısı"
+            "value" : "Uyku taymeri"
           }
         },
         "hr" : {
@@ -2497,179 +2941,624 @@
       }
     },
     "accessibility_value_volume" : {
+      "comment" : "VoiceOver value for the system volume control (0–100). String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the percent via String(localized:defaultValue:).",
       "localizations" : {
         "bg" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d процента"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld процент"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld процента"
+                }
+              }
+            }
           }
         },
         "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d procent"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procenta"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procenta"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procent"
+                }
+              }
+            }
           }
         },
         "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d procent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procent"
+                }
+              }
+            }
           }
         },
         "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d Prozent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Prozent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Prozent"
+                }
+              }
+            }
           }
         },
         "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d τοις εκατό"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld τοις εκατό"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld τοις εκατό"
+                }
+              }
+            }
           }
         },
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d percent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld percent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld percent"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d por ciento"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld por ciento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld por ciento"
+                }
+              }
+            }
           }
         },
         "et" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d protsenti"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld protsent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld protsenti"
+                }
+              }
+            }
           }
         },
         "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d prosenttia"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld prosentti"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld prosenttia"
+                }
+              }
+            }
           }
         },
         "fit" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d prosenttia"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld prosentti"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld prosenttia"
+                }
+              }
+            }
           }
         },
         "fo" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d prosent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld prosent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld prosent"
+                }
+              }
+            }
           }
         },
         "gag" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d faiz"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld proţent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld proţent"
+                }
+              }
+            }
           }
         },
         "hr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d posto"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld posto"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld posto"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld posto"
+                }
+              }
+            }
           }
         },
         "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d százalék"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld százalék"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld százalék"
+                }
+              }
+            }
           }
         },
         "is" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d prósent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld prósent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld prósent"
+                }
+              }
+            }
           }
         },
         "kl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d pisumi"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pisumi"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pisumi"
+                }
+              }
+            }
           }
         },
         "lt" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d procentų"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procentai"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procento"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procentas"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procentų"
+                }
+              }
+            }
           }
         },
         "lv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d procenti"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procents"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procenti"
+                }
+              },
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procentu"
+                }
+              }
+            }
           }
         },
         "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d prosent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld prosent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld prosent"
+                }
+              }
+            }
           }
         },
         "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d procent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procent"
+                }
+              }
+            }
           }
         },
         "nn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d prosent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld prosent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld prosent"
+                }
+              }
+            }
           }
         },
         "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d procent"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procenty"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procentów"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procenta"
+                }
+              }
+            }
           }
         },
         "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d la sută"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld la sută"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld la sută"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld la sută"
+                }
+              }
+            }
           }
         },
         "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d процента"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld процента"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld процентов"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld процент"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld процента"
+                }
+              }
+            }
           }
         },
         "se" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d proseantta"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld proseanta"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld proseantta"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld proseantta"
+                }
+              }
+            }
           }
         },
         "sk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d percent"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld percentá"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld percenta"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld percento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld percent"
+                }
+              }
+            }
           }
         },
         "sl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d odstotkov"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld odstotki"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld odstotek"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld odstotkov"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld odstotka"
+                }
+              }
+            }
           }
         },
         "sq" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d për qind"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld për qind"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld për qind"
+                }
+              }
+            }
           }
         },
         "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d procent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld procent"
+                }
+              }
+            }
           }
         }
       }
@@ -2923,7 +3812,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tekrar dene"
+            "value" : "Gene dene"
           }
         },
         "hr" : {
@@ -3101,7 +3990,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bu oturum üçin izin ver"
+            "value" : "Bu seans üçin izin ver"
           }
         },
         "hr" : {
@@ -3279,7 +4168,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Daima izin ver"
+            "value" : "Hep izin ver"
           }
         },
         "hr" : {
@@ -3635,7 +4524,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Temizle"
+            "value" : "Sil"
           }
         },
         "hr" : {
@@ -3813,7 +4702,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Temizlendi"
+            "value" : "Silindi"
           }
         },
         "hr" : {
@@ -3991,7 +4880,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bu, oynatmayı durdurur, widget ve Live Activity verilerini kaldırır ve bu cihazdan son dinleme durumunu temizler. İşlem geri alınamaz."
+            "value" : "Bu, çalmaayı durduracek, vidjet hem Live Activity verilerini kaldıracek hem bu aletdän son dinlemää durumunu silecek. Bu işlem geriyä alınamaz."
           }
         },
         "hr" : {
@@ -4169,7 +5058,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lokal oynatma durumunu temizle"
+            "value" : "Lokal çalmaa durumunu sil"
           }
         },
         "hr" : {
@@ -4347,7 +5236,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio widget konfiguratsiyası."
+            "value" : "Lutheran Radio vidjeti konfiguratsiyası."
           }
         },
         "hr" : {
@@ -4526,7 +5415,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bağlantı hatası"
+            "value" : "Bağlantı yannışı"
           }
         },
         "hr" : {
@@ -4705,7 +5594,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio oynatılmasını kontrol et ve cari stansiyanı gör."
+            "value" : "Lutheran Radio çalmaasını kontrol et hem şindiki stantsiyanı gör."
           }
         },
         "hr" : {
@@ -4883,7 +5772,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oynatmayı kontrol et ve dil stream-leri arasında geçiş yap."
+            "value" : "Çalmaayı kontrol et hem dil yayınnarı arasında geç."
           }
         },
         "hr" : {
@@ -5419,7 +6308,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oynatılıyor"
+            "value" : "Çalêr"
           }
         },
         "hr" : {
@@ -5955,7 +6844,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "İngilizce"
+            "value" : "İnglizçä"
           }
         },
         "hr" : {
@@ -6134,7 +7023,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Estonca"
+            "value" : "Estonçä"
           }
         },
         "hr" : {
@@ -6313,7 +7202,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fince"
+            "value" : "Finçä"
           }
         },
         "hr" : {
@@ -6492,7 +7381,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Almanca"
+            "value" : "Nemţä"
           }
         },
         "hr" : {
@@ -6671,7 +7560,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "İsveççe"
+            "value" : "Şvedçä"
           }
         },
         "hr" : {
@@ -7029,7 +7918,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Yalnızca lokal"
+            "value" : "Sade lokal"
           }
         },
         "hr" : {
@@ -7386,7 +8275,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uygulama mobil veri kullanıyor, bu da veri tarifenize göre masraf çıxarabilir."
+            "value" : "Aplikatsiya mobil data kullanêr; bu, senin data tarifäna görä masrafa sebep olabilir."
           }
         },
         "hr" : {
@@ -7564,7 +8453,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mobil veri kullanımı"
+            "value" : "Mobil data kullanımı"
           }
         },
         "hr" : {
@@ -7742,7 +8631,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Parça bilgisi yok"
+            "value" : "Parça malumatı yok"
           }
         },
         "hr" : {
@@ -7920,7 +8809,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Şimdi oynatılıyor"
+            "value" : "Şindi çalêr"
           }
         },
         "hr" : {
@@ -8277,7 +9166,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Önce uygulamayı aç"
+            "value" : "Öndän aplikatsiyanı aç"
           }
         },
         "hr" : {
@@ -8386,7 +9275,7 @@
       "extractionState" : "manual"
     },
     "Pause Lutheran Radio" : {
-      "comment" : "Title for the Pause/Stop Lutheran Radio Siri shortcut / App Shortcut.",
+      "comment" : "Title for the Pause/Stop Lutheran Radio Siri shortcut / App Shortcut. Keep the brand name Lutheran Radio; localize the pause verb.",
       "localizations" : {
         "bg" : {
           "stringUnit" : {
@@ -8403,7 +9292,7 @@
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pause Lutheran Radio"
+            "value" : "Sæt Lutheran Radio på pause"
           }
         },
         "de" : {
@@ -8451,13 +9340,13 @@
         "fo" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pause Lutheran Radio"
+            "value" : "Set Lutheran Radio á pause"
           }
         },
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio duraklat"
+            "value" : "Lutheran Radio pauza et"
           }
         },
         "hr" : {
@@ -8499,7 +9388,7 @@
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pause Lutheran Radio"
+            "value" : "Sett Lutheran Radio på pause"
           }
         },
         "nl" : {
@@ -8511,7 +9400,7 @@
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pause Lutheran Radio"
+            "value" : "Set Lutheran Radio på pause"
           }
         },
         "pl" : {
@@ -8636,7 +9525,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio oynatmayı duraklat."
+            "value" : "Lutheran Radio çalmaasını pauza et."
           }
         },
         "hr" : {
@@ -8814,7 +9703,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oynat"
+            "value" : "Çal"
           }
         },
         "hr" : {
@@ -8993,7 +9882,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio oynat"
+            "value" : "Lutheran Radio çal"
           }
         },
         "hr" : {
@@ -9171,7 +10060,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio'yu oynat yahut duraklat."
+            "value" : "Lutheran Radio çal yaki pauza et."
           }
         },
         "hr" : {
@@ -9350,7 +10239,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio oynat veya devam ettir."
+            "value" : "Lutheran Radio çal yaki devam et."
           }
         },
         "hr" : {
@@ -9528,7 +10417,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Güvenlik doğrulama hatası sebebinden oynatma başlatılamıyor. Lütfen internet bağlantınızı kontrol edin ve uygulamanın güncel olduğundan emin olun. Sorun devam ederse uygulamayı yeniden başlatın ve tekrar deneyin."
+            "value" : "Eminlik kontrolu yannışından çalmaa başlanameer. Internet bağlantını kontrol et hem aplikatsiyanın eni versiyada olduuunu bak. Problem devam ederä, aplikatsiyanı kapat hem taa bir kerä aç, sora gene dene."
           }
         },
         "hr" : {
@@ -9706,7 +10595,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Güvenlik doğrulaması başarısız oldu"
+            "value" : "Eminlik kontrolu olmadı"
           }
         },
         "hr" : {
@@ -9993,179 +10882,624 @@
       }
     },
     "sleep_timer_accessibility_remaining" : {
+      "comment" : "VoiceOver value for an active sleep timer. String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the minute count via String(localized:defaultValue:); String(format: String(localized:), n) cannot select a plural category.",
       "localizations" : {
         "bg" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Остават %d минути"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Остава %lld минута"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Остават %lld минути"
+                }
+              }
+            }
           }
         },
         "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zbývá %d min"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Zbývají %lld minuty"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Zbývá %lld minuty"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Zbývá %lld minuta"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Zbývá %lld minut"
+                }
+              }
+            }
           }
         },
         "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d minutter tilbage"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minut tilbage"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutter tilbage"
+                }
+              }
+            }
           }
         },
         "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Noch %d Minuten"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Noch %lld Minute"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Noch %lld Minuten"
+                }
+              }
+            }
           }
         },
         "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Απομένουν %d λεπτά"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Απομένει %lld λεπτό"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Απομένουν %lld λεπτά"
+                }
+              }
+            }
           }
         },
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d minutes remaining"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minute remaining"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutes remaining"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quedan %d minutos"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Queda %lld minuto"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Quedan %lld minutos"
+                }
+              }
+            }
           }
         },
         "et" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d minutit jäänud"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minut jäänud"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutit jäänud"
+                }
+              }
+            }
           }
         },
         "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d minuuttia jäljellä"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuutti jäljellä"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuuttia jäljellä"
+                }
+              }
+            }
           }
         },
         "fit" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d minuuttia jäljellä"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuutti jäljellä"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuuttia jäljellä"
+                }
+              }
+            }
           }
         },
         "fo" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d minuttir eftir"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuttur eftir"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuttir eftir"
+                }
+              }
+            }
           }
         },
         "gag" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d dakika kaldı"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minut kaldı"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minut kaldı"
+                }
+              }
+            }
           }
         },
         "hr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Još %d minuta"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Još %lld minute"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Još %lld minuta"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Još %lld minuta"
+                }
+              }
+            }
           }
         },
         "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d perc van hátra"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld perc van hátra"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld perc van hátra"
+                }
+              }
+            }
           }
         },
         "is" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d mínútur eftir"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld mínúta eftir"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld mínútur eftir"
+                }
+              }
+            }
           }
         },
         "kl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d minutsit sinnerusoq"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuti sinnerusoq"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutsit sinnerusoq"
+                }
+              }
+            }
           }
         },
         "lt" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Liko %d min."
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Liko %lld minutės"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Liko %lld minutės"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Liko %lld minutė"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Liko %lld minučių"
+                }
+              }
+            }
           }
         },
         "lv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Atlicis %d min"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Atlikusi %lld minūte"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Atlikušas %lld minūtes"
+                }
+              },
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Atlicis %lld minūšu"
+                }
+              }
+            }
           }
         },
         "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d minutter igjen"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutt igjen"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutter igjen"
+                }
+              }
+            }
           }
         },
         "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nog %d minuten"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Nog %lld minuut"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Nog %lld minuten"
+                }
+              }
+            }
           }
         },
         "nn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d minutt att"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutt att"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutt att"
+                }
+              }
+            }
           }
         },
         "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pozostało %d min"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Pozostały %lld minuty"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Pozostało %lld minut"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Pozostała %lld minuta"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Pozostało %lld minuty"
+                }
+              }
+            }
           }
         },
         "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d minute rămase"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minute rămase"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minut rămas"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de minute rămase"
+                }
+              }
+            }
           }
         },
         "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Осталось %d мин"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Осталось %lld минуты"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Осталось %lld минут"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Осталась %lld минута"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Осталось %lld минуты"
+                }
+              }
+            }
           }
         },
         "se" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d minuhtta báhcán"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuhtta báhcán"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuhtta báhcán"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuhta báhcán"
+                }
+              }
+            }
           }
         },
         "sk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zostáva %d min"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Zostávajú %lld minúty"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Zostáva %lld minúty"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Zostáva %lld minúta"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Zostáva %lld minút"
+                }
+              }
+            }
           }
         },
         "sl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Še %d minut"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Še %lld minute"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Še %lld minuta"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Še %lld minut"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Še %lld minuti"
+                }
+              }
+            }
           }
         },
         "sq" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d minuta të mbetura"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutë e mbetur"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuta të mbetura"
+                }
+              }
+            }
           }
         },
         "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%d minuter kvar"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minut kvar"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuter kvar"
+                }
+              }
+            }
           }
         }
       }
@@ -10241,7 +11575,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zamanlayıcıyı iptal et"
+            "value" : "Taymeri kaldır"
           }
         },
         "hr" : {
@@ -10419,7 +11753,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "15 dakika"
+            "value" : "15 minut"
           }
         },
         "hr" : {
@@ -10597,7 +11931,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "30 dakika"
+            "value" : "30 minut"
           }
         },
         "hr" : {
@@ -10775,7 +12109,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "45 dakika"
+            "value" : "45 minut"
           }
         },
         "hr" : {
@@ -10953,7 +12287,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "60 dakika"
+            "value" : "60 minut"
           }
         },
         "hr" : {
@@ -11131,7 +12465,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uyku zamanlayıcısı"
+            "value" : "Uyku taymeri"
           }
         },
         "hr" : {
@@ -11309,7 +12643,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Streaming serverleri SSL sertifikalarını yeniledi. Uygulama uyumluluk modunda çalışıyor. En yeni versiyona güncellemenizi tavsiye ederiz."
+            "value" : "Yayın serverleri SSL sertifikatlarını eniledi. Aplikatsiya uyum modunda işleer. En iyi eminlik üçin, eni versiya çıkınca aplikatsiyanı enile."
           }
         },
         "hr" : {
@@ -11487,7 +12821,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sertifika yenilendi"
+            "value" : "Sertifikat enilendi"
           }
         },
         "hr" : {
@@ -11666,7 +13000,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio oynatılmasını başlat yahut devam et."
+            "value" : "Lutheran Radio çalmaasını başlat yaki devam et."
           }
         },
         "hr" : {
@@ -11844,7 +13178,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio oynatılmasını başlat yahut durdur."
+            "value" : "Lutheran Radio çalmaasını başlat yaki durdur."
           }
         },
         "hr" : {
@@ -12022,7 +13356,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tampon"
+            "value" : "Büfer"
           }
         },
         "hr" : {
@@ -12378,7 +13712,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Başarısız"
+            "value" : "Olmadı"
           }
         },
         "hr" : {
@@ -12556,7 +13890,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Offline"
+            "value" : "Oflayn"
           }
         },
         "hr" : {
@@ -12734,7 +14068,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Duraklat"
+            "value" : "Pauza"
           }
         },
         "hr" : {
@@ -12913,7 +14247,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Duraklatıldı – Çağrı aktif"
+            "value" : "Pauzada – Zvonok"
           }
         },
         "hr" : {
@@ -13092,7 +14426,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oynatma başarısız oldu: %@"
+            "value" : "Çalmaa olmadı: %@"
           }
         },
         "hr" : {
@@ -13271,7 +14605,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oynat"
+            "value" : "Çal"
           }
         },
         "hr" : {
@@ -13449,7 +14783,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Güvenlik"
+            "value" : "Eminlik"
           }
         },
         "hr" : {
@@ -13627,7 +14961,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SSL sertifikası yenilendi – uygulamayı yakında güncelle"
+            "value" : "SSL sertifikatı enilendi – aplikatsiyanı yakında enile"
           }
         },
         "hr" : {
@@ -13805,7 +15139,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Durduruldu"
+            "value" : "Durdu"
           }
         },
         "hr" : {
@@ -14161,7 +15495,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cihaz ısındı"
+            "value" : "Alet sıcak"
           }
         },
         "hr" : {
@@ -14339,7 +15673,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Yayın geçici olarak mevcut değil. Lütfen daha sonra tekrar deneyin."
+            "value" : "Yayın şindi geçici olarak yok. Lütfen taa sora gene dene."
           }
         },
         "hr" : {
@@ -14517,7 +15851,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Yayın mevcut değil"
+            "value" : "Yayın yok"
           }
         },
         "hr" : {
@@ -14696,7 +16030,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio dil akışını değiştir."
+            "value" : "Lutheran Radio dil yayınını däiştir."
           }
         },
         "hr" : {
@@ -14874,7 +16208,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stream değiştir"
+            "value" : "Yayını däiştir"
           }
         },
         "hr" : {
@@ -15053,7 +16387,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geç %@"
+            "value" : "%@ dilinä geç"
           }
         },
         "hr" : {
@@ -15231,7 +16565,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live Activity'den farklı bir dil stream-ine geçiş yap."
+            "value" : "Live Activity-dän başka dil yayınına geç."
           }
         },
         "hr" : {
@@ -15409,7 +16743,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Farklı bir dil stream-ine geçiş yap."
+            "value" : "Başka dil yayınına geç."
           }
         },
         "hr" : {
@@ -15588,7 +16922,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ diline geçiş yapıldı"
+            "value" : "%@ dilinä geçildi"
           }
         },
         "hr" : {
@@ -15768,7 +17102,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Açmak için tıkla"
+            "value" : "Açmaa üçin bas"
           }
         },
         "hr" : {
@@ -15947,7 +17281,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio'yu aç/kapat"
+            "value" : "Lutheran Radio aç/kapa"
           }
         },
         "hr" : {
@@ -16125,7 +17459,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio oynatılmasını aç/kapat"
+            "value" : "Lutheran Radio çalmaasını aç/kapa"
           }
         },
         "hr" : {
@@ -16303,7 +17637,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live Activity'den oynat/duraklat."
+            "value" : "Live Activity-dän çal/pauza."
           }
         },
         "hr" : {
@@ -16482,7 +17816,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oynatmayı aç/kapat"
+            "value" : "Çalmaayı aç/kapa"
           }
         },
         "hr" : {
@@ -16590,179 +17924,624 @@
       }
     },
     "volume_set_to" : {
+      "comment" : "VoiceOver announcement after a volume step. String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the percent via String(localized:defaultValue:).",
       "localizations" : {
         "bg" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Силата на звука е зададена на %d процента"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Силата на звука е зададена на %lld процент"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Силата на звука е зададена на %lld процента"
+                }
+              }
+            }
           }
         },
         "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hlasitost nastavena na %d procent"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hlasitost nastavena na %lld procenta"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hlasitost nastavena na %lld procenta"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hlasitost nastavena na %lld procento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hlasitost nastavena na %lld procent"
+                }
+              }
+            }
           }
         },
         "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lydstyrke sat til %d procent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Lydstyrke sat til %lld procent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Lydstyrke sat til %lld procent"
+                }
+              }
+            }
           }
         },
         "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lautstärke auf %d Prozent eingestellt"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Lautstärke auf %lld Prozent eingestellt"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Lautstärke auf %lld Prozent eingestellt"
+                }
+              }
+            }
           }
         },
         "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Η ένταση ορίστηκε στο %d τοις εκατό"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Η ένταση ορίστηκε στο %lld τοις εκατό"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Η ένταση ορίστηκε στο %lld τοις εκατό"
+                }
+              }
+            }
           }
         },
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volume set to %d percent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume set to %lld percent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume set to %lld percent"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volumen ajustado al %d por ciento"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volumen ajustado al %lld por ciento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volumen ajustado al %lld por ciento"
+                }
+              }
+            }
           }
         },
         "et" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Helitugevus seatud %d protsendile"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Helitugevus seatud %lld protsendile"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Helitugevus seatud %lld protsendile"
+                }
+              }
+            }
           }
         },
         "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Äänenvoimakkuus asetettu %d prosenttiin"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Äänenvoimakkuus asetettu %lld prosenttiin"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Äänenvoimakkuus asetettu %lld prosenttiin"
+                }
+              }
+            }
           }
         },
         "fit" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Äänenvoimakkuus asetettu %d prosenttiin"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Äänenvoimakkuus asetettu %lld prosenttiin"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Äänenvoimakkuus asetettu %lld prosenttiin"
+                }
+              }
+            }
           }
         },
         "fo" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ljóðstyrki stillaður til %d prosent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ljóðstyrki stillaður til %lld prosent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ljóðstyrki stillaður til %lld prosent"
+                }
+              }
+            }
           }
         },
         "gag" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ses seviyesi %d faize ayarlandı"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ses %lld proţentä ayarlandı"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ses %lld proţentä ayarlandı"
+                }
+              }
+            }
           }
         },
         "hr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Glasnoća postavljena na %d posto"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Glasnoća postavljena na %lld posto"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Glasnoća postavljena na %lld posto"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Glasnoća postavljena na %lld posto"
+                }
+              }
+            }
           }
         },
         "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hangerő %d százalékra állítva"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hangerő %lld százalékra állítva"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hangerő %lld százalékra állítva"
+                }
+              }
+            }
           }
         },
         "is" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hljóðstyrkur stilltur á %d prósent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hljóðstyrkur stilltur á %lld prósent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hljóðstyrkur stilltur á %lld prósent"
+                }
+              }
+            }
           }
         },
         "kl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hørigutit %d %-mut settet"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hørigutit %lld %-mut settet"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hørigutit %lld %-mut settet"
+                }
+              }
+            }
           }
         },
         "lt" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Garsumas nustatytas %d procentų"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Garsumas nustatytas %lld procentų"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Garsumas nustatytas %lld procento"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Garsumas nustatytas %lld procento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Garsumas nustatytas %lld procentų"
+                }
+              }
+            }
           }
         },
         "lv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Skaļums iestatīts uz %d procentiem"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Skaļums iestatīts uz %lld procentu"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Skaļums iestatīts uz %lld procentiem"
+                }
+              },
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Skaļums iestatīts uz %lld procentiem"
+                }
+              }
+            }
           }
         },
         "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volum satt til %d prosent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volum satt til %lld prosent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volum satt til %lld prosent"
+                }
+              }
+            }
           }
         },
         "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volume ingesteld op %d procent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume ingesteld op %lld procent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume ingesteld op %lld procent"
+                }
+              }
+            }
           }
         },
         "nn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volum sett til %d prosent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volum sett til %lld prosent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volum sett til %lld prosent"
+                }
+              }
+            }
           }
         },
         "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Głośność ustawiona na %d procent"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Głośność ustawiona na %lld procenty"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Głośność ustawiona na %lld procentów"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Głośność ustawiona na %lld procent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Głośność ustawiona na %lld procenta"
+                }
+              }
+            }
           }
         },
         "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volum setat la %d la sută"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volum setat la %lld la sută"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volum setat la %lld la sută"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volum setat la %lld la sută"
+                }
+              }
+            }
           }
         },
         "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Громкость установлена на %d процентов"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Громкость установлена на %lld процента"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Громкость установлена на %lld процентов"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Громкость установлена на %lld процент"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Громкость установлена на %lld процента"
+                }
+              }
+            }
           }
         },
         "se" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hárdu lea settet %d %-ii"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hárdu lea settet %lld %-ii"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hárdu lea settet %lld %-ii"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hárdu lea settet %lld %-ii"
+                }
+              }
+            }
           }
         },
         "sk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hlasitosť nastavená na %d percent"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hlasitosť nastavená na %lld percentá"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hlasitosť nastavená na %lld percenta"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hlasitosť nastavená na %lld percento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Hlasitosť nastavená na %lld percent"
+                }
+              }
+            }
           }
         },
         "sl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Glasnost nastavljena na %d odstotkov"
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Glasnost nastavljena na %lld odstotke"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Glasnost nastavljena na %lld odstotek"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Glasnost nastavljena na %lld odstotkov"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Glasnost nastavljena na %lld odstotka"
+                }
+              }
+            }
           }
         },
         "sq" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volumi u vendos në %d për qind"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volumi u vendos në %lld për qind"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volumi u vendos në %lld për qind"
+                }
+              }
+            }
           }
         },
         "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volym inställd på %d procent"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volym inställd på %lld procent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volym inställd på %lld procent"
+                }
+              }
+            }
           }
         }
       }
@@ -16838,7 +18617,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Widget konfiguratsiyası"
+            "value" : "Vidjet konfiguratsiyası"
           }
         },
         "hr" : {

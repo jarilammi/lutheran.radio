@@ -33,6 +33,8 @@ struct RadioLanguageEntity: AppEntity {
     nonisolated static var typeDisplayRepresentation: TypeDisplayRepresentation {
         TypeDisplayRepresentation(
             name: LocalizedStringResource("Language"),
+            // Interpolation (not a flattened "%lld languages" lookup) so the catalog
+            // key's variations.plural can select one/few/many/other per locale.
             numericFormat: LocalizedStringResource("\(placeholder: .int) languages")
         )
     }

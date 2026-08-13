@@ -362,16 +362,14 @@ enum SystemVolumeVoiceOver {
     ///
     /// - Parameter value: System volume in unit interval.
     /// - Returns: Catalog-formatted percent string via `accessibility_value_volume`.
+    /// - Note: Interpolates `percent` so String Catalog `variations.plural` can select
+    ///   the CLDR category. `String(format: String(localized:), n)` cannot inflect.
     static func accessibilityValueText(for value: Float) -> String {
         let percent = percent(for: value)
-        // SAFETY: `String(format:)` with a catalog-provided format containing `%d` is the
-        // established VoiceOver format pattern (see `sleepTimerAccessibilityValue` on
-        // `PlayerViewModel` and `announceSwitchedToLanguage` on `RadioPlayerCoordinator`).
-        // The format is trusted (`Localizable.xcstrings`) and the argument is a simple `Int`.
-        // Required under `SWIFT_STRICT_MEMORY_SAFETY = YES`.
-        return unsafe String(
-            format: String(localized: "accessibility_value_volume", table: "Localizable"),
-            percent
+        return String(
+            localized: "accessibility_value_volume",
+            defaultValue: "\(percent) percent",
+            table: "Localizable"
         )
     }
 
@@ -410,22 +408,18 @@ enum SystemVolumeVoiceOver {
     /// - Parameter value: System volume in 0...1 after the step.
     static func announceVolumeSet(to value: Float) {
         let percent = percent(for: value)
-        // SAFETY: catalog format string with `%d` + Int argument (same pattern as
-        // `accessibilityValueText(for:)` and sleep-timer VoiceOver formatting).
-        let message = unsafe String(
-            format: String(
-                localized: "volume_set_to",
-                defaultValue: "Volume set to %d percent",
-                table: "Localizable"
-            ),
-            percent
+        // Interpolate the percent so `volume_set_to` can select variations.plural.
+        let message = String(
+            localized: "volume_set_to",
+            defaultValue: "Volume set to \(percent) percent",
+            table: "Localizable"
         )
         // SAFETY: `UIAccessibility.post` is the established announcement API for VoiceOver
         // in this codebase (see `announceSwitchedToLanguage` / post-clear revival).
         unsafe UIAccessibility.post(notification: .announcement, argument: message)
     }
 
-    /// Converts unit-interval volume to a whole-number percent for catalog format strings.
+    /// Converts unit-interval volume to a whole-number percent for catalog interpolation.
     static func percent(for value: Float) -> Int {
         Int((value * 100).rounded())
     }
