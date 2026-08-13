@@ -11,6 +11,21 @@
 //  New code lives only in the main "Lutheran Radio" target (no Core, no widget changes).
 //  Matches style, DEBUG logging, init patterns, and error handling from LutheranRadioWidget intents.
 //
+//  AGENT NOTE — Siri phrase localization is not Localizable.xcstrings:
+//  Apple trains App Shortcut utterances from the dedicated `AppShortcuts` table
+//  (`AppShortcuts.xcstrings` in this target). Putting those phrases in
+//  `Localizable.xcstrings` (the usual CODING_AGENT.md table) does not register a
+//  native invocation for fi/de/… Siri users. Every phrase must include
+//  `\(.applicationName)` / `${applicationName}`. Parameterized phrases use
+//  `\(\.$language)` / `${language}`. Intent titles and descriptions stay in
+//  Localizable as LocalizedStringResource.
+//
+//  AGENT NOTE — one phrase per AppShortcut():
+//  Xcode's catalog extractor only binds the first phrase of each initializer.
+//  Additional phrases in the same `phrases:` array become stale in
+//  AppShortcuts.xcstrings ("References to this key could not be found in
+//  source code") and are not trained. Keep the `@AppShortcutsBuilder` body.
+//
 //  Created by Jari Lammi on 15.6.2026.
 //
 
@@ -239,38 +254,75 @@ struct SwitchToLanguageIntent: AppIntent {
 
 // MARK: - AppShortcutsProvider (zero-config Siri + Shortcuts app discovery)
 
+/// Zero-config Siri / Shortcuts / Spotlight discovery for play, pause, and language switch.
+///
+/// English source phrases below are the extraction keys. Spoken forms for all 29
+/// app languages live in ``AppShortcuts.xcstrings`` (Apple-required table name).
+///
+/// - Important: Do not move these utterances into `Localizable.xcstrings`. Siri
+///   only trains App Shortcut phrases from the `AppShortcuts` table. Every phrase
+///   must include `\(.applicationName)` or Xcode rejects the utterance.
+/// - Important: Keep **one phrase per `AppShortcut`**. Xcode's App Shortcuts
+///   catalog extractor only binds the first phrase of each initializer to
+///   `AppShortcuts.xcstrings`. Extra phrases in the same `phrases:` array are
+///   marked stale ("References to this key could not be found in source code")
+///   and are not trained. Use the `@AppShortcutsBuilder` body (no `return []`).
+/// - Note: `shortTitle` / intent `title` / `description` stay on
+///   `LocalizedStringResource` in `Localizable.xcstrings` (Shortcuts library chrome).
+/// - SeeAlso: `AppShortcuts.xcstrings`, `PlayRadioIntent`, `PauseRadioIntent`,
+///   `SwitchToLanguageIntent`, README.md Localizations, CODING_AGENT.md (Localization).
 struct LutheranRadioShortcuts: AppShortcutsProvider {
     /// Provides the top-level shortcuts that appear automatically in the Shortcuts app,
-    /// Spotlight, and are trainable by Siri ("Hey Siri, play Lutheran Radio in Finnish").
+    /// Spotlight, and are trainable by Siri in the user's language
+    /// ("Hei Siri, toista Lutheran Radio kielellä suomi").
     static var appShortcuts: [AppShortcut] {
-        let play = AppShortcut(
+        AppShortcut(
             intent: PlayRadioIntent(),
             phrases: [
-                "Play \(.applicationName)",
-                "Start \(.applicationName)",
+                "Play \(.applicationName)"
+            ],
+            shortTitle: LocalizedStringResource("Play Lutheran Radio"),
+            systemImageName: "play.circle.fill"
+        )
+        AppShortcut(
+            intent: PlayRadioIntent(),
+            phrases: [
+                "Start \(.applicationName)"
+            ],
+            shortTitle: LocalizedStringResource("Play Lutheran Radio"),
+            systemImageName: "play.circle.fill"
+        )
+        AppShortcut(
+            intent: PlayRadioIntent(),
+            phrases: [
                 "Play \(.applicationName) in \(\.$language)"
             ],
             shortTitle: LocalizedStringResource("Play Lutheran Radio"),
             systemImageName: "play.circle.fill"
         )
-        let pause = AppShortcut(
+        AppShortcut(
             intent: PauseRadioIntent(),
             phrases: [
-                "Pause \(.applicationName)",
+                "Pause \(.applicationName)"
+            ],
+            shortTitle: LocalizedStringResource("Pause Lutheran Radio"),
+            systemImageName: "pause.circle.fill"
+        )
+        AppShortcut(
+            intent: PauseRadioIntent(),
+            phrases: [
                 "Stop \(.applicationName)"
             ],
             shortTitle: LocalizedStringResource("Pause Lutheran Radio"),
             systemImageName: "pause.circle.fill"
         )
-        let switchLang = AppShortcut(
+        AppShortcut(
             intent: SwitchToLanguageIntent(),
             phrases: [
-                "Switch \(.applicationName) to \(\.$language)",
-                "Play \(.applicationName) in \(\.$language)"
+                "Switch \(.applicationName) to \(\.$language)"
             ],
             shortTitle: LocalizedStringResource("Switch to %@"),
             systemImageName: "globe"
         )
-        return [play, pause, switchLang]
     }
 }
