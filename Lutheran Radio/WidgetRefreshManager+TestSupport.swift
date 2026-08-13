@@ -300,8 +300,9 @@ extension WidgetRefreshManager {
 
     /// Resets debounce, coalesce, and last-known refresh state for timing-isolated unit tests.
     ///
-    /// Cancels pending work items and clears ``lastRefreshTime`` / ``lastKnownState`` so
-    /// successive tests do not inherit coalesce windows from prior drives.
+    /// Cancels pending work items and clears ``lastRefreshTime`` / ``lastKnownState`` /
+    /// ``lastPaintEpochAtSuccessfulReload`` so successive tests do not inherit coalesce
+    /// windows or a stale paint-epoch token from prior drives.
     ///
     /// - SeeAlso: ``_test_setBypassUITestModeForDebounceObservation(_:)``,
     ///   ``WidgetRefreshManagerEventTests``.
@@ -310,6 +311,7 @@ extension WidgetRefreshManager {
         cancelPendingRefresh()
         lastRefreshTime = nil
         lastKnownState = nil
+        lastPaintEpochAtSuccessfulReload = 0
         refreshCount = 0
         adaptiveInterval = 0.5
     }

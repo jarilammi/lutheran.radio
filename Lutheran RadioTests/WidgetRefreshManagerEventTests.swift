@@ -1495,10 +1495,14 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         )
     }
 
-    /// Soft-resume reverse race: non-immediate ``.userPaused`` after session snapshot advanced
-    /// to ``.playing`` must discard at execute time (must not reverse authoritative playing).
+    /// Soft-resume reverse race: non-immediate ``.userPaused`` after memory + session already
+    /// advanced to ``.playing`` must discard at execute time (must not reverse authoritative
+    /// playing). Composition is memory-first, so the recorded outcome is
+    /// ``discardedMemoryAuthorityRegress`` (session would also discard this pair).
     ///
-    /// - SeeAlso: ``refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``.
+    /// - SeeAlso: ``refreshWouldDiscardHomeWake(executing:memory:session:isImmediate:)``,
+    ///   ``refreshWouldRegressMemoryAuthority(executing:memory:isImmediate:)``,
+    ///   ``refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``.
     func testDelayedUserPausedDiscardsWhenPersistedPlayingAfterSoftResume() async {
         enableDebounceObservation()
         WidgetRefreshManager.setHasActiveLutheranWidgets(true)
@@ -1536,13 +1540,18 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         )
 
         let discarded = await waitForDebounceOutcome(
-            .discardedStaleDebouncedRegress,
+            .discardedMemoryAuthorityRegress,
             timeout: 3.0
         )
         let log = WidgetRefreshManager._test_debounceOutcomeLog()
         XCTAssertTrue(
             discarded,
-            "Delayed pause must discard when persisted snapshot is playing; log: \(log)"
+            "Delayed pause must discard on memory authority when playing already won; log: \(log)"
+        )
+        XCTAssertEqual(
+            refreshExecutedCount(),
+            1,
+            "Late pause must not execute a second home wake; log: \(log)"
         )
         XCTAssertEqual(
             refreshManager._test_lastKnownVisualState(),
@@ -1717,6 +1726,67 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         XCTAssertTrue(
             log.contains(.coalescedIdenticalNonPlaying),
             "Post-stop dual-path duplicate must identity-coalesce; log: \(log)"
+        )
+    }
+
+    /// Interactive paint-epoch advance after a successful kind reload must allow one more
+    /// identical non-playing wake so residual LIVE can re-resolve. Subsequent identical
+    /// callbacks with an unchanged epoch still identity-coalesce.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/bumpHomeWidgetInteractivePaintEpoch(reason:)``,
+    ///   ``WidgetRefreshManager/shouldCoalesceIdenticalNonPlayingRefresh(requestedVisual:lastKnownVisual:languageUnchanged:errorFlagsMatch:hasError:)``.
+    func testRefreshIfNeededAllowsIdenticalNonPlayingWhenPaintEpochAdvanced() async {
+        enableDebounceObservation()
+        // Align memory with the sticky candidate so execute-time wake discard does not fire.
+        await manager.setVisualState(.userPaused)
+
+        refreshManager.refreshIfNeeded(
+            visualState: .userPaused,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        let firstExecuted = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        XCTAssertTrue(firstExecuted)
+        XCTAssertEqual(refreshExecutedCount(), 1)
+
+        SharedPlayerManager.bumpHomeWidgetInteractivePaintEpoch(reason: "testPaintEpochAdvance")
+
+        refreshManager.refreshIfNeeded(
+            visualState: .userPaused,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        let secondExecuted = await waitForRefreshExecutedCount(atLeast: 2, timeout: 1.0)
+        let logAfterAdvance = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertTrue(
+            secondExecuted,
+            "Paint-epoch advance must allow one more identical sticky wake; log: \(logAfterAdvance)"
+        )
+        XCTAssertFalse(
+            logAfterAdvance.contains(.coalescedIdenticalNonPlaying),
+            "Paint-epoch advance must not identity-coalesce the follow-up wake; log: \(logAfterAdvance)"
+        )
+
+        refreshManager.refreshIfNeeded(
+            visualState: .userPaused,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: true,
+            trigger: .teardown
+        )
+        let logAfterDuplicate = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertEqual(
+            refreshExecutedCount(),
+            2,
+            "Unchanged epoch after the extra wake must identity-coalesce; log: \(logAfterDuplicate)"
+        )
+        XCTAssertTrue(
+            logAfterDuplicate.contains(.coalescedIdenticalNonPlaying),
+            "Duplicate after the epoch-allowed wake must identity-coalesce; log: \(logAfterDuplicate)"
         )
     }
 

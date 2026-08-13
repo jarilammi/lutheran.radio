@@ -161,7 +161,11 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// follow-up ``reloadTimelines`` that residual LIVE needs to re-resolve. Comparing suite
     /// epoch to this bookkeeping token allows one more kind-only wake without dual
     /// ``reloadAllTimelines`` thrash.
-    private var lastPaintEpochAtSuccessfulReload: Int = 0
+    ///
+    /// DEBUG debounce observation must snapshot the same token on simulated execute; otherwise
+    /// any leftover suite epoch looks permanently “advanced” and identity-coalesce never fires.
+    /// - SeeAlso: ``_test_resetRefreshTimingState()``, ``performRefresh(for:)``.
+    var lastPaintEpochAtSuccessfulReload: Int = 0
     /// Deferred `.prePlay` refresh; superseded by `.playing` on the same language within the coalesce window.
     private var coalescedPrePlayWorkItem: DispatchWorkItem?
     private var coalescedPrePlayState: WidgetState?
@@ -1017,6 +1021,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
             cancelPendingRefresh()
             lastRefreshTime = Date()
             lastKnownState = state
+            // Mirror production kind-reload bookkeeping so paint-epoch advance is the only
+            // reason identical non-playing coalesce is skipped under observation.
+            lastPaintEpochAtSuccessfulReload =
+                SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
             return
         }
         #endif
