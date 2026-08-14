@@ -1,6 +1,9 @@
 # Xcode
 #
 # gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
+#
+# Comments must occupy their own line. A trailing "# ..." on a pattern line is
+# part of the pattern — gitignore has no end-of-line comments.
 
 ## User settings
 xcuserdata/
@@ -62,33 +65,53 @@ fastlane/screenshots/**/*.png
 fastlane/test_output
 
 # Secrets and credentials
-*.p8             # Apple Push Notification service keys
-*.p12            # iOS Distribution certificates
-*.cer            # iOS certificates
-*.mobileprovision # iOS provisioning profiles
-*.keychain       # Keychain files
-.env*            # Environment files that might contain API keys/secrets
-**/GoogleService-Info.plist  # Firebase configuration
-**/Keys.plist    # Custom keys/config files
+# Apple Push Notification service keys
+*.p8
+# iOS Distribution certificates
+*.p12
+# iOS certificates
+*.cer
+# iOS provisioning profiles
+*.mobileprovision
+# Keychain files
+*.keychain
+# Environment files that might contain API keys/secrets
+.env*
+# Firebase configuration
+**/GoogleService-Info.plist
+# Custom keys/config files
+**/Keys.plist
 **/Secrets.plist
-ApiKeys.swift    # Files containing API keys
+# Files containing API keys
+ApiKeys.swift
 Secrets.swift
-Config.xcconfig  # Xcode configuration files that might contain secrets
+# Xcode configuration files that might contain secrets
+Config.xcconfig
 
 # Additional build artifacts
-*.generated.swift # Generated files that might contain secrets
+# Generated files that might contain secrets
+*.generated.swift
 build/
-DerivedData/     # More comprehensive than just xcuserdata
+# More comprehensive than just xcuserdata
+DerivedData/
 
-# IDE specific
-.idea/           # AppCode
-*.xcconfig       # If storing sensitive data in xcconfig files
-.DS_Store        # macOS specific
-*.swp            # Vim temporary files
-*~.nib           # Interface builder temporary files
+# IDE / editor / OS junk
+# AppCode
+.idea/
+# If storing sensitive data in xcconfig files
+*.xcconfig
+# macOS Finder folder metadata
+.DS_Store
+# Vim temporary files
+*.swp
+# Interface builder temporary files
+*~.nib
 
-# Agent tooling alias - canonical source is CODING_AGENT.md
+# Agent tooling alias — canonical source is CODING_AGENT.md
 /AGENTS.md
+
+# Unpublished local working notes
+docs/local/
 
 # Generated tuning sound files
 Lutheran Radio/Tools/*.wav
