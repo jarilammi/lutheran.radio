@@ -15,6 +15,8 @@ import WidgetSurface
 
 /// `RadioLiveActivityManager` owns the lifecycle and push surface for privacy-first
 /// local-only Live Activities (Dynamic Island + Lock Screen) using ActivityKit.
+/// On Designed-for-iPhone Mac (`isiOSAppOnMac`) ActivityKit is unavailable —
+/// ``areActivitiesEnabledOnThisHost`` is false and start/observe/update/ensure no-op.
 ///
 /// ## Purpose and Ownership
 /// Manages creation, `ContentState` pushes (via `update(using:)`), and termination
@@ -215,6 +217,28 @@ import WidgetSurface
 @MainActor
 class RadioLiveActivityManager: ObservableObject {
     static let shared = RadioLiveActivityManager()
+
+    /// Whether ActivityKit Live Activities are available on this process host.
+    ///
+    /// On Designed for iPhone / iPad Mac (`ProcessInfo.processInfo.isiOSAppOnMac`),
+    /// ActivityKit authorization and output services do not exist. Constructing
+    /// `ActivityAuthorizationInfo` or reading `Activity.activities` logs connection
+    /// failures. Report disabled without calling ActivityKit.
+    ///
+    /// This is not a privacy, security, or `PlayerEvent` bypass. It only avoids
+    /// unavailable system IPC. Hardware Live Activity chrome is an iPhone / iPad surface.
+    ///
+    /// - Returns: `false` when ``SharedPlayerManager/isRunningAsIOSAppOnMac``; otherwise
+    ///   the system `ActivityAuthorizationInfo` enabled flag.
+    /// - SeeAlso: ``startActivity()``, ``observeExistingActivities()``,
+    ///   ``SharedPlayerManager/isRunningAsIOSAppOnMac``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    nonisolated static var areActivitiesEnabledOnThisHost: Bool {
+        if SharedPlayerManager.isRunningAsIOSAppOnMac {
+            return false
+        }
+        return ActivityAuthorizationInfo().areActivitiesEnabled
+    }
     
     @Published var currentActivity: Activity<LutheranRadioLiveActivityAttributes>?
 
@@ -802,6 +826,17 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
+        // Designed-for-iPhone Mac: ActivityKit services are absent. Skip before
+        // `ActivityAuthorizationInfo` / `Activity.request` so launch does not log
+        // authorization and output-client connection failures.
+        if SharedPlayerManager.isRunningAsIOSAppOnMac {
+            stopLocalUpdateTimer()
+            activityEventObserver.cancel()
+            activityObservationTask = nil
+            pendingInteractiveLiveActivityEnsure = false
+            return
+        }
+
         #if DEBUG
         if isRunningUnderTest {
             // Prevent creating real Live Activities + the repeating local timer
@@ -813,7 +848,7 @@ class RadioLiveActivityManager: ObservableObject {
         }
         #endif
 
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+        guard Self.areActivitiesEnabledOnThisHost else {
             #if DEBUG
             print("🔴 Live Activities are not enabled by user")
             #endif
@@ -885,7 +920,7 @@ class RadioLiveActivityManager: ObservableObject {
     private func recoverAfterFailedInteractiveLiveActivityRequest() async {
         // Prefer re-bind over a permanent blank surface (request may fail while system
         // still holds a residual interactive for this attribute type).
-        if let existing = Activity<LutheranRadioLiveActivityAttributes>.activities.first {
+        if let existing = systemHeldLiveActivities().first {
             currentActivity = existing
             pendingInteractiveLiveActivityEnsure = false
             beginObservingActivityEvents(existing)
@@ -978,6 +1013,10 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
+        if SharedPlayerManager.isRunningAsIOSAppOnMac {
+            return
+        }
+
         #if DEBUG
         if isRunningUnderTest {
             return
@@ -1047,7 +1086,7 @@ class RadioLiveActivityManager: ObservableObject {
         // Visual mutations still push. Re-arm: destination change, eligibility, become-active,
         // or contentUpdates (see languageEnsureQuietPendingDestination).
         let requestEligibleForQuiet = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         if Self.shouldDeferRedundantLanguagePushWhileQuiet(
@@ -1293,7 +1332,7 @@ class RadioLiveActivityManager: ObservableObject {
         #endif
 
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         if Self.shouldPerformStalledContentRecreation(
@@ -1785,7 +1824,7 @@ class RadioLiveActivityManager: ObservableObject {
     /// leaves the user with audio-only chrome until a later foreground path succeeds.
     ///
     /// - Parameters:
-    ///   - areActivitiesEnabled: `ActivityAuthorizationInfo().areActivitiesEnabled`.
+    ///   - areActivitiesEnabled: `Self.areActivitiesEnabledOnThisHost`.
     ///   - isApplicationActive: `UIApplication.shared.applicationState == .active` (presentable
     ///     for a replacement interactive request; inactive/background is not).
     /// - Returns: `true` when both Live Activities are enabled and the app is active.
@@ -1929,7 +1968,7 @@ class RadioLiveActivityManager: ObservableObject {
         guard !isRecreatingLiveActivityAfterStalledContent else { return }
 
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         guard requestEligible else {
@@ -3174,7 +3213,7 @@ class RadioLiveActivityManager: ObservableObject {
         }
 
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         guard Self.shouldRunPlayingContentEnsureSoftPushes(
@@ -3271,7 +3310,7 @@ class RadioLiveActivityManager: ObservableObject {
             ownedVisual: currentActivity?.content.state.visualState
         )
         let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         if Self.shouldEnterPlayingEnsureQuietPending(
@@ -3376,7 +3415,7 @@ class RadioLiveActivityManager: ObservableObject {
         let hold = await manager.isStreamSwitchPrePlayHoldActive
         let ownedLanguage = currentActivity?.content.state.currentLanguage
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
 
@@ -3434,7 +3473,7 @@ class RadioLiveActivityManager: ObservableObject {
         // Still lagging while locked — re-enter quiet for status thrash, keep pending ensure
         // for become-active, and schedule longer-cadence soft ensure without end+request.
         let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         let holdAfter = await manager.isStreamSwitchPrePlayHoldActive
@@ -3560,7 +3599,7 @@ class RadioLiveActivityManager: ObservableObject {
 
                 // Still lagging — quiet status thrash until next delayed attempt or FG rail.
                 let eligible = Self.isInteractiveLiveActivityRequestEligible(
-                    areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                    areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
                     isApplicationActive: UIApplication.shared.applicationState == .active
                 )
                 if !eligible {
@@ -3619,7 +3658,7 @@ class RadioLiveActivityManager: ObservableObject {
         let connecting = await manager.isConnectingPlayback
         let ownedVisual = currentActivity?.content.state.visualState
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
 
@@ -3678,7 +3717,7 @@ class RadioLiveActivityManager: ObservableObject {
         // Still lagging while locked — re-enter quiet for status thrash, keep pending ensure
         // for become-active, and schedule longer-cadence soft ensure without end+request.
         let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         let holdAfter = await manager.isStreamSwitchPrePlayHoldActive
@@ -3806,7 +3845,7 @@ class RadioLiveActivityManager: ObservableObject {
 
                 // Still lagging — quiet status thrash until next delayed attempt or FG rail.
                 let eligible = Self.isInteractiveLiveActivityRequestEligible(
-                    areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                    areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
                     isApplicationActive: UIApplication.shared.applicationState == .active
                 )
                 if !eligible {
@@ -3888,7 +3927,7 @@ class RadioLiveActivityManager: ObservableObject {
         let hold = await manager.isStreamSwitchPrePlayHoldActive
         let connecting = await manager.isConnectingPlayback
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         let destination = await manager.liveActivityLanguageCodeForContentPush()
@@ -3963,7 +4002,7 @@ class RadioLiveActivityManager: ObservableObject {
         let connecting = await manager.isConnectingPlayback
         let actorVisual = await manager.currentVisualState
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         let languageLags = Self.shouldEnsureAuthoritativeLanguageContent(
@@ -4033,7 +4072,7 @@ class RadioLiveActivityManager: ObservableObject {
         let connecting = await manager.isConnectingPlayback
         let actorVisual = await manager.currentVisualState
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         let languageLags = Self.shouldEnsureAuthoritativeLanguageContent(
@@ -4172,7 +4211,7 @@ class RadioLiveActivityManager: ObservableObject {
                         return
                     }
                     let eligibleAfterDual = Self.isInteractiveLiveActivityRequestEligible(
-                        areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                        areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
                         isApplicationActive: UIApplication.shared.applicationState == .active
                     )
                     if !eligibleAfterDual {
@@ -4204,7 +4243,7 @@ class RadioLiveActivityManager: ObservableObject {
                 }
 
                 let eligible = Self.isInteractiveLiveActivityRequestEligible(
-                    areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                    areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
                     isApplicationActive: UIApplication.shared.applicationState == .active
                 )
                 if !eligible {
@@ -4326,7 +4365,7 @@ class RadioLiveActivityManager: ObservableObject {
                         return
                     }
                     let eligibleAfterDual = Self.isInteractiveLiveActivityRequestEligible(
-                        areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                        areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
                         isApplicationActive: UIApplication.shared.applicationState == .active
                     )
                     if !eligibleAfterDual {
@@ -4356,7 +4395,7 @@ class RadioLiveActivityManager: ObservableObject {
                 }
 
                 let eligible = Self.isInteractiveLiveActivityRequestEligible(
-                    areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                    areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
                     isApplicationActive: UIApplication.shared.applicationState == .active
                 )
                 if !eligible {
@@ -4512,7 +4551,7 @@ class RadioLiveActivityManager: ObservableObject {
                 }
 
                 let eligible = Self.isInteractiveLiveActivityRequestEligible(
-                    areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                    areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
                     isApplicationActive: UIApplication.shared.applicationState == .active
                 )
                 if !eligible {
@@ -4610,7 +4649,7 @@ class RadioLiveActivityManager: ObservableObject {
         defer { dualAxisEnsureSoftPushesInFlight = false }
 
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
 
@@ -4682,7 +4721,7 @@ class RadioLiveActivityManager: ObservableObject {
             ownedVisual: currentActivity?.content.state.visualState
         )
         let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         if !eligibleAfter {
@@ -4726,7 +4765,7 @@ class RadioLiveActivityManager: ObservableObject {
         let ownedVisual = currentActivity?.content.state.visualState
         let destination = await manager.liveActivityLanguageCodeForContentPush()
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
 
@@ -4798,7 +4837,7 @@ class RadioLiveActivityManager: ObservableObject {
         }
 
         let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         if !eligibleAfter {
@@ -4946,7 +4985,7 @@ class RadioLiveActivityManager: ObservableObject {
         }
 
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         guard Self.shouldRunLanguageContentEnsureSoftPushes(
@@ -5023,7 +5062,7 @@ class RadioLiveActivityManager: ObservableObject {
             }
             // Eligibility-aware inter-attempt spacing (longer under continuous lock).
             let loopEligible = Self.isInteractiveLiveActivityRequestEligible(
-                areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
                 isApplicationActive: UIApplication.shared.applicationState == .active
             )
             if let delayMs = Self.softEnsureInterAttemptDelayMilliseconds(
@@ -5045,7 +5084,7 @@ class RadioLiveActivityManager: ObservableObject {
             lastPushedLanguage: lastPushedContent?.currentLanguage
         )
         let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         if let quietDestination = Self.quietPendingDestinationAfterLanguageEnsureExhaustion(
@@ -5324,7 +5363,7 @@ class RadioLiveActivityManager: ObservableObject {
         )
 
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
 
@@ -5771,6 +5810,22 @@ class RadioLiveActivityManager: ObservableObject {
         return (language, metadata)
     }
 
+    /// System-held Live Activities for this attribute type, or empty when ActivityKit is absent.
+    ///
+    /// Designed-for-iPhone Mac has no ActivityKit output service. Reading
+    /// `Activity.activities` logs `OutputClientError`. Return empty without querying.
+    ///
+    /// - Returns: `Activity.activities` on iPhone / iPad; `[]` when
+    ///   ``SharedPlayerManager/isRunningAsIOSAppOnMac``.
+    /// - SeeAlso: ``areActivitiesEnabledOnThisHost``, ``observeExistingActivities()``,
+    ///   ``collectActivitiesToEnd()``
+    private func systemHeldLiveActivities() -> [Activity<LutheranRadioLiveActivityAttributes>] {
+        if SharedPlayerManager.isRunningAsIOSAppOnMac {
+            return []
+        }
+        return Activity<LutheranRadioLiveActivityAttributes>.activities
+    }
+
     /// Collects unique Live Activities to dismiss: the local `currentActivity` plus every
     /// system-held activity for this attribute type.
     ///
@@ -5782,7 +5837,7 @@ class RadioLiveActivityManager: ObservableObject {
         if let current = currentActivity {
             byId[current.id] = current
         }
-        for activity in Activity<LutheranRadioLiveActivityAttributes>.activities {
+        for activity in systemHeldLiveActivities() {
             byId[activity.id] = activity
         }
         return Array(byId.values)
@@ -5988,6 +6043,16 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
+        // Designed-for-iPhone Mac: `Activity.activities` fails with OutputClientError.
+        // Same cheap local nil as UITestMode — do not query or end surfaces that
+        // cannot exist on this host.
+        if SharedPlayerManager.isRunningAsIOSAppOnMac {
+            currentActivity = nil
+            activityEventObserver.cancel()
+            activityObservationTask = nil
+            return
+        }
+
         #if DEBUG
         // Robust test detection (works in Xcode GUI + xcodebuild + attached LLDB).
         // We short-circuit *before* the synchronous call to ActivityKit's system services
@@ -6012,7 +6077,7 @@ class RadioLiveActivityManager: ObservableObject {
         // ``endActivity`` sweeps all system activities, pushes paused + residual language
         // chrome, and dismisses immediately. Local `currentActivity` stays nil until
         // ``startActivity()`` runs for this process lifetime.
-        let residualCount = Activity<LutheranRadioLiveActivityAttributes>.activities.count
+        let residualCount = systemHeldLiveActivities().count
         if residualCount > 0 {
             #if DEBUG
             print("🔴 Reaping \(residualCount) residual Live Activity surface(s) from prior process lifetime")
@@ -6036,7 +6101,7 @@ class RadioLiveActivityManager: ObservableObject {
     /// - SeeAlso: ``systemResidualIdsToReap(systemActivityIds:ownedActivityId:)``,
     ///   ``seedFinalEndChromeFromResidualActivities(_:)``, ``observeExistingActivities()``.
     private func reapUnownedSystemResiduals(preservingOwnedActivityId ownedActivityId: String) {
-        let systemActivities = Activity<LutheranRadioLiveActivityAttributes>.activities
+        let systemActivities = systemHeldLiveActivities()
         let siblingIds = Self.systemResidualIdsToReap(
             systemActivityIds: systemActivities.map(\.id),
             ownedActivityId: ownedActivityId
@@ -6156,7 +6221,7 @@ class RadioLiveActivityManager: ObservableObject {
         let hold = await manager.isStreamSwitchPrePlayHoldActive
         let connecting = await manager.isConnectingPlayback
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
 
@@ -7535,6 +7600,7 @@ extension RadioLiveActivityManager {
     func handleAppWillEnterBackground() {
         // Defense-in-depth: never start Live Activities from background transitions under test.
         if SharedPlayerManager.isRunningInUITestMode { return }
+        if SharedPlayerManager.isRunningAsIOSAppOnMac { return }
 
         #if DEBUG
         if isRunningUnderTest { return }
@@ -7573,6 +7639,7 @@ extension RadioLiveActivityManager {
     func handleAppDidEnterForeground() {
         // Defense-in-depth: suppress foreground LA pushes under UITestMode.
         if SharedPlayerManager.isRunningInUITestMode { return }
+        if SharedPlayerManager.isRunningAsIOSAppOnMac { return }
 
         #if DEBUG
         if isRunningUnderTest { return }
@@ -7618,6 +7685,7 @@ extension RadioLiveActivityManager {
     @MainActor
     func ensureInteractiveLiveActivityIfNeeded() async {
         if SharedPlayerManager.isRunningInUITestMode { return }
+        if SharedPlayerManager.isRunningAsIOSAppOnMac { return }
         #if DEBUG
         if isRunningUnderTest { return }
         #endif
@@ -7647,7 +7715,7 @@ extension RadioLiveActivityManager {
                 ownedVisual: ownedVisual
             )
             let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
-                areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
                 isApplicationActive: UIApplication.shared.applicationState == .active
             )
             let shouldInvoke = Self.shouldInvokeOwnedSurfaceForegroundEnsure(
@@ -7684,7 +7752,7 @@ extension RadioLiveActivityManager {
             return
         }
 
-        let activitiesEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
+        let activitiesEnabled = Self.areActivitiesEnabledOnThisHost
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
             areActivitiesEnabled: activitiesEnabled,
             isApplicationActive: UIApplication.shared.applicationState == .active

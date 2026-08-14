@@ -31,6 +31,23 @@ extension SharedPlayerManager {
     // the established nonisolated(unsafe) pattern for gate-observation seams in WidgetRefreshManager.
     nonisolated(unsafe) internal static var _test_simulateWidgetProcessContext = false
 
+    // SAFETY: DEBUG-only host-capability override for Designed-for-iPhone Mac tests.
+    // Production ``isRunningAsIOSAppOnMac`` reads ``ProcessInfo/isiOSAppOnMac`` only.
+    // Not a privacy, security, or PlayerEvent bypass — tests inject the same Bool
+    // production call sites already consult.
+    nonisolated(unsafe) internal static var _test_isRunningAsIOSAppOnMacOverride: Bool?
+
+    /// Overrides ``isRunningAsIOSAppOnMac`` for unit tests of unavailable-surface gates.
+    ///
+    /// - Parameter override: `true` / `false` to pin the host query; `nil` restores
+    ///   ``ProcessInfo/isiOSAppOnMac``.
+    /// - SeeAlso: ``isRunningAsIOSAppOnMac``,
+    ///   ``RadioLiveActivityManager/areActivitiesEnabledOnThisHost``,
+    ///   CODING_AGENT.md (fast test patterns).
+    nonisolated static func _test_setIsRunningAsIOSAppOnMac(_ override: Bool?) {
+        unsafe _test_isRunningAsIOSAppOnMacOverride = override
+    }
+
     /// Simulates widget-extension process context for unit tests of cross-process guards.
     ///
     /// When `true` in the main-app test host, ``isRunningInWidget()`` and

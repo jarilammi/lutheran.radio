@@ -352,8 +352,10 @@ enum WidgetIntentExecution {
     /// calls do not regress the glyph while the actor catches up.
     ///
     /// - Parameter visualState: Target control visual (`.userPaused` after pause plan, `.playing` after play).
-    /// - Note: Skips ActivityKit IPC under ``SharedPlayerManager/isRunningInUITestMode`` so
-    ///   unit tests stay free of system-service round-trips; main-app last-pushed alignment
+    /// - Note: Skips ActivityKit IPC under ``SharedPlayerManager/isRunningInUITestMode`` and
+    ///   ``SharedPlayerManager/isRunningAsIOSAppOnMac`` (Designed-for-iPhone Mac has no
+    ///   ActivityKit service) so those hosts stay free of system-service connection failures;
+    ///   main-app last-pushed alignment
     ///   still runs so white-box suppression tests can exercise the thrash guard. On the main
     ///   app, when ``DirectStreamingPlayer/selectedStream`` language differs from owned
     ///   ContentState language, the optimistic push co-heals language with the visual flip so
@@ -365,6 +367,7 @@ enum WidgetIntentExecution {
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func pushOptimisticLiveActivityToggleContent(visualState: PlayerVisualState) async {
         let skipActivityKitIPC = SharedPlayerManager.isRunningInUITestMode
+            || SharedPlayerManager.isRunningAsIOSAppOnMac
 
         if !skipActivityKitIPC {
             for activity in interactiveLiveActivities() {
@@ -424,7 +427,8 @@ enum WidgetIntentExecution {
     ///   - languageCode: Destination stream language code (flag / name / alt-current).
     ///   - visualState: Optimistic control visual from
     ///     ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``.
-    /// - Note: Skips ActivityKit IPC under ``SharedPlayerManager/isRunningInUITestMode``;
+    /// - Note: Skips ActivityKit IPC under ``SharedPlayerManager/isRunningInUITestMode``
+    ///   and ``SharedPlayerManager/isRunningAsIOSAppOnMac``;
     ///   mirror + main-app last-pushed alignment still run for white-box contracts.
     /// - SeeAlso: ``executeLiveActivityStreamSwitch(languageCode:)``,
     ///   ``RadioLiveActivityManager/ensureAuthoritativeLanguageContentIfNeeded()``,
@@ -443,6 +447,7 @@ enum WidgetIntentExecution {
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(visualState)
 
         let skipActivityKitIPC = SharedPlayerManager.isRunningInUITestMode
+            || SharedPlayerManager.isRunningAsIOSAppOnMac
         var anySurfaceAcceptedDestination = false
 
         if !skipActivityKitIPC {
@@ -515,7 +520,12 @@ enum WidgetIntentExecution {
     nonisolated private static func interactiveLiveActivities()
         -> [Activity<LutheranRadioLiveActivityAttributes>]
     {
-        Activity<LutheranRadioLiveActivityAttributes>.activities.filter {
+        if SharedPlayerManager.isRunningInUITestMode
+            || SharedPlayerManager.isRunningAsIOSAppOnMac
+        {
+            return []
+        }
+        return Activity<LutheranRadioLiveActivityAttributes>.activities.filter {
             switch $0.activityState {
             case .active, .stale:
                 return true

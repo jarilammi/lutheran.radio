@@ -458,6 +458,33 @@ actor SharedPlayerManager {
         return false
     }
 
+    /// Whether this process is the iOS app running on Apple Silicon Mac (Designed for iPhone / iPad).
+    ///
+    /// Wraps ``ProcessInfo/isiOSAppOnMac``. Used only to hide or skip surfaces that do not
+    /// exist on that host (ActivityKit Live Activities). It does **not** change Core security
+    /// policy, privacy write suppression, `PlayerEvent` observation, or playback intent.
+    ///
+    /// - Returns: `true` when the iOS binary is hosted as Designed for iPhone / iPad on Mac.
+    ///   `false` on iPhone, iPad, simulator, and Mac Catalyst (`isMacCatalystApp` is a
+    ///   different product and is not consulted here).
+    /// - Note: Nonisolated and safe during early launch. DEBUG tests may override via
+    ///   ``_test_setIsRunningAsIOSAppOnMac(_:)`` — do not mock `ProcessInfo` globally.
+    /// - SeeAlso: ``RadioLiveActivityManager/areActivitiesEnabledOnThisHost``,
+    ///   ``isRunningInUITestMode``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    nonisolated static var isRunningAsIOSAppOnMac: Bool {
+        #if DEBUG
+        // SAFETY: DEBUG-only read of the host-capability seam. Same `unsafe` borrow
+        // as ``isRunningInWidget()`` / ``isWidgetProcess()`` on
+        // ``_test_simulateWidgetProcessContext``. Release builds omit this branch
+        // and read ``ProcessInfo/isiOSAppOnMac`` only.
+        if let override = unsafe Self._test_isRunningAsIOSAppOnMacOverride {
+            return override
+        }
+        #endif
+        return ProcessInfo.processInfo.isiOSAppOnMac
+    }
+
     // AGENT NOTE (UI Test Isolation):
     // If you add any new automatic playback path (cold-launch Task, recovery timer,
     // network-restore handler, widget-driven auto-resume, Live Activity start, etc.),

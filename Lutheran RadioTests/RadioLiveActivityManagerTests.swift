@@ -5,7 +5,8 @@
 //  Created by Jari Lammi on 29.8.2025.
 //
 //  White-box unit tests for ``RadioLiveActivityManager`` timer demotion, change-detection
-//  guards, Live Activity attribute-events (`contentUpdates`) observation contracts, and
+//  guards, Live Activity attribute-events (`contentUpdates`) observation contracts,
+//  Designed-for-iPhone Mac ActivityKit skip, and
 //  termination final-ContentState / hygiene contracts.
 //
 //  Attribute-events tests consume DEBUG synthetic-stream seams on the manager
@@ -78,6 +79,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
         manager?._test_clearLastPushedContent()
         manager?.stopLocalUpdateTimer()
         manager?.activityObservationTask?.cancel()
+        SharedPlayerManager._test_setIsRunningAsIOSAppOnMac(nil)
         // The seam cancel stops the work; the observer is reset on next use.
         manager = nil
         try await super.tearDown()
@@ -94,6 +96,42 @@ class RadioLiveActivityManagerTests: XCTestCase {
         // We also force nil in setUp (cheap direct assignment) so the assertion is
         // reliable even when other tests in the suite have started real Live Activities.
         XCTAssertNil(manager.currentActivity)
+    }
+
+    // MARK: - Designed-for-iPhone Mac host
+
+    /// Designed-for-iPhone Mac has no ActivityKit service. The host query plus
+    /// ``areActivitiesEnabledOnThisHost`` must report disabled without calling
+    /// `ActivityAuthorizationInfo` so launch does not log connection failures.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/isRunningAsIOSAppOnMac``,
+    ///   ``RadioLiveActivityManager/areActivitiesEnabledOnThisHost``
+    func testDesignedForIPhoneMacHostReportsLiveActivitiesDisabled() {
+        SharedPlayerManager._test_setIsRunningAsIOSAppOnMac(true)
+        defer { SharedPlayerManager._test_setIsRunningAsIOSAppOnMac(nil) }
+
+        XCTAssertTrue(
+            SharedPlayerManager.isRunningAsIOSAppOnMac,
+            "DEBUG seam must pin the Designed-for-iPhone Mac host query"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.areActivitiesEnabledOnThisHost,
+            "Mac host must treat Live Activities as unavailable without ActivityKit IPC"
+        )
+    }
+
+    /// Clearing the DEBUG host override restores ``ProcessInfo/isiOSAppOnMac`` (false
+    /// on the iOS simulator test host).
+    func testDesignedForIPhoneMacHostOverrideClearsToProcessInfo() {
+        SharedPlayerManager._test_setIsRunningAsIOSAppOnMac(true)
+        XCTAssertTrue(SharedPlayerManager.isRunningAsIOSAppOnMac)
+        SharedPlayerManager._test_setIsRunningAsIOSAppOnMac(nil)
+
+        XCTAssertEqual(
+            SharedPlayerManager.isRunningAsIOSAppOnMac,
+            ProcessInfo.processInfo.isiOSAppOnMac,
+            "Nil override must read ProcessInfo.isiOSAppOnMac (false on iOS Simulator)"
+        )
     }
     
     // MARK: - Timer Management Tests
