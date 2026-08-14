@@ -66,6 +66,8 @@ Product source (`///`, inline comments, file headers), DocC, permanent documenta
 
 Working briefs may guide implementation sessions. When shipping, absorb truth into committed symbols and permanent docs using **mechanism names**, not provenance from temporary files. If a brief is promoted into permanent `docs/`, treat it as canonical only after it is committed and linked from the relevant roadmap or SSOT.
 
+Untracked or local session notes (including gitignored working briefs) may be stale. Confirm `git status` and `git log` before treating their commit pins or `HEAD` claims as current. Do not re-land commits those notes already list as shipped.
+
 `- SeeAlso:` links must resolve to DocC articles, committed types/methods, permanent `docs/` paths, README sections, or this file — not to temporary paths.
 
 ### Naming: Honest and Non-Forcing

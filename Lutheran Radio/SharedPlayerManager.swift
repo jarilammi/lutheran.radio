@@ -288,9 +288,11 @@ import WidgetKit
 /// - The main app is always the source of truth. Widgets write optimistic visual state +
 ///   `pendingAction`, then the main app performs real work and writes authoritative values.
 /// - `saveCurrentState()` is the primary persistence path driven by the real player.
-/// - Widget / extension code should prefer `loadPersistedVisualStateDirect()` or call
-///   `syncVisualStateFromPersistence()` / `refreshVisualStateFromPersistence()` before
-///   trusting in-memory `currentVisualState`.
+/// - Happy-path home / Control Providers paint via ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``
+///   (session + privacy-gated ``homeWidgetLiveChrome``) and do **not** hop the actor for paint.
+///   ``refreshVisualStateFromPersistence()`` / ``syncVisualStateFromPersistence()`` remain for
+///   main-app cold launch and Control’s App Group–nil fallback only — never “call refresh at
+///   the top of any Provider.”
 /// - Live Activity lock-screen toggle plans prefer ActivityKit `ContentState` then
 ///   ``loadLiveActivityToggleVisualStateMirror()`` over extension-local actor defaults
 ///   (see ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``).
@@ -1423,15 +1425,18 @@ actor SharedPlayerManager {
     ///
     /// - SeeAlso: ``signalWidgetPendingAction(visualState:action:language:)``,
     ///   ``persistWidgetSnapshot(visualState:language:streamMetadata:clearStreamMetadata:hasError:)``,
+    ///   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``,
     ///   ``WidgetToggleRadioIntent``, ``events``, ``emit(_:)``,
     ///   docs/Widget-Functionality-Roadmap.md, docs/Widget-Presentation-Dataflow.md,
     ///   docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md (SSOT + event-driven direction).
     nonisolated public func persistOptimisticWidgetSnapshot(_ state: PlayerVisualState, language: String? = nil) {
         let lang = language ?? Self.preferredWidgetLanguage()
         // Extension optimistic toggle: session RAM + privacy-gated live chrome (widget-process
-        // bypass). Visual must match the pure plan (``optimisticVisualAfterPlayPlan`` /
-        // pause → ``.userPaused``) — never invent mid-hold ``.playing`` beyond product policy.
+        // bypass). The writer stores the caller’s visual; it does not choose a plan.
+        // Home stamps pass ``optimisticHomeWidgetVisualAfterPlayPlan`` (never invent home
+        // ``.playing``). LA / media dual-tap uses ``optimisticVisualAfterPlayPlan``.
         // - SeeAlso: ``stampHomeWidgetLiveChromeFromSession``,
+        //   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``,
         //   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
         Self.persistWidgetSnapshot(
             visualState: state,
@@ -1463,23 +1468,33 @@ actor SharedPlayerManager {
         hasLoadedVisualStateFromPersistence = true
     }
 
-    /// Public entry point for widget/extension providers to guarantee they read the real persisted state.
-    /// Call this once at the top of any Provider method before reading currentVisualState or loadSharedState for UI decisions.
+    /// Aligns actor ``currentVisualState`` with the in-process session snapshot (no disk read).
+    ///
+    /// Main-app cold launch and Control’s App Group–nil fallback use this when they need
+    /// actor visual. Happy-path Providers paint via ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``
+    /// and must **not** call this at the top of every timeline request.
+    ///
+    /// - SeeAlso: ``refreshVisualStateFromPersistence()``, ``ensureVisualStateLoaded()``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``.
     public func syncVisualStateFromPersistence() async {
         ensureVisualStateLoaded()
     }
     
-    /// Re-applies the factory-default visual load path for widget/extension hygiene.
-    /// Widget Providers should call this before reading `currentVisualState` for UI decisions.
-    /// Resets the one-shot guard so in-session updates from `persistOptimisticWidgetSnapshot` are visible
-    /// in long-lived extension processes. Never reads visual state from UserDefaults.
+    /// Re-applies the factory-default visual load path so actor ``currentVisualState`` matches
+    /// the in-process session snapshot.
     ///
-    /// This is a read-side refresh helper for long-lived widget processes. It is unrelated to
-    /// the event emission path; observers of ``events`` receive fresh values on the next yield
-    /// without needing explicit refresh calls.
+    /// Resets the one-shot guard so in-session updates from ``persistOptimisticWidgetSnapshot``
+    /// are visible to later actor readers. Never reads visual state from UserDefaults.
+    ///
+    /// **Not Provider paint:** Happy-path home / Control Providers use
+    /// ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``. This hop remains for main-app
+    /// cold launch / coordination and Control’s rare App Group–nil fallback only.
+    ///
+    /// Unrelated to ``events``; observers receive fresh values on the next yield without this call.
     ///
     /// - SeeAlso: ``syncVisualStateFromPersistence()``, ``loadPersistedWidgetState()``,
-    ///   ``events``, docs/Event-Driven-Refactor-Roadmap.md.
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   ``events``, docs/Event-Driven-Refactor-Roadmap.md, docs/Widget-Functionality-Roadmap.md.
     public func refreshVisualStateFromPersistence() async {
         hasLoadedVisualStateFromPersistence = false
         ensureVisualStateLoaded()

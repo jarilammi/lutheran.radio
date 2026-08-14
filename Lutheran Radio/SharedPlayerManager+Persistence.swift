@@ -1007,9 +1007,10 @@ extension SharedPlayerManager {
     ///
     /// **Soft-resume honesty (main app):** Callers must pass the **actual** session visual.
     /// Product soft-resume retains sticky ``.userPaused`` until ``setPlaying()``; do not invent
-    /// intermediate ``.prePlay`` on the main settle path. Extension optimistic play may stamp
-    /// the pure plan’s visual (``optimisticVisualAfterPlayPlan``) — that is existing dual-tap
-    /// product policy, not a new invention.
+    /// intermediate ``.prePlay`` on the main settle path. Extension optimistic **home** play
+    /// stamps ``optimisticHomeWidgetVisualAfterPlayPlan`` (sticky pause or Connecting — never
+    /// invent home ``.playing``). ``optimisticVisualAfterPlayPlan`` is the LA / media dual-tap
+    /// helper and is not this home-chrome writer’s play plan.
     ///
     /// - Parameters:
     ///   - visualState: Presentation visual to project (never invent mid-hold ``.playing`` beyond
@@ -1024,6 +1025,7 @@ extension SharedPlayerManager {
     ///   ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()``,
     ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
     ///   ``persistHomeWidgetStreamMetadataMirror(_:)`` (privacy-class peer),
+    ///   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§4, §5.2–§5.3, §6, §9).
     nonisolated static func stampHomeWidgetLiveChromeFromSession(
         visualState: PlayerVisualState,

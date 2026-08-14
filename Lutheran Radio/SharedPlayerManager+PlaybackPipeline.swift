@@ -1412,8 +1412,13 @@ extension SharedPlayerManager {
     /// active session, an in-memory snapshot may exist for widget refresh derivation; actor-owned
     /// `currentVisualState` remains authoritative for playback decisions.
     ///
-    /// Widget providers must call this (directly or via ``syncVisualStateFromPersistence()``)
-    /// before trusting `currentVisualState`.
+    /// Actor ``currentVisualState`` is for playback / coordination, not Provider paint.
+    /// Happy-path Providers use ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``.
+    /// Callers that need actor visual (main cold launch, Control App Group–nil) reset via
+    /// ``refreshVisualStateFromPersistence()`` / ``syncVisualStateFromPersistence()``.
+    ///
+    /// - SeeAlso: ``refreshVisualStateFromPersistence()``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``.
     internal func ensureVisualStateLoaded() {
         // Upgrade hygiene: remove retired App Group visual/language keys if present.
         Self.clearPersistedVisualStateKeysFromDisk()

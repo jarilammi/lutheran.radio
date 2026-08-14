@@ -172,9 +172,9 @@ This subsection records the authoritative inventory of direct "force", refresh, 
   **Not** a main-app play / cold-launch / resurrection gate (process isolation — sticky intent + factory reset own play status).
 
 - `refreshVisualStateFromPersistence()` / `syncVisualStateFromPersistence()`.  
-  Read-side helpers that reset the one-shot `hasLoadedVisualStateFromPersistence` guard so long-lived widget extension processes see the latest main-app or ``persistOptimisticWidgetSnapshot`` writes.  
-  Call sites: Every widget Provider entry point (`LutheranRadioWidget`, `LutheranRadioWidgetControl`), `RadioPlayerCoordinator.performColdLaunchPlaybackIfAllowed` and related paths, ViewController cold-launch / foreground guards, and defensive spots inside `SharedPlayerManager`.  
-  Note: Widget extension processes have no access to `SharedPlayerManager.events`. These read-refresh surfaces remain for extension hygiene.
+  Read-side helpers that reset the one-shot `hasLoadedVisualStateFromPersistence` guard so actor ``currentVisualState`` matches the in-process session snapshot (never a disk visual resurrection).  
+  Call sites: main-app cold launch / coordinator / ViewController, and Control Provider **only** when the App Group suite is unavailable. Happy-path home and Control Providers paint via ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` and do **not** hop.  
+  Note: Widget extension processes have no access to `SharedPlayerManager.events`. These helpers are not Provider paint.
 
 **2. Dual-path `refreshIfNeeded` inventory (event mutation vs imperative lifecycle — present tense)**
 
@@ -203,24 +203,15 @@ WidgetRefreshManager.refreshIfNeeded(
 |------------------------|--------|
 | ``performActualSave`` / ``didUpdateStreamMetadata`` / ``RadioPlayerCoordinator/updateUserDefaultsLanguage`` → ``refreshIfNeeded`` | **Removed 2026-07-13.** Mutation-path timeline reloads are sole via Tier 2 ``handlePlayerEvent`` + ``refreshUsesImmediateDelivery(for:hasError:)``. Do not reintroduce dual mutation-path refresh. |
 
-**Not refresh call sites (related surfaces):** SceneDelegate drain hooks (no direct ``refreshIfNeeded``); provider ``refreshVisualStateFromPersistence`` (read hygiene, not timeline reload); coordinator language save (emit only).
+**Not refresh call sites (related surfaces):** SceneDelegate drain hooks (no direct ``refreshIfNeeded``); ``refreshVisualStateFromPersistence`` (main-app cold launch + Control App Group–nil only — not happy-path Provider paint); coordinator language save (emit only).
 
 **Later consolidation (requires explicit product decision):** further main-app imperative deletion only after device-proven parity; do **not** delete lifecycle/teardown/extension optimistic paths casually. Full table also in [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) Tier 3.
 
-**3. Widget / Control Provider state resolution (repeated persistence refresh + snapshot reads)**
+**3. Widget / Control Provider state resolution (snapshot paint)**
 
-Every timeline entry and control value query in widget extension code performs:
+Happy-path home and Control Providers paint via ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` (session + privacy-gated ``homeWidgetLiveChrome``). They do **not** call ``refreshVisualStateFromPersistence()`` or read ``currentVisualState`` for paint. ``getPendingOrCurrentState`` and ``resolveWithActorHygiene`` are removed.
 
-```swift
-await manager.refreshVisualStateFromPersistence()
-if let combined = SharedPlayerManager.loadPersistedWidgetState() { ... }
-```
-
-(See: LutheranRadioWidget.swift:getPendingOrCurrentState:307 and Provider paths; LutheranRadioWidgetControl.swift:effectiveVisualStateAndStation:174.)
-
-This is WidgetKit-driven (not a CPU poll loop), but it is an explicit "force read from disk" pattern on every system snapshot request.
-
-Future direction (very late): Rely more heavily on main-app-driven `WidgetCenter.reloadTimelines` (already the dominant mechanism) so providers see fresh snapshots without the refresh call on every execution. The read-refresh guard will likely stay for safety.
+Control retains a narrow ``refreshVisualStateFromPersistence()`` then actor visual **only** when the App Group suite is unavailable. Timeline requests remain WidgetKit-driven (not a CPU poll loop). ``reloadTimelines`` is wake-only; paint fields come from the snapshot resolve.
 
 **4. Fallback / lifecycle timers (present-tense inventory)**
 
@@ -332,6 +323,7 @@ This document must be maintained after every significant micro-step so that the 
 
 Keep a short chronological log of major milestones:
 
+- Provider snapshot inventory hygiene (2026-08-14): Tier 4 Provider section and refresh-helper call-site inventory describe ``resolveFromSnapshot()`` as happy-path paint. ``refreshVisualStateFromPersistence`` is main-app cold launch + Control App Group–nil only — not every Provider entry. Deleted ``getPendingOrCurrentState`` / ``resolveWithActorHygiene`` names removed from present-tense inventory. No event-emission or security change.
 - Main-app chrome consumer complete (2026-07-30): ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()`` is primary durable paint on ``visualStateDidChange`` (multi-cast replay; non-forcing). Status path demoted to race lead + error side effects with pure ``RadioPlayerChromeVisualResolver`` and ``shouldApplyStatusPathChromePaint`` supersession. Soft-resume hold promote remains intent-gated. Permanent docs: Architecture Status + Tier 4 §5/§6 inventory; dedicated **Main-App Chrome Authority** section in docs/Widget-Presentation-Dataflow.md; soft-resume / surface-paint cross-link in docs/Live-Activity-Stacking-and-Media-Surfaces.md (Connecting Chrome vs Audible Start — LA ensure orthogonal).
 - `PlayerEvent` vocabulary introduced + `SharedPlayerManager` became authoritative emitter with clean `AsyncStream` (commit 085311d...).
 - Tier 1 Emission Coverage cleaned up and completed (emissions added after state mutations inside `SharedPlayerManager` using existing surfaces only; no new record APIs or emission logic in `DirectStreamingPlayer`). Stream*, metadata, visualStateDidChange, and persistedWidgetStateDidUpdate now emitted. Stale comments/docs cleaned. (2026-07-03)

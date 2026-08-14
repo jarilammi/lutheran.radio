@@ -147,6 +147,8 @@ Grok has access to **skills** (bundled capabilities). To use one:
 
 **Often relevant on this project** (when installed): `check-work`, `review`, `device-interaction`, `modernize-tests`, `audit-xcode-security-settings`, `swiftui-specialist`, `swiftui-whats-new-27`.
 
+`review` is for a local, branch, or PR **diff**. Proof-reading already-shipped mainline is `read_file` / `grep` / a read-only explore pass — do not run `/review` against a clean tree to re-audit commits already on `main`.
+
 For day-to-day Lutheran Radio coding the default remains disciplined use of `run_terminal_command` + `read_file` / `search_replace` / `grep`.
 
 ### Subagents / plan / MCP (when available)
@@ -168,6 +170,7 @@ Do **not** call them as ordinary coding tools. Use them only to enhance the fina
 - Live Activity language / lock-stretch work: read `docs/Live-Activity-Stacking-and-Media-Surfaces.md` and `docs/Widget-Functionality-Roadmap.md` (ContentState convergence) before changing ensure/recreation policy. Soft language ensure may lag under continuous lock-ineligible; become-active heals; never end the only interactive LA while request is ineligible solely for language lag. Product comments must use mechanism names only (never living prompts or evidence filenames).
 - Event path is non-forcing and main-app only; the extension never observes `PlayerEvent`. See `docs/Event-Driven-Refactor-Roadmap.md`.
 - After any file modification, you are expected to run the appropriate verification commands and report results.
+- If a start prompt points at a gitignored `docs/local/` working brief: re-verify `HEAD` with `git status` / `git log` before acting; do not re-land commits that brief already names as shipped; never cite the brief from product source, DocC, permanent `docs/`, README, or commits. See `CODING_AGENT.md` (Canonical Citations and Temporary Work Products).
 
 ## Maintenance
 

@@ -379,9 +379,10 @@ extension SharedPlayerManager {
     /// ``setPlaying()`` later overwrite the mirror when the home-widget gate is open.
     ///
     /// - Parameters:
-    ///   - visualState: Target from the pure toggle plan (``.userPaused`` on pause;
-    ///     ``PlayerVisualState/optimisticVisualAfterPlayPlan`` on play — never invent mid-hold
-    ///     ``.playing`` beyond product policy).
+    ///   - visualState: Target from the caller’s pure plan (``.userPaused`` on pause;
+    ///     home play uses ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan`` —
+    ///     never invent home ``.playing``. LA / media dual-tap uses
+    ///     ``optimisticVisualAfterPlayPlan``).
     ///   - action: "play" or "pause".
     ///   - language: Language code to pair with the snapshot (strongly recommended from widget).
     ///     If omitted, falls back inside ``persistOptimisticWidgetSnapshot``. Always pass the language the widget
@@ -392,6 +393,7 @@ extension SharedPlayerManager {
     ///
     /// - SeeAlso: ``persistOptimisticWidgetSnapshot(_:language:)``,
     ///   ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
+    ///   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``,
     ///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3 extension optimistic stamp matrix).
     @discardableResult

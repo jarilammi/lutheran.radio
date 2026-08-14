@@ -354,8 +354,8 @@ struct SimpleEntry: TimelineEntry, Sendable {
 /// covers same-process suite flips; local NC + Darwin ``homeWidgetInteractivePaintAdvanced``
 /// covers intent-handler vs render process splits and main-app settle stamps (without dual
 /// ``reloadAllTimelines`` thrash). Heal **always** rebuilds via
-/// ``WidgetInteractivePaintHeal/projectHomeInteractivePaint`` (snapshot SSOT) — preferring a
-/// lagging Provider entry pause over resolve ``.playing`` blocked soft-resume settle.
+/// ``WidgetInteractivePaintHeal/projectHomeInteractivePaint`` (snapshot SSOT) — never preferring
+/// a lagging Provider entry pause over resolve ``.playing`` (that blocked soft-resume settle).
 ///
 /// - SeeAlso: `SmallWidgetView`, `MediumWidgetView`, `LargeWidgetView`,
 ///   ``WidgetInteractivePaintHeal/projectHomeInteractivePaint(laggingPaintEpoch:laggingPaintSignature:date:)``,
@@ -874,12 +874,20 @@ struct WidgetPauseRadioIntent: AppIntent {
 }
 
 /// Legacy single-intent toggle (tests / Shortcuts). Home family views use direction-bound intents.
+///
+/// Does **not** open the main app (``openAppWhenRun`` is `false`) — same in-widget contract as
+/// ``WidgetPlayRadioIntent`` / ``WidgetPauseRadioIntent``. Prefer those direction-bound intents
+/// for LIVE chrome so residual glyphs cannot invert the scheduled verb.
+///
+/// - SeeAlso: ``WidgetIntentExecution/performHomeWidgetToggle()``, ``WidgetPlayRadioIntent``.
 struct WidgetToggleRadioIntent: AppIntent {
     nonisolated static var title: LocalizedStringResource { "Toggle Lutheran Radio" }
     nonisolated static var description: IntentDescription {
         IntentDescription("Play or pause Lutheran Radio.")
     }
-    
+    /// Shortcuts / tests must stay in-widget; never foreground main for a toggle.
+    nonisolated static var openAppWhenRun: Bool { false }
+
     init() {}
     
     func perform() async throws -> some IntentResult {
