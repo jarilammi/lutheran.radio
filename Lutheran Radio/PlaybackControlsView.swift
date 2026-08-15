@@ -8,10 +8,25 @@
 //  - Visual appearance (system image + tint) is driven by the narrow `controlPresentation`
 //    value received from the caller.
 //  - Semantic state (whether audio is actively playing) is supplied explicitly as
-//    `isActivelyPlaying` for action routing, `.symbolEffect`, and accessibility.
+//    `isActivelyPlaying` for action routing, `.symbolEffect`, accessibility, and
+//    whether an in-app pause press may bump the local sensory-feedback token.
 //  - VoiceOver label is short and state-dependent (`accessibility_label_play` /
 //    `accessibility_label_pause`); the longer toggle instruction stays on the hint
 //    and the named `toggle_playback` custom action.
+//  - Pause-only press chrome: `.sensoryFeedback(.selection)` on a local incrementing
+//    token. Play tap has no haptic here. Audible-start confirmation is an
+//    orchestration event on `HapticPlaybackPolicy` + `HapticsController` via
+//    `RadioPlayerCoordinator.handleStatusChange` (one `.light` UIImpact per
+//    audible start, latched; shipped 987ebd5). Privacy-clear stays `.heavy`.
+//  - The token is *not* `isActivelyPlaying`. Language switch (playing → Connecting
+//    → playing), stream failure, thermal, and security lock also leave `.playing`;
+//    binding SwiftUI feedback to that flag would double-buzz with confirmation.
+//    `PlayerVisualState.isActivelyPlaying` is `self == .playing` only — Connecting
+//    keeps a play affordance and is not “user paused”.
+//  - This is press chrome, not a second haptic owner. Do not call
+//    `HapticsController` from this view. Do not add play-tap / optimistic-play
+//    feedback. Widget, Live Activity, Control Center, keyboard, and remote
+//    commands are not this surface.
 //
 //  Sleep timer:
 //  - Sole presentation is a native `.confirmationDialog` with duration presets,
@@ -20,9 +35,10 @@
 //    `sleepTimerAccessibilityValue` (derived on the model, not inside the view body).
 //
 //  The view receives only narrow value types (`controlPresentation`, timer values,
-//  `statusPresentation`) + action closures. No `PlayerViewModel`.
-//  All complex timing, orchestration, and privacy confirmation logic remains in
-//  `RadioPlayerCoordinator`.
+//  `statusPresentation`) + action closures. No `PlayerViewModel`, no
+//  `HapticsController`, no coordinator call. All complex timing, orchestration,
+//  audible-start / privacy-clear impacts, and privacy confirmation logic remain
+//  in `RadioPlayerCoordinator` / `HapticPlaybackPolicy`.
 //
 //  Created by Jari Lammi on 13.6.2026.
 //
@@ -34,7 +50,8 @@ import WidgetSurface
 ///
 /// Receives narrow value inputs for everything it renders:
 /// - `controlPresentation`: glyph and tint for the play/pause button (from `PlayerControlPresentation`).
-/// - `isActivelyPlaying`: semantic flag used for action routing, `.symbolEffect` key, and accessibility.
+/// - `isActivelyPlaying`: semantic flag used for action routing, `.symbolEffect` key,
+///   accessibility, and whether a pause press may bump the local sensory-feedback token.
 /// - `sleepTimerRemaining` + `sleepTimerAccessibilityValue`: timer state and pre-derived a11y string.
 ///
 /// Actions are supplied as closures so the view has no knowledge of `PlayerViewModel`.
@@ -47,6 +64,15 @@ import WidgetSurface
 /// The pattern (leaf views receive narrow value types + closures, never the full
 /// model) is now consistent across the main player and the widget / Live Activity
 /// leaf views (`WidgetMetadataRegion`, button builders in Dynamic Island, etc.).
+///
+/// Pause press chrome (this view only):
+/// - `.sensoryFeedback(.selection)` on a local incrementing token, shared by the
+///   `Button` action and the VoiceOver / Switch Control `toggle_playback` action.
+/// - Pause-only because `HapticPlaybackPolicy` already confirms audible start
+///   (987ebd5). A play-tap haptic would double-buzz on fast resume.
+/// - Local token, not `isActivelyPlaying`: leaving `.playing` is not “user paused”
+///   (`PlayerVisualState.isActivelyPlaying` is `self == .playing` only).
+/// - Not a replacement for `HapticPlaybackPolicy` / `HapticsController`.
 ///
 /// Accessibility (play / pause):
 /// - Label is short and state-dependent: `accessibility_label_play` when idle,
@@ -67,6 +93,10 @@ import WidgetSurface
 /// - Note: The privacy clear path does a secondary confirmation via UIAlert before acting.
 /// - SeeAlso: ``PlayerViewModel``, ``PlayerControlPresentation``, ``PlayerStatusPresentation``,
 ///   `StatusPill`, `NowPlayingDisplayModel`, `RadioPlayerCoordinator`, `VolumeAndAirPlayRow`,
+///   ``HapticPlaybackPolicy``, ``HapticsController``,
+///   ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
+///   ``PlaybackPausePressFeedback``,
+///   ``PlayerVisualState/isActivelyPlaying``,
 ///   CODING_AGENT.md (narrow inputs for separate View types + cached derived values),
 ///   <doc:Architecture>.
 struct PlaybackControlsView: View {
@@ -99,15 +129,24 @@ struct PlaybackControlsView: View {
     // This is the primary user-facing path after the SwiftUI migration of the player UI.
     @State private var isShowingSleepTimerDialog = false
 
+    /// Equatable trigger for pause-only `.sensoryFeedback`. Incremented only by
+    /// ``requestPauseFromControl()`` when ``PlaybackPausePressFeedback`` allows.
+    /// Never bound to `isActivelyPlaying` — that flag also falls on language
+    /// switch, failure, thermal, and security lock (then confirmation would fire again).
+    @State private var pausePressFeedbackToken = 0
+
     var body: some View {
         HStack(spacing: 20) {
             // Play / Pause button
             // Glyph and tint come from the narrow controlPresentation input.
             // Action routing, symbolEffect value, and accessibility labels use the
             // explicit semantic `isActivelyPlaying` flag.
+            // Pause haptic: local token + `.selection` (different feel from the
+            // coordinator's `.light` audible-start UIImpact). Play tap has no
+            // sensoryFeedback — confirmation already owns audible start.
             Button {
                 if isActivelyPlaying {
-                    onPause()
+                    requestPauseFromControl()
                 } else {
                     onPlay()
                 }
@@ -119,6 +158,7 @@ struct PlaybackControlsView: View {
                     .symbolEffect(.bounce, value: isActivelyPlaying)
             }
             .buttonStyle(.plain)
+            .sensoryFeedback(.selection, trigger: pausePressFeedbackToken)
             .accessibilityIdentifier("playPauseButton")
             .accessibilityHint(String(localized: "accessibility_hint_play_pause", table: "Localizable"))
             // State-dependent short labels: "Play" when idle, "Pause" when actively playing.
@@ -135,9 +175,11 @@ struct PlaybackControlsView: View {
             // The button's default tap behavior already works; this named action provides a clear
             // discoverable action for VoiceOver / Switch Control users. Matches the old UIKit
             // custom action intent without changing observable behavior.
+            // Pause branch shares ``requestPauseFromControl()`` with the Button so
+            // VoiceOver / Switch Control cannot drift from the press-chrome path.
             .accessibilityAction(named: String(localized: "toggle_playback", table: "Localizable")) {
                 if isActivelyPlaying {
-                    onPause()
+                    requestPauseFromControl()
                 } else {
                     onPlay()
                 }
@@ -207,6 +249,80 @@ struct PlaybackControlsView: View {
             StatusPill(presentation: statusPresentation)
         }
         .frame(height: 50)
+    }
+
+    /// Shared pause request from the `Button` action and the `toggle_playback`
+    /// accessibility action.
+    ///
+    /// Increments ``pausePressFeedbackToken`` only when
+    /// ``PlaybackPausePressFeedback/shouldBumpPausePressToken(isActivelyPlaying:isUITestMode:isLowPowerModeEnabled:)``
+    /// is true, then calls `onPause()`. Play never enters this path.
+    ///
+    /// - SeeAlso: ``HapticPlaybackPolicy``, ``HapticsController``,
+    ///   ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
+    ///   CODING_AGENT.md
+    private func requestPauseFromControl() {
+        guard isActivelyPlaying else { return }
+        if PlaybackPausePressFeedback.shouldBumpPausePressToken(
+            isActivelyPlaying: isActivelyPlaying,
+            isUITestMode: SharedPlayerManager.isRunningInUITestMode,
+            isLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
+        ) {
+            pausePressFeedbackToken += 1
+        }
+        onPause()
+    }
+}
+
+// MARK: - Pause press feedback policy (in-app control only)
+
+/// Whether an explicit in-app pause press should increment the SwiftUI
+/// `.sensoryFeedback` trigger token.
+///
+/// Pause-only: audible-start confirmation already lives on
+/// ``HapticPlaybackPolicy`` + ``HapticsController`` via
+/// ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)`` (one `.light`
+/// `UIImpactFeedbackGenerator` per audible start, latched). Binding
+/// `.sensoryFeedback` to `isActivelyPlaying` would also fire on language
+/// switch, stream failure, thermal, and security lock — then confirmation
+/// would fire again. `PlayerVisualState.isActivelyPlaying` is
+/// `self == .playing` only; Connecting keeps a play affordance and is not
+/// “user paused”.
+///
+/// This is not a replacement for ``HapticPlaybackPolicy``. The view stays a
+/// narrow-input leaf: it reads UITestMode / Low Power Mode the same way
+/// ``HapticsController/playHapticFeedback(style:)`` does, and never calls
+/// the controller.
+///
+/// - SeeAlso: ``PlaybackControlsView``, ``HapticPlaybackPolicy``,
+///   ``HapticsController``,
+///   ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
+///   ``PlayerVisualState/isActivelyPlaying``,
+///   ``SharedPlayerManager/isRunningInUITestMode``,
+///   CODING_AGENT.md
+enum PlaybackPausePressFeedback {
+
+    /// Whether the local pause-press token should increment.
+    ///
+    /// - Parameters:
+    ///   - isActivelyPlaying: `PlayerVisualState.isActivelyPlaying` immediately
+    ///     before `onPause()`. Must be `true` (audio flowing); Connecting is false.
+    ///   - isUITestMode: ``SharedPlayerManager/isRunningInUITestMode``.
+    ///   - isLowPowerModeEnabled: `ProcessInfo.processInfo.isLowPowerModeEnabled`.
+    /// - Returns: `true` only for an explicit pause while audio is flowing and
+    ///   neither UITestMode nor Low Power Mode is on.
+    /// - Note: SwiftUI `.sensoryFeedback` still respects system haptic settings.
+    ///   The Low Power skip matches ``HapticsController`` so pause cannot
+    ///   out-buzz play confirmation when the coordinator is also silent.
+    /// - SeeAlso: ``HapticPlaybackPolicy``, ``HapticsController``,
+    ///   ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
+    ///   CODING_AGENT.md
+    static func shouldBumpPausePressToken(
+        isActivelyPlaying: Bool,
+        isUITestMode: Bool,
+        isLowPowerModeEnabled: Bool
+    ) -> Bool {
+        isActivelyPlaying && !isUITestMode && !isLowPowerModeEnabled
     }
 }
 

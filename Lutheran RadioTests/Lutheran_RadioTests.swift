@@ -364,6 +364,8 @@ final class SwiftUIComposedViewsTests: XCTestCase {
     }
 
     @MainActor
+    /// Construction / closure smoke only. Pause-press token policy:
+    /// `PlaybackPausePressFeedbackTests`.
     func testPlaybackControlsView_BindsVisualStateAndCallsActions() {
         let vm = PlayerViewModel.makeMock(visualState: .prePlay)
         var playCalled = false

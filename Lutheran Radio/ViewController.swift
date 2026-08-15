@@ -849,13 +849,17 @@ extension ViewController {
     /// Primary `@objc` entry for user-initiated play/pause (legacy remote / selector paths).
     ///
     /// Delegates to ``handleUserTogglePlayback()`` → coordinator. SwiftUI
-    /// `PlaybackControlsView` owns in-app press feedback; haptics live on the coordinator.
+    /// `PlaybackControlsView` owns pause press chrome; the coordinator owns
+    /// audible-start and privacy-clear impacts.
     /// Status chrome VoiceOver is **not** host-owned — see
     /// ``RadioPlayerCoordinator/safeUpdateStatusLabel(text:backgroundColor:textColor:isPermanentError:)``.
     ///
-    /// - SeeAlso: `handleUserTogglePlayback()`, `handleTogglePlayback()` (public SceneDelegate wrapper)
+    /// - SeeAlso: `handleUserTogglePlayback()`, `handleTogglePlayback()` (public SceneDelegate wrapper),
+    ///   ``HapticPlaybackPolicy``, ``HapticsController``, CODING_AGENT.md
     @objc private func togglePlayback() {
-        // SwiftUI PlaybackControlsView provides its own press feedback via Button.
+        // SwiftUI PlaybackControlsView owns pause press chrome (local token +
+        // `.sensoryFeedback`). Coordinator owns audible-start (`.light`) and
+        // privacy-clear (`.heavy`) UIImpact via HapticPlaybackPolicy.
         // Rapid-tap guard is handled inside the VM/coordinator paths if needed.
         Task { @MainActor in
             await self.handleUserTogglePlayback()
