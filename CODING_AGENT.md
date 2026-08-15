@@ -146,7 +146,7 @@ These rules are especially strict for anything that could affect security invari
        -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 17 Pro' test-without-building
      # Look for: ** TEST SUCCEEDED **
      ```
-   - Any iPhone 17-class device on iOS 27.0 is preferred for agents. The project minimum deployment target is iOS 26.2. Stable Xcode 26 development uses iOS 26.5 (see README.md for human contributor guidance). Substitute from discovery output when needed.
+   - Any iPhone 17-class device on iOS 27.0 is preferred for agents. The project minimum deployment target is iOS 26.2. Stable Xcode 26 development uses iOS 26.5 (see README.md for human contributor guidance). Use only a simulator that discovery lists; substitute name and OS from that output when the canonical pair is absent. Mac Designed-for-iPad eyes-on is a different destination (see “iOS App Store binary on Apple Silicon Mac”) and does **not** replace these gates.
    - If either gate fails → fix it before suggesting the change.
 
    **Build Gate Exceptions for Mechanical / Warning / Refactoring Work**
@@ -444,6 +444,40 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 
 The same iOS binary runs as Designed for iPhone / iPad (`ProcessInfo.processInfo.isiOSAppOnMac`). Do **not** enable `SUPPORTS_MACCATALYST`. Live Activities are unavailable — ``RadioLiveActivityManager/areActivitiesEnabledOnThisHost`` skips ActivityKit IPC. Keyboard and menu Play/Pause and adjacent language reuse ``AppDelegate/buildMenu(with:)``, ``userRequestedPlay()`` / ``stop()`` via ``handleTogglePlayback()``, and ``RadioPlayerCoordinator/handleLanguageSelection(at:)`` via ``handleAdjacentLanguageSelection(offset:)``. Hardware MIE/EMTE remains an iPhone 17-class claim.
 
+There is no Mac simulator for this path. Discover destinations on the **current** machine — never reuse another host’s device id:
+
+```bash
+xcodebuild -scheme "Lutheran Radio" -showdestinations
+xcrun simctl list devices available
+```
+
+- **Simulator gates:** Prefer an iPhone 17-class device on iOS 27.0 from that listing. If the canonical `iPhone 17 Pro` / `27.0` name is missing, substitute the closest listed iPhone 17-class / iOS 27 simulator. Do not invent a destination.
+- **Mac eyes-on (Apple Silicon only):** Use the *compatible* `platform=macOS` row whose variant is Designed for iPhone / iPad. The native macOS row for the same Mac is incompatible unless Catalyst is on — do not flip `SUPPORTS_MACCATALYST` to make it compatible. Eyes-on on that host does **not** replace the iOS 27 simulator gates.
+- **Destination specifiers:** `xcodebuild -destination` splits on commas. The Designed-for-iPad variant string contains commas; prefer the `id=` printed by `-showdestinations` over pasting the variant name.
+- **Launch:** Run through Xcode’s Designed-for-iPad action (the iOS-on-Mac wrapper). Do not `open` a raw `iphoneos` `.app`. The host Mac’s destination id is not an iOS CoreDevice for `devicectl`.
+- **Keyboard:** ``UIKeyCommand`` punctuation remaps to the current input source. On a layout without `[` / `]`, the language verbs appear and fire as the remapped keys (for example ⌘Ö / ⌘Ä on Finnish). Do not assume a US keyboard.
+
+### Device eyes-on (physical iPhone)
+
+SpringBoard home LIVE chrome, lock-screen Live Activity stacking, and ActivityKit `ContentState` acceptance under lock are **physical-device** claims. The iOS 27 simulator gates remain mandatory after product edits; they do **not** prove those surfaces. Mac Designed-for-iPad eyes-on (section above) is a different host and does **not** replace this path.
+
+**When this section applies:** home-widget paint, in-widget pause/play/switch while main is backgrounded, force-quit / liveness residual, Live Activity lock stacking, language-switch release QA, or any check that needs SpringBoard or a presentable-window unlock heal.
+
+**How to drive the device:** use the session’s iOS device-interaction skill or tools when they are available (often named start-session / install-and-run / synthesize / end-session). That path is usually a **child** workflow: the parent discovers the destination and lists the rows; the child owns the session exclusively and performs taps. Read the skill file the session actually loaded — do not cite a vendor home-directory path from this repository. If those tools are not on the parent’s tool list, put the full lifecycle in the child prompt. Do **not** invent a `devicectl` / raw-`.app` launch as a substitute for an Xcode Debug install.
+
+1. Discover destinations on **this** machine — never reuse another host’s device id:
+   ```bash
+   xcodebuild -scheme "Lutheran Radio" -showdestinations
+   xcrun devicectl list devices
+   ```
+   Prefer a **connected physical iPhone** on iOS 26.2+ (`Reality: physical`). Pass that destination id into the session-start tool. A non-matching id lists available targets. Simulator-only is not enough for this section.
+2. **Start the device session early**, then hand it to one child for exclusive use. Lifecycle: start → install-and-run (after each product change; includes the Xcode Debug build) → synthesize events (repeat) → end. Do not leave the session open.
+3. **Launch:** install-and-run is Debug of current `HEAD` via Xcode onto the chosen device. Do **not** `open` a raw `.app`. Do **not** pass `-UITestMode` — that short-circuits ActivityKit, WidgetCenter, DNS, and streaming. `isRunningInUITestMode` stays live in Release for XCUITests; this eyes-on path is not an XCUITest.
+4. **Observe:** capture hierarchy (and screenshot) before and after each gesture; tap hierarchy **center** coordinates. Trust **on-device paint** and extension DEBUG `creating entry: visualState=…`. Do **not** treat main-process “refresh executed … visualState” scheduler labels as rendered home chrome (`docs/Home-Live-Chrome-App-Group-Mirror-Design.md` §8.3). Do **not** treat “ensure logs ran” or long-horizon fire counts as lock-screen flag / glyph proof (`docs/Live-Activity-Stacking-and-Media-Surfaces.md`).
+5. Device eyes-on does **not** replace sequential iPhone 17-class / iOS 27 simulator `build-for-testing` then `test-without-building` after a product edit.
+
+**SeeAlso:** `docs/Home-Live-Chrome-App-Group-Mirror-Design.md` §10.3 / §14, `docs/Live-Activity-Stacking-and-Media-Surfaces.md` (stacking matrix + language-switch release QA), `docs/Widget-Presentation-Dataflow.md` (Cleanup Invariant), `docs/Widget-Functionality-Roadmap.md` (force-quit liveness residual; Live Activity ContentState acceptance residual).
+
 ### Core Framework Surface Area (Mandatory Knowledge)
 
 The `Core` framework is the **single source of truth** for all security decisions. Its public surface consists of exactly three subdirectories:
@@ -457,7 +491,7 @@ The `Core` framework is the **single source of truth** for all security decision
 ## Development Workflow (Always Follow)
 
 1. Open `Lutheran Radio.xcodeproj` in Xcode 27+ (bleeding-edge recommended for agents).
-2. Use an iPhone 17-class simulator on iOS 27.0. The canonical gate commands above use iPhone 17 Pro; run `xcrun simctl list devices available` and substitute as needed.
+2. Use an iPhone 17-class simulator on iOS 27.0. The canonical gate commands above use iPhone 17 Pro; run `xcrun simctl list devices available` and substitute as needed. Physical-iPhone SpringBoard / Live Activity eyes-on uses the **Device eyes-on** section — it does not replace these simulator gates.
 3. Run the two xcodebuild commands above when you have the final implementation. Stable Xcode 26 is acceptable for human contributors (see README.md) but agents should target the latest for full security verification.
    For pure compiler warning cleanup, dead code removal, or mechanical refactoring, the lighter rules under "Build Gate Exceptions for Mechanical / Warning / Refactoring Work" apply.
    When running both gates in the same environment, execute them sequentially (build first, then test) to avoid transient build-database contention.

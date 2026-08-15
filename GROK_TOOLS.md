@@ -145,7 +145,7 @@ Grok has access to **skills** (bundled capabilities). To use one:
 1. `read_file` the skill's `SKILL.md` (typical paths: `~/.grok/skills/<skill>/SKILL.md` or a session-bundled skill root)
 2. Follow the instructions in that skill file
 
-**Often relevant on this project** (when installed): `check-work`, `review`, `device-interaction`, `modernize-tests`, `audit-xcode-security-settings`, `swiftui-specialist`, `swiftui-whats-new-27`.
+**Often relevant on this project** (when installed): `check-work`, `review`, `device-interaction`, `modernize-tests`, `audit-xcode-security-settings`, `swiftui-specialist`, `swiftui-whats-new-27`. Physical-iPhone SpringBoard / Live Activity eyes-on: follow **Device eyes-on (physical iPhone)** in `CODING_AGENT.md`. That section is vendor-path-free; this file is the Grok-side pointer to load the session’s `device-interaction` skill when present.
 
 `review` is for a local, branch, or PR **diff**. Proof-reading already-shipped mainline is `read_file` / `grep` / a read-only explore pass — do not run `/review` against a clean tree to re-audit commits already on `main`.
 
