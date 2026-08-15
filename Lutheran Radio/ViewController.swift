@@ -68,7 +68,6 @@ import UIKit
 import SwiftUI
 @unsafe @preconcurrency import AVFoundation
 import CoreImage
-import CoreHaptics
 import WidgetKit
 import Core
 import WidgetSurface
@@ -350,8 +349,8 @@ class ViewController: UIViewController {
         
         // Playback audio session is configured in DirectStreamingPlayer.init (single owner).
         
-        // Haptic engine init + start is owned by RadioPlayerCoordinator.wireAndInitialSetup() (single owner of haptics).
-        // Local hapticEngine lazy + startHapticEngine/playHapticFeedback bodies deleted (calls forwarded).
+        // Haptics owned by RadioPlayerCoordinator.wireAndInitialSetup() (single owner).
+        // UIImpact only — do not add a CHHapticEngine (see HapticPlaybackPolicy).
         
         setupDarwinNotificationListener()
         setupUI()

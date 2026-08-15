@@ -188,6 +188,10 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     var lastAppliedVisualState: PlayerVisualState?
     var hasShownSecurityAlert = false
     var hasEverPlayed = false
+    /// Latch for the became-playing confirmation haptic (one buzz per audible start).
+    /// Cleared on non-`.playing` status and on privacy clear.
+    /// - SeeAlso: ``HapticPlaybackPolicy``
+    var hasPlayedHapticForCurrentAudibleStart = false
     /// Multi-cast ``PlayerEvent`` observer that paints in-app chrome from visual SSOT
     /// transitions (``visualStateDidChange``) without requiring a status emission.
     /// Owned by +StatusDistribution; stored here because extensions cannot declare storage.
@@ -255,7 +259,7 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
 
     /// Called by VC after it has added the subviews to the hierarchy (setupUI complete).
     /// Wires VM action closures (SwiftUI composed views), performs initial index calculation,
-    /// starts haptic if supported, and registers the sleep notification observer.
+    /// warms UIKit impact generators (no CHHapticEngine), and registers the sleep observer.
     func wireAndInitialSetup() {
         // Wire SwiftUI ViewModel action closures.
         // Pure SwiftUI views (LanguageSelectorView etc) call viewModel.selectLanguage / play / pause
@@ -280,7 +284,8 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         // VM drives the SwiftUI selector; push the initial selection.
         viewModel?.selectedStreamIndex = initialIndex
 
-        // Haptics early init (if hardware supports) — now delegated to tiny controller (P5+ extraction)
+        // Haptics: warm UIImpact generators only. Do not create a CHHapticEngine —
+        // a running engine mutes SwiftUI / UIKit haptics on device.
         hapticsController.prepareIfSupported()
 
         // Sleep-timer VM closures + SleepTimerNotification observer (+SleepTimer domain).
@@ -552,7 +557,11 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         }
     }
 
-    // MARK: - Haptics (tiny controller extraction P5+; thin forward only — behavior preserved)
+    // MARK: - Haptics (thin forward; UIImpact only — see HapticsController)
+    /// Plays coordinator-owned haptic feedback (playing confirmation or privacy-clear).
+    ///
+    /// - Parameter style: `.light` on became-playing; `.heavy` after clear-local-state.
+    /// - SeeAlso: ``HapticsController/playHapticFeedback(style:)``, ``HapticPlaybackPolicy``
     func playHapticFeedback(style: UIImpactFeedbackGenerator.FeedbackStyle) {
         hapticsController.playHapticFeedback(style: style)
     }
@@ -603,6 +612,7 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
                     vm.visualState = .cleared
                 }
                 self.updateUI(for: .cleared)
+                hasPlayedHapticForCurrentAudibleStart = false
                 // Post-clear visual is .cleared (blue "Cleared" using clear_local_state_done) + .cleared intent (the actual blocker).
                 // Sighted users now see explicit reset confirmation in the status pill (the reason .cleared visual exists).
                 // The VO announcement is still posted for a11y catalog + non-sighted users.

@@ -35,7 +35,8 @@
 //  visual/intent SSOT (SharedPlayerManager).
 //
 //  Stored chrome stamps (`lastAppliedVisualState`, `hasShownSecurityAlert`,
-//  `hasEverPlayed`, `visualChromeEventObserver`, `visualChromeObservationTask`) remain
+//  `hasEverPlayed`, `hasPlayedHapticForCurrentAudibleStart`,
+//  `visualChromeEventObserver`, `visualChromeObservationTask`) remain
 //  on the primary type body (extensions cannot declare stored properties); this file
 //  owns the behavior that mutates them.
 //
@@ -387,7 +388,8 @@ extension RadioPlayerCoordinator {
     ///    arrive on MainActor before SPM ``setPlaying()`` is visible; pure policy may promote
     ///    Connecting or soft-resume hold chrome early (defense in depth after SSOT paint).
     /// 2. **Error / unavailable / SSL / no-internet side effects** — alerts, recovery windows,
-    ///    ``markPlaybackStoppedByStreamFailure``, haptic / background flush, widget save.
+    ///    ``markPlaybackStoppedByStreamFailure``, became-playing haptic
+    ///    (``HapticPlaybackPolicy`` on `status_playing` / `nil`), background flush, widget save.
     ///
     /// Chrome mapping for the race-lead branch is solely
     /// ``RadioPlayerChromeVisualResolver/resolve(status:reasonKey:visualState:playbackIntent:engineIsActuallyPlaying:)``.
@@ -432,7 +434,7 @@ extension RadioPlayerCoordinator {
     ///   ``RadioPlayerChromeVisualResolver/shouldApplyStatusPathChromePaint(policyResult:latestVisual:latestIntent:lastApplied:)``,
     ///   `DirectStreamingPlayer.safeOnStatusChange`, `handleItemStatusFailure(_:)`,
     ///   `streamingPlayer.isInInitialRecoveryWindow`, `SharedPlayerManager.markPlaybackStoppedByStreamFailure`,
-    ///   `SharedPlayerManager.setPlaying()`, `updateUI(for:)`,
+    ///   `SharedPlayerManager.setPlaying()`, `updateUI(for:)`, ``HapticPlaybackPolicy``,
     ///   docs/Widget-Presentation-Dataflow.md, docs/Event-Driven-Refactor-Roadmap.md,
     ///   CODING_AGENT.md (transient vs permanent modeling, Single Source of Truth Principles)
     func handleStatusChange(_ status: PlayerStatus, reasonKey: String?) async {
@@ -597,10 +599,22 @@ extension RadioPlayerCoordinator {
             }
         }
 
+        if HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(status: status) {
+            hasPlayedHapticForCurrentAudibleStart = false
+        }
+
         if status == .playing {
             hasEverPlayed = true
 
-            if reasonKey == nil {
+            // Production audible start is `status_playing` (device log). `nil` is
+            // interruption resume. The previous `reasonKey == nil` gate never fired
+            // on the normal play / resume / switch path.
+            if HapticPlaybackPolicy.shouldPlayPlayingConfirmation(
+                status: status,
+                reasonKey: reasonKey,
+                alreadyPlayedForCurrentAudibleStart: hasPlayedHapticForCurrentAudibleStart
+            ) {
+                hasPlayedHapticForCurrentAudibleStart = true
                 playHapticFeedback(style: .light)
             }
 
