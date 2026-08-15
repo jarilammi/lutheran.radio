@@ -194,10 +194,34 @@ enum WidgetIntentExecution {
 
     /// Full Control Center toggle path used by ``ToggleRadioIntent/perform()``.
     ///
+    /// Maps ``ControlWidgetToggle`` `value` (`true` = play, `false` = pause) through the raw
+    /// bool planner ``planControlWidgetToggle(isPlayingRequested:)``. Residual-only **play**
+    /// uses the same honesty flags as ``performHomeWidgetToggle()``: when
+    /// ``shouldDistrustDurableMirrorPlayPlanning()`` is true or
+    /// ``isMainAppProcessRecentlyActive()`` is false, play is refused — no optimistic
+    /// snapshot, no pending mailbox write, no Darwin. Pause still executes so the Control
+    /// glyph can settle to honest paused chrome.
+    ///
+    /// After the user opens main, factory reset records this boot so distrust is false and
+    /// a real Control tap still plays.
+    ///
     /// - Parameter isPlayingRequested: `true` = play, `false` = pause (ControlWidgetToggle value).
-    /// - SeeAlso: ``WidgetIntentCoordinators/planControlWidgetToggle(isPlayingRequested:)``.
+    /// - SeeAlso: ``performHomeWidgetToggle()``,
+    ///   ``WidgetIntentCoordinators/planControlWidgetToggle(isPlayingRequested:)``,
+    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
+    ///   ``SharedPlayerManager/isMainAppProcessRecentlyActive()``,
+    ///   docs/Widget-Presentation-Dataflow.md.
     static func performControlWidgetToggle(isPlayingRequested: Bool) async {
         await MainActor.run { WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
+
+        // Same residual-play refuse as home: Control `true` must not invent a playing
+        // session (or pending play + Darwin) when main cannot service audio.
+        let distrust = SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning()
+        let mainCannotServiceAudio =
+            !SharedPlayerManager.isMainAppProcessRecentlyActive() || distrust
+        if isPlayingRequested, mainCannotServiceAudio {
+            return
+        }
 
         let plan = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: isPlayingRequested)
         let language = WidgetIntentCoordinators.languageForOptimisticUpdate(

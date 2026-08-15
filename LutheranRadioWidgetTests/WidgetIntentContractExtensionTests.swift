@@ -701,14 +701,32 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
     }
 
     /// ``performControlWidgetToggle(isPlayingRequested:)`` mirrors Control ``ToggleRadioIntent``.
+    ///
+    /// In-session trusted-boot matrix: distrust is false and main is recently active, so
+    /// play then pause still execute.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/performControlWidgetToggle(isPlayingRequested:)``,
+    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
+    ///   ``SharedPlayerManager/isMainAppProcessRecentlyActive()``.
     func testPerformControlWidgetTogglePlayAndPause() async {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        defaults.set(Date().timeIntervalSince1970 - 5, forKey: "lastUpdateTime")
+        XCTAssertFalse(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+        XCTAssertTrue(SharedPlayerManager.isMainAppProcessRecentlyActive())
+
         SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: "sv")
 
         await WidgetIntentExecution.performControlWidgetToggle(isPlayingRequested: true)
         XCTAssertEqual(
             SharedPlayerManager.loadPersistedWidgetState()?.visualState,
             .playing,
-            "Control toggle true → optimistic .playing"
+            "Trusted boot + recently active + Control true → optimistic .playing"
         )
 
         await WidgetIntentExecution.performControlWidgetToggle(isPlayingRequested: false)
@@ -716,6 +734,150 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
             SharedPlayerManager.loadPersistedWidgetState()?.visualState,
             .userPaused,
             "Control toggle false → optimistic .userPaused"
+        )
+    }
+
+    /// Reboot distrust + Control `true` must not invent optimistic play.
+    ///
+    /// **Invariant protected:** ``shouldDistrustDurableMirrorPlayPlanning()`` (boot-identity
+    /// mismatch) refuses Control play — no session snapshot, no pending play, residual
+    /// live chrome unchanged. Same honesty flags as ``performHomeWidgetToggle()``.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/performControlWidgetToggle(isPlayingRequested:)``,
+    ///   ``WidgetIntentExecution/performHomeWidgetToggle()``,
+    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``.
+    func testPerformControlWidgetToggleRefusesPlayAfterSimulatedRebootResidualChrome() async {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        defaults.set(1.0, forKey: SharedPlayerManager.recordedSystemBootTimeAppGroupKey)
+        XCTAssertTrue(SharedPlayerManager.hasDeviceRebootedSinceLastRecordedBoot())
+        XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+        XCTAssertFalse(SharedPlayerManager.isMainAppProcessRecentlyActive())
+
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .userPaused,
+                currentLanguage: "sv",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "testResidual"
+            )
+        )
+
+        await WidgetIntentExecution.performControlWidgetToggle(isPlayingRequested: true)
+
+        XCTAssertNil(
+            SharedPlayerManager.loadPersistedWidgetState(),
+            "Refuse must not write an optimistic session snapshot after reboot Control play"
+        )
+        XCTAssertNotEqual(
+            manager.getPendingAction()?.action,
+            "play",
+            "Refuse must not write pending play"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .userPaused,
+            "Refuse must leave residual chrome unchanged"
+        )
+    }
+
+    /// Main not recently active without reboot: Control `true` must refuse play.
+    ///
+    /// **Invariant protected:** ``isMainAppProcessRecentlyActive() == false`` alone refuses
+    /// Control play even when boot identity is trusted (stale 60 s window expired / missing).
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/performControlWidgetToggle(isPlayingRequested:)``,
+    ///   ``SharedPlayerManager/isMainAppProcessRecentlyActive()``.
+    func testPerformControlWidgetToggleRefusesPlayWhenMainNotRecentlyActiveTrustedBoot() async {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        defaults.set(Date().timeIntervalSince1970 - 120, forKey: "lastUpdateTime")
+        XCTAssertFalse(SharedPlayerManager.isMainAppProcessRecentlyActive())
+        XCTAssertFalse(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .userPaused,
+                currentLanguage: "de",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970 - 120,
+                stampReason: "staleResidual"
+            )
+        )
+
+        await WidgetIntentExecution.performControlWidgetToggle(isPlayingRequested: true)
+
+        XCTAssertNil(
+            SharedPlayerManager.loadPersistedWidgetState(),
+            "Main not recently active + Control true must refuse play (no reboot required)"
+        )
+        XCTAssertNotEqual(
+            manager.getPendingAction()?.action,
+            "play",
+            "Refuse must not write pending play"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .userPaused
+        )
+    }
+
+    /// Control `false` under reboot distrust still stamps pause (glyph honesty).
+    ///
+    /// **Invariant protected:** Residual-play refuse is play-only. Control pause still
+    /// writes optimistic ``.userPaused`` so the Control glyph can settle after distrust.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/performControlWidgetToggle(isPlayingRequested:)``,
+    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``.
+    func testPerformControlWidgetTogglePauseStillStampsUnderDistrust() async {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+
+        // Seed residual while boot identity is still trusted (pre-power-off stamp).
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "fi",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "preRebootPlaying"
+            )
+        )
+        XCTAssertEqual(SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState, .playing)
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        defaults.set(1.0, forKey: SharedPlayerManager.recordedSystemBootTimeAppGroupKey)
+        XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+        XCTAssertFalse(SharedPlayerManager.isMainAppProcessRecentlyActive())
+
+        await WidgetIntentExecution.performControlWidgetToggle(isPlayingRequested: false)
+
+        XCTAssertEqual(
+            SharedPlayerManager.loadPersistedWidgetState()?.visualState,
+            .userPaused,
+            "Control false under distrust must still stamp pause"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .userPaused,
+            "Control pause under distrust must stamp live chrome .userPaused"
         )
     }
 

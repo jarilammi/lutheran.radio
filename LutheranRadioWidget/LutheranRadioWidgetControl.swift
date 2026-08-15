@@ -44,6 +44,8 @@ struct ToggleRadioIntent: SetValueIntent {
 
         // AGENT NOTE: Full path is ``WidgetIntentExecution/performControlWidgetToggle(isPlayingRequested:)``
         // so extension-profile unit tests exercise the same body as this AppIntent.
+        // Residual-only play refuse lives in that perform (same flags as
+        // ``performHomeWidgetToggle()`` / ``shouldDistrustDurableMirrorPlayPlanning()``).
         await WidgetIntentExecution.performControlWidgetToggle(isPlayingRequested: value)
 
         #if DEBUG

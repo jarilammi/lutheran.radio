@@ -327,6 +327,8 @@ extension SharedPlayerManager {
     /// must not call ``userRequestedPlay()`` after dirty power-off.
     /// **Home widget planning:** residual ``homeWidgetLiveChrome`` / empty factory alone must not
     /// schedule pending **play** after process exit or reboot (``planHomeWidgetToggle(resolution:…)``).
+    /// **Control widget planning:** ``performControlWidgetToggle(isPlayingRequested:)`` refuses
+    /// `true` (play) under the same flags; pause still executes for glyph honesty.
     /// **Home widget paint:** Providers ignore residual live chrome via
     /// ``resolveHomeWidgetChromeFields(..., distrustLiveChrome:)`` so last play/pause glyphs
     /// do not survive dirty exit / reboot when the App Group blob was not cleared.
@@ -339,6 +341,7 @@ extension SharedPlayerManager {
     ///   ``WidgetIntentCoordinators/planHomeWidgetToggle(resolution:distrustDurableMirrorPlay:mainProcessRecentlyActive:)``,
     ///   ``WidgetIntentExecution/performLiveActivityToggle()``,
     ///   ``WidgetIntentExecution/performHomeWidgetToggle()``,
+    ///   ``WidgetIntentExecution/performControlWidgetToggle(isPlayingRequested:)``,
     ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
     ///   ``persistHomeWidgetLiveChromeMirror(_:)``,
     ///   ``bumpWidgetLivenessTimestamp(policy:minInterval:)``.

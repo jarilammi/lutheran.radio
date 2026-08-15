@@ -246,8 +246,15 @@ public enum WidgetIntentCoordinators {
 
     /// Plans Control-widget `SetValueIntent` toggle (`true` = play, `false` = pause).
     ///
+    /// Raw bool matrix for unit tests and the perform path. Residual-play refuse is **not**
+    /// applied here — production ``WidgetIntentExecution/performControlWidgetToggle(isPlayingRequested:)``
+    /// applies the same honesty flags as ``planHomeWidgetToggle(resolution:distrustDurableMirrorPlay:mainProcessRecentlyActive:)``
+    /// (``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()`` or main not recently active).
+    ///
     /// - Parameter isPlayingRequested: Bool from `ControlWidgetToggle` / `ToggleRadioIntent.value`.
     /// - Returns: Pending action + optimistic target visual state.
+    /// - SeeAlso: ``WidgetIntentExecution/performControlWidgetToggle(isPlayingRequested:)``,
+    ///   ``planHomeWidgetToggle(resolution:distrustDurableMirrorPlay:mainProcessRecentlyActive:)``.
     public static func planControlWidgetToggle(isPlayingRequested value: Bool) -> WidgetToggleActionPlan {
         WidgetToggleActionPlan(
             action: value ? .play : .pause,
