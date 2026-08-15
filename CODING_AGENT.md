@@ -440,6 +440,10 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 | `docs/`                                           | All architecture & security decision records                                   | Read before any major change; LA language ensure residual lives in Live-Activity stacking + Widget Functionality Roadmap (mechanism names only) |
 | `SharedPlayerManager.swift` (+ extensions) + `DirectStreamingPlayer+WidgetStub.swift` + `SecurityValidationFacade.swift` + `WidgetDisplayModels.swift` + `WidgetIntentExecution.swift` + `WidgetRefreshManager.swift` (+ test support) + `MediaTransportLatencyTimeline.swift` | Membership-exception SSOT: actor state, named security call-site intents, intent execution + snapshot hygiene, widget refresh; DEBUG transport latency timeline | Compiled into app + extension + `LutheranRadioWidgetTests`. Pure presentation lives in `WidgetSurface/`. Never duplicate widget state logic. Security *policy* stays in `Core/`. |
 
+### iOS App Store binary on Apple Silicon Mac
+
+The same iOS binary runs as Designed for iPhone / iPad (`ProcessInfo.processInfo.isiOSAppOnMac`). Do **not** enable `SUPPORTS_MACCATALYST`. Live Activities are unavailable — ``RadioLiveActivityManager/areActivitiesEnabledOnThisHost`` skips ActivityKit IPC. Keyboard and menu Play/Pause and adjacent language reuse ``AppDelegate/buildMenu(with:)``, ``userRequestedPlay()`` / ``stop()`` via ``handleTogglePlayback()``, and ``RadioPlayerCoordinator/handleLanguageSelection(at:)`` via ``handleAdjacentLanguageSelection(offset:)``. Hardware MIE/EMTE remains an iPhone 17-class claim.
+
 ### Core Framework Surface Area (Mandatory Knowledge)
 
 The `Core` framework is the **single source of truth** for all security decisions. Its public surface consists of exactly three subdirectories:

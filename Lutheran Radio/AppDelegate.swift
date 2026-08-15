@@ -49,7 +49,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
-    // MARK: - Menu Building (Storyboard Removal Guard)
+    // MARK: - Menu Building (Storyboard Removal Guard + Playback Verbs)
     //
     // After fully removing Main.storyboard, UIKit's UIMenuSystem (used for
     // the main menu bar on iPad / Mac, and for discovering keyboard shortcuts /
@@ -65,12 +65,121 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // (Edit, Format, View, Window, Help, etc.) and automatic key command
     // discovery from the responder chain continue to work.
     //
+    // Playback sibling: Space → ``handleTogglePlayback()`` (``userRequestedPlay()`` /
+    // ``stop()``). ⌘[ / ⌘] → ``handleAdjacentLanguageSelection(offset:)`` →
+    // ``handleLanguageSelection(at:)``. Titles from ``PlaybackKeyboardMenu``
+    // (`String(localized:)` table `Localizable`). Not a new play entry.
+    //
     // - Important: This must live on AppDelegate (or another early responder)
     //   because the menu rebuild can be triggered very early (during
     //   _immediatelyUpdateSerializableKeyCommands / after CA commit).
-    // - SeeAlso: SceneDelegate (window setup), UIApplication.buildMenuWithBuilder
+    // - SeeAlso: ``PlaybackKeyboardMenu``, SceneDelegate (window setup),
+    //   ``ViewController/handleTogglePlayback()``,
+    //   ``RadioPlayerCoordinator/handleAdjacentLanguageSelection(offset:)``,
+    //   UIApplication.buildMenuWithBuilder
     override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)
+        insertPlaybackKeyboardMenu(into: builder)
+    }
+
+    /// Inserts the Playback sibling (Play/Pause, previous/next language) when building the main menu.
+    ///
+    /// - Parameter builder: The system menu builder. Only ``UIMenuSystem.main`` receives the sibling.
+    /// - Important: Idempotent if ``PlaybackKeyboardMenu/menuIdentifier`` is already present.
+    /// - SeeAlso: ``PlaybackKeyboardMenu``, ``menuTogglePlayback(_:)``
+    private func insertPlaybackKeyboardMenu(into builder: UIMenuBuilder) {
+        guard builder.system == .main else { return }
+        if builder.menu(for: PlaybackKeyboardMenu.menuIdentifier) != nil { return }
+
+        let playPause = UIKeyCommand(
+            title: PlaybackKeyboardMenu.playPauseTitle,
+            action: #selector(menuTogglePlayback(_:)),
+            input: " ",
+            modifierFlags: []
+        )
+        playPause.discoverabilityTitle = PlaybackKeyboardMenu.playPauseTitle
+
+        let previousLanguage = UIKeyCommand(
+            title: PlaybackKeyboardMenu.previousLanguageTitle,
+            action: #selector(menuPreviousLanguage(_:)),
+            input: "[",
+            modifierFlags: .command
+        )
+        previousLanguage.discoverabilityTitle = PlaybackKeyboardMenu.previousLanguageTitle
+
+        let nextLanguage = UIKeyCommand(
+            title: PlaybackKeyboardMenu.nextLanguageTitle,
+            action: #selector(menuNextLanguage(_:)),
+            input: "]",
+            modifierFlags: .command
+        )
+        nextLanguage.discoverabilityTitle = PlaybackKeyboardMenu.nextLanguageTitle
+
+        let playback = UIMenu(
+            title: PlaybackKeyboardMenu.playbackMenuTitle,
+            identifier: PlaybackKeyboardMenu.menuIdentifier,
+            children: [playPause, previousLanguage, nextLanguage]
+        )
+        if builder.menu(for: .view) != nil {
+            builder.insertSibling(playback, afterMenu: .view)
+        } else if builder.menu(for: .edit) != nil {
+            builder.insertSibling(playback, afterMenu: .edit)
+        } else {
+            builder.insertChild(playback, atEndOfMenu: .root)
+        }
+    }
+
+    /// Space / menu Play/Pause → ``ViewController/handleTogglePlayback()``.
+    ///
+    /// That shim is the existing toggle decision surface
+    /// (``stop()`` while playing, otherwise ``userRequestedPlay()``).
+    ///
+    /// - Parameter sender: Menu or key-command sender (unused).
+    /// - SeeAlso: ``ViewController/handleTogglePlayback()``,
+    ///   ``RadioPlayerCoordinator/handleUserTogglePlayback()``,
+    ///   ``SharedPlayerManager/userRequestedPlay()``, ``SharedPlayerManager/stop()``
+    @objc func menuTogglePlayback(_ sender: Any?) {
+        Task { @MainActor in
+            Self.keyRadioViewController()?.handleTogglePlayback()
+        }
+    }
+
+    /// ⌘[ / menu previous language → ``handleAdjacentLanguageSelection(offset:)``.
+    ///
+    /// - Parameter sender: Menu or key-command sender (unused).
+    /// - SeeAlso: ``ViewController/handleAdjacentLanguageSelection(offset:)``
+    @objc func menuPreviousLanguage(_ sender: Any?) {
+        Task { @MainActor in
+            Self.keyRadioViewController()?.handleAdjacentLanguageSelection(offset: -1)
+        }
+    }
+
+    /// ⌘] / menu next language → ``handleAdjacentLanguageSelection(offset:)``.
+    ///
+    /// - Parameter sender: Menu or key-command sender (unused).
+    /// - SeeAlso: ``ViewController/handleAdjacentLanguageSelection(offset:)``
+    @objc func menuNextLanguage(_ sender: Any?) {
+        Task { @MainActor in
+            Self.keyRadioViewController()?.handleAdjacentLanguageSelection(offset: 1)
+        }
+    }
+
+    /// Root ``ViewController`` on a connected window scene, if the window has attached.
+    ///
+    /// - Returns: The scene root when it is ``ViewController``; `nil` before
+    ///   ``SceneDelegate`` installs the window.
+    /// - SeeAlso: ``SceneDelegate/scene(_:willConnectTo:options:)``
+    @MainActor
+    private static func keyRadioViewController() -> ViewController? {
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            for window in windowScene.windows {
+                if let viewController = window.rootViewController as? ViewController {
+                    return viewController
+                }
+            }
+        }
+        return nil
     }
 
     // MARK: - UISceneSession Lifecycle

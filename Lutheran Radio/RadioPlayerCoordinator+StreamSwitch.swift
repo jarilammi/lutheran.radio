@@ -30,6 +30,7 @@
 //  - ``handleWidgetSwitchToLanguage(_:actionId:)`` — widget/LA pending switch
 //  - ``updateUserDefaultsLanguage(_:)`` — awaited destination language + privacy-gated liveness
 //  - ``handleLanguageSelection(at:)`` — LanguageSelectorView / PlayerViewModel
+//  - ``handleAdjacentLanguageSelection(offset:)`` — menu / keyboard previous-next wrap
 //
 //  Canonical private orchestrators (same type, file-private):
 //  - ``completeStreamSwitch(stream:index:)`` — main-app full UX (tuning + needle)
@@ -412,12 +413,36 @@ extension RadioPlayerCoordinator {
 
     // MARK: - Main-app flag-tap language selection
 
+    /// Menu / keyboard previous or next language: wrap the catalog, then ``handleLanguageSelection(at:)``.
+    ///
+    /// Same orchestration as a flag tap (tuning + needle + sticky-pause preserve). Not a
+    /// new play entry and not the external ``handleSwitchToLanguage(_:)`` path.
+    ///
+    /// - Parameter offset: Signed step through ``DirectStreamingPlayer/availableStreams``
+    ///   (`-1` previous, `+1` next). A no-op when the wrap lands on the current index
+    ///   (single-stream catalog or `offset == 0`).
+    /// - SeeAlso: ``PlaybackKeyboardMenu/adjacentStreamIndex(current:offset:count:)``,
+    ///   ``handleLanguageSelection(at:)``, ``AppDelegate/menuPreviousLanguage(_:)``,
+    ///   ``AppDelegate/menuNextLanguage(_:)``
+    func handleAdjacentLanguageSelection(offset: Int) {
+        let streams = DirectStreamingPlayer.availableStreams
+        guard let nextIndex = PlaybackKeyboardMenu.adjacentStreamIndex(
+            current: selectedStreamIndex,
+            offset: offset,
+            count: streams.count
+        ), nextIndex != selectedStreamIndex else {
+            return
+        }
+        handleLanguageSelection(at: nextIndex)
+    }
+
     /// Language-selector entry: optimistic prePlay when auto-play, debounce, then ``completeStreamSwitch``.
     ///
     /// Wired from `PlayerViewModel.onLanguageSelected` in ``wireAndInitialSetup()``.
     ///
     /// - Parameter newIndex: Index into `DirectStreamingPlayer.availableStreams`.
-    /// - SeeAlso: ``completeStreamSwitch(stream:index:)``, `LanguageSelectorView`.
+    /// - SeeAlso: ``completeStreamSwitch(stream:index:)``, `LanguageSelectorView`,
+    ///   ``handleAdjacentLanguageSelection(offset:)``.
     func handleLanguageSelection(at newIndex: Int) {
         // isDeallocating guard stays in host (VC) for now; coordinator is torn down with VC.
         #if DEBUG

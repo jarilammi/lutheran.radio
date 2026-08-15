@@ -52,7 +52,8 @@
 /// - Darwin widget-notify install + launch-burst scheduling (`ViewController+DarwinWidgetNotify`)
 /// - Layout hosting install + layout-pass forward (`ViewController+LayoutHosting` — single
 ///   `UIHostingController` for `RadioPlayerView` + background layer insert; never eager AirPlay)
-/// - Public shims: `handlePlayAction`, URL schemes, SceneDelegate entry points
+/// - Public shims: `handlePlayAction`, URL schemes, SceneDelegate entry points,
+///   keyboard/menu adjacent-language (`handleAdjacentLanguageSelection`)
 ///
 /// **Background / terminate:** `SceneDelegate` + `AppDelegate` forward to
 /// `RadioLiveActivityManager` and `SharedPlayerManager` (widgets + liveness). Authoritative LA
@@ -123,7 +124,7 @@ import WidgetSurface
 /// - SeeAlso: `RadioPlayerView`, `AirPlayButton`, `VolumeAndAirPlayRow`, `PlayerViewModel`,
 ///   `RadioPlayerCoordinator`, `TuningSoundCoordinator`, `DirectStreamingPlayer`,
 ///   `SharedPlayerManager`, `CellularPermissionManager`, `PlaybackPlayDecision`,
-///   CODING_AGENT.md, <doc:Architecture>.
+///   `PlaybackKeyboardMenu`, CODING_AGENT.md, <doc:Architecture>.
 @MainActor
 class ViewController: UIViewController {
 
@@ -141,7 +142,7 @@ class ViewController: UIViewController {
     // | Engine path observation | ViewController+NetworkPathObservation.swift | ``observeEngineNetworkPath`` / sample handler / cellular alert presentation / ``handleNetworkReconnection`` / path-callback clear; no host monitor |
     // | Layout hosting | ViewController+LayoutHosting.swift | ``setupUI`` hosting controller + background insert; ``viewDidLayoutSubviews`` → coordinator ``notifyLayoutChange`` |
     // | Cold launch / lifecycle | (this file) | viewDidLoad Task (UITestMode, resurrection, special tuning, first play); viewDidAppear resurrection |
-    // | Public shims | (this file) | SceneDelegate / URL / Siri / widget-action entry → coordinator or SPM |
+    // | Public shims | (this file) | SceneDelegate / URL / Siri / widget-action / keyboard-menu entry → coordinator or SPM |
     // | DEBUG test seams | (this file) | Drain bypass forwarders for WidgetIntentContractTests |
     //
     // Cross-layer owners (do not re-home into this host):
@@ -816,6 +817,19 @@ extension ViewController {
     public func handleTogglePlayback() {
         // Thin delegate (both the coordinator shim and the internal handleUserTogglePlayback forward are covered by this).
         radioPlayerCoordinator.handleTogglePlayback()
+    }
+
+    /// Menu / keyboard previous or next language (⌘[ / ⌘]).
+    ///
+    /// Wraps ``DirectStreamingPlayer/availableStreams`` via
+    /// ``PlaybackKeyboardMenu/adjacentStreamIndex(current:offset:count:)`` and
+    /// enters ``handleLanguageSelection(at:)`` (same orchestration as a flag tap).
+    ///
+    /// - Parameter offset: Signed catalog step (`-1` previous, `+1` next).
+    /// - SeeAlso: ``RadioPlayerCoordinator/handleAdjacentLanguageSelection(offset:)``,
+    ///   ``AppDelegate/menuPreviousLanguage(_:)``, ``AppDelegate/menuNextLanguage(_:)``
+    public func handleAdjacentLanguageSelection(offset: Int) {
+        radioPlayerCoordinator.handleAdjacentLanguageSelection(offset: offset)
     }
 
     /// Public method called when the user taps the Live Activity (Lock Screen or Dynamic Island)

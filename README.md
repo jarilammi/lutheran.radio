@@ -201,7 +201,7 @@ Cross-reference: "Current Security Snapshot" and "Single Sources of Truth — Ke
  - Minimum deployment target: iOS 26.2 (required for EMTE + MIE hardened memory protections)
  - Recommended for most work and contributions: iPhone 17-class simulator on iOS 26.5 (stable Xcode 26)
  - For complete security feature validation (latest MIE/EMTE): Xcode 27+ with iOS 27 simulators (see CODING_AGENT.md)
- - The iOS App Store binary also runs on Apple Silicon Mac as Designed for iPhone / iPad (`ProcessInfo.processInfo.isiOSAppOnMac`). That host is the same iOS binary (`LSMinimumSystemVersion` 26.5). Live Activities are unavailable there — ``RadioLiveActivityManager`` skips ActivityKit IPC. Hardware MIE/EMTE remains an iPhone 17-class claim; do not describe equivalent memory tagging on Mac.
+ - The iOS App Store binary also runs on Apple Silicon Mac as Designed for iPhone / iPad (`ProcessInfo.processInfo.isiOSAppOnMac`). That host is the same iOS binary (`LSMinimumSystemVersion` 26.5). Live Activities are unavailable there — ``RadioLiveActivityManager`` skips ActivityKit IPC. Keyboard and menu Play/Pause (Space) and previous/next language (⌘[ / ⌘]) are inserted by ``AppDelegate/buildMenu(with:)`` and call ``userRequestedPlay()`` / ``stop()`` via ``handleTogglePlayback()`` and ``handleLanguageSelection(at:)`` via ``handleAdjacentLanguageSelection(offset:)``. Hardware MIE/EMTE remains an iPhone 17-class claim; do not describe equivalent memory tagging on Mac.
 
 ### Swift Build Settings
 
