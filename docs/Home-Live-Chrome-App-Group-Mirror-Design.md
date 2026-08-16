@@ -270,6 +270,8 @@ When `hasActiveLutheranWidgets` opens:
 2. Then schedule a normal `reloadTimelines` (existing refresh path).
 3. Do not invent `.playing` if actor is still Connecting hold.
 
+**Privacy-clear hold:** ``clearAllLocalState()`` forces the gate false **and** arms ``holdPrivacyClearWriteSuppressionClosedUntilForeground()``. ``performRefresh`` / opportunistic ``refreshHasActiveWidgets`` apply WidgetCenter presence through ``applyDetectedWidgetPresence(_:)``, which refuses a main-process `true` detect until SceneDelegate lifts the hold on become-active / enter-foreground. That false→true restamp must not run from the teardown refresh that still wakes Home (reload from **absent** keys). Extension Providers still call ``setHasActiveLutheranWidgets(true)`` directly (process-local gate).
+
 ---
 
 ## 6. Provider read order
@@ -375,7 +377,7 @@ Legend: **W** = may write · **C** = must clear · **—** = no-op · **R** = ma
 | Gate open (widgets installed) | **W** | **W** | **W** | **W** | **W** | **W** | **W** |
 | Gate false → true | **W** re-stamp once | **W** re-stamp once | — | as today | — | — | **W** |
 | Gate true → false | **C** | **C** | **C** | keep main RAM optional | keep | keep transient rules | **C** residual helper |
-| User privacy clear (`clearAllLocalState`) | **C** | **C** | **C** | **C** | **C** | **C** | **C** |
+| User privacy clear (`clearAllLocalState`) | **C** (stays **C** through teardown ``performRefresh``; no restamp until foreground lift) | **C** | **C** | **C** | **C** | **C** | **C** |
 | Factory reset cold launch | **C** (or already empty) | **C** | **C** | **C** | **C** as today | as today | as today |
 | App terminate (delivered path) | **C** (recommended) | as today | as today | process dies | LA end + clear as today | as today | **0** sentinel |
 | Force-quit | process dies; next launch factory | next launch purge | next launch | empty | residual reaped as today | as today | ages out / launch purge |
@@ -394,7 +396,8 @@ Live chrome is **not** folded into the liveness residual helper. Gate close runs
 | `clearHomeWidgetStreamMetadataMirror()` | **No** (metadata only) | Sibling of live-chrome clear; same privacy class. |
 | `clearHomeWidgetLiveChromeMirror()` | **Yes** (this key only) | Dedicated clear for ``homeWidgetLiveChrome``. |
 | `WidgetRefreshManager.setHasActiveLutheranWidgets` **true→false edge** | **Yes** (orchestration) | Calls liveness residual clear **+** metadata mirror clear **+** live-chrome clear as three siblings. Re-asserting `false` while already closed is residual-clear **no-op** so WidgetCenter lag (`configs: 0` while widgets still exist) cannot wipe extension-stamped mirrors under widget-process bypass. Main-app write suppression while closed remains in force. |
-| `removeAllLocalPlaybackKeys()` / privacy clear | **Yes** | Includes ``clearHomeWidgetLiveChromeMirror()`` with other home residuals. |
+| `WidgetRefreshManager.applyDetectedWidgetPresence` after privacy clear | **No** (hold-closed) | Main-process WidgetCenter `true` detect is ignored while ``isPrivacyClearWriteSuppressionHeldClosed``. Timeline reload still wakes Home. SceneDelegate ``liftPrivacyClearWriteSuppressionHoldForForegroundDetect()`` is the allowed re-detect. |
+| `removeAllLocalPlaybackKeys()` / privacy clear | **Yes** | Includes ``clearHomeWidgetLiveChromeMirror()`` with other home residuals. ``clearAllLocalState()`` also arms the hold-closed next to force-false. |
 | `resetToFactoryDefaultsOnLaunch()` | **Yes** | Belt-and-suspenders residual reap. |
 | Termination sync teardown (`forceStaleLivenessTimestampForTermination` path) | **Yes** | Explicit live-chrome clear (prefer clear over stale mirror + passive overlay). |
 | Core security cache / DNS keys | **Never** | Untouched by home residual paths. |
@@ -418,6 +421,7 @@ Full privacy clear, factory residual, and terminate paths clear independently of
 4. Security keys (`lastSecurityValidation`, Core) untouched.
 5. No PII beyond anonymous stream language code + presentation visual enum + optional program metadata (already separate).
 6. Residual clear on ``setHasActiveLutheranWidgets`` is **edge-only** (true→false); write suppression while the gate is closed is continuous.
+7. After in-app privacy clear, leftover Home Screen widgets must **not** reopen the main-app write gate (and must **not** restamp ``homeWidgetLiveChrome``) via teardown ``performRefresh`` / opportunistic ``refreshHasActiveWidgets``. Only ``liftPrivacyClearWriteSuppressionHoldForForegroundDetect()`` on become-active / enter-foreground allows the next detect. Home paints factory / defaults from **absent** keys until that lift.
 
 ---
 
@@ -520,7 +524,7 @@ Unit and integration cases below protect the shipped mirror. Device eyes-on (§1
 - Early sticky pause → mirror userPaused before soft silence.
 - setPlaying → mirror playing.
 - Extension optimistic switch → mirror prePlay + dest lang; main setPlaying → mirror playing.
-- Privacy clear → Provider fields factory; gate closed until re-detect.
+- Privacy clear → Provider fields factory; gate closed until foreground lift (teardown WidgetCenter detect must not restamp).
 - Gate open re-stamp once when playing with widgets added mid-session (parallel metadata test).
 
 ### 10.3 Device eyes-on matrix (manual)

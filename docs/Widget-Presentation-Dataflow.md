@@ -237,7 +237,7 @@ See `RadioLiveActivityManager.swift` (``beginObservingActivityEvents(_:)``, ``ac
 
 **Problem:** OI-1 correctly made visual/playback chrome **memory-only** for the session (`inMemorySessionWidgetSnapshot`). The incomplete half of that contract was live **cross-process paint**: home/Control Providers run in the widget extension and **cannot** read main-app session RAM. ``WidgetRefreshManager.performRefresh`` only calls `WidgetCenter.reloadTimelines` — it does **not** pass visual/language into WidgetKit. Main-process “refresh executed … visualState: .playing” is a **scheduler label**, not Provider paint proof. Extension paint comes from App Group + process-local session, re-read after each reload wake.
 
-**Solution:** Privacy-gated App Group key ``homeWidgetLiveChrome`` (JSON ``HomeWidgetLiveChrome``: visual + language + hasError + stamp metadata). Same privacy class as ``homeWidgetStreamMetadata`` (write only while ``hasActiveWidgets`` or widget-process bypass; clear on gate close, privacy clear, factory residual, terminate).
+**Solution:** Privacy-gated App Group key ``homeWidgetLiveChrome`` (JSON ``HomeWidgetLiveChrome``: visual + language + hasError + stamp metadata). Same privacy class as ``homeWidgetStreamMetadata`` (write only while ``hasActiveWidgets`` or widget-process bypass; clear on gate close, privacy clear, factory residual, terminate). After ``clearAllLocalState()``, main-app ``performRefresh`` / opportunistic ``refreshHasActiveWidgets`` must not reopen the write gate until SceneDelegate ``liftPrivacyClearWriteSuppressionHoldForForegroundDetect()`` on become-active / enter-foreground — teardown still reloads timelines so Home paints factory from **absent** keys, not a restamped language mirror.
 
 | Layer | Role |
 |-------|------|

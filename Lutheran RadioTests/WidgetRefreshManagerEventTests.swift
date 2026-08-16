@@ -59,6 +59,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         await SharedPlayerManager.clearAllLocalState()
         await manager.cancelReplayForwarding()
 
+        WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
         WidgetRefreshManager.setHasActiveLutheranWidgets(true)
         WidgetRefreshManager._test_setRecordHandlePlayerEventDerivation(true)
     }
@@ -66,6 +67,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     override func tearDown() async throws {
         refreshManager._test_suspendPlayerEventObservation()
         WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
+        WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
         WidgetRefreshManager.setSessionTeardownInProgress(false)
         WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(false)
         WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)
@@ -658,6 +660,47 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     }
 
     // MARK: - Event-path privacy gate
+
+    /// WidgetCenter true-detect must not reopen write suppression while privacy
+    /// clear holds the gate closed. Direct ``setHasActiveLutheranWidgets(true)``
+    /// (extension Providers / test seams) is unchanged.
+    ///
+    /// **Invariant protected:** ``applyDetectedWidgetPresence(_:)`` is the
+    /// ``performRefresh`` / ``refreshHasActiveWidgets`` presence-detect seam.
+    /// No WidgetCenter IPC.
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/applyDetectedWidgetPresence(_:)``,
+    ///   ``WidgetRefreshManager/holdPrivacyClearWriteSuppressionClosedUntilForeground()``,
+    ///   ``SharedPlayerManager/clearAllLocalState()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7).
+    func testApplyDetectedWidgetPresenceHonorsPrivacyClearHoldClosed() {
+        WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
+        WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        XCTAssertFalse(WidgetRefreshManager.hasActiveLutheranWidgets)
+
+        WidgetRefreshManager.holdPrivacyClearWriteSuppressionClosedUntilForeground()
+        WidgetRefreshManager.applyDetectedWidgetPresence(true)
+        XCTAssertTrue(
+            WidgetRefreshManager.isPrivacyClearWriteSuppressionHeldClosed,
+            "Arm must leave the hold closed"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.hasActiveLutheranWidgets,
+            "WidgetCenter true-detect must not reopen the gate while hold-closed"
+        )
+
+        // A false detect may still close the gate (already closed — residual no-op).
+        WidgetRefreshManager.applyDetectedWidgetPresence(false)
+        XCTAssertFalse(WidgetRefreshManager.hasActiveLutheranWidgets)
+
+        WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
+        WidgetRefreshManager.applyDetectedWidgetPresence(true)
+        XCTAssertTrue(
+            WidgetRefreshManager.hasActiveLutheranWidgets,
+            "After foreground lift, true-detect may reopen the write gate"
+        )
+        XCTAssertFalse(WidgetRefreshManager.isPrivacyClearWriteSuppressionHeldClosed)
+    }
 
     /// Verifies that ``handlePlayerEvent(_:)`` records privacy suppression when
     /// ``hasActiveLutheranWidgets`` is false and the event is

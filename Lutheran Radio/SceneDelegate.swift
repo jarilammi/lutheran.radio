@@ -41,7 +41,9 @@ import UIKit
 ///   ``RadioLiveActivityManager/ensureInteractiveLiveActivityIfNeeded()``,
 ///   ``RadioLiveActivityManager/handleAppDidEnterForeground()``,
 ///   ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)``,
-///   docs/Widget-Presentation-Dataflow.md
+///   ``WidgetRefreshManager/liftPrivacyClearWriteSuppressionHoldForForegroundDetect()``,
+///   docs/Widget-Presentation-Dataflow.md,
+///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7)
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// The main window for the app's user interface.
     var window: UIWindow?
@@ -85,8 +87,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window = nil
     }
 
-    /// Becomes active: drain pending widget commands (when honest), then refresh privacy gate,
-    /// liveness, snapshot, and Live Activity ensure.
+    /// Becomes active: drain pending widget commands (when honest), lift privacy-clear
+    /// write-suppression hold, then refresh privacy gate, liveness, snapshot, and Live Activity
+    /// ensure.
     ///
     /// Pending drain is intentional **before** the async liveness Task so in-session widget
     /// taps are processed promptly. Residual pre-process / pre-boot commands are refused by
@@ -95,7 +98,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     ///
     /// - Parameter scene: The scene that became active.
     /// - SeeAlso: ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
-    ///   ``SharedPlayerManager/discardResidualPendingActionsAndArmMailboxForThisProcess()``
+    ///   ``SharedPlayerManager/discardResidualPendingActionsAndArmMailboxForThisProcess()``,
+    ///   ``WidgetRefreshManager/liftPrivacyClearWriteSuppressionHoldForForegroundDetect()``,
+    ///   ``WidgetRefreshManager/refreshHasActiveWidgets()``
     func sceneDidBecomeActive(_ scene: UIScene) {
         #if DEBUG
         print("[SceneDelegate] sceneDidBecomeActive — unlock/active cycle")
@@ -107,11 +112,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             viewController.checkForPendingWidgetActions()
         }
 
+        // Lift privacy-clear hold *before* WidgetCenter re-detect so leftover Home Screen
+        // widgets may reopen write suppression only on this foreground edge — not from the
+        // teardown refresh that ran inside `clearAllLocalState`.
         // Privacy gate refresh before liveness/save so a widget re-added while backgrounded
         // can receive writes again. Fire-and-forget; save paths consult the refreshed flag.
         // LA ensure restores a missing card after deferred recreation / failed request, or
         // soft-reconciles language/visual when ownership is already non-nil.
         Task { @MainActor in
+            WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
             await WidgetRefreshManager.shared.refreshHasActiveWidgets()
             await SharedPlayerManager.shared.recordWidgetLiveness()
             await SharedPlayerManager.shared.saveCurrentState()
@@ -148,11 +157,19 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    /// Entering foreground: second pending-drain opportunity + Live Activity foreground push.
+    /// Entering foreground: lift privacy-clear write-suppression hold, second pending-drain
+    /// opportunity, and Live Activity foreground push.
     ///
     /// - Parameter scene: The scene entering the foreground.
-    /// - SeeAlso: ``RadioLiveActivityManager/handleAppDidEnterForeground()``
+    /// - SeeAlso: ``RadioLiveActivityManager/handleAppDidEnterForeground()``,
+    ///   ``WidgetRefreshManager/liftPrivacyClearWriteSuppressionHoldForForegroundDetect()``
     func sceneWillEnterForeground(_ scene: UIScene) {
+        // Lift before any opportunistic write-path re-detect. `sceneDidBecomeActive`
+        // lifts again (idempotent) and then runs `refreshHasActiveWidgets`.
+        Task { @MainActor in
+            WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
+        }
+
         if let viewController = window?.rootViewController as? ViewController {
             viewController.checkForPendingWidgetActions()
         }

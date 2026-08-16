@@ -5,10 +5,10 @@
 //  Created by Jari Lammi on 23.7.2026.
 //
 //  SHARED: Cross-target membership-exception source (main app + extension +
-//  LutheranRadioWidgetTests). Mechanical split of SharedPlayerManager — same actor,
-//  no API renames, no behavior change.
+//  LutheranRadioWidgetTests). Mechanical split of SharedPlayerManager — same actor.
 //
 //  Purpose: Privacy clear of local playback keys and full local-state reset orchestration.
+//  After clear, write suppression stays held closed until foreground WidgetCenter detect.
 //
 //  - SeeAlso: SharedPlayerManager.swift, CODING_AGENT.md (cross-target membership exceptions).
 //
@@ -24,8 +24,8 @@ import WidgetKit
 // MARK: - Privacy: Clear Local Playback State and Write Suppression
 //
 // These entry points implement the user-initiated "Clear local playback state".
-// It removes recent playback/widget/Live Activity signals from the App Group and forces the
-// write-suppression gate until widgets are re-detected.
+// It removes recent playback/widget/Live Activity signals from the App Group and holds
+// write suppression closed until the next foreground WidgetCenter detect.
 // 
 // - removeAllLocalPlaybackKeys is nonisolated static (safe for widget/extension call sites in future).
 // - clearAllLocalState is the @MainActor entry point used from UI (sleep timer menu / clear action etc.).
@@ -92,12 +92,27 @@ extension SharedPlayerManager {
     /// Activity, cancels sleep, notifies observers. Main UI gets blue "Cleared" pill immediately;
     /// widgets (no snapshot + write suppression) fall back to .prePlay on next load.
     ///
+    /// Write suppression stays **held closed** after this call: teardown
+    /// ``WidgetRefreshManager/performRefresh(for:)`` and opportunistic
+    /// ``refreshHasActiveWidgetsStatus()`` must not reopen ``hasActiveLutheranWidgets``
+    /// while widgets remain on the Home Screen. SceneDelegate lifts the hold on
+    /// become-active / enter-foreground, then ``refreshHasActiveWidgets()`` may detect
+    /// again. Timeline reload after clear still wakes Home so Providers paint factory
+    /// from **absent** keys — not a restamped live-chrome mirror.
+    ///
     /// - Important: After this call `loadPersistedWidgetState()` returns nil until the next
     ///   explicit play or widget-driven write.
+    /// - Important: Does not treat `.cleared` as factory in the gate-open restamp helper;
+    ///   the hold itself is what keeps that restamp from running before foreground.
     ///
     /// Must be called from @MainActor (UI surfaces, coordinator). Internally hops for actor work.
     ///
     /// - SeeAlso: ``removeAllLocalPlaybackKeys()``, ``resetStateToClearedForPrivacy()``,
+    ///   ``WidgetRefreshManager/holdPrivacyClearWriteSuppressionClosedUntilForeground()``,
+    ///   ``WidgetRefreshManager/applyDetectedWidgetPresence(_:)``,
+    ///   ``WidgetRefreshManager/liftPrivacyClearWriteSuppressionHoldForForegroundDetect()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7),
+    ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant),
     ///   CODING_AGENT.md.
     @MainActor
     static func clearAllLocalState() async {
@@ -127,13 +142,16 @@ extension SharedPlayerManager {
         Self.removeAllLocalPlaybackKeys()
 
         // 5. Privacy: after explicit clear, force the hasActiveWidgets flag false *even if*
-        // WidgetCenter still reports configured widgets. This prevents the next play() / saveCurrentState
-        // from immediately re-writing a fresh snapshot + language signal. The flag is only flipped
-        // back to true by an explicit re-detect on foreground (sceneDidBecomeActive) or a later
-        // refreshHasActiveWidgetsStatus once a widget has been re-added.
+        // WidgetCenter still reports configured widgets, and hold that closed against the
+        // teardown refresh that follows. `performRefresh` / opportunistic
+        // `refreshHasActiveWidgetsStatus` must not treat leftover Home Screen configs as
+        // the allowed re-detect (that restamps live chrome as visual=cleared + language).
+        // SceneDelegate lifts the hold on become-active / enter-foreground, then
+        // `refreshHasActiveWidgets` may open the gate.
         WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        WidgetRefreshManager.holdPrivacyClearWriteSuppressionClosedUntilForeground()
         #if DEBUG
-        print("[SharedPlayerManager] hasActiveWidgets forced false after privacy clear (suppressing re-writes until re-detect)")
+        print("[SharedPlayerManager] hasActiveWidgets forced false after privacy clear (hold-closed until foreground detect)")
         #endif
 
         // 6–6b. Session + widget teardown (Now Playing, LA graceful end, immediate widget reload to .cleared).

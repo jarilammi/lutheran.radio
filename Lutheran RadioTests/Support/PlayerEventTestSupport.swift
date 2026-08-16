@@ -530,6 +530,10 @@ func prepareSharedPlayerManagerEventTestIsolation(
     await manager.setUserIntentToPlay()
 
     await MainActor.run {
+        // Isolation wants an open gate for observability. Privacy clear arms a
+        // hold-closed against WidgetCenter re-detect; lift it so suite defaults
+        // match a normal foreground session (tests under test use the direct setter).
+        WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
         WidgetRefreshManager.setHasActiveLutheranWidgets(true)
     }
 
@@ -562,6 +566,7 @@ func tearDownSharedPlayerManagerEventTestIsolation(
 
     await MainActor.run {
         sanitizeLiveActivityLocalState()
+        WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
         WidgetRefreshManager.setSessionTeardownInProgress(false)
         WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(false)
         WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)
@@ -609,6 +614,7 @@ func resetSharedPlayerManagerEventContrastPhase(
     await manager.setUserIntentToPlay()
 
     await MainActor.run {
+        WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
         WidgetRefreshManager.setHasActiveLutheranWidgets(true)
     }
 

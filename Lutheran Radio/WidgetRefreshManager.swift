@@ -204,15 +204,20 @@ final class WidgetRefreshManager: @unchecked Sendable {
     // Single source of truth for active Lutheran Radio widgets (home widget + Control Center kind).
     // Used by SharedPlayerManager write paths to suppress re-population of persistedWidgetState,
     // instantFeedback*, pendingAction*, lastUpdateTime, etc. when no Lutheran widgets are configured.
-    // After an explicit clearAllLocalState the flag is forced false even
-    // if configs still list the widget (prevents immediate re-write of a fresh snapshot on next play
-    // until explicit re-detect on foreground or subsequent detection).
+    // After an explicit clearAllLocalState the flag is forced false *and* a process-local
+    // hold keeps WidgetCenter re-detect (`performRefresh` / `refreshHasActiveWidgets`) from
+    // reopening it until SceneDelegate lifts on become-active / enter-foreground. Widgets
+    // still on the Home Screen would otherwise make teardown `currentConfigurations()` a
+    // false→true edge and restamp the live-chrome key privacy clear just removed.
+    // Widget-extension Providers still call `setHasActiveLutheranWidgets(true)` directly
+    // (process-local gate; first-tap language honesty). Timeline reload after clear still
+    // wakes Home so Providers paint factory from absent keys.
     // Widget providers (LutheranRadioWidget.swift, Control, LiveActivity) already early-return
     // to safe .prePlay + preferred language defaults when loadPersistedWidgetState() == nil.
     // The canonical list of our widget kinds lives in `ourWidgetKinds`.
     //
     // Concurrency: nonisolated(unsafe) justified because:
-    // - Updates are serialized exclusively through @MainActor entry points (refreshHasActiveWidgets, setHasActiveLutheranWidgets, performRefresh).
+    // - Updates are serialized exclusively through @MainActor entry points (refreshHasActiveWidgets, setHasActiveLutheranWidgets, applyDetectedWidgetPresence, hold/lift, performRefresh).
     // - The containing class is already @unchecked Sendable (existing pattern in this file for WidgetKit/refresh state).
     // - Reads are best-effort cache for a privacy optimization gate (occasional stale true -> one extra write is harmless; false when should be true just delays a write until next foreground detect).
     // - Matches the risk profile of other timestamp/liveness mutable state already managed here.
@@ -226,6 +231,84 @@ final class WidgetRefreshManager: @unchecked Sendable {
     // Nonisolated getter so it can be read from nonisolated static write-guard paths in SharedPlayerManager
     // (and widget extension code) while updates remain serialized on @MainActor.
     nonisolated static var hasActiveLutheranWidgets: Bool { unsafe _hasActiveLutheranWidgets }
+
+    /// Process-local hold after ``SharedPlayerManager/clearAllLocalState()``.
+    ///
+    /// When true, ``applyDetectedWidgetPresence(_:)`` refuses a WidgetCenter `true` detect so
+    /// teardown ``performRefresh(for:)`` and opportunistic ``refreshHasActiveWidgets()`` cannot
+    /// reopen write suppression (and therefore cannot restamp ``homeWidgetLiveChrome``) before
+    /// the next foreground lift. ``setHasActiveLutheranWidgets(_:)`` itself is unchanged — the
+    /// extension process and DEBUG test seams still open the gate directly.
+    ///
+    /// - SeeAlso: ``holdPrivacyClearWriteSuppressionClosedUntilForeground()``,
+    ///   ``liftPrivacyClearWriteSuppressionHoldForForegroundDetect()``,
+    ///   ``applyDetectedWidgetPresence(_:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7).
+    // SAFETY: Written only from @MainActor arm/lift entry points; read from @MainActor detect
+    // paths and a nonisolated getter. Stale `true` only delays one re-detect until foreground;
+    // stale `false` would allow one extra WidgetCenter open (the pre-hold bug class).
+    nonisolated(unsafe) static private var _privacyClearWriteSuppressionHold: Bool = false
+
+    /// Whether privacy-clear write suppression is held closed against WidgetCenter re-detect.
+    ///
+    /// - SeeAlso: ``holdPrivacyClearWriteSuppressionClosedUntilForeground()``,
+    ///   ``applyDetectedWidgetPresence(_:)``.
+    nonisolated static var isPrivacyClearWriteSuppressionHeldClosed: Bool {
+        unsafe _privacyClearWriteSuppressionHold
+    }
+
+    /// Arms the privacy-clear hold so WidgetCenter re-detect cannot reopen the write gate.
+    ///
+    /// Call from ``SharedPlayerManager/clearAllLocalState()`` next to the force-false.
+    /// Does not itself change ``hasActiveLutheranWidgets`` or clear App Group keys.
+    ///
+    /// - Postcondition: ``isPrivacyClearWriteSuppressionHeldClosed`` is `true` in this process.
+    /// - SeeAlso: ``liftPrivacyClearWriteSuppressionHoldForForegroundDetect()``,
+    ///   ``applyDetectedWidgetPresence(_:)``,
+    ///   ``SharedPlayerManager/clearAllLocalState()``.
+    @MainActor
+    static func holdPrivacyClearWriteSuppressionClosedUntilForeground() {
+        unsafe _privacyClearWriteSuppressionHold = true
+    }
+
+    /// Lifts the privacy-clear hold so the next WidgetCenter detect may reopen the write gate.
+    ///
+    /// SceneDelegate calls this on `sceneDidBecomeActive` / `sceneWillEnterForeground` **before**
+    /// ``refreshHasActiveWidgets()``. Idempotent. Does not itself open the gate.
+    ///
+    /// - Postcondition: ``isPrivacyClearWriteSuppressionHeldClosed`` is `false` in this process.
+    /// - SeeAlso: ``holdPrivacyClearWriteSuppressionClosedUntilForeground()``,
+    ///   ``refreshHasActiveWidgets()``, SceneDelegate.
+    @MainActor
+    static func liftPrivacyClearWriteSuppressionHoldForForegroundDetect() {
+        unsafe _privacyClearWriteSuppressionHold = false
+    }
+
+    /// Applies a WidgetCenter presence result to ``hasActiveLutheranWidgets``.
+    ///
+    /// After privacy clear, a `true` detect in the **main** process is ignored while
+    /// ``isPrivacyClearWriteSuppressionHeldClosed`` — Home still reloads timelines from the
+    /// caller so Providers paint factory from **absent** keys, not a restamped language
+    /// mirror. A `false` detect still closes the gate (true→false residual clear). The
+    /// widget-extension process never honors the hold (process-local gate; first-tap honesty).
+    ///
+    /// - Parameter hasActive: `true` when WidgetCenter lists at least one of ``ourWidgetKinds``.
+    /// - SeeAlso: ``performRefresh(for:)``, ``refreshHasActiveWidgets()``,
+    ///   ``setHasActiveLutheranWidgets(_:)``,
+    ///   ``SharedPlayerManager/clearAllLocalState()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7).
+    @MainActor
+    static func applyDetectedWidgetPresence(_ hasActive: Bool) {
+        if hasActive,
+           isPrivacyClearWriteSuppressionHeldClosed,
+           !SharedPlayerManager.isWidgetProcess() {
+            #if DEBUG
+            print("[WidgetRefreshManager] Privacy-clear hold-closed — ignoring WidgetCenter true detect")
+            #endif
+            return
+        }
+        setHasActiveLutheranWidgets(hasActive)
+    }
 
     /// Sets the home/Control widget privacy write-suppression flag.
     ///
@@ -255,6 +338,8 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///   ``SharedPlayerManager/restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()``,
     ///   ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``,
     ///   ``SharedPlayerManager/clearAllLocalState()``,
+    ///   ``applyDetectedWidgetPresence(_:)``,
+    ///   ``holdPrivacyClearWriteSuppressionClosedUntilForeground()``,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.5, §7 privacy clear matrix).
     @MainActor
     static func setHasActiveLutheranWidgets(_ value: Bool) {
@@ -300,8 +385,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
     }
 
     /// Re-queries WidgetCenter.currentConfigurations() and updates the hasActiveLutheranWidgets flag.
-    /// Primary call sites: sceneDidBecomeActive / foreground (SceneDelegate), after clear (forced false
-    /// first, then re-detect allowed on next foreground), and opportunistic on write attempts when suppressed.
+    /// Primary call sites: sceneDidBecomeActive / foreground (SceneDelegate lifts the privacy-clear
+    /// hold first, then re-detects), and opportunistic on write attempts when suppressed.
+    /// After ``clearAllLocalState()`` this returns without opening the gate until that lift —
+    /// teardown ``performRefresh(for:)`` must not count as the allowed re-detect.
     ///
     /// Under test isolation (`SharedPlayerManager.isRunningInUITestMode`) this early-returns
     /// without performing the WidgetCenter IPC. WidgetCenter queries and reloadTimelines can
@@ -318,11 +405,21 @@ final class WidgetRefreshManager: @unchecked Sendable {
         if Self.isSessionTeardownInProgress {
             return
         }
+        // Privacy-clear hold: opportunistic re-detect (write-path
+        // ``refreshHasActiveWidgetsStatus``) must not reopen the gate. SceneDelegate
+        // lifts first, then this query may set true.
+        if Self.isPrivacyClearWriteSuppressionHeldClosed,
+           !SharedPlayerManager.isWidgetProcess() {
+            #if DEBUG
+            print("[WidgetRefreshManager] refreshHasActiveWidgets skipped — privacy-clear write suppression held closed until foreground")
+            #endif
+            return
+        }
 
         do {
             let configs = try await WidgetCenter.shared.currentConfigurations()
             let hasActive = configs.contains { Self.ourWidgetKinds.contains($0.kind) }
-            Self.setHasActiveLutheranWidgets(hasActive)
+            Self.applyDetectedWidgetPresence(hasActive)
             #if DEBUG
             print("[WidgetRefreshManager] Active Lutheran widgets re-detected for privacy gate: \(hasActive) (configs: \(configs.count))")
             #endif
@@ -1047,7 +1144,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
             let configs = try await WidgetCenter.shared.currentConfigurations()
 
             let hasActive = configs.contains { Self.ourWidgetKinds.contains($0.kind) }
-            Self.setHasActiveLutheranWidgets(hasActive)
+            // Presence detect honors privacy-clear hold-closed (does not reopen the
+            // write gate / restamp live chrome). Timeline reload below still runs
+            // when widgets exist so Home paints factory from absent keys.
+            Self.applyDetectedWidgetPresence(hasActive)
 
             if hasActive {
                 WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")

@@ -648,6 +648,88 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
         )
     }
 
+    /// Privacy-clear write suppression must stay closed through a teardown-style
+    /// WidgetCenter presence detect. Home paints factory from **absent** keys; leftover
+    /// Home Screen widgets must not restamp ``homeWidgetLiveChrome`` until SceneDelegate
+    /// lifts the hold on foreground.
+    ///
+    /// **Invariant protected:** ``clearAllLocalState()`` arms
+    /// ``WidgetRefreshManager/holdPrivacyClearWriteSuppressionClosedUntilForeground()``.
+    /// ``applyDetectedWidgetPresence(true)`` (the ``performRefresh`` / opportunistic
+    /// ``refreshHasActiveWidgets`` seam — no WidgetCenter IPC) must not reopen the gate
+    /// or schedule ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()``.
+    /// ``liftPrivacyClearWriteSuppressionHoldForForegroundDetect()`` then allows the
+    /// next detect to open the gate.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/clearAllLocalState()``,
+    ///   ``WidgetRefreshManager/applyDetectedWidgetPresence(_:)``,
+    ///   ``WidgetRefreshManager/liftPrivacyClearWriteSuppressionHoldForForegroundDetect()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7).
+    func testPrivacyClearHoldsWriteSuppressionClosedThroughTeardownWidgetPresenceDetect() async {
+        await MainActor.run {
+            WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .playing,
+            language: "sv",
+            hasError: false,
+            reason: "prePrivacyClearSeed"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.currentLanguage,
+            "sv",
+            "Precondition: live chrome must be present so a false restamp is observable"
+        )
+
+        await SharedPlayerManager.clearAllLocalState()
+
+        XCTAssertFalse(
+            WidgetRefreshManager.hasActiveLutheranWidgets,
+            "Privacy clear must force the write gate closed"
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager.isPrivacyClearWriteSuppressionHeldClosed,
+            "Privacy clear must hold WidgetCenter re-detect closed until foreground"
+        )
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Privacy clear must remove homeWidgetLiveChrome"
+        )
+
+        await MainActor.run {
+            WidgetRefreshManager.applyDetectedWidgetPresence(true)
+        }
+        // Allow a mistaken false→true restamp Task to land if the hold failed.
+        for _ in 0..<10 {
+            if SharedPlayerManager.loadHomeWidgetLiveChromeMirror() != nil { break }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+
+        XCTAssertFalse(
+            WidgetRefreshManager.hasActiveLutheranWidgets,
+            "Teardown WidgetCenter true-detect must not reopen the gate while hold-closed"
+        )
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Hold-closed detect must not restamp live chrome (Home paints factory from absent keys)"
+        )
+
+        await MainActor.run {
+            WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
+            WidgetRefreshManager.applyDetectedWidgetPresence(true)
+        }
+        XCTAssertFalse(
+            WidgetRefreshManager.isPrivacyClearWriteSuppressionHeldClosed,
+            "Foreground lift must release the hold"
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager.hasActiveLutheranWidgets,
+            "After foreground lift, WidgetCenter true-detect may reopen the write gate"
+        )
+    }
+
     /// Closing the home-widget privacy gate alone must **not** clear durable LA mirrors.
     ///
     /// **Invariant protected:** Mirrors are intentionally **not** gated by `hasActiveWidgets`.
