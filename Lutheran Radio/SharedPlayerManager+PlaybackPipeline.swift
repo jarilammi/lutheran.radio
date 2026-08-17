@@ -5,8 +5,7 @@
 //  Created by Jari Lammi on 23.7.2026.
 //
 //  SHARED: Cross-target membership-exception source (main app + extension +
-//  LutheranRadioWidgetTests). Mechanical split of SharedPlayerManager — same actor,
-//  no API renames, no behavior change.
+//  LutheranRadioWidgetTests). Mechanical split of SharedPlayerManager — same actor.
 //
 //  Purpose: Playback intent checks, public play/stop/switch API, visual-state mutations, and private playback helpers.
 //
@@ -1528,9 +1527,8 @@ extension SharedPlayerManager {
     internal func handleWidgetPlay() {
         ensureVisualStateLoadedForWidget()
         
-        // Instant visual feedback: prefer session / LA language mirror over bare
-        // preferredWidgetLanguage() so LA-only (no home widgets) play does not stamp "en"
-        // when the engine stream is non-English.
+        // Instant visual feedback: session / live chrome first so play of a settled
+        // stream does not restamp a lagging Live Activity language into the 15 s window.
         let optimisticLanguage = Self.languageForLiveActivityOrWidgetOptimistic()
         Self.writeInstantFeedback(language: optimisticLanguage)
         
@@ -1546,11 +1544,10 @@ extension SharedPlayerManager {
         // stream; delayed refresh reloads timelines after optimistic snapshot write.
         Task {
             try? await Task.sleep(for: .seconds(0.5))
-            let language = Self.languageForLiveActivityOrWidgetOptimistic()
             
             await WidgetRefreshManager.shared.refreshIfNeeded(
                 visualState: .playing,
-                currentLanguage: language,
+                currentLanguage: optimisticLanguage,
                 hasError: false,
                 immediate: true,
                 trigger: .extensionOptimistic
@@ -1563,8 +1560,8 @@ extension SharedPlayerManager {
     internal func handleWidgetStop() {
         ensureVisualStateLoadedForWidget()
         
-        // Instant visual feedback: prefer session / LA language mirror over bare
-        // preferredWidgetLanguage() so LA-only pause does not stamp "en".
+        // Instant visual feedback: session / live chrome first so pause of a settled
+        // stream does not restamp a lagging Live Activity language into the 15 s window.
         let optimisticLanguage = Self.languageForLiveActivityOrWidgetOptimistic()
         Self.writeInstantFeedback(language: optimisticLanguage)
         
@@ -1579,11 +1576,10 @@ extension SharedPlayerManager {
         // Imperative **extensionOptimistic** path (no PlayerEvent emission in extension).
         Task {
             try? await Task.sleep(for: .seconds(0.5))
-            let language = Self.languageForLiveActivityOrWidgetOptimistic()
             
             await WidgetRefreshManager.shared.refreshIfNeeded(
                 visualState: currentVisualState,   // already .userPaused
-                currentLanguage: language,
+                currentLanguage: optimisticLanguage,
                 hasError: false,
                 immediate: true,
                 trigger: .extensionOptimistic

@@ -1486,13 +1486,68 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
 
     // MARK: - Instant feedback
 
+    /// Instant feedback still wins inside the 15 s window when it **agrees** with the
+    /// settled session / live-chrome language (optimistic switch after persist).
     func testLoadSharedStatePrefersInstantFeedbackWithinFifteenSecondWindow() {
-        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "en")
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "fi")
         SharedPlayerManager.writeInstantFeedback(language: "fi")
 
         let state = manager.loadSharedState()
         XCTAssertEqual(state.currentLanguage, "fi")
         XCTAssertTrue(state.isPlaying)
+    }
+
+    /// Play/pause must not let a lagging instant-feedback language override a settled
+    /// session / live-chrome stream (`et` must not become `sv`).
+    ///
+    /// **Invariant protected:** ``loadSharedState()`` ignores ``instantFeedbackLanguage``
+    /// when it disagrees with session / ``homeWidgetLiveChrome``.
+    /// ``languageForLiveActivityOrWidgetOptimistic()`` prefers those sources over the
+    /// durable Live Activity language mirror.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/loadSharedState()``,
+    ///   ``SharedPlayerManager/languageForLiveActivityOrWidgetOptimistic()``,
+    ///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``.
+    func testLoadSharedStateDoesNotOverrideSettledEtWithDisagreeingInstantFeedbackSv() {
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "et")
+        SharedPlayerManager.persistLiveActivityLanguageMirror("sv")
+        SharedPlayerManager.writeInstantFeedback(language: "sv")
+
+        XCTAssertEqual(
+            SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(),
+            "et",
+            "Play/pause optimistic language must prefer session/live chrome over a lagging LA mirror"
+        )
+        let state = manager.loadSharedState()
+        XCTAssertEqual(state.currentLanguage, "et")
+        XCTAssertTrue(state.isPlaying)
+    }
+
+    /// Home-widget pause of a settled `et` stream must write `et` instant feedback and
+    /// keep ``loadSharedState()`` on `et` even if the LA language mirror is still `sv`.
+    ///
+    /// **Invariant protected:** ``executeOptimisticToggle(plan:language:)`` stamps
+    /// instant feedback with the plan language (session / live chrome), not a lagging
+    /// ContentState / durable-mirror code.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
+    ///   ``SharedPlayerManager/writeInstantFeedback(language:)``.
+    func testExecuteOptimisticTogglePauseWritesEtInstantFeedbackNotLaggingSv() async {
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "et")
+        SharedPlayerManager.persistLiveActivityLanguageMirror("sv")
+        SharedPlayerManager.writeInstantFeedback(language: "sv")
+
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: .playing)
+        XCTAssertEqual(plan.action, .pause)
+        await WidgetIntentExecution.executeOptimisticToggle(plan: plan, language: "et")
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        XCTAssertEqual(defaults.string(forKey: "instantFeedbackLanguage"), "et")
+        XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityLanguageMirror(), "et")
     }
 
     func testLoadSharedStateFallsBackAfterInstantFeedbackExpiry() {

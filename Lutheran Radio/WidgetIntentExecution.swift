@@ -324,10 +324,13 @@ enum WidgetIntentExecution {
             return
         }
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(optimisticTarget)
-        // Keep language mirror warm from ContentState (or existing durable code) so extension
-        // play/pause instant-feedback does not fall through to privacy-gated "en".
-        if let contentLanguage = currentLiveActivityContentLanguage(), !contentLanguage.isEmpty {
-            SharedPlayerManager.persistLiveActivityLanguageMirror(contentLanguage)
+        // Warm the language mirror from session / live chrome (same resolve as play/pause
+        // instant feedback). Do not re-stamp a lagging ContentState language when the
+        // settled stream has already advanced — that prior code would then win the
+        // durable-mirror fallback on the next play/pause.
+        let optimisticLanguage = SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic()
+        if !optimisticLanguage.isEmpty {
+            SharedPlayerManager.persistLiveActivityLanguageMirror(optimisticLanguage)
         }
         await pushOptimisticLiveActivityToggleContent(visualState: optimisticTarget)
         #if DEBUG
@@ -622,10 +625,14 @@ enum WidgetIntentExecution {
     ///
     /// - Parameters:
     ///   - plan: Home-widget or Control-widget toggle plan.
-    ///   - language: Language code from ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``.
+    ///   - language: Language code from ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``
+    ///     (session / ``homeWidgetLiveChrome`` resolution — the stream just paused or resumed).
+    ///     Play/pause instant feedback and the durable LA language mirror use this code; they
+    ///     must not take a lagging Live Activity ``ContentState`` language.
     /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``,
     ///   ``pushOptimisticLiveActivityToggleContent(visualState:)``,
     ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``,
+    ///   ``SharedPlayerManager/writeInstantFeedback(language:)``,
     ///   ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
     ///   ``SharedPlayerManager/bumpHomeWidgetInteractivePaintEpoch(reason:)``,
     ///   ``SharedPlayerManager/publishHomeWidgetInteractivePaintSignature(visualState:language:epoch:)``,
@@ -641,6 +648,11 @@ enum WidgetIntentExecution {
             action: plan.action.wireValue,
             language: language
         )
+        // Instant-feedback language must match the optimistic snapshot / live chrome just
+        // stamped above — play/pause of a settled stream, not a prior Live Activity language.
+        if !language.isEmpty {
+            SharedPlayerManager.writeInstantFeedback(language: language)
+        }
         // Align actor memory **before** extensionOptimistic wake discard samples
         // ``currentVisualState``. ``persistOptimisticWidgetSnapshot`` already wrote session +
         // live chrome; awaiting here closes the fire-and-forget race that could leave memory
@@ -661,10 +673,10 @@ enum WidgetIntentExecution {
         // home snapshot already shows userPaused — same optimistic ContentState path as LA toggle.
         if plan.targetVisualState.isDefinitiveMediaToggleVisual {
             SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(plan.targetVisualState)
-            if let contentLanguage = currentLiveActivityContentLanguage(), !contentLanguage.isEmpty {
-                SharedPlayerManager.persistLiveActivityLanguageMirror(contentLanguage)
-            } else if !language.isEmpty {
+            if !language.isEmpty {
                 SharedPlayerManager.persistLiveActivityLanguageMirror(language)
+            } else if let contentLanguage = currentLiveActivityContentLanguage(), !contentLanguage.isEmpty {
+                SharedPlayerManager.persistLiveActivityLanguageMirror(contentLanguage)
             }
             await pushOptimisticLiveActivityToggleContent(visualState: plan.targetVisualState)
         }

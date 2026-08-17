@@ -140,7 +140,7 @@ struct HomeWidgetLiveChrome: Codable, Equatable, Sendable {
 |--------------|-------------------------|
 | `inMemorySessionWidgetSnapshot` | Unchanged — main + warm extension RAM SSOT |
 | `homeWidgetStreamMetadata` | Unchanged — program title/speaker only |
-| `isInstantFeedback` / `instantFeedbackTime` / `instantFeedbackLanguage` | Keep for short-lived optimistic language on `loadSharedState` paths; **not** required for Provider visual once mirror exists. Optional later fold (operational residual), not this design’s scope |
+| `isInstantFeedback` / `instantFeedbackTime` / `instantFeedbackLanguage` | Keep for short-lived optimistic **switch** language on `loadSharedState` paths (15 s). Play/pause must write the settled session / ``homeWidgetLiveChrome`` language and must **not** override a disagreeing settled code. **Not** required for Provider visual once the live-chrome mirror exists. Optional later fold (operational residual), not this design’s scope |
 | `lastUpdateTime` | Unchanged — 60 s interactive vs passive; terminate `0` |
 | `liveActivityToggleVisualState` / `liveActivityCurrentLanguage` | Unchanged — LA-only; **not** home privacy class |
 | Retired visual keys | Stay purge-only; never reintroduce writers |
@@ -241,8 +241,8 @@ postHomeWidgetInteractivePaintAdvancedWake()  // local NC + Darwin
 
 | Intent | visualState | language | Notes |
 |--------|-------------|----------|-------|
-| Home/Control toggle → pause | `.userPaused` | current | Mirror + session optimistic + pending |
-| Home/Control toggle → play (connect) | `.prePlay` (or plan’s optimistic visual) | current | Do not invent playing if plan says Connecting |
+| Home/Control toggle → pause | `.userPaused` | current | Mirror + session optimistic + pending. Instant-feedback language is this **current** stream (``executeOptimisticToggle(plan:language:)`` / ``languageForLiveActivityOrWidgetOptimistic()``); ``loadSharedState()`` must not let a prior Live Activity language override it. |
+| Home/Control toggle → play (connect) | `.prePlay` (or plan’s optimistic visual) | current | Do not invent playing if plan says Connecting. Same instant-feedback language rule as pause — play/pause of a settled stream is not a language switch. |
 | Soft-resume path after pause (same stream) | Prefer plan’s non-lying optimistic; if plan is playing, stamp `.playing` only when product policy already does for optimistic UI | current | Align with `optimisticVisualAfterPlayPlan` — no new invention |
 | Stream switch while playing | `.prePlay` | destination | Same as `optimisticLiveActivityVisualForStreamSwitch` |
 | Stream switch while paused | `.userPaused` | destination | Preserve sticky pause |

@@ -5,10 +5,11 @@
 //  Created by Jari Lammi on 23.7.2026.
 //
 //  SHARED: Cross-target membership-exception source (main app + extension +
-//  LutheranRadioWidgetTests). Mechanical split of SharedPlayerManager — same actor,
-//  no API renames, no behavior change.
+//  LutheranRadioWidgetTests). Mechanical split of SharedPlayerManager — same actor.
 //
-//  Purpose: Widget pending-action scheduling, Darwin notify, liveness heartbeat, and App Group save/load facades.
+//  Purpose: Widget pending-action scheduling, Darwin notify, liveness heartbeat, and
+//  App Group save/load facades. ``loadSharedState()`` instant-feedback language does
+//  not override a disagreeing settled session / ``homeWidgetLiveChrome`` language.
 //
 //  - SeeAlso: SharedPlayerManager.swift, CODING_AGENT.md (cross-target membership exceptions).
 //
@@ -36,6 +37,12 @@ extension SharedPlayerManager {
     /// termination sentinel); instant-feedback language keys still write when the privacy gate
     /// allows so short optimistic language paint can proceed without resurrecting liveness.
     ///
+    /// Play/pause callers must pass the settled session / ``homeWidgetLiveChrome`` language
+    /// (``languageForLiveActivityOrWidgetOptimistic()``). Stream-switch callers pass the
+    /// **destination** after persisting that same code into session + live chrome. The 15 s
+    /// ``loadSharedState()`` window does not let a disagreeing instant-feedback language
+    /// override those settled sources.
+    ///
     /// - Parameter language: Language code shown during the optimistic window (must match the
     ///   widget timeline language when possible).
     /// - Precondition: Home-widget privacy gate open (`hasActiveWidgets`) **or** call is from a
@@ -48,7 +55,8 @@ extension SharedPlayerManager {
     ///   ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()`` when the gate closes).
     /// - SeeAlso: ``bumpWidgetLivenessTimestamp(policy:minInterval:)``,
     ///   ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
-    ///   ``loadSharedState()``, ``signalWidgetSwitchAction(visualState:language:)``,
+    ///   ``loadSharedState()``, ``languageForLiveActivityOrWidgetOptimistic()``,
+    ///   ``signalWidgetSwitchAction(visualState:language:)``,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     nonisolated static func writeInstantFeedback(language: String) {
         // Privacy gate (write suppression: no widgets configured).
@@ -611,6 +619,23 @@ extension SharedPlayerManager {
         #endif
     }
     
+    /// Combined playback chrome for widget / Live Activity / intent readers.
+    ///
+    /// `isPlaying` and `hasError` always come from the in-process ``PersistedWidgetState``
+    /// snapshot. Language uses the 15 s instant-feedback window only when that code agrees
+    /// with the settled session or ``homeWidgetLiveChrome`` language, or when neither source
+    /// has a language yet (first-tap / destination flash). Play/pause of a settled stream
+    /// must not let a lagging ``instantFeedbackLanguage`` override those sources.
+    ///
+    /// - Returns: `isPlaying` from snapshot visual, `currentLanguage` per the instant-feedback
+    ///   vs settled-session rule, `hasError` from the snapshot.
+    /// - SeeAlso: ``writeInstantFeedback(language:)``,
+    ///   ``languageForLiveActivityOrWidgetOptimistic()``,
+    ///   ``settledSessionOrHomeLiveChromeLanguages()``,
+    ///   ``preferredWidgetLanguage()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3),
+    ///   docs/Widget-Presentation-Dataflow.md,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
     nonisolated func loadSharedState() -> (isPlaying: Bool, currentLanguage: String, hasError: Bool) {
         // Check for instant feedback state first
         if let instantFeedbackTime = sharedDefaults?.object(forKey: "instantFeedbackTime") as? Double,
@@ -626,12 +651,24 @@ extension SharedPlayerManager {
                 let persisted = Self.loadPersistedWidgetState()
                 let isPlaying = persisted?.visualState.isActivelyPlaying ?? false
                 let hasError = persisted?.hasError ?? false
-                
-                #if DEBUG
-                print("[SharedPlayerManager] Using instant feedback state: \(instantFeedbackLanguage), age: \(age)s")
-                #endif
-                
-                return (isPlaying, instantFeedbackLanguage, hasError)
+                let settledLanguages = Self.settledSessionOrHomeLiveChromeLanguages()
+                // Instant feedback is the short optimistic **switch** flash (destination already
+                // stamped into session or live chrome) or the only language when no snapshot
+                // exists. A disagreeing code is a play/pause restamp of a lagging prior language.
+                let currentLanguage: String
+                if settledLanguages.isEmpty || settledLanguages.contains(instantFeedbackLanguage) {
+                    currentLanguage = instantFeedbackLanguage
+                    #if DEBUG
+                    print("[SharedPlayerManager] Using instant feedback state: \(instantFeedbackLanguage), age: \(age)s")
+                    #endif
+                } else {
+                    currentLanguage = settledLanguages[0]
+                    #if DEBUG
+                    print("[SharedPlayerManager] Ignoring instant feedback language \(instantFeedbackLanguage) (age: \(age)s) — settled session/live-chrome is \(currentLanguage)")
+                    #endif
+                }
+
+                return (isPlaying, currentLanguage, hasError)
             } else {
                 // Clear expired instant feedback
                 sharedDefaults?.removeObject(forKey: "isInstantFeedback")

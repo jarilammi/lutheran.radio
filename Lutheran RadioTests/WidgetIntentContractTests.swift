@@ -107,14 +107,80 @@ final class WidgetIntentContractTests: XCTestCase {
 
     // MARK: - Instant feedback expiry
 
+    /// Instant feedback still wins inside the 15 s window when it **agrees** with the
+    /// settled session / live-chrome language (optimistic switch after persist).
+    ///
+    /// **Invariant protected:** ``loadSharedState()`` uses ``instantFeedbackLanguage``
+    /// when that code is already the session language.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/writeInstantFeedback(language:)``,
+    ///   ``SharedPlayerManager/loadSharedState()``.
     func testLoadSharedStatePrefersInstantFeedbackWithinFifteenSecondWindow() {
-        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "en")
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "fi")
         SharedPlayerManager.writeInstantFeedback(language: "fi")
 
         let state = manager.loadSharedState()
         XCTAssertEqual(state.currentLanguage, "fi")
         XCTAssertTrue(state.isPlaying)
         XCTAssertFalse(state.hasError)
+    }
+
+    /// Play/pause must not let a lagging instant-feedback language override a settled
+    /// session / live-chrome stream.
+    ///
+    /// **Invariant protected:** After session + ``homeWidgetLiveChrome`` are `et`, a
+    /// fresh ``instantFeedbackLanguage`` of `sv` (prior Live Activity language) is
+    /// ignored by ``loadSharedState()``. Instant feedback remains for switch flash
+    /// when the destination already matches session or chrome.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/loadSharedState()``,
+    ///   ``SharedPlayerManager/settledSessionOrHomeLiveChromeLanguages()``,
+    ///   ``SharedPlayerManager/languageForLiveActivityOrWidgetOptimistic()``.
+    func testLoadSharedStateDoesNotOverrideSettledEtWithDisagreeingInstantFeedbackSv() {
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "et")
+        SharedPlayerManager.persistLiveActivityLanguageMirror("sv")
+        SharedPlayerManager.writeInstantFeedback(language: "sv")
+
+        XCTAssertEqual(
+            SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(),
+            "et",
+            "Play/pause optimistic language must prefer session/live chrome over a lagging LA mirror"
+        )
+        let state = manager.loadSharedState()
+        XCTAssertEqual(state.currentLanguage, "et")
+        XCTAssertTrue(state.isPlaying)
+        XCTAssertFalse(state.hasError)
+    }
+
+    /// Instant feedback remains the language signal when no session or live chrome exists.
+    func testLoadSharedStateUsesInstantFeedbackWhenNoSettledSessionOrLiveChrome() {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.writeInstantFeedback(language: "fi")
+
+        let state = manager.loadSharedState()
+        XCTAssertEqual(state.currentLanguage, "fi")
+    }
+
+    /// Widget-process pause of a settled `et` session must write `et` instant feedback
+    /// even when the durable LA language mirror still holds `sv`.
+    ///
+    /// **Invariant protected:** ``handleWidgetStop()`` uses
+    /// ``languageForLiveActivityOrWidgetOptimistic()`` (session / live chrome first).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/handleWidgetStop()``,
+    ///   ``SharedPlayerManager/writeInstantFeedback(language:)``.
+    func testHandleWidgetStopWritesInstantFeedbackMatchingSettledEtNotLaggingSv() async {
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "et")
+        SharedPlayerManager.persistLiveActivityLanguageMirror("sv")
+
+        await manager.handleWidgetStop()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        XCTAssertEqual(defaults.string(forKey: "instantFeedbackLanguage"), "et")
+        XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
     }
 
     func testLoadSharedStateFallsBackAfterInstantFeedbackExpiry() {

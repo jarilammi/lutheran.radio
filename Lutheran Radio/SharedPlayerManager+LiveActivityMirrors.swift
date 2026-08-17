@@ -5,12 +5,13 @@
 //  Created by Jari Lammi on 23.7.2026.
 //
 //  SHARED: Cross-target membership-exception source (main app + extension +
-//  LutheranRadioWidgetTests). Mechanical split of SharedPlayerManager — same actor,
-//  no API renames, no behavior change.
+//  LutheranRadioWidgetTests). Mechanical split of SharedPlayerManager — same actor.
 //
 //  Purpose: Live Activity durable visual/language App Group mirrors, boot identity,
-//  extension-hosted toggle planning helpers, and widget-refresh language derivation
-//  (stream attach / LA content-push SSOT under privacy write suppression).
+//  extension-hosted toggle planning helpers, and widget-refresh / play-pause
+//  optimistic language derivation. Play/pause instant feedback follows session +
+//  ``homeWidgetLiveChrome``; a lagging Live Activity language mirror must not win.
+
 //
 //  - SeeAlso: SharedPlayerManager.swift, CODING_AGENT.md (cross-target membership exceptions).
 //
@@ -158,23 +159,55 @@ extension SharedPlayerManager {
     ///
     /// Resolve order (first non-empty wins):
     /// 1. In-process session snapshot (`PersistedWidgetState.currentLanguage`)
-    /// 2. Durable Live Activity language mirror (``loadLiveActivityLanguageMirror()``)
-    /// 3. ``preferredWidgetLanguage()`` (may hard-default `"en"` under no-widgets)
+    /// 2. Privacy-gated ``homeWidgetLiveChrome`` language (settled / optimistic home paint)
+    /// 3. Durable Live Activity language mirror (``loadLiveActivityLanguageMirror()``)
+    /// 4. ``preferredWidgetLanguage()`` (may hard-default `"en"` under no-widgets)
+    ///
+    /// Session and live chrome are the stream the user just paused or resumed. The durable
+    /// language mirror can still hold a prior Live Activity ``ContentState`` language after a
+    /// destination switch (fire ≠ accept). Play/pause must not re-introduce that prior code
+    /// into ``instantFeedbackLanguage``.
     ///
     /// Live Activity **views** must not call this — they use `context.state.currentLanguage` only.
-    /// This helper exists so LA-hosted play/pause does not stamp English into instant-feedback
-    /// keys when ContentState / the language mirror already hold the active stream code.
     ///
-    /// - SeeAlso: ``writeInstantFeedback(language:)``, ``persistLiveActivityLanguageMirror(_:)``,
-    ///   ``WidgetIntentExecution/performLiveActivityToggle()``.
+    /// - SeeAlso: ``writeInstantFeedback(language:)``, ``loadSharedState()``,
+    ///   ``persistLiveActivityLanguageMirror(_:)``,
+    ///   ``settledSessionOrHomeLiveChromeLanguages()``,
+    ///   ``WidgetIntentExecution/performLiveActivityToggle()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
     nonisolated static func languageForLiveActivityOrWidgetOptimistic() -> String {
-        if let snapshotLanguage = loadPersistedWidgetState()?.currentLanguage, !snapshotLanguage.isEmpty {
-            return snapshotLanguage
+        if let settled = settledSessionOrHomeLiveChromeLanguages().first {
+            return settled
         }
         if let mirrorLanguage = loadLiveActivityLanguageMirror(), !mirrorLanguage.isEmpty {
             return mirrorLanguage
         }
         return preferredWidgetLanguage()
+    }
+
+    /// Non-empty language codes from the in-process session snapshot and privacy-gated
+    /// ``homeWidgetLiveChrome`` (session first; chrome appended when it differs).
+    ///
+    /// Play/pause instant-feedback **write** and ``loadSharedState()`` **read** use this
+    /// pair as the settled stream. Instant feedback may still flash a destination language
+    /// that already matches one of these codes (optimistic switch). It must not override
+    /// when it agrees with neither.
+    ///
+    /// - Returns: Zero, one, or two distinct non-empty language codes.
+    /// - SeeAlso: ``languageForLiveActivityOrWidgetOptimistic()``, ``loadSharedState()``,
+    ///   ``loadHomeWidgetLiveChromeMirror()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
+    nonisolated static func settledSessionOrHomeLiveChromeLanguages() -> [String] {
+        var codes: [String] = []
+        if let sessionLanguage = loadPersistedWidgetState()?.currentLanguage, !sessionLanguage.isEmpty {
+            codes.append(sessionLanguage)
+        }
+        if let chromeLanguage = loadHomeWidgetLiveChromeMirror()?.currentLanguage,
+           !chromeLanguage.isEmpty,
+           !codes.contains(chromeLanguage) {
+            codes.append(chromeLanguage)
+        }
+        return codes
     }
 
     /// Language for ``WidgetRefreshManager`` derivation, coalesce bookkeeping, and DEBUG labels.
@@ -433,13 +466,16 @@ extension SharedPlayerManager {
         visualState: PlayerVisualState,
         language: String
     ) -> String? {
-        Self.writeInstantFeedback(language: language)
+        // Persist destination session + live chrome **before** instant feedback so
+        // ``loadSharedState()`` sees a settled code that agrees with the destination
+        // (instant feedback remains the short switch flash, not a prior-language override).
         Self.persistWidgetSnapshot(
             visualState: visualState,
             language: language,
             clearStreamMetadata: true,
             liveChromeStampReason: "optimisticSwitch"
         )
+        Self.writeInstantFeedback(language: language)
         Self.bumpWidgetLivenessTimestamp(policy: .immediate)
         let actionId = scheduleWidgetAction(action: "switch", parameter: language)
         notifyMainApp(action: "switch", parameter: language)

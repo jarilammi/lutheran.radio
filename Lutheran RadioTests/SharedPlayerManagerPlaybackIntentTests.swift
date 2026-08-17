@@ -382,4 +382,33 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
             "Main-app instant feedback must stay suppressed after privacy clear"
         )
     }
+
+    /// Play/pause of a settled Estonian session must not prefer leftover Swedish
+    /// instant-feedback language (or a lagging Live Activity language mirror).
+    ///
+    /// **Invariant protected:** ``loadSharedState()`` and
+    /// ``languageForLiveActivityOrWidgetOptimistic()`` keep `et` when session /
+    /// ``homeWidgetLiveChrome`` are `et` even if ``instantFeedbackLanguage`` and the
+    /// durable LA mirror still hold `sv`.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/loadSharedState()``,
+    ///   ``SharedPlayerManager/writeInstantFeedback(language:)``,
+    ///   ``SharedPlayerManager/languageForLiveActivityOrWidgetOptimistic()``.
+    func testLoadSharedStateKeepsSettledEtWhenInstantFeedbackAndLiveActivityMirrorAreSv() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        defer {
+            SharedPlayerManager.removeAllLocalPlaybackKeys()
+        }
+
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "et")
+        SharedPlayerManager.persistLiveActivityLanguageMirror("sv")
+        SharedPlayerManager.writeInstantFeedback(language: "sv")
+
+        XCTAssertEqual(SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(), "et")
+        let state = manager.loadSharedState()
+        XCTAssertEqual(state.currentLanguage, "et")
+        XCTAssertTrue(state.isPlaying)
+    }
 }
