@@ -45,6 +45,7 @@ import WidgetSurface
 ///   ``SharedPlayerManager/teardownNowPlayingSession()``,
 ///   ``SharedPlayerManager/clearSystemNowPlayingMetadataSynchronously()``,
 ///   ``SharedPlayerManager/forceStaleLivenessTimestampForTermination()``,
+///   ``SharedPlayerManager/performSessionTeardownSynchronouslyForTermination()``,
 ///   ``SharedPlayerManager/clearAllLocalState()``,
 ///   ``SharedPlayerManager/preferredWidgetLanguage()``,
 ///   ``SharedPlayerManager/mainAppLiveActivityLanguageCode()``,
@@ -609,6 +610,64 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
             SharedPlayerManager.hasExplicitTerminationSentinel(),
             "Precondition of termination path: liveness sentinel must be written"
         )
+    }
+
+    /// Delivered quit may invoke both `applicationWillTerminate` and `sceneDidDisconnect`.
+    /// The sync helper must run the liveness sentinel + waited Live Activity end once.
+    ///
+    /// **Invariant protected:** ``performSessionTeardownSynchronouslyForTermination()`` is
+    /// process-local single-flight. Two back-to-back calls write the sentinel on the first
+    /// call and leave it in place; the body (including ``handleAppWillTerminate()``) does
+    /// not run again. Both production call sites stay.
+    ///
+    /// Why this pattern is required: a second bounded ActivityKit wait on a dying process
+    /// is the cost of an unlatched helper. Tests reset the latch in isolation so this
+    /// process-lifetime flag does not leak across XCTest methods.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/performSessionTeardownSynchronouslyForTermination()``,
+    ///   ``SharedPlayerManager/_test_resetProcessExitSessionTeardownOnceFlag()``,
+    ///   ``SharedPlayerManager/_test_processExitSessionTeardownRunCount()``,
+    ///   ``RadioLiveActivityManager/handleAppWillTerminate()``,
+    ///   AppDelegate.applicationWillTerminate, SceneDelegate.sceneDidDisconnect,
+    ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant),
+    ///   CODING_AGENT.md (fast test patterns).
+    func testPerformSessionTeardownSynchronouslyForTerminationIsSingleFlight() async {
+        await MainActor.run {
+            SharedPlayerManager._test_resetProcessExitSessionTeardownOnceFlag()
+            XCTAssertEqual(
+                SharedPlayerManager._test_processExitSessionTeardownRunCount(),
+                0,
+                "Precondition: isolation reset must leave the process-exit latch unclaimed"
+            )
+
+            SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
+            XCTAssertFalse(
+                SharedPlayerManager.hasExplicitTerminationSentinel(),
+                "Precondition: liveness heartbeat must be non-sentinel before the first terminate call"
+            )
+
+            SharedPlayerManager.performSessionTeardownSynchronouslyForTermination()
+            XCTAssertEqual(
+                SharedPlayerManager._test_processExitSessionTeardownRunCount(),
+                1,
+                "First terminate/disconnect call must run the sync teardown body"
+            )
+            XCTAssertTrue(
+                SharedPlayerManager.hasExplicitTerminationSentinel(),
+                "First call must write the termination liveness sentinel"
+            )
+
+            SharedPlayerManager.performSessionTeardownSynchronouslyForTermination()
+            XCTAssertEqual(
+                SharedPlayerManager._test_processExitSessionTeardownRunCount(),
+                1,
+                "Second call must be a no-op (no second waited Live Activity end)"
+            )
+            XCTAssertTrue(
+                SharedPlayerManager.hasExplicitTerminationSentinel(),
+                "Liveness sentinel must remain after the skipped second call"
+            )
+        }
     }
 
     /// Full privacy clear must remove both durable LA mirrors (and not leave plan signals

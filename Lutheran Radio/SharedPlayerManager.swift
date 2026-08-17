@@ -375,7 +375,7 @@ actor SharedPlayerManager {
     /// - Important: Never store a strong reference to an actor instance obtained another
     ///   way; always use `SharedPlayerManager.shared`.
     static let shared = SharedPlayerManager()
-    
+
     // MARK: - Cold Launch & Resurrection Guards
 
     /// Timing constants used by optimistic widget feedback.
@@ -590,12 +590,12 @@ actor SharedPlayerManager {
         await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
         #endif
     }
-    
+
     // MARK: - Visual State (Single Source of Truth)
     /// Single source of truth for playback intent (UI + widget + Live Activity)
     /// This prevents the "play on pause" resurrection bug when set synchronously to .userPaused
     var currentVisualState: PlayerVisualState = .prePlay
-    
+
     /// When true, `resetToPrePlayForNewStream()` has enabled a stream-switch hold: UI stays `.prePlay`
     /// (Connecting) through validation and secured attach until the engine publishes authoritative
     /// `.playing` via ``setPlaying()`` (soft-resume or readyToPlay first-play kick). Cleared only
@@ -649,7 +649,7 @@ actor SharedPlayerManager {
     internal func clearPlaybackStartPipeline() {
         isPlaybackStartPipelineActive = false
     }
-    
+
     /// True when a stream-switch tap already reset to `.prePlay` and enabled the hold
     /// (`didSelectItemAt` optimistic yellow). `completeStreamSwitch` skips a second reset.
     var isStreamSwitchPrePlayHoldActive: Bool {
@@ -721,7 +721,7 @@ actor SharedPlayerManager {
         }
         return Self.mainAppLiveActivityLanguageCode()
     }
-    
+
     /// Guards one-time application of the factory-default visual load path per process.
     /// Widget/extension processes start with a fresh actor instance (default `.prePlay`).
     internal var hasLoadedVisualStateFromPersistence = false
@@ -1049,18 +1049,18 @@ actor SharedPlayerManager {
     }
 
     // MARK: - Computed Properties (nonisolated safe access)
-    
+
     // NEW: Make sharedDefaults easily accessible (nonisolated since it's read-only & safe)
     /// App Group suite accessor shared by membership-exception extension files.
     nonisolated internal var sharedDefaults: UserDefaults? {
         UserDefaults(suiteName: "group.radio.lutheran.shared")
     }
-    
+
     // Widget-safe accessors for extension processes
     nonisolated var availableStreams: [DirectStreamingPlayer.Stream] {
         return DirectStreamingPlayer.availableStreams
     }
-    
+
     // MARK: - Initialization
 
     /// Synchronous factory reset invoked from ``init()`` before any caller can observe stale disk state.
@@ -1148,6 +1148,23 @@ actor SharedPlayerManager {
         case graceful
         /// Immediate dismissal (termination, cold-launch hygiene).
         case immediate
+    }
+
+    /// Whether lock / inactive resign-active should run session/widget teardown.
+    ///
+    /// Policy lives on ``SharedPlayerManager`` so SceneDelegate stays a thin scheduler.
+    ///
+    /// - SeeAlso: ``resignActiveSessionTeardownDecision()``,
+    ///   SceneDelegate.sceneWillResignActive,
+    ///   ``clearAllLocalState()``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    enum ResignActiveSessionTeardownDecision: Equatable, Sendable {
+        /// Run ``performSessionAndWidgetTeardown`` (non-playing, not already privacy-cleared).
+        case perform
+        /// Skip: audio is flowing; lock-screen Live Activity must survive.
+        case skipActivePlayback
+        /// Skip: visual is already `.cleared`; privacy clear already ended the Live Activity.
+        case skipAlreadyCleared
     }
 
     /// Comprehensive session + widget teardown for privacy, termination, cold launch, and post-stop hygiene.
@@ -1313,25 +1330,105 @@ actor SharedPlayerManager {
         #endif
     }
 
+    /// Process-local latch for ``performSessionTeardownSynchronouslyForTermination()``.
+    ///
+    /// Delivered quit may invoke both `applicationWillTerminate` and `sceneDidDisconnect`.
+    /// The first caller writes the liveness sentinel and waits on ActivityKit end; later
+    /// callers are no-ops so the dying process does not pay a second bounded wait.
+    ///
+    /// SAFETY: Compare-and-swap via ``OSAllocatedUnfairLock``. Written from the
+    /// terminate/disconnect path (main thread in production) or DEBUG test reset.
+    /// Not a privacy, security, or PlayerEvent bypass.
+    private struct ProcessExitSessionTeardownLatch: Sendable {
+        var completed = false
+        #if DEBUG
+        var runCount = 0
+        #endif
+    }
+
+    private static let processExitSessionTeardownLatch = OSAllocatedUnfairLock(
+        initialState: ProcessExitSessionTeardownLatch()
+    )
+
+    /// Claims the process-exit teardown latch. Returns `true` only for the first caller.
+    ///
+    /// - Returns: `true` when this caller must run the sync teardown body; `false` when
+    ///   this process already completed it.
+    /// - SeeAlso: ``performSessionTeardownSynchronouslyForTermination()``
+    private nonisolated static func claimProcessExitSessionTeardownOnce() -> Bool {
+        processExitSessionTeardownLatch.withLock { state in
+            if state.completed { return false }
+            state.completed = true
+            #if DEBUG
+            state.runCount += 1
+            #endif
+            return true
+        }
+    }
+
+    #if DEBUG
+    /// Resets the process-exit teardown latch so XCTest can exercise the first-call body.
+    ///
+    /// Production never resets: the latch is process-lifetime. Isolation helpers call
+    /// this so suites that share the process singleton do not inherit a prior claim.
+    ///
+    /// - SeeAlso: ``performSessionTeardownSynchronouslyForTermination()``,
+    ///   ``prepareSharedPlayerManagerEventTestIsolation(manager:)``,
+    ///   CODING_AGENT.md (fast test patterns).
+    nonisolated static func _test_resetProcessExitSessionTeardownOnceFlag() {
+        processExitSessionTeardownLatch.withLock { state in
+            state.completed = false
+            state.runCount = 0
+        }
+    }
+
+    /// Number of times the sync termination body has run since the last DEBUG reset.
+    ///
+    /// - Returns: Successful claims (first call after reset). Second back-to-back call
+    ///   must leave this at `1`.
+    /// - SeeAlso: ``performSessionTeardownSynchronouslyForTermination()``
+    nonisolated static func _test_processExitSessionTeardownRunCount() -> Int {
+        processExitSessionTeardownLatch.withLock { state in
+            state.runCount
+        }
+    }
+    #endif
+
     /// Best-effort synchronous session teardown for process exit (`applicationWillTerminate`,
     /// `sceneDidDisconnect`) where async actor work may not complete before exit.
     ///
     /// Order: liveness sentinel → Live Activity waited end (``handleAppWillTerminate``) →
     /// cancel pending widget refresh → best-effort timeline reload → Now Playing clear.
     ///
+    /// **Single-flight:** delivered quit may invoke both `applicationWillTerminate` and
+    /// `sceneDidDisconnect`. This helper is process-local once: the first call runs the
+    /// body; a second call is a no-op. Both call sites stay — some kills deliver
+    /// disconnect without `applicationWillTerminate`. Force-quit still bypasses both.
+    ///
     /// - Important: Live Activity end uses a **bounded wait** so Dynamic Island / Lock Screen
     ///   do not retain a stale interactive ContentState after the process dies. Force-quit
     ///   still bypasses this path; residuals are reaped on next cold launch.
     /// - Important: Metadata clear is the critical privacy step; widget reload is best-effort
     ///   on the main thread before the process dies. Imperative **teardown** — no event stream at exit.
+    /// - Important: Do not wait on ActivityKit from a new unstructured `Task` here. The
+    ///   waited end exists because fire-and-forget loses the race with process exit.
     ///
     /// - SeeAlso: ``performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
     ///   ``RadioLiveActivityManager/handleAppWillTerminate()``,
     ///   ``clearSystemNowPlayingMetadataSynchronously()``, ``WidgetRefreshTrigger``,
+    ///   ``resignActiveSessionTeardownDecision()``,
     ///   AppDelegate.applicationWillTerminate,
     ///   SceneDelegate.sceneDidDisconnect,
-    ///   docs/Widget-Presentation-Dataflow.md, docs/Event-Driven-Refactor-Roadmap.md.
+    ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant),
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func performSessionTeardownSynchronouslyForTermination() {
+        guard claimProcessExitSessionTeardownOnce() else {
+            #if DEBUG
+            print("[SessionTeardown] SYNC termination teardown — already completed this process; skipping")
+            #endif
+            return
+        }
+
         forceStaleLivenessTimestampForTermination()
         // Termination callbacks run on the main thread; assumeIsolated satisfies strict Swift 6.
         MainActor.assumeIsolated {
@@ -1352,14 +1449,42 @@ actor SharedPlayerManager {
         print("[SessionTeardown] SYNC termination teardown — liveness staled, LA ended (waited), widgets reloaded, Now Playing cleared")
         #endif
     }
+
+    /// Resign-active (lock / inactive) decision for session/widget teardown.
+    ///
+    /// SceneDelegate consults this so lock-cycle policy stays on the actor:
+    /// - ``skipActivePlayback`` — audio is flowing; background audio + lock-screen Live
+    ///   Activity must survive lock.
+    /// - ``skipAlreadyCleared`` — visual is already `.cleared`; ``clearAllLocalState()``
+    ///   already ended the Live Activity (graceful) and reloaded widgets. A second
+    ///   immediate end races that dismissal.
+    /// - ``perform`` — non-playing and not privacy-cleared (``.prePlay``, ``.userPaused``,
+    ///   thermal / security). Same as the historical non-playing teardown.
+    ///
+    /// Connecting `.prePlay` during an in-flight cold attach still **performs** teardown
+    /// from resign-active (do not skip that window here).
+    ///
+    /// - Returns: Decision for ``SceneDelegate/sceneWillResignActive``.
+    /// - SeeAlso: ``performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
+    ///   ``clearAllLocalState()``, SceneDelegate.sceneWillResignActive,
+    ///   docs/Event-Driven-Refactor-Roadmap.md, docs/Widget-Presentation-Dataflow.md.
+    func resignActiveSessionTeardownDecision() -> ResignActiveSessionTeardownDecision {
+        if currentVisualState.isActivelyPlaying {
+            return .skipActivePlayback
+        }
+        if currentVisualState == .cleared {
+            return .skipAlreadyCleared
+        }
+        return .perform
+    }
     #endif
-    
+
     // MARK: - Nonisolated Public Surface (Widget / Extension Safe)
     //
     // These entry points are safe for widget intents, timeline providers, Control Center,
     // Live Activities, and other non-actor contexts. They either perform no actor work
     // or hop internally via Task.
-    
+
     /// Returns the authoritative visual state for widget/extension decision paths and fallbacks.
     ///
     /// - Returns: `PlayerVisualState` from the in-memory session snapshot when present;
@@ -1375,7 +1500,7 @@ actor SharedPlayerManager {
         }
         return .prePlay
     }
-    
+
     /// Returns whether the current execution context is a widget extension process.
     ///
     /// Authoritative ``PlayerEvent`` emission is suppressed when this returns `true`;
@@ -1422,14 +1547,14 @@ actor SharedPlayerManager {
         return true
         #endif
     }
-    
+
     /// Nonisolated convenience for widget/extension code paths that run outside actor isolation
     /// (e.g. handleWidgetPlay / handleWidgetStop). Fires a quick hop to ensure the persisted state is loaded
     /// before the method does its optimistic mutation.
     nonisolated public func ensureVisualStateLoadedForWidget() {
         Task { await Self.shared.ensureVisualStateLoaded() }
     }
-    
+
     /// Writes an optimistic widget snapshot for instant extension feedback (App Intents, Control Center, Live Activity).
     ///
     /// Permanent cross-process infrastructure: persists the in-memory session `PersistedWidgetState`
@@ -1507,7 +1632,7 @@ actor SharedPlayerManager {
     public func syncVisualStateFromPersistence() async {
         ensureVisualStateLoaded()
     }
-    
+
     /// Re-applies the factory-default visual load path so actor ``currentVisualState`` matches
     /// the in-process session snapshot.
     ///
@@ -1527,7 +1652,7 @@ actor SharedPlayerManager {
         hasLoadedVisualStateFromPersistence = false
         ensureVisualStateLoaded()
     }
-    
+
 }
 
 

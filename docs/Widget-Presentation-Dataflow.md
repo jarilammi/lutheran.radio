@@ -82,6 +82,8 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 - **Liveness heuristic (SSOT)**: `SharedPlayerManager.isMainAppProcessRecentlyActive()` (backed by the `lastUpdateTime` key + explicit `0` sentinel). Widget family views delegate the passive-branch decision to ``WidgetLivenessPresentation/shouldShowPassiveTapToOpen(isMainAppRecentlyActive:)`` (`WidgetSurface/WidgetLivenessPresentation.swift`) to render either full interactive controls + status + metadata or the "tap_to_open" prompt. **Liveness owns interactive vs passive** — privacy-gated live chrome (below) is never proof the main app is still interactive. After a device reboot, boot-identity mismatch also makes the process not “recently active,” so residual pre-reboot heartbeats cannot reopen interactive chrome.
 - **Process isolation**: the termination sentinel is **presentation / extension only**. Main-app cold launch, `play()`, resurrection, and restore use in-process sticky intent after ``resetToFactoryDefaultsOnLaunch()`` — never `lastUpdateTime == 0` as a play gate. Prior-process play status does not survive into the next process (OI-1 memory-only visual policy).
 - **On observed termination** (AppDelegate `applicationWillTerminate`, SceneDelegate `sceneDidDisconnect`, `UIApplication.willTerminateNotification`):
+  - Delivered quit may invoke both `applicationWillTerminate` and `sceneDidDisconnect`. ``performSessionTeardownSynchronouslyForTermination()`` is **single-flight**: the first call writes the liveness sentinel and waits on Live Activity end; the second is a no-op. Both call sites remain (multi-window / some kills deliver disconnect without `applicationWillTerminate`). Force-quit and reboot often deliver neither.
+  - **On resign-active (lock / inactive):** ``resignActiveSessionTeardownDecision()`` skips session teardown while actively playing and when visual is already `.cleared` (``clearAllLocalState()`` already ended the Live Activity). Connecting `.prePlay` and sticky `.userPaused` still run ``performSessionAndWidgetTeardown``.
   - `SharedPlayerManager.forceStaleLivenessTimestampForTermination()` writes the sentinel `0`, clears instant-feedback transients, clears durable LA mirrors, and **explicitly clears** privacy-gated ``homeWidgetLiveChrome`` (session-scoped only). Prefer explicit clear over “stale mirror + passive overlay” so passive Providers cannot briefly flash last play/pause glyphs from a process that has already exited. Any subsequent Provider run immediately sees the passive path and factory visual defaults when session + live chrome are absent.
   - `RadioLiveActivityManager.handleAppWillTerminate()` **sweeps all** system-held Live Activities (not only the local `currentActivity` ref), pushes a final coherent `.userPaused` ContentState that **preserves last-known language chrome** (and program metadata when available), ends with `.immediate` dismissal, and **waits** (bounded run-loop pump + detached ActivityKit work) so process exit cannot race an unfinished unstructured `Task`.
   - `WidgetRefreshManager.cancelPendingRefresh()` drops in-flight debounced work.
@@ -127,10 +129,10 @@ Opening the **main** process after a cold start is expected to start radio (spec
 
 Examples (all user-initiated main open):
 
-- Home-screen / app-icon launch  
-- Passive home-widget `widgetURL` (`lutheranradio://open`) — user tapped open chrome  
-- Siri / URL-scheme open that creates a new main process without an in-process sticky pause  
-- Reboot, **then** the user opens the app — still user-initiated; factory reset realigns boot identity so this open is not stuck in residual distrust  
+- Home-screen / app-icon launch
+- Passive home-widget `widgetURL` (`lutheranradio://open`) — user tapped open chrome
+- Siri / URL-scheme open that creates a new main process without an in-process sticky pause
+- Reboot, **then** the user opens the app — still user-initiated; factory reset realigns boot identity so this open is not stuck in residual distrust
 
 #### Residual post-reboot surprise (unintended “cold play” fiction)
 

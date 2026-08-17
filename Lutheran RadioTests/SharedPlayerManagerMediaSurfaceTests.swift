@@ -22,14 +22,15 @@ import WidgetSurface
 
 /// Unit tests for media-surface coordination on `SharedPlayerManager`.
 ///
-/// Covers session-teardown refresh gates, post-stop widget hygiene, connecting-chrome
-/// honesty, soft-silence barriers, Now Playing info/controls, and media-transport
-/// mailbox interleaving. Emission-order / replay contracts live in
-/// ``SharedPlayerManagerEventTests``.
+/// Covers session-teardown refresh gates, resign-active teardown decisions,
+/// post-stop widget hygiene, connecting-chrome honesty, soft-silence barriers,
+/// Now Playing info/controls, and media-transport mailbox interleaving.
+/// Emission-order / replay contracts live in ``SharedPlayerManagerEventTests``.
 ///
 /// - SeeAlso: ``SharedPlayerManager/refreshAllMediaSurfaces(refreshWidgets:)``,
 ///   ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
 ///   ``SharedPlayerManager/performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
+///   ``SharedPlayerManager/resignActiveSessionTeardownDecision()``,
 ///   ``WidgetRefreshManager/isSessionTeardownInProgress``,
 ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
 ///   docs/Event-Driven-Refactor-Roadmap.md.
@@ -1652,6 +1653,58 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
                 "Terminal refresh must not be suppressed after orchestration completes; log: \(gateLog)"
             )
         }
+    }
+
+    /// Resign-active must not re-teardown a session already at `.cleared`, and must still
+    /// skip only while audio is flowing — connecting / sticky pause still tear down.
+    ///
+    /// **Invariant protected:** ``resignActiveSessionTeardownDecision()`` is the SceneDelegate
+    /// policy SSOT. After ``clearAllLocalState()`` (visual `.cleared`) lock/inactive must
+    /// not call ``performSessionAndWidgetTeardown`` again (second immediate Live Activity
+    /// end races the graceful privacy-clear dismissal). `.playing` still skips. Isolation
+    /// `.prePlay` and ``setUserPaused()`` still return ``.perform``.
+    ///
+    /// Why this pattern is required: SceneDelegate is a thin scheduler; asserting the
+    /// actor decision avoids a real ActivityKit wait or UIScene host.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/resignActiveSessionTeardownDecision()``,
+    ///   ``SharedPlayerManager/clearAllLocalState()``,
+    ///   SceneDelegate.sceneWillResignActive,
+    ///   docs/Event-Driven-Refactor-Roadmap.md,
+    ///   CODING_AGENT.md (fast test patterns).
+    func testResignActiveSessionTeardownSkipsClearedAndPlaying() async {
+        let connecting = await manager.resignActiveSessionTeardownDecision()
+        XCTAssertEqual(
+            connecting,
+            .perform,
+            "Connecting .prePlay after isolation must still run resign-active teardown"
+        )
+
+        await manager.setUserPaused()
+        let paused = await manager.resignActiveSessionTeardownDecision()
+        XCTAssertEqual(
+            paused,
+            .perform,
+            "Sticky .userPaused must still run resign-active teardown"
+        )
+
+        await manager.setPlaying()
+        let playing = await manager.resignActiveSessionTeardownDecision()
+        XCTAssertEqual(
+            playing,
+            .skipActivePlayback,
+            "Active playback must skip resign-active teardown so lock-screen LA survives"
+        )
+
+        await SharedPlayerManager.clearAllLocalState()
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .cleared, "Precondition: privacy clear lands .cleared")
+        let cleared = await manager.resignActiveSessionTeardownDecision()
+        XCTAssertEqual(
+            cleared,
+            .skipAlreadyCleared,
+            "Already-cleared session must skip a second resign-active teardown"
+        )
     }
 
     // MARK: - Attach-path sticky connecting snapshot quiet

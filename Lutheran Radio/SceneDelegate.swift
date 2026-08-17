@@ -26,8 +26,12 @@ import UIKit
 ///   lives in ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)`` (unarmed cold start,
 ///   pre-boot residual, termination sentinel, max age).
 /// - Deep links: `widget-action` URLs (actionId dedup) first; other hosts via ``handleURLScheme(_:from:)``
-/// - Termination-adjacent cleanup: ``sceneDidDisconnect`` mirrors
+/// - Termination-adjacent cleanup: ``sceneDidDisconnect`` calls
 ///   ``SharedPlayerManager/performSessionTeardownSynchronouslyForTermination()``
+///   (single-flight with `applicationWillTerminate`; both sites stay).
+/// - Resign-active teardown: ``sceneWillResignActive`` consults
+///   ``SharedPlayerManager/resignActiveSessionTeardownDecision()`` (skip playing
+///   and already-`.cleared`; still teardown connecting / paused).
 ///
 /// **`lutheranradio://open` honesty:** ``ViewController/handleOpenFromLiveActivity()`` only runs
 /// the resurrection / state-sync check and does **not** invent a new play intent. Cold-launch
@@ -42,6 +46,7 @@ import UIKit
 ///   ``RadioLiveActivityManager/handleAppDidEnterForeground()``,
 ///   ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)``,
 ///   ``WidgetRefreshManager/liftPrivacyClearWriteSuppressionHoldForForegroundDetect()``,
+///   ``SharedPlayerManager/resignActiveSessionTeardownDecision()``,
 ///   docs/Widget-Presentation-Dataflow.md,
 ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7)
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
@@ -77,7 +82,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     ///   not disconnect alone.
     /// - Note: Not every disconnect is a full process quit (multi-window / temporary). Writing
     ///   the termination liveness sentinel is still safe: the next live foreground bumps
-    ///   ``SharedPlayerManager/recordWidgetLiveness()`` again.
+    ///   ``SharedPlayerManager/recordWidgetLiveness()`` again. A second call after
+    ///   `applicationWillTerminate` is a no-op (the helper is single-flight).
     /// - SeeAlso: ``SharedPlayerManager/performSessionTeardownSynchronouslyForTermination()``,
     ///   AppDelegate.applicationWillTerminate
     func sceneDidDisconnect(_ scene: UIScene) {
@@ -128,11 +134,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    /// Resign active (lock, interruption, etc.): session/widget hygiene only when **not**
-    /// actively playing so background audio + lock-screen LA controls stay intact.
+    /// Resign active (lock, interruption, etc.): session/widget hygiene only when the
+    /// actor says teardown is still needed.
+    ///
+    /// Skip while actively playing (background audio + lock-screen LA must survive) and
+    /// when visual is already `.cleared` (privacy clear already ended the Live Activity
+    /// and reloaded widgets). Connecting `.prePlay` and sticky `.userPaused` still tear down.
     ///
     /// - Parameter scene: The scene that will resign active.
-    /// - SeeAlso: ``SharedPlayerManager/performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``
+    /// - SeeAlso: ``SharedPlayerManager/resignActiveSessionTeardownDecision()``,
+    ///   ``SharedPlayerManager/performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
+    ///   ``SharedPlayerManager/clearAllLocalState()``
     func sceneWillResignActive(_ scene: UIScene) {
         #if DEBUG
         print("[SceneDelegate] sceneWillResignActive — lock/inactive cycle begin")
@@ -140,20 +152,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         Task {
             let manager = SharedPlayerManager.shared
-            let isActivelyPlaying = await manager.currentVisualState.isActivelyPlaying
-            guard !isActivelyPlaying else {
+            switch await manager.resignActiveSessionTeardownDecision() {
+            case .skipActivePlayback:
                 #if DEBUG
                 print("[SceneDelegate] sceneWillResignActive — skipping session teardown (active playback)")
                 #endif
                 return
+            case .skipAlreadyCleared:
+                #if DEBUG
+                print("[SceneDelegate] sceneWillResignActive — skipping session teardown (already .cleared)")
+                #endif
+                return
+            case .perform:
+                await manager.performSessionAndWidgetTeardown(
+                    includeFactoryReset: false,
+                    liveActivityTeardown: .immediate,
+                    refreshWidgets: true,
+                    widgetVisualState: nil,
+                    staleLiveness: false
+                )
             }
-            await manager.performSessionAndWidgetTeardown(
-                includeFactoryReset: false,
-                liveActivityTeardown: .immediate,
-                refreshWidgets: true,
-                widgetVisualState: nil,
-                staleLiveness: false
-            )
         }
     }
 

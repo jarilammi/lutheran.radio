@@ -524,6 +524,7 @@ func prepareSharedPlayerManagerEventTestIsolation(
 ) async {
     await MainActor.run {
         sanitizeLiveActivityLocalState()
+        SharedPlayerManager._test_resetProcessExitSessionTeardownOnceFlag()
     }
 
     await SharedPlayerManager.clearAllLocalState()
@@ -575,6 +576,7 @@ func tearDownSharedPlayerManagerEventTestIsolation(
         SharedPlayerManager._test_setBypassUITestModeForNowPlayingUpdates(false)
         SharedPlayerManager._test_setRecordMediaSurfaceCoordinationOrder(false)
         SharedPlayerManager._test_clearMediaSurfaceCoordinationOrderLog()
+        SharedPlayerManager._test_resetProcessExitSessionTeardownOnceFlag()
     }
 }
 

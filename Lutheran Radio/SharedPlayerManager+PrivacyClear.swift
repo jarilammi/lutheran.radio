@@ -26,7 +26,7 @@ import WidgetKit
 // These entry points implement the user-initiated "Clear local playback state".
 // It removes recent playback/widget/Live Activity signals from the App Group and holds
 // write suppression closed until the next foreground WidgetCenter detect.
-// 
+//
 // - removeAllLocalPlaybackKeys is nonisolated static (safe for widget/extension call sites in future).
 // - clearAllLocalState is the @MainActor entry point used from UI (sleep timer menu / clear action etc.).
 //   The timer preset/cancel UI itself is a SwiftUI confirmationDialog; the cancel + set paths still flow through here.
@@ -100,6 +100,11 @@ extension SharedPlayerManager {
     /// again. Timeline reload after clear still wakes Home so Providers paint factory
     /// from **absent** keys — not a restamped live-chrome mirror.
     ///
+    /// After this call visual is `.cleared`. Resign-active consults
+    /// ``resignActiveSessionTeardownDecision()`` and does not run a second
+    /// ``performSessionAndWidgetTeardown`` (that would immediately end the Live
+    /// Activity this path already dismissed gracefully).
+    ///
     /// - Important: After this call `loadPersistedWidgetState()` returns nil until the next
     ///   explicit play or widget-driven write.
     /// - Important: Does not treat `.cleared` as factory in the gate-open restamp helper;
@@ -111,6 +116,7 @@ extension SharedPlayerManager {
     ///   ``WidgetRefreshManager/holdPrivacyClearWriteSuppressionClosedUntilForeground()``,
     ///   ``WidgetRefreshManager/applyDetectedWidgetPresence(_:)``,
     ///   ``WidgetRefreshManager/liftPrivacyClearWriteSuppressionHoldForForegroundDetect()``,
+    ///   ``resignActiveSessionTeardownDecision()``,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7),
     ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant),
     ///   CODING_AGENT.md.

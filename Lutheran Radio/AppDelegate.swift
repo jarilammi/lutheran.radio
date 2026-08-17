@@ -198,7 +198,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     ///   - application: The application instance.
     ///   - sceneSessions: The set of discarded scene sessions.
     func application(_ application: UIApplication, didDiscardSceneSessions sceneSessions: Set<UISceneSession>) {}
-    
+
     // Imperative **lifecycle** path: foreground re-entry has no PlayerEvent.
     // Mutation-path reloads stay on the Tier 2 observer; this only re-syncs
     // timelines after suspension (see WidgetRefreshTrigger.lifecycle).
@@ -219,7 +219,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
         // Also refresh Live Activity state (in case scene delegate path wasn't the active one).
         RadioLiveActivityManager.shared.handleAppDidEnterForeground()
-        
+
         #if DEBUG
         print("[AppDelegate] Foreground widget refresh via WidgetRefreshManager + LA update")
         #endif
@@ -261,6 +261,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // state and UserDefaults. No force-unwraps.
 
         // Canonical synchronous session + widget teardown (liveness, LA, widgets, Now Playing).
+        // Single-flight with SceneDelegate.sceneDidDisconnect — keep both call sites.
         SharedPlayerManager.performSessionTeardownSynchronouslyForTermination()
 
         #if DEBUG
