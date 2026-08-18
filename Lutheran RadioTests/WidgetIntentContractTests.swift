@@ -203,6 +203,68 @@ final class WidgetIntentContractTests: XCTestCase {
         )
     }
 
+    /// Leftover in-process session `sv` must not re-plant instant feedback when
+    /// ``homeWidgetLiveChrome`` is already strictly fresher `et`.
+    ///
+    /// **Invariant protected:** ``settledLanguageForInstantFeedback()`` prefers chrome
+    /// when `updatedAt` is strictly newer than session ``lastLanguageChangeTime``.
+    /// ``writeInstantFeedback(language:)`` stores `et`; ``loadSharedState()`` reads `et`.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/settledLanguageForInstantFeedback()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
+    func testWriteInstantFeedbackCoercesLeftoverSessionSvWhenLiveChromeEtIsFresher() {
+        plantLeftoverSessionLanguage("sv", sessionStamp: 1_000)
+        plantHomeWidgetLiveChrome(language: "et", updatedAt: 2_000)
+
+        XCTAssertEqual(SharedPlayerManager.languageForInstantFeedbackWrite("sv"), "et")
+        SharedPlayerManager.writeInstantFeedback(language: "sv")
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        XCTAssertEqual(defaults.string(forKey: "instantFeedbackLanguage"), "et")
+        XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
+    }
+
+    /// Older chrome must not beat a fresher session `et` (ties stay session).
+    ///
+    /// **Invariant protected:** Leftover ``instantFeedbackLanguage`` `sv` is ignored
+    /// when session `et` is fresher or tied vs chrome.
+    func testLoadSharedStateKeepsFresherSessionEtWhenChromeAndInstantFeedbackAreSv() {
+        plantLeftoverSessionLanguage("et", sessionStamp: 2_000)
+        plantHomeWidgetLiveChrome(language: "sv", updatedAt: 1_000)
+        plantInstantFeedbackLanguage("sv")
+
+        XCTAssertEqual(SharedPlayerManager.languageForInstantFeedbackWrite("sv"), "et")
+        XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
+
+        plantLeftoverSessionLanguage("et", sessionStamp: 1_500)
+        plantHomeWidgetLiveChrome(language: "sv", updatedAt: 1_500)
+        plantInstantFeedbackLanguage("sv")
+        XCTAssertEqual(SharedPlayerManager.settledLanguageForInstantFeedback(), "et")
+        XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
+    }
+
+    /// Optimistic switch destination still flashes when it already matches fresher chrome.
+    ///
+    /// **Invariant protected:** Caller `fi` is stored when chrome is already fresher `fi`
+    /// even if leftover session is `sv`.
+    func testWriteInstantFeedbackStoresFresherChromeFiWhenCallerProposesSwitchDestination() {
+        plantLeftoverSessionLanguage("sv", sessionStamp: 1_000)
+        plantHomeWidgetLiveChrome(language: "fi", updatedAt: 2_000)
+
+        XCTAssertEqual(SharedPlayerManager.languageForInstantFeedbackWrite("fi"), "fi")
+        SharedPlayerManager.writeInstantFeedback(language: "fi")
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        XCTAssertEqual(defaults.string(forKey: "instantFeedbackLanguage"), "fi")
+        XCTAssertEqual(manager.loadSharedState().currentLanguage, "fi")
+    }
+
     /// ``executeOptimisticToggle(plan:language:)`` must persist `et` instant feedback
     /// (and not restamp chrome as `sv`) when the caller language is locale `sv` and
     /// live chrome is already `et`.

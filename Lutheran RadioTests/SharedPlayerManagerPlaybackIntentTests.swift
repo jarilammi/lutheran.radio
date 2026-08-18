@@ -419,4 +419,66 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
         XCTAssertEqual(state.currentLanguage, "et")
         XCTAssertTrue(state.isPlaying)
     }
+
+    /// Leftover session `sv` plus leftover instant `sv` must not win when
+    /// ``homeWidgetLiveChrome`` is already strictly fresher `et`.
+    ///
+    /// **Invariant protected:** ``loadSharedState()`` and
+    /// ``languageForInstantFeedbackWrite(_:)`` settle via
+    /// ``settledLanguageForInstantFeedback()`` (chrome wins when `updatedAt` is
+    /// strictly newer than session ``lastLanguageChangeTime``). Durable LA
+    /// language remains unused. This is the first-pause hole after a destination
+    /// switch: session RAM still holds the prior code while live chrome already
+    /// names the current stream.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/settledLanguageForInstantFeedback()``,
+    ///   ``SharedPlayerManager/loadSharedState()``,
+    ///   ``SharedPlayerManager/writeInstantFeedback(language:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
+    func testLoadSharedStatePrefersFresherLiveChromeEtOverLeftoverSessionAndInstantSv() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        defer {
+            SharedPlayerManager.removeAllLocalPlaybackKeys()
+        }
+
+        SharedPlayerManager.inMemorySessionWidgetSnapshot = SharedPlayerManager.PersistedWidgetState(
+            visualState: .playing,
+            currentLanguage: "sv",
+            lastLanguageChangeTime: Date(timeIntervalSince1970: 1_000),
+            streamMetadata: nil,
+            hasError: false
+        )
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "et",
+                hasError: false,
+                updatedAt: 2_000,
+                stampReason: "setPlaying"
+            )
+        )
+        SharedPlayerManager.persistLiveActivityLanguageMirror("sv")
+
+        XCTAssertEqual(SharedPlayerManager.settledLanguageForInstantFeedback(), "et")
+        XCTAssertEqual(SharedPlayerManager.languageForInstantFeedbackWrite("sv"), "et")
+
+        SharedPlayerManager.writeInstantFeedback(language: "sv")
+        XCTAssertEqual(
+            UserDefaults(suiteName: "group.radio.lutheran.shared")?.string(forKey: "instantFeedbackLanguage"),
+            "et"
+        )
+        XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
+
+        // Read gate: leftover suite `sv` must still lose to fresher chrome.
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        defaults.set(true, forKey: "isInstantFeedback")
+        defaults.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
+        defaults.set("sv", forKey: "instantFeedbackLanguage")
+        XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
+    }
 }

@@ -603,6 +603,7 @@ enum WidgetIntentExecution {
     /// - Returns: First settled session / live-chrome code, else `resolutionLanguage`, else
     ///   ``SharedPlayerManager/preferredWidgetLanguage()``.
     /// - SeeAlso: ``SharedPlayerManager/settledSessionOrHomeLiveChromeLanguages()``,
+    ///   ``SharedPlayerManager/settledLanguageForInstantFeedback()``,
     ///   ``SharedPlayerManager/languageForInstantFeedbackWrite(_:)``,
     ///   ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``.
     private static func languageForPlayPauseOptimisticWrite(

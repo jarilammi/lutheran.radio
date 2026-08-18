@@ -9,8 +9,11 @@
 //
 //  Purpose: Live Activity durable visual/language App Group mirrors, boot identity,
 //  extension-hosted toggle planning helpers, and widget-refresh / play-pause
-//  optimistic language derivation. Play/pause instant feedback follows session +
-//  ``homeWidgetLiveChrome``; a lagging Live Activity language mirror must not win.
+//  optimistic language derivation. Play/pause instant feedback follows
+//  ``settledLanguageForInstantFeedback()`` (session vs ``homeWidgetLiveChrome`` by
+//  the same freshness rule as ``resolveHomeWidgetChromeFields``). A leftover
+//  session code is not a valid match when chrome is strictly fresher. A lagging
+//  Live Activity language mirror must not win.
 
 //
 //  - SeeAlso: SharedPlayerManager.swift, CODING_AGENT.md (cross-target membership exceptions).
@@ -168,11 +171,17 @@ extension SharedPlayerManager {
     /// destination switch (fire ≠ accept). Play/pause must not re-introduce that prior code
     /// into ``instantFeedbackLanguage``.
     ///
+    /// Instant-feedback **write** and ``loadSharedState()`` **read** settle language via
+    /// ``settledLanguageForInstantFeedback()`` (freshness), not this function’s session-first
+    /// `.first`. This resolver still prefers the first session / chrome code so callers that
+    /// only need “any settled stream” stay session-contiguous.
+    ///
     /// Live Activity **views** must not call this — they use `context.state.currentLanguage` only.
     ///
     /// - SeeAlso: ``writeInstantFeedback(language:)``, ``loadSharedState()``,
     ///   ``persistLiveActivityLanguageMirror(_:)``,
     ///   ``settledSessionOrHomeLiveChromeLanguages()``,
+    ///   ``settledLanguageForInstantFeedback()``,
     ///   ``languageForInstantFeedbackWrite(_:)``,
     ///   ``WidgetIntentExecution/performLiveActivityToggle()``,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
@@ -189,13 +198,15 @@ extension SharedPlayerManager {
     /// Non-empty language codes from the in-process session snapshot and privacy-gated
     /// ``homeWidgetLiveChrome`` (session first; chrome appended when it differs).
     ///
-    /// Play/pause instant-feedback **write** and ``loadSharedState()`` **read** use this
-    /// pair as the settled stream. Instant feedback may still flash a destination language
-    /// that already matches one of these codes (optimistic switch). It must not override
-    /// when it agrees with neither.
+    /// Play/pause optimistic **callers** that only need “a settled stream exists” still
+    /// use this pair (``.first``). Instant-feedback **write** and ``loadSharedState()``
+    /// **read** must not treat every element as a valid match — a leftover session code
+    /// plus fresher chrome yields `[stale, current]`, and `contains` would re-plant the
+    /// stale code. Those paths use ``settledLanguageForInstantFeedback()`` instead.
     ///
     /// - Returns: Zero, one, or two distinct non-empty language codes.
     /// - SeeAlso: ``languageForLiveActivityOrWidgetOptimistic()``,
+    ///   ``settledLanguageForInstantFeedback()``,
     ///   ``languageForInstantFeedbackWrite(_:)``, ``loadSharedState()``,
     ///   ``loadHomeWidgetLiveChromeMirror()``,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
@@ -212,30 +223,85 @@ extension SharedPlayerManager {
         return codes
     }
 
+    /// Single settled language for instant-feedback write and ``loadSharedState()`` read.
+    ///
+    /// Session vs privacy-gated ``homeWidgetLiveChrome`` use the same freshness comparison
+    /// as ``languageForWidgetRefreshDerivation(fallbackLanguage:)`` and
+    /// ``resolveHomeWidgetChromeFields``: chrome wins only when `updatedAt` is **strictly**
+    /// greater than session ``PersistedWidgetState/lastLanguageChangeTime`` (`updatedAt` on
+    /// the snapshot tuple). Ties stay with session. Missing session stamp is older than any
+    /// positive chrome stamp (`-.infinity`).
+    ///
+    /// - Returns: Session language when it is the only or fresher/tied source; chrome
+    ///   language when session is empty or chrome is strictly fresher; `nil` when both
+    ///   are empty (first-tap / no-settled — callers store `proposed`).
+    /// - Important: A leftover session code is **not** a valid instant-feedback match
+    ///   merely because it appears in ``settledSessionOrHomeLiveChromeLanguages()``.
+    ///   Play/pause must not re-plant that leftover after chrome already names the
+    ///   current stream. Optimistic switch may still store the destination when it
+    ///   already matches this fresher settled source.
+    /// - Important: Durable Live Activity language is never consulted. Privacy write
+    ///   suppression is unchanged (this helper only reads).
+    /// - SeeAlso: ``languageForInstantFeedbackWrite(_:)``, ``loadSharedState()``,
+    ///   ``settledSessionOrHomeLiveChromeLanguages()``,
+    ///   ``languageForWidgetRefreshDerivation(fallbackLanguage:)``,
+    ///   ``resolveHomeWidgetChromeFields``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3),
+    ///   docs/Widget-Presentation-Dataflow.md,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
+    nonisolated static func settledLanguageForInstantFeedback() -> String? {
+        let session = loadPersistedWidgetState()
+        let sessionLanguage: String? = {
+            guard let code = session?.currentLanguage, !code.isEmpty else { return nil }
+            return code
+        }()
+        let liveChrome = loadHomeWidgetLiveChromeMirror()
+        let chromeLanguage: String? = {
+            guard let code = liveChrome?.currentLanguage, !code.isEmpty else { return nil }
+            return code
+        }()
+
+        guard let sessionLanguage else {
+            return chromeLanguage
+        }
+        guard let chromeLanguage, let liveChrome else {
+            return sessionLanguage
+        }
+        if sessionLanguage == chromeLanguage {
+            return sessionLanguage
+        }
+        // Disagree: reuse WRM / Provider freshness — chrome only when strictly newer.
+        let sessionTime = session?.updatedAt ?? -.infinity
+        if liveChrome.updatedAt > sessionTime {
+            return chromeLanguage
+        }
+        return sessionLanguage
+    }
+
     /// Language ``writeInstantFeedback(language:)`` persists for the 15 s optimistic window.
     ///
-    /// When ``settledSessionOrHomeLiveChromeLanguages()`` is non-empty and `proposed` is not
-    /// in that set, returns the first settled code. Play/pause must not plant a device-locale
-    /// or lagging Live Activity language while session or ``homeWidgetLiveChrome`` already
-    /// names the stream. Stream switch persists the destination into session + live chrome
-    /// **before** instant feedback, so the destination is already settled and is stored as given.
+    /// Settles via ``settledLanguageForInstantFeedback()``. Play/pause must not plant a
+    /// device-locale, leftover session, or lagging Live Activity language while the fresher
+    /// of session / ``homeWidgetLiveChrome`` already names the stream. Stream switch
+    /// persists the destination into session + live chrome **before** instant feedback, so
+    /// the destination is already the fresher settled source and is stored as given.
     ///
     /// ``loadHomeWidgetLiveChromeMirror()`` re-syncs the App Group suite, so an empty
     /// extension session (OI-1) still sees stamped chrome.
     ///
     /// - Parameter proposed: Caller language (optimistic plan, locale fallback, or destination).
-    /// - Returns: `proposed` when it already matches a settled code or no settled code exists;
-    ///   otherwise the first settled session / live-chrome language.
+    /// - Returns: `proposed` when it already matches ``settledLanguageForInstantFeedback()``
+    ///   or no settled language exists; otherwise that single settled language.
     /// - SeeAlso: ``writeInstantFeedback(language:)``, ``loadSharedState()``,
+    ///   ``settledLanguageForInstantFeedback()``,
     ///   ``settledSessionOrHomeLiveChromeLanguages()``,
     ///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
     nonisolated static func languageForInstantFeedbackWrite(_ proposed: String) -> String {
-        let settled = settledSessionOrHomeLiveChromeLanguages()
-        guard !settled.isEmpty, !settled.contains(proposed) else {
+        guard let settled = settledLanguageForInstantFeedback() else {
             return proposed
         }
-        return settled[0]
+        return proposed == settled ? proposed : settled
     }
 
     /// Language for ``WidgetRefreshManager`` derivation, coalesce bookkeeping, and DEBUG labels.

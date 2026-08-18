@@ -45,7 +45,7 @@ func prepareWidgetIntentContractTestIsolation() {
 /// ``SharedPlayerManager/writeInstantFeedback(language:)``.
 ///
 /// Use when a test must exercise ``loadSharedState()``'s ignore of a disagreeing
-/// leftover key. The production writer coerces to settled session / live chrome.
+/// leftover key. The production writer coerces to ``settledLanguageForInstantFeedback()``.
 func plantInstantFeedbackLanguage(_ language: String) {
     guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
         XCTFail("App Group UserDefaults unavailable")
@@ -54,6 +54,30 @@ func plantInstantFeedbackLanguage(_ language: String) {
     defaults.set(true, forKey: "isInstantFeedback")
     defaults.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
     defaults.set(language, forKey: "instantFeedbackLanguage")
+}
+
+/// In-process leftover session with an explicit stamp (does not restamp live chrome).
+func plantLeftoverSessionLanguage(_ language: String, sessionStamp: TimeInterval) {
+    SharedPlayerManager.inMemorySessionWidgetSnapshot = SharedPlayerManager.PersistedWidgetState(
+        visualState: .playing,
+        currentLanguage: language,
+        lastLanguageChangeTime: Date(timeIntervalSince1970: sessionStamp),
+        streamMetadata: nil,
+        hasError: false
+    )
+}
+
+/// Privacy-gated live chrome with an explicit `updatedAt` (does not touch session RAM).
+func plantHomeWidgetLiveChrome(language: String, updatedAt: TimeInterval) {
+    SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+        HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: language,
+            hasError: false,
+            updatedAt: updatedAt,
+            stampReason: "testFreshnessPlant"
+        )
+    )
 }
 
 /// Symmetric tear-down for ``prepareWidgetIntentContractTestIsolation()``.

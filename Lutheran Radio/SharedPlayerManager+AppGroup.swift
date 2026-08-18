@@ -8,9 +8,11 @@
 //  LutheranRadioWidgetTests). Mechanical split of SharedPlayerManager — same actor.
 //
 //  Purpose: Widget pending-action scheduling, Darwin notify, liveness heartbeat, and
-//  App Group save/load facades. ``writeInstantFeedback(language:)`` persists the
-//  settled session / ``homeWidgetLiveChrome`` language when the caller disagrees.
-//  ``loadSharedState()`` still ignores a disagreeing instant-feedback language.
+//  App Group save/load facades. ``writeInstantFeedback(language:)`` persists
+//  ``settledLanguageForInstantFeedback()`` when the caller disagrees (session vs
+//  ``homeWidgetLiveChrome`` by freshness — a leftover session code is not a valid
+//  match when chrome is strictly fresher). ``loadSharedState()`` still ignores a
+//  disagreeing instant-feedback language.
 //
 //  - SeeAlso: SharedPlayerManager.swift, CODING_AGENT.md (cross-target membership exceptions).
 //
@@ -40,12 +42,13 @@ extension SharedPlayerManager {
     ///
     /// Play/pause callers must pass the settled session / ``homeWidgetLiveChrome`` language
     /// (``languageForLiveActivityOrWidgetOptimistic()``). This writer still **coerces** a
-    /// disagreeing caller language via ``languageForInstantFeedbackWrite(_:)`` so an empty
-    /// extension session that fell through to the device locale cannot plant that locale
-    /// while live chrome already names the stream. Stream-switch callers persist the
-    /// **destination** into session + live chrome first, so the destination is already
-    /// settled and is stored as given. The 15 s ``loadSharedState()`` window does not let a
-    /// disagreeing instant-feedback language override those settled sources.
+    /// disagreeing caller language via ``languageForInstantFeedbackWrite(_:)`` so neither
+    /// an empty extension session (device locale) nor a leftover session code can plant
+    /// that language while fresher ``homeWidgetLiveChrome`` already names the stream.
+    /// Stream-switch callers persist the **destination** into session + live chrome first,
+    /// so the destination is already the fresher settled source and is stored as given.
+    /// The 15 s ``loadSharedState()`` window does not let a disagreeing instant-feedback
+    /// language override ``settledLanguageForInstantFeedback()``.
     ///
     /// - Parameter language: Language code shown during the optimistic window (must match the
     ///   widget timeline language when possible). Persisted value is
@@ -54,7 +57,8 @@ extension SharedPlayerManager {
     ///   widget/extension process (intent execution is proof a surface exists).
     /// - Postcondition: On success, `isInstantFeedback` / `instantFeedbackTime` /
     ///   `instantFeedbackLanguage` are present. The stored language is `language` when it
-    ///   matches session / live chrome (or those are empty); otherwise the first settled code.
+    ///   matches ``settledLanguageForInstantFeedback()`` (or that resolver is `nil`);
+    ///   otherwise the freshness-settled session / live-chrome language.
     ///   `lastUpdateTime` is refreshed only when
     ///   ``bumpWidgetLivenessTimestamp(policy:minInterval:)`` allows (main process rules or
     ///   extension refresh-of-open-window rules). When privacy-suppressed, **no** keys are written
@@ -63,6 +67,7 @@ extension SharedPlayerManager {
     /// - SeeAlso: ``bumpWidgetLivenessTimestamp(policy:minInterval:)``,
     ///   ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
     ///   ``loadSharedState()``, ``languageForInstantFeedbackWrite(_:)``,
+    ///   ``settledLanguageForInstantFeedback()``,
     ///   ``languageForLiveActivityOrWidgetOptimistic()``,
     ///   ``signalWidgetSwitchAction(visualState:language:)``,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
@@ -637,14 +642,16 @@ extension SharedPlayerManager {
     ///
     /// `isPlaying` and `hasError` always come from the in-process ``PersistedWidgetState``
     /// snapshot. Language uses the 15 s instant-feedback window only when that code agrees
-    /// with the settled session or ``homeWidgetLiveChrome`` language, or when neither source
-    /// has a language yet (first-tap / destination flash). Play/pause of a settled stream
-    /// must not let a lagging ``instantFeedbackLanguage`` override those sources.
+    /// with ``settledLanguageForInstantFeedback()``, or when neither session nor
+    /// ``homeWidgetLiveChrome`` has a language yet (first-tap / destination flash). Play/pause
+    /// of a settled stream must not let a leftover session code or lagging
+    /// ``instantFeedbackLanguage`` override the fresher of those sources.
     ///
     /// - Returns: `isPlaying` from snapshot visual, `currentLanguage` per the instant-feedback
-    ///   vs settled-session rule, `hasError` from the snapshot.
+    ///   vs freshness-settled session / live-chrome rule, `hasError` from the snapshot.
     /// - SeeAlso: ``writeInstantFeedback(language:)``,
     ///   ``languageForInstantFeedbackWrite(_:)``,
+    ///   ``settledLanguageForInstantFeedback()``,
     ///   ``languageForLiveActivityOrWidgetOptimistic()``,
     ///   ``settledSessionOrHomeLiveChromeLanguages()``,
     ///   ``preferredWidgetLanguage()``,
@@ -666,20 +673,21 @@ extension SharedPlayerManager {
                 let persisted = Self.loadPersistedWidgetState()
                 let isPlaying = persisted?.visualState.isActivelyPlaying ?? false
                 let hasError = persisted?.hasError ?? false
-                let settledLanguages = Self.settledSessionOrHomeLiveChromeLanguages()
+                let settledLanguage = Self.settledLanguageForInstantFeedback()
                 // Instant feedback is the short optimistic **switch** flash (destination already
-                // stamped into session or live chrome) or the only language when no snapshot
-                // exists. A disagreeing code is a play/pause restamp of a lagging prior language.
+                // the fresher of session / live chrome) or the only language when no snapshot
+                // exists. A leftover session code is not a valid match when chrome is strictly
+                // fresher — ``settledLanguageForInstantFeedback()`` applies that rule.
                 let currentLanguage: String
-                if settledLanguages.isEmpty || settledLanguages.contains(instantFeedbackLanguage) {
+                if let settledLanguage, settledLanguage != instantFeedbackLanguage {
+                    currentLanguage = settledLanguage
+                    #if DEBUG
+                    print("[SharedPlayerManager] Ignoring instant feedback language \(instantFeedbackLanguage) (age: \(age)s) — settled session/live-chrome is \(currentLanguage)")
+                    #endif
+                } else {
                     currentLanguage = instantFeedbackLanguage
                     #if DEBUG
                     print("[SharedPlayerManager] Using instant feedback state: \(instantFeedbackLanguage), age: \(age)s")
-                    #endif
-                } else {
-                    currentLanguage = settledLanguages[0]
-                    #if DEBUG
-                    print("[SharedPlayerManager] Ignoring instant feedback language \(instantFeedbackLanguage) (age: \(age)s) — settled session/live-chrome is \(currentLanguage)")
                     #endif
                 }
 
