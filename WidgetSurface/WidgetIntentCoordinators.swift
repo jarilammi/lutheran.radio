@@ -450,14 +450,16 @@ public enum WidgetIntentCoordinators {
 
     /// Resolves the language code for optimistic snapshot writes.
     ///
-    /// Prefers the persisted snapshot language (the value the Provider just rendered) over
-    /// `preferredWidgetLanguage()` so first interaction does not fall back to `"en"` when the
-    /// hasActiveWidgets cache is still cold.
+    /// Prefers the persisted snapshot / live-chrome language (the stream the Provider just
+    /// rendered) over `preferredWidgetLanguage()` so first interaction does not fall back to
+    /// the device locale when the hasActiveWidgets cache is still cold or extension session
+    /// RAM is empty (OI-1).
     ///
     /// - Parameters:
-    ///   - persistedLanguage: `PersistedWidgetState.currentLanguage` when a snapshot exists.
+    ///   - persistedLanguage: Session or ``homeWidgetLiveChrome`` language when either exists.
     ///   - preferredLanguage: ``SharedPlayerManager/preferredWidgetLanguage()`` fallback.
     /// - Returns: Language code for optimistic persist + pending-action tuple.
+    /// - SeeAlso: docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
     public static func languageForOptimisticUpdate(
         persistedLanguage: String?,
         preferredLanguage: String

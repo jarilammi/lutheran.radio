@@ -41,6 +41,21 @@ func prepareWidgetIntentContractTestIsolation() {
     WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
 }
 
+/// Plants ``instantFeedbackLanguage`` on the App Group suite without going through
+/// ``SharedPlayerManager/writeInstantFeedback(language:)``.
+///
+/// Use when a test must exercise ``loadSharedState()``'s ignore of a disagreeing
+/// leftover key. The production writer coerces to settled session / live chrome.
+func plantInstantFeedbackLanguage(_ language: String) {
+    guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+        XCTFail("App Group UserDefaults unavailable")
+        return
+    }
+    defaults.set(true, forKey: "isInstantFeedback")
+    defaults.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
+    defaults.set(language, forKey: "instantFeedbackLanguage")
+}
+
 /// Symmetric tear-down for ``prepareWidgetIntentContractTestIsolation()``.
 @MainActor
 func tearDownWidgetIntentContractTestIsolation() {

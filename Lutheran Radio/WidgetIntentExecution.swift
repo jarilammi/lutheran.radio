@@ -63,7 +63,7 @@ enum WidgetIntentExecution {
     ///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:distrustLiveChrome:)``,
     ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
     ///   ``SharedPlayerManager/isMainAppProcessRecentlyActive()``,
-    ///   ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``,
+    ///   ``languageForPlayPauseOptimisticWrite(resolutionLanguage:)``,
     ///   docs/Widget-Presentation-Dataflow.md.
     static func performHomeWidgetToggle() async {
         // Intent execution proves a home widget surface exists (symmetric with Control / switch).
@@ -89,9 +89,8 @@ enum WidgetIntentExecution {
         )
         // Thermal refuse + post-exit residual-play refuse: no optimistic flip, no pending drain.
         guard plan.shouldExecutePendingAction else { return }
-        let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
-            persistedLanguage: resolution.currentLanguage ?? session?.currentLanguage,
-            preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
+        let language = languageForPlayPauseOptimisticWrite(
+            resolutionLanguage: resolution.currentLanguage
         )
         await executeOptimisticToggle(plan: plan, language: language)
     }
@@ -103,6 +102,7 @@ enum WidgetIntentExecution {
     /// lagging toggle resolve (the inverted-tap failure class when glyph and App Group disagree).
     ///
     /// - SeeAlso: ``performHomeWidgetPlay()``, ``WidgetIntentCoordinators/planHomeWidgetPause()``,
+    ///   ``languageForPlayPauseOptimisticWrite(resolutionLanguage:)``,
     ///   ``executeOptimisticToggle(plan:language:)``.
     static func performHomeWidgetPause() async {
         await MainActor.run { WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
@@ -119,9 +119,8 @@ enum WidgetIntentExecution {
             distrustLiveChrome: distrust
         )
         let plan = WidgetIntentCoordinators.planHomeWidgetPause()
-        let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
-            persistedLanguage: resolution.currentLanguage ?? session?.currentLanguage,
-            preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
+        let language = languageForPlayPauseOptimisticWrite(
+            resolutionLanguage: resolution.currentLanguage
         )
         await executeOptimisticToggle(plan: plan, language: language)
     }
@@ -134,6 +133,7 @@ enum WidgetIntentExecution {
     /// re-stamps playing + bumps paint epoch so residual Tauko heals without a second engine play.
     ///
     /// - SeeAlso: ``performHomeWidgetPause()``, ``WidgetIntentCoordinators/planHomeWidgetPlay(from:)``,
+    ///   ``languageForPlayPauseOptimisticWrite(resolutionLanguage:)``,
     ///   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``.
     static func performHomeWidgetPlay() async {
         await MainActor.run { WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
@@ -149,9 +149,8 @@ enum WidgetIntentExecution {
             liveChrome: liveChrome,
             distrustLiveChrome: distrust
         )
-        let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
-            persistedLanguage: resolution.currentLanguage ?? session?.currentLanguage,
-            preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
+        let language = languageForPlayPauseOptimisticWrite(
+            resolutionLanguage: resolution.currentLanguage
         )
 
         // Already authoritative playing: heal residual non-playing LIVE paint; do not re-queue play.
@@ -208,6 +207,7 @@ enum WidgetIntentExecution {
     /// - Parameter isPlayingRequested: `true` = play, `false` = pause (ControlWidgetToggle value).
     /// - SeeAlso: ``performHomeWidgetToggle()``,
     ///   ``WidgetIntentCoordinators/planControlWidgetToggle(isPlayingRequested:)``,
+    ///   ``languageForPlayPauseOptimisticWrite(resolutionLanguage:)``,
     ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
     ///   ``SharedPlayerManager/isMainAppProcessRecentlyActive()``,
     ///   docs/Widget-Presentation-Dataflow.md.
@@ -224,10 +224,7 @@ enum WidgetIntentExecution {
         }
 
         let plan = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: isPlayingRequested)
-        let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
-            persistedLanguage: SharedPlayerManager.loadPersistedWidgetState()?.currentLanguage,
-            preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
-        )
+        let language = languageForPlayPauseOptimisticWrite()
         await executeOptimisticToggle(plan: plan, language: language)
     }
 
@@ -595,6 +592,29 @@ enum WidgetIntentExecution {
 
     // MARK: - Primitive side effects
 
+    /// Session / ``homeWidgetLiveChrome`` language for play/pause optimistic writes.
+    ///
+    /// Empty extension RAM (OI-1) must not fall through to ``preferredWidgetLanguage()``
+    /// (device locale) when live chrome already holds the settled stream.
+    /// ``settledSessionOrHomeLiveChromeLanguages()`` re-syncs the App Group suite.
+    ///
+    /// - Parameter resolutionLanguage: Optional chrome-field language already resolved for
+    ///   this intent (used only when session and live chrome are both empty).
+    /// - Returns: First settled session / live-chrome code, else `resolutionLanguage`, else
+    ///   ``SharedPlayerManager/preferredWidgetLanguage()``.
+    /// - SeeAlso: ``SharedPlayerManager/settledSessionOrHomeLiveChromeLanguages()``,
+    ///   ``SharedPlayerManager/languageForInstantFeedbackWrite(_:)``,
+    ///   ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``.
+    private static func languageForPlayPauseOptimisticWrite(
+        resolutionLanguage: String? = nil
+    ) -> String {
+        WidgetIntentCoordinators.languageForOptimisticUpdate(
+            persistedLanguage: SharedPlayerManager.settledSessionOrHomeLiveChromeLanguages().first
+                ?? resolutionLanguage,
+            preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
+        )
+    }
+
     /// Optimistic snapshot + pending action + immediate widget refresh for play/pause toggles.
     ///
     /// Imperative **extensionOptimistic** path: the extension process cannot emit
@@ -625,14 +645,16 @@ enum WidgetIntentExecution {
     ///
     /// - Parameters:
     ///   - plan: Home-widget or Control-widget toggle plan.
-    ///   - language: Language code from ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``
-    ///     (session / ``homeWidgetLiveChrome`` resolution — the stream just paused or resumed).
-    ///     Play/pause instant feedback and the durable LA language mirror use this code; they
-    ///     must not take a lagging Live Activity ``ContentState`` language.
+    ///   - language: Language code from ``languageForPlayPauseOptimisticWrite(resolutionLanguage:)``
+    ///     (session / ``homeWidgetLiveChrome`` — the stream just paused or resumed).
+    ///     Coerced again via ``SharedPlayerManager/languageForInstantFeedbackWrite(_:)`` so a
+    ///     locale fallback cannot persist into the optimistic snapshot or instant-feedback keys
+    ///     while live chrome already names the stream.
     /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``,
     ///   ``pushOptimisticLiveActivityToggleContent(visualState:)``,
     ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``,
     ///   ``SharedPlayerManager/writeInstantFeedback(language:)``,
+    ///   ``SharedPlayerManager/languageForInstantFeedbackWrite(_:)``,
     ///   ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
     ///   ``SharedPlayerManager/bumpHomeWidgetInteractivePaintEpoch(reason:)``,
     ///   ``SharedPlayerManager/publishHomeWidgetInteractivePaintSignature(visualState:language:epoch:)``,
@@ -642,6 +664,9 @@ enum WidgetIntentExecution {
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func executeOptimisticToggle(plan: WidgetToggleActionPlan, language: String) async {
         guard plan.shouldExecutePendingAction else { return }
+        // Coerce before persist so an empty extension session that passed locale `sv` cannot
+        // stamp that locale into session + live chrome while ``homeWidgetLiveChrome`` is `et`.
+        let language = SharedPlayerManager.languageForInstantFeedbackWrite(language)
         let manager = SharedPlayerManager.shared
         _ = manager.signalWidgetPendingAction(
             visualState: plan.targetVisualState,

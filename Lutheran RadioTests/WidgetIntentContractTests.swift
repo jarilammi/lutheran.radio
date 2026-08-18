@@ -129,9 +129,10 @@ final class WidgetIntentContractTests: XCTestCase {
     /// session / live-chrome stream.
     ///
     /// **Invariant protected:** After session + ``homeWidgetLiveChrome`` are `et`, a
-    /// fresh ``instantFeedbackLanguage`` of `sv` (prior Live Activity language) is
-    /// ignored by ``loadSharedState()``. Instant feedback remains for switch flash
-    /// when the destination already matches session or chrome.
+    /// leftover ``instantFeedbackLanguage`` of `sv` (planted on the suite, not via
+    /// ``writeInstantFeedback(language:)``) is ignored by ``loadSharedState()``. Instant
+    /// feedback remains for switch flash when the destination already matches session
+    /// or chrome. The writer itself coerces — this test keeps the read gate.
     ///
     /// - SeeAlso: ``SharedPlayerManager/loadSharedState()``,
     ///   ``SharedPlayerManager/settledSessionOrHomeLiveChromeLanguages()``,
@@ -139,7 +140,7 @@ final class WidgetIntentContractTests: XCTestCase {
     func testLoadSharedStateDoesNotOverrideSettledEtWithDisagreeingInstantFeedbackSv() {
         SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "et")
         SharedPlayerManager.persistLiveActivityLanguageMirror("sv")
-        SharedPlayerManager.writeInstantFeedback(language: "sv")
+        plantInstantFeedbackLanguage("sv")
 
         XCTAssertEqual(
             SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(),
@@ -150,6 +151,88 @@ final class WidgetIntentContractTests: XCTestCase {
         XCTAssertEqual(state.currentLanguage, "et")
         XCTAssertTrue(state.isPlaying)
         XCTAssertFalse(state.hasError)
+    }
+
+    /// Play/pause instant-feedback **write** must persist settled chrome, not a locale
+    /// or lagging caller language.
+    ///
+    /// **Invariant protected:** ``writeInstantFeedback(language:)`` stores `et` when
+    /// session / ``homeWidgetLiveChrome`` are `et` even if the caller passes `sv`.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/writeInstantFeedback(language:)``,
+    ///   ``SharedPlayerManager/languageForInstantFeedbackWrite(_:)``.
+    func testWriteInstantFeedbackStoresSettledEtNotCallerSv() {
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "et")
+
+        SharedPlayerManager.writeInstantFeedback(language: "sv")
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        XCTAssertEqual(defaults.string(forKey: "instantFeedbackLanguage"), "et")
+        XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
+    }
+
+    /// Empty in-process session (OI-1 extension RAM) still follows stamped live chrome.
+    ///
+    /// **Invariant protected:** ``languageForInstantFeedbackWrite(_:)`` re-syncs
+    /// ``homeWidgetLiveChrome`` and coerces locale `sv` to chrome `et`.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/writeInstantFeedback(language:)``,
+    ///   ``SharedPlayerManager/settledSessionOrHomeLiveChromeLanguages()``.
+    func testWriteInstantFeedbackStoresLiveChromeEtWhenSessionIsEmpty() {
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "et")
+        SharedPlayerManager.inMemorySessionWidgetSnapshot = nil
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.currentLanguage,
+            "et"
+        )
+
+        SharedPlayerManager.writeInstantFeedback(language: "sv")
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        XCTAssertEqual(defaults.string(forKey: "instantFeedbackLanguage"), "et")
+        XCTAssertEqual(
+            SharedPlayerManager.languageForInstantFeedbackWrite("sv"),
+            "et"
+        )
+    }
+
+    /// ``executeOptimisticToggle(plan:language:)`` must persist `et` instant feedback
+    /// (and not restamp chrome as `sv`) when the caller language is locale `sv` and
+    /// live chrome is already `et`.
+    ///
+    /// **Invariant protected:** Play/pause coerce happens before
+    /// ``persistOptimisticWidgetSnapshot`` so empty extension RAM cannot plant locale
+    /// into session + ``homeWidgetLiveChrome``.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
+    ///   ``SharedPlayerManager/languageForInstantFeedbackWrite(_:)``.
+    func testExecuteOptimisticTogglePauseCoercesCallerSvToLiveChromeEt() async {
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "et")
+        SharedPlayerManager.inMemorySessionWidgetSnapshot = nil
+        SharedPlayerManager.persistLiveActivityLanguageMirror("sv")
+
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: .playing)
+        XCTAssertEqual(plan.action, .pause)
+        await WidgetIntentExecution.executeOptimisticToggle(plan: plan, language: "sv")
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        XCTAssertEqual(defaults.string(forKey: "instantFeedbackLanguage"), "et")
+        XCTAssertEqual(SharedPlayerManager.loadPersistedWidgetState()?.currentLanguage, "et")
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.currentLanguage,
+            "et"
+        )
+        XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
     }
 
     /// Instant feedback remains the language signal when no session or live chrome exists.

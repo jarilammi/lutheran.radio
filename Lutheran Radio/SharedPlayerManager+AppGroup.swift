@@ -8,8 +8,9 @@
 //  LutheranRadioWidgetTests). Mechanical split of SharedPlayerManager — same actor.
 //
 //  Purpose: Widget pending-action scheduling, Darwin notify, liveness heartbeat, and
-//  App Group save/load facades. ``loadSharedState()`` instant-feedback language does
-//  not override a disagreeing settled session / ``homeWidgetLiveChrome`` language.
+//  App Group save/load facades. ``writeInstantFeedback(language:)`` persists the
+//  settled session / ``homeWidgetLiveChrome`` language when the caller disagrees.
+//  ``loadSharedState()`` still ignores a disagreeing instant-feedback language.
 //
 //  - SeeAlso: SharedPlayerManager.swift, CODING_AGENT.md (cross-target membership exceptions).
 //
@@ -38,24 +39,31 @@ extension SharedPlayerManager {
     /// allows so short optimistic language paint can proceed without resurrecting liveness.
     ///
     /// Play/pause callers must pass the settled session / ``homeWidgetLiveChrome`` language
-    /// (``languageForLiveActivityOrWidgetOptimistic()``). Stream-switch callers pass the
-    /// **destination** after persisting that same code into session + live chrome. The 15 s
-    /// ``loadSharedState()`` window does not let a disagreeing instant-feedback language
-    /// override those settled sources.
+    /// (``languageForLiveActivityOrWidgetOptimistic()``). This writer still **coerces** a
+    /// disagreeing caller language via ``languageForInstantFeedbackWrite(_:)`` so an empty
+    /// extension session that fell through to the device locale cannot plant that locale
+    /// while live chrome already names the stream. Stream-switch callers persist the
+    /// **destination** into session + live chrome first, so the destination is already
+    /// settled and is stored as given. The 15 s ``loadSharedState()`` window does not let a
+    /// disagreeing instant-feedback language override those settled sources.
     ///
     /// - Parameter language: Language code shown during the optimistic window (must match the
-    ///   widget timeline language when possible).
+    ///   widget timeline language when possible). Persisted value is
+    ///   ``languageForInstantFeedbackWrite(_:)`` of this argument.
     /// - Precondition: Home-widget privacy gate open (`hasActiveWidgets`) **or** call is from a
     ///   widget/extension process (intent execution is proof a surface exists).
     /// - Postcondition: On success, `isInstantFeedback` / `instantFeedbackTime` /
-    ///   `instantFeedbackLanguage` are present. `lastUpdateTime` is refreshed only when
+    ///   `instantFeedbackLanguage` are present. The stored language is `language` when it
+    ///   matches session / live chrome (or those are empty); otherwise the first settled code.
+    ///   `lastUpdateTime` is refreshed only when
     ///   ``bumpWidgetLivenessTimestamp(policy:minInterval:)`` allows (main process rules or
     ///   extension refresh-of-open-window rules). When privacy-suppressed, **no** keys are written
     ///   (residuals cleared only via privacy clear or
     ///   ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()`` when the gate closes).
     /// - SeeAlso: ``bumpWidgetLivenessTimestamp(policy:minInterval:)``,
     ///   ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
-    ///   ``loadSharedState()``, ``languageForLiveActivityOrWidgetOptimistic()``,
+    ///   ``loadSharedState()``, ``languageForInstantFeedbackWrite(_:)``,
+    ///   ``languageForLiveActivityOrWidgetOptimistic()``,
     ///   ``signalWidgetSwitchAction(visualState:language:)``,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     nonisolated static func writeInstantFeedback(language: String) {
@@ -75,12 +83,18 @@ extension SharedPlayerManager {
             return
         }
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        let languageToWrite = Self.languageForInstantFeedbackWrite(language)
+        #if DEBUG
+        if languageToWrite != language {
+            print("[SharedPlayerManager] Coercing instant feedback language \(language) to settled session/live-chrome \(languageToWrite)")
+        }
+        #endif
         let now = Date().timeIntervalSince1970
         // May no-op under extension honesty gate; instant-feedback keys still write below.
         Self.bumpWidgetLivenessTimestamp(policy: .immediate)
         defaults.set(true, forKey: "isInstantFeedback")
         defaults.set(now, forKey: "instantFeedbackTime")
-        defaults.set(language, forKey: "instantFeedbackLanguage")
+        defaults.set(languageToWrite, forKey: "instantFeedbackLanguage")
         // Explicit synchronize() removed — unnecessary for App Group + Darwin on iOS 26+.
     }
 
@@ -630,6 +644,7 @@ extension SharedPlayerManager {
     /// - Returns: `isPlaying` from snapshot visual, `currentLanguage` per the instant-feedback
     ///   vs settled-session rule, `hasError` from the snapshot.
     /// - SeeAlso: ``writeInstantFeedback(language:)``,
+    ///   ``languageForInstantFeedbackWrite(_:)``,
     ///   ``languageForLiveActivityOrWidgetOptimistic()``,
     ///   ``settledSessionOrHomeLiveChromeLanguages()``,
     ///   ``preferredWidgetLanguage()``,

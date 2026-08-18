@@ -404,7 +404,15 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
 
         SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "et")
         SharedPlayerManager.persistLiveActivityLanguageMirror("sv")
-        SharedPlayerManager.writeInstantFeedback(language: "sv")
+        // Plant leftover `sv` on the suite. ``writeInstantFeedback`` would coerce to `et`;
+        // this test keeps the ``loadSharedState()`` ignore of a disagreeing leftover key.
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        defaults.set(true, forKey: "isInstantFeedback")
+        defaults.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
+        defaults.set("sv", forKey: "instantFeedbackLanguage")
 
         XCTAssertEqual(SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(), "et")
         let state = manager.loadSharedState()
