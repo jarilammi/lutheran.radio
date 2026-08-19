@@ -1656,28 +1656,31 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
     }
 
     /// Resign-active must not re-teardown a session already at `.cleared`, and must still
-    /// skip only while audio is flowing — connecting / sticky pause still tear down.
+    /// skip while audio is flowing. Factory-idle Connecting (isolation `.prePlay` with
+    /// no hold and no start pipeline) and sticky pause still tear down.
     ///
     /// **Invariant protected:** ``resignActiveSessionTeardownDecision()`` is the SceneDelegate
     /// policy SSOT. After ``clearAllLocalState()`` (visual `.cleared`) lock/inactive must
     /// not call ``performSessionAndWidgetTeardown`` again (second immediate Live Activity
     /// end races the graceful privacy-clear dismissal). `.playing` still skips. Isolation
-    /// `.prePlay` and ``setUserPaused()`` still return ``.perform``.
+    /// factory-idle `.prePlay` and ``setUserPaused()`` still return ``.perform``.
+    /// Claimed Connecting (switch hold / start pipeline) is a separate test.
     ///
     /// Why this pattern is required: SceneDelegate is a thin scheduler; asserting the
     /// actor decision avoids a real ActivityKit wait or UIScene host.
     ///
     /// - SeeAlso: ``SharedPlayerManager/resignActiveSessionTeardownDecision()``,
+    ///   ``SharedPlayerManager/shouldPreserveSessionAcrossResignActive``,
     ///   ``SharedPlayerManager/clearAllLocalState()``,
     ///   SceneDelegate.sceneWillResignActive,
     ///   docs/Event-Driven-Refactor-Roadmap.md,
     ///   CODING_AGENT.md (fast test patterns).
     func testResignActiveSessionTeardownSkipsClearedAndPlaying() async {
-        let connecting = await manager.resignActiveSessionTeardownDecision()
+        let factoryIdle = await manager.resignActiveSessionTeardownDecision()
         XCTAssertEqual(
-            connecting,
+            factoryIdle,
             .perform,
-            "Connecting .prePlay after isolation must still run resign-active teardown"
+            "Factory-idle .prePlay after isolation (no hold, no pipeline) must still run resign-active teardown"
         )
 
         await manager.setUserPaused()
@@ -1705,6 +1708,68 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
             .skipAlreadyCleared,
             "Already-cleared session must skip a second resign-active teardown"
         )
+    }
+
+    /// Claimed Connecting (stream-switch hold or start pipeline) must skip resign-active
+    /// teardown the same way audible play does — swipe-to-Home during yellow must not
+    /// detach the in-flight attach.
+    ///
+    /// **Invariant protected:** ``shouldPreserveSessionAcrossResignActive`` is true for
+    /// ``isStreamSwitchPrePlayHoldActive`` and ``isConnectingPlayback`` even while visual
+    /// remains `.prePlay`. Factory-idle `.prePlay` (isolation, no claim) still returns
+    /// ``.perform``. Does not set the start pipeline before a simulated ``play()`` —
+    /// production ``play()`` would treat that as a duplicate start.
+    ///
+    /// Why this pattern is required: isolation lands factory-idle Connecting; the hold
+    /// and DEBUG pipeline seams exercise the two claim bits without engine attach.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/shouldPreserveSessionAcrossResignActive``,
+    ///   ``SharedPlayerManager/resignActiveSessionTeardownDecision()``,
+    ///   ``SharedPlayerManager/resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
+    ///   ``SharedPlayerManager/_test_setPlaybackStartPipelineActive(_:)``,
+    ///   SceneDelegate.sceneWillResignActive,
+    ///   CODING_AGENT.md (fast test patterns).
+    func testResignActiveSessionTeardownPreservesClaimedConnecting() async {
+        let factoryIdle = await manager.resignActiveSessionTeardownDecision()
+        XCTAssertEqual(
+            factoryIdle,
+            .perform,
+            "Precondition: isolation factory-idle Connecting still tears down"
+        )
+        let idlePreserve = await manager.shouldPreserveSessionAcrossResignActive
+        XCTAssertFalse(idlePreserve, "Factory-idle .prePlay must not preserve the session")
+
+        await manager.resetToPrePlayForNewStream(connectingLanguageCode: "fi")
+        let holdActive = await manager.isStreamSwitchPrePlayHoldActive
+        XCTAssertTrue(holdActive, "Precondition: switch hold claims Connecting")
+        let holdDecision = await manager.resignActiveSessionTeardownDecision()
+        XCTAssertEqual(
+            holdDecision,
+            .skipActivePlayback,
+            "Stream-switch hold must skip resign-active teardown so attach can finish"
+        )
+
+        await manager.setUserPaused()
+        let afterPause = await manager.resignActiveSessionTeardownDecision()
+        XCTAssertEqual(
+            afterPause,
+            .perform,
+            "Sticky pause after a claimed switch must still tear down"
+        )
+
+        await prepareSharedPlayerManagerEventTestIsolation(manager: manager)
+        await manager._test_setPlaybackStartPipelineActive(true)
+        let connecting = await manager.isConnectingPlayback
+        XCTAssertTrue(connecting, "Precondition: start pipeline claims Connecting")
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .prePlay, "Pipeline claim must not require .playing chrome")
+        let pipelineDecision = await manager.resignActiveSessionTeardownDecision()
+        XCTAssertEqual(
+            pipelineDecision,
+            .skipActivePlayback,
+            "Active start pipeline must skip resign-active teardown (cold first play / switch attach)"
+        )
+        await manager._test_setPlaybackStartPipelineActive(false)
     }
 
     // MARK: - Attach-path sticky connecting snapshot quiet

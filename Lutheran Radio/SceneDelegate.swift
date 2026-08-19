@@ -30,8 +30,9 @@ import UIKit
 ///   ``SharedPlayerManager/performSessionTeardownSynchronouslyForTermination()``
 ///   (single-flight with `applicationWillTerminate`; both sites stay).
 /// - Resign-active teardown: ``sceneWillResignActive`` consults
-///   ``SharedPlayerManager/resignActiveSessionTeardownDecision()`` (skip playing
-///   and already-`.cleared`; still teardown connecting / paused).
+///   ``SharedPlayerManager/resignActiveSessionTeardownDecision()`` (skip audible
+///   play, claimed Connecting, and already-`.cleared`; still teardown factory-idle
+///   Connecting / paused).
 ///
 /// **`lutheranradio://open` honesty:** ``ViewController/handleOpenFromLiveActivity()`` only runs
 /// the resurrection / state-sync check and does **not** invent a new play intent. Cold-launch
@@ -47,6 +48,7 @@ import UIKit
 ///   ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)``,
 ///   ``WidgetRefreshManager/liftPrivacyClearWriteSuppressionHoldForForegroundDetect()``,
 ///   ``SharedPlayerManager/resignActiveSessionTeardownDecision()``,
+///   ``SharedPlayerManager/shouldPreserveSessionAcrossResignActive``,
 ///   docs/Widget-Presentation-Dataflow.md,
 ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7)
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
@@ -134,15 +136,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    /// Resign active (lock, interruption, etc.): session/widget hygiene only when the
-    /// actor says teardown is still needed.
+    /// Resign active (lock, interruption, app switcher, etc.): session/widget hygiene
+    /// only when the actor says teardown is still needed.
     ///
-    /// Skip while actively playing (background audio + lock-screen LA must survive) and
-    /// when visual is already `.cleared` (privacy clear already ended the Live Activity
-    /// and reloaded widgets). Connecting `.prePlay` and sticky `.userPaused` still tear down.
+    /// Skip while ``shouldPreserveSessionAcrossResignActive`` (audible play **or** a
+    /// claimed attach — stream-switch hold / start pipeline) so swipe-to-Home during
+    /// yellow Connecting cannot nil the player item. Skip when visual is already
+    /// `.cleared` (privacy clear already ended the Live Activity). Factory-idle
+    /// `.prePlay` and sticky `.userPaused` still tear down.
     ///
     /// - Parameter scene: The scene that will resign active.
     /// - SeeAlso: ``SharedPlayerManager/resignActiveSessionTeardownDecision()``,
+    ///   ``SharedPlayerManager/shouldPreserveSessionAcrossResignActive``,
     ///   ``SharedPlayerManager/performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
     ///   ``SharedPlayerManager/clearAllLocalState()``
     func sceneWillResignActive(_ scene: UIScene) {

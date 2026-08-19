@@ -1155,13 +1155,16 @@ actor SharedPlayerManager {
     /// Policy lives on ``SharedPlayerManager`` so SceneDelegate stays a thin scheduler.
     ///
     /// - SeeAlso: ``resignActiveSessionTeardownDecision()``,
+    ///   ``shouldPreserveSessionAcrossResignActive``,
     ///   SceneDelegate.sceneWillResignActive,
     ///   ``clearAllLocalState()``,
     ///   docs/Event-Driven-Refactor-Roadmap.md.
     enum ResignActiveSessionTeardownDecision: Equatable, Sendable {
-        /// Run ``performSessionAndWidgetTeardown`` (non-playing, not already privacy-cleared).
+        /// Run ``performSessionAndWidgetTeardown`` (factory-idle Connecting, sticky pause,
+        /// thermal / security — not a claimed attach and not already privacy-cleared).
         case perform
-        /// Skip: audio is flowing; lock-screen Live Activity must survive.
+        /// Skip: audio is flowing **or** this process has claimed an attach (stream-switch
+        /// hold / start pipeline). Lock-screen Live Activity and the in-flight engine must survive.
         case skipActivePlayback
         /// Skip: visual is already `.cleared`; privacy clear already ended the Live Activity.
         case skipAlreadyCleared
@@ -1450,30 +1453,57 @@ actor SharedPlayerManager {
         #endif
     }
 
+    /// Whether resign-active must keep the engine and Live Activity instead of tearing down.
+    ///
+    /// Yellow ``PlayerVisualState/prePlay`` is chrome, not ownership. Factory-idle Connecting
+    /// (reset done, no hold, no start pipeline) is **not** preserved — residual Now Playing /
+    /// Live Activity hygiene still runs. A **claimed** attach is preserved the same way as
+    /// audible play:
+    /// - ``isStreamSwitchPrePlayHoldActive`` — flag tap already promised Connecting until
+    ///   ``setPlaying()`` (covers the whole stream-switch yellow window, including tuning
+    ///   before ``play()``).
+    /// - ``isConnectingPlayback`` — ``play()`` start pipeline owns the attach (cold first
+    ///   play after factory, or switch after ``play()`` entered).
+    ///
+    /// - Returns: `true` when lock / app-switcher / Control Center must not detach the
+    ///   player item or end Live Activity.
+    /// - Important: Do **not** set ``isPlaybackStartPipelineActive`` before ``play()`` to
+    ///   cover the cold-launch special-tuning window — ``play()`` treats that flag as a
+    ///   duplicate start and skips attach. That residual window stays factory-idle.
+    /// - SeeAlso: ``resignActiveSessionTeardownDecision()``, ``isConnectingPlayback``,
+    ///   ``isStreamSwitchPrePlayHoldActive``, ``resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
+    ///   SceneDelegate.sceneWillResignActive,
+    ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant — resign-active),
+    ///   docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md.
+    var shouldPreserveSessionAcrossResignActive: Bool {
+        currentVisualState.isActivelyPlaying
+            || isStreamSwitchPrePlayHoldActive
+            || isConnectingPlayback
+    }
+
     /// Resign-active (lock / inactive) decision for session/widget teardown.
     ///
     /// SceneDelegate consults this so lock-cycle policy stays on the actor:
-    /// - ``skipActivePlayback`` — audio is flowing; background audio + lock-screen Live
-    ///   Activity must survive lock.
+    /// - ``skipActivePlayback`` — ``shouldPreserveSessionAcrossResignActive`` (audible play
+    ///   **or** claimed Connecting). Background audio + in-flight attach + lock-screen
+    ///   Live Activity must survive.
     /// - ``skipAlreadyCleared`` — visual is already `.cleared`; ``clearAllLocalState()``
     ///   already ended the Live Activity (graceful) and reloaded widgets. A second
     ///   immediate end races that dismissal.
-    /// - ``perform`` — non-playing and not privacy-cleared (``.prePlay``, ``.userPaused``,
-    ///   thermal / security). Same as the historical non-playing teardown.
-    ///
-    /// Connecting `.prePlay` during an in-flight cold attach still **performs** teardown
-    /// from resign-active (do not skip that window here).
+    /// - ``perform`` — factory-idle ``.prePlay``, sticky ``.userPaused``, thermal / security.
+    ///   Not a claimed attach and not privacy-cleared.
     ///
     /// - Returns: Decision for ``SceneDelegate/sceneWillResignActive``.
-    /// - SeeAlso: ``performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
+    /// - SeeAlso: ``shouldPreserveSessionAcrossResignActive``,
+    ///   ``performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
     ///   ``clearAllLocalState()``, SceneDelegate.sceneWillResignActive,
     ///   docs/Event-Driven-Refactor-Roadmap.md, docs/Widget-Presentation-Dataflow.md.
     func resignActiveSessionTeardownDecision() -> ResignActiveSessionTeardownDecision {
-        if currentVisualState.isActivelyPlaying {
-            return .skipActivePlayback
-        }
         if currentVisualState == .cleared {
             return .skipAlreadyCleared
+        }
+        if shouldPreserveSessionAcrossResignActive {
+            return .skipActivePlayback
         }
         return .perform
     }
