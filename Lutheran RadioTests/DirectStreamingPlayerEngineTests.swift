@@ -5,7 +5,7 @@
 //  Created by Jari Lammi on 24.7.2026.
 //
 //  Real-engine integration coverage for ``DirectStreamingPlayer`` under the XCTest
-//  host: attach-generation discard, soft-silence barriers, early-window recovery,
+//  host: attach-generation discard, hard-teardown barriers, early-window recovery,
 //  UITestMode audio short-circuits, and production type / DNSSEC factory surfaces.
 //
 //  Mock doubles and pure unit scenarios live in ``DirectStreamingPlayerMockTests``.
@@ -27,12 +27,14 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
 
     // MARK: - Setup & Teardown
 
-    /// Minimal isolation only: avoid full `clearAllLocalState` / `stop()` in suite setUp.
-    /// Those paths activate teardown guards and sticky pause that individual attach/recovery
-    /// tests already arrange explicitly (and that would suppress early-window admission).
+    /// Minimal isolation only: avoid full `clearAllLocalState` / `stop()` in suite setUp
+    /// (those paths sticky-pause intent). User-action `stop()` now arms the Icecast teardown
+    /// guard; clear it here so a prior pause case cannot suppress the next attach/recovery test.
+    /// Production attach clears the same guard in ``createAndStartPlayer`` / ``preparePlayerItem``.
     override func setUp() async throws {
         try await super.setUp()
         sanitizeLiveActivityLocalState()
+        DirectStreamingPlayer.shared.test_clearPlaybackTeardownGuard()
     }
 
     override func tearDown() async throws {
@@ -280,10 +282,10 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
             "Live generation + active play intent must allow attach to continue"
         )
 
-        // Await soft silence — same completion contract SharedPlayerManager.stop uses.
+        // Await Icecast hard teardown — same completion contract SharedPlayerManager.stop uses.
         await engine.test_stopAndWait(
             reason: .userAction,
-            silent: false,
+            silent: true,
             applyUserPauseVisualLock: false
         )
 
@@ -297,37 +299,54 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
             mayContinueAfterStop,
             "Stale generation must fail shouldContinueInFlightAttach after stop"
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             engine.test_isSoftPaused,
-            "stopAndWait must leave soft-pause engaged before returning (engine-complete contract)"
+            "user-action stopAndWait must not leave a retained Icecast item (loaders must be cancelled)"
+        )
+        XCTAssertFalse(
+            engine.test_hasAttachedPlayerItem,
+            "user-action stop must nil the player item so the keep-alive URLSession is cancelled"
+        )
+        XCTAssertTrue(
+            engine.test_isPlaybackTeardownActive,
+            "hard teardown must activate the playback teardown guard"
         )
         if let rate = engine.test_playerRate {
-            XCTAssertEqual(rate, 0, accuracy: 0.001, "soft silence must zero player rate before stopAndWait returns")
+            XCTAssertEqual(rate, 0, accuracy: 0.001, "hard teardown must zero player rate before stopAndWait returns")
         }
 
         engine.test_endInFlightPlaybackAttach()
         XCTAssertFalse(engine.test_isCurrentlyAttemptingPlayback)
     }
 
-    /// Soft-pause completion is the engine-complete barrier for user pause: callers that refresh
-    /// Now Playing / Live Activity must not observe return until rate is 0 and soft-pause is set.
+    /// Hard-teardown completion is the engine-complete barrier for user pause: callers that
+    /// refresh Now Playing / Live Activity must not observe return while the Icecast
+    /// URLSession is still running.
     ///
-    /// Protects: media surfaces cannot claim "paused" while soft silence is still in flight.
+    /// Protects: paused chrome cannot sit on a live keep-alive data task (Icecast still downloading).
     ///
     /// - SeeAlso: `DirectStreamingPlayer.stopAndWait`, `SharedPlayerManager.stop`,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause / transport coordination).
-    func testStopAndWaitCompletesOnlyAfterSoftSilence() async {
+    func testStopAndWaitCompletesOnlyAfterHardTeardown() async {
         let engine = DirectStreamingPlayer.shared
 
         await engine.test_stopAndWait(
             reason: .userAction,
-            silent: false,
+            silent: true,
             applyUserPauseVisualLock: false
         )
 
-        XCTAssertTrue(
+        XCTAssertFalse(
             engine.test_isSoftPaused,
-            "stopAndWait must set isSoftPaused before resuming the caller"
+            "user-action stopAndWait must clear isSoftPaused (no retained live item)"
+        )
+        XCTAssertFalse(
+            engine.test_hasAttachedPlayerItem,
+            "user-action stop must nil the player item"
+        )
+        XCTAssertTrue(
+            engine.test_isPlaybackTeardownActive,
+            "audible kick must stay blocked via the teardown guard after user pause"
         )
         if let rate = engine.test_playerRate {
             XCTAssertEqual(
@@ -340,7 +359,7 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         let canKick = await engine.test_shouldAllowAudiblePlaybackKick()
         XCTAssertFalse(
             canKick,
-            "Audible kick must remain blocked after soft-pause completion"
+            "Audible kick must remain blocked after hard teardown"
         )
     }
 

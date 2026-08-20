@@ -227,7 +227,7 @@ postHomeWidgetInteractivePaintAdvancedWake()  // local NC + Darwin
 
 | Event | visualState to stamp | language | hasError | urgency / notes |
 |-------|----------------------|----------|----------|-----------------|
-| Sticky user pause lock (`stop` / `setUserPaused` / `markAsUserPaused`) | `.userPaused` | current stream language | false (unless permanent error) | **Early** — same moment as early sticky session snapshot intent; before soft silence |
+| Sticky user pause lock (`stop` / `setUserPaused` / `markAsUserPaused`) | `.userPaused` | current stream language | false (unless permanent error) | **Early** — same moment as early sticky session snapshot intent; before Icecast hard teardown |
 | Soft-resume eligible play intent | **Do not stamp Connecting** | unchanged | — | Hold residual pause chrome until audible |
 | Engine `setPlaying()` / authoritative playing | `.playing` | current / destination language | false | Authoritative settle; always stamp when gate open |
 | Stream-switch hold (active play) | `.prePlay` | **destination** language | false | Honesty window; never `.playing` mid-hold |
@@ -521,7 +521,7 @@ Unit and integration cases below protect the shipped mirror. Device eyes-on (§1
 
 ### 10.2 Integration (existing UITestMode / seams)
 
-- Early sticky pause → mirror userPaused before soft silence.
+- Early sticky pause → mirror userPaused before Icecast hard teardown.
 - setPlaying → mirror playing.
 - Extension optimistic switch → mirror prePlay + dest lang; main setPlaying → mirror playing.
 - Privacy clear → Provider fields factory; gate closed until foreground lift (teardown WidgetCenter detect must not restamp).
@@ -544,8 +544,8 @@ Self-contained manual checklist for §14. **Do not commit device logs**; absorb 
 | Step | Required? | Home chrome expectation |
 |------|-----------|-------------------------|
 | Cold launch with widgets (new process; product auto-plays) → background | **Required** | Brief Connecting / ``prePlay``, then home settles **playing** for **this** process without reopening the app; not stuck factory while audio is live |
-| Pause from home | **Required** | App **stays backgrounded** (Darwin + pending ``pause`` → sticky ``userPaused`` / soft silence); first durable paint ``userPaused`` (no long residual ``playing`` flash). **Not** intent-miss host open (main foreground with no mailbox / no stop) |
-| Soft resume from home | **Required** | Settles ``playing``; no long post-audible Connecting while soft-resume same-stream is already audible; main stays backgrounded |
+| Pause from home | **Required** | App **stays backgrounded** (Darwin + pending ``pause`` → sticky ``userPaused`` / Icecast hard teardown); first durable paint ``userPaused`` (no long residual ``playing`` flash). **Not** intent-miss host open (main foreground with no mailbox / no stop) |
+| Play from paused home | **Required** | Connecting / ``prePlay`` then settles ``playing`` (user pause nils the live item; not gapless same-stream resume); main stays backgrounded |
 | Switch stream while playing | **Required** | Destination flag + Connecting / ``prePlay``, then ``playing`` after attach settle — never destination + ``playing`` mid-hold |
 | Privacy clear | **Required** | ``clearHomeWidgetLiveChromeMirror`` (and siblings); home factory/defaults — not residual playing |
 | Residual honesty when session + live chrome absent or distrust applies | Regression | Factory ``prePlay`` / passive ``tap_to_open`` — **not** prior-process playing residual |

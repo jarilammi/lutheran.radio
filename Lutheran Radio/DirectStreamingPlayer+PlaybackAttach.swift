@@ -743,7 +743,7 @@ extension DirectStreamingPlayer {
         await publishAuthoritativePlayingIfNeeded()
     }
 
-    /// Test seam: await soft-pause / hard-stop completion (production ``stopAndWait``).
+    /// Test seam: await hard-teardown completion (production ``stopAndWait``).
     @MainActor
     func test_stopAndWait(
         reason: StopReason = .userAction,
@@ -763,11 +763,30 @@ extension DirectStreamingPlayer {
     @MainActor
     var test_isCurrentlyAttemptingPlayback: Bool { isCurrentlyAttemptingPlayback }
 
-    /// Test seam: soft-pause flag set when user pause retains a secured item path.
+    /// Test seam: soft-pause flag (in-flight discard only; user pause must leave this false).
+    /// - SeeAlso: ``SharedPlayerManager/stop()``, ``enforceSilenceAfterDiscardedAttach()``.
     @MainActor
     var test_isSoftPaused: Bool { isSoftPaused }
 
-    /// Test seam: AVPlayer rate after soft silence (nil when no player is attached).
+    /// Test seam: true when a secured item is still bound (user pause must leave this false).
+    /// - SeeAlso: ``SharedPlayerManager/stop()``, ``performActualStop(reason:silent:)``.
+    @MainActor
+    var test_hasAttachedPlayerItem: Bool { playerItem != nil }
+
+    /// Test seam: hard-teardown guard after user pause / stream-switch / interruption stop.
+    /// - SeeAlso: ``activatePlaybackTeardownGuardFromStop()``, ``shouldAllowAudiblePlaybackKick()``.
+    @MainActor
+    var test_isPlaybackTeardownActive: Bool { isPlaybackTeardownActive }
+
+    /// Test seam: drop leftover user-pause teardown so the next attach/recovery case can run.
+    /// Production attach clears this in ``createAndStartPlayer`` / ``preparePlayerItem``.
+    /// - SeeAlso: ``clearPlaybackTeardownGuard()``, ``SharedPlayerManager/stop()``.
+    @MainActor
+    func test_clearPlaybackTeardownGuard() {
+        clearPlaybackTeardownGuard()
+    }
+
+    /// Test seam: AVPlayer rate after stop (nil when no player is attached).
     @MainActor
     var test_playerRate: Float? { player?.rate }
 

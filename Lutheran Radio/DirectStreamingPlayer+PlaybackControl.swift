@@ -5,8 +5,10 @@
 //  Created by Jari Lammi on 26.7.2026.
 //
 //  Engine-owned public play / stop entry surface for the secured AVPlayer streaming engine.
-//  Owns cold-start `play()`, attach-aware `createAndStartPlayer`, soft-pause and hard-teardown
+//  Owns cold-start `play()`, attach-aware `createAndStartPlayer`, and hard-teardown
 //  stop paths (`stop` / `stopAndWait` / `performActualStop` / synchronous cleanup helpers).
+//  User pause cancels the Icecast URLSession and nils the item — not a retained
+//  live connection. Soft-pause (item at rate 0) is only ``enforceSilenceAfterDiscardedAttach``.
 //
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
 //  DirectStreamingPlayer remains the public engine façade; this file owns one domain.
@@ -31,10 +33,14 @@
 //
 //  Process invariants:
 //  - No-op under UITestMode (`isTesting`) for ``play()`` / ``createAndStartPlayer``.
+//  - ``stop`` under `isTesting` still applies the Icecast teardown postcondition (teardown guard,
+//    `isSoftPaused == false`, item niled, loaders cancelled) on MainActor — it must not hop
+//    `audioQueue` or AVAudioSession (that re-introduces the XCTest-host launch hang).
 //  - User pause during validation / session activation advances attach generation; post-await
 //    paths re-check generation + intent and discard without audible start.
-//  - Soft pause (user action, non-silent) zeros rate on MainActor before completion so Now
-//    Playing / Live Activity refresh cannot race audible audio.
+//  - User-action stop always hard-tears down the custom resource-loader session so a paused
+//    Icecast keep-alive cannot keep receiving the live body. ``SharedPlayerManager/stop()`` then
+//    deactivates ``AVAudioSession``. Play after pause is full ``attachAndPlay``.
 //  - ``SharedPlayerManager/stop()`` may pass `applyUserPauseVisualLock: false` when it already
 //    owns sticky `.userPaused` + single media-surface refresh.
 //
@@ -227,10 +233,15 @@ extension DirectStreamingPlayer {
     /// silences any partially attached player. There is **no** early return that leaves attach free
     /// to call `playImmediately` after paused chrome is shown.
     ///
-    /// **Engine-complete ordering:** Soft pause applies `player.pause()` + `rate = 0` (and sets
-    /// ``isSoftPaused``) on the MainActor **before** invoking `completion`. Callers that refresh
-    /// Now Playing / Live Activity must await that completion (prefer ``stopAndWait(reason:silent:applyUserPauseVisualLock:)``)
-    /// so glyphs and system rate cannot flip while audio is still audible.
+    /// **Engine-complete ordering:** Hard teardown cancels ``activeResourceLoaders`` (Icecast
+    /// `URLSession` keep-alive), nils the item, and clears ``isSoftPaused`` **before** invoking
+    /// `completion`. Callers that refresh Now Playing / Live Activity must await that completion
+    /// (prefer ``stopAndWait(reason:silent:applyUserPauseVisualLock:)``) so glyphs cannot flip
+    /// while the Icecast URLSession is still running.
+    ///
+    /// **Why not AVPlayer.pause() alone:** media bytes flow through a custom resource loader,
+    /// not AVPlayer’s HLS stack. `canUseNetworkResourcesForLiveStreamingWhilePaused` does not
+    /// apply. Leaving the item attached would keep `StreamingSessionDelegate` receiving MP3.
     ///
     /// **Visual-lock ownership:** When ``SharedPlayerManager/stop()`` already locked sticky
     /// `.userPaused`, pass `applyUserPauseVisualLock: false` so this path does not re-enter
@@ -242,8 +253,8 @@ extension DirectStreamingPlayer {
     ///   - reason: Why we are stopping. This is now the single source of truth for user intent.
     ///             `.userAction` → sticky `.userPaused` when `applyUserPauseVisualLock` is true
     ///             `.streamSwitch`, `.interruption`, `.error` → preserve play intent
-    ///   - completion: Optional MainActor handler invoked after soft silence (or hard-teardown
-    ///                 scheduling reaches its documented completion points). Always called once.
+    ///   - completion: Optional MainActor handler invoked after hard-teardown completion.
+    ///                 Always called once.
     ///   - silent: If `true`, skips status updates / UI flicker (exactly as it behaved in recent commits).
     ///   - applyUserPauseVisualLock: When `true` (default) and `reason == .userAction && !silent`,
     ///     applies sticky pause via ``markAsUserPaused()`` **after** engine silence. Pass `false`
@@ -270,14 +281,44 @@ extension DirectStreamingPlayer {
 
         if isCurrentlyAttemptingPlayback {
             #if DEBUG
-            print("[DirectStreamingPlayer] [Stop] User/engine stop during in-flight attach — generation invalidated; soft-silence will run (no early skip)")
+            print("[DirectStreamingPlayer] [Stop] User/engine stop during in-flight attach — generation invalidated; hard teardown will run (no early skip)")
             #endif
         }
 
-        let usesSoftPause = reason == .userAction && !silent
-        if !usesSoftPause {
-            // Activate before any async work so stale KVO / debounced recreate cannot race teardown.
-            activatePlaybackTeardownGuardFromStop()
+        // Always activate before async work so stale KVO / debounced recreate cannot race
+        // Icecast teardown. User pause used to skip this for "soft pause" (item retained);
+        // that left the keep-alive data task running while chrome showed paused.
+        activatePlaybackTeardownGuardFromStop()
+
+        // XCTest host: apply the same Icecast teardown postcondition without audioQueue / session IPC.
+        // AGENT NOTE: Skipping this re-introduces the black-screen / 5–15 min `test-without-building`
+        // hang (see SharedPlayerManager.isRunningInUITestMode).
+        if isTesting {
+            Task { @MainActor [weak self, reason, silent, applyUserPauseVisualLock, completion] in
+                guard let self else {
+                    completion?()
+                    return
+                }
+                self.cancelStartupSafetyNet()
+                self.cancelEarlyICYDropRecreate()
+                self.player?.pause()
+                self.player?.rate = 0.0
+                self.isSoftPaused = false
+                self.activeResourceLoaders.forEach { (_, delegate) in
+                    delegate.cancel()
+                }
+                self.activeResourceLoaders.removeAll()
+                self.playerItem = nil
+                self.clearAttachedItemBinding()
+                if applyUserPauseVisualLock && reason == .userAction && !silent {
+                    await self.markAsUserPaused()
+                }
+                if !silent {
+                    await SharedPlayerManager.shared.saveCurrentState()
+                }
+                completion?()
+            }
+            return
         }
         
         loadingTimeoutWorkItem?.cancel()
@@ -286,10 +327,9 @@ extension DirectStreamingPlayer {
         
         removeAudioSessionObservers()
         
-        // Soft silence first, then optional sticky visual lock. Outer `completion` fires only after
-        // engine silence so SPM can refresh media surfaces without "paused chrome + audible stream".
-        // Soft silence is applied on this MainActor task (no nested CheckedContinuation resume on the
-        // same stack). Hard teardown still uses a continuation bridged from audioQueue → main.
+        // Hard teardown first, then optional sticky visual lock. Outer `completion` fires only after
+        // loaders are cancelled so SPM can refresh media surfaces without "paused chrome + live HTTP".
+        // Teardown uses a continuation bridged from audioQueue → main.
         Task { @MainActor [weak self, reason, silent, applyUserPauseVisualLock, completion] in
             guard let self else {
                 completion?()
@@ -303,7 +343,7 @@ extension DirectStreamingPlayer {
             if applyUserPauseVisualLock && reason == .userAction && !silent {
                 await self.markAsUserPaused()
                 #if DEBUG
-                print("[DirectStreamingPlayer] markAsUserPaused() after soft silence – visualState set to .userPaused")
+                print("[DirectStreamingPlayer] markAsUserPaused() after hard teardown – visualState set to .userPaused")
                 #endif
             }
 
@@ -317,11 +357,11 @@ extension DirectStreamingPlayer {
         }
     }
 
-    /// Awaits engine stop completion (soft silence or hard-teardown completion).
+    /// Awaits engine stop completion (hard-teardown: loaders cancelled, item niled).
     ///
     /// Prefer this over fire-and-forget ``stop(reason:completion:silent:applyUserPauseVisualLock:)``
     /// whenever the caller will update Now Playing / Live Activity or treat the stop as
-    /// engine-complete. Soft pause guarantees `player.rate == 0` and ``isSoftPaused`` before return.
+    /// engine-complete. Return means the Icecast data task is cancelled and ``isSoftPaused`` is false.
     ///
     /// - Parameters:
     ///   - reason: Stop reason (see ``stop(reason:completion:silent:applyUserPauseVisualLock:)``).
@@ -345,7 +385,7 @@ extension DirectStreamingPlayer {
             )
         }
         #if DEBUG
-        // Engine-complete: soft pause has rate 0 / hard path finished before this resumes.
+        // Engine-complete: hard teardown finished (loaders cancelled / item niled) before this resumes.
         MediaTransportLatencyTimeline.mark(
             .softSilenceComplete,
             detail: "reason=\(reason) silent=\(silent) applyVisualLock=\(applyUserPauseVisualLock)"
@@ -355,50 +395,34 @@ extension DirectStreamingPlayer {
 
     /// Performs the actual stop operation (MainActor entry from ``stop``’s isolation task).
     ///
-    /// Soft pause (user action, non-silent) applies silence on the MainActor **before** return —
-    /// no intermediate `audioQueue` hop — so awaiters observe a silent engine.
-    /// Hard teardown schedules cleanup on `audioQueue` and resumes only after rate is zeroed /
-    /// status emitted on the MainActor.
+    /// Always hard-tears down: cancel resource loaders (Icecast `URLSession`), nil the item,
+    /// clear ``isSoftPaused``. User pause must not retain a live HTTP body while chrome
+    /// shows paused. In-flight attach discard still uses
+    /// ``enforceSilenceAfterDiscardedAttach`` (short-lived, not unattended pause).
+    ///
+    /// Schedules cleanup on `audioQueue` and resumes only after rate is zeroed / status
+    /// emitted on the MainActor.
     ///
     /// - Parameters:
     ///   - silent: If `true`, skips all status updates to avoid UI flicker.
     /// - Note: Combines `silent` and non-user reasons into `effectiveSilent`.
+    /// - SeeAlso: ``StreamingSessionDelegate/cancel()``, ``SharedPlayerManager/stop()``,
+    ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant).
     @MainActor
     func performActualStop(
         reason: StopReason,
         silent: Bool = false
     ) async {
         // Derive effectiveSilent exactly as before, but now driven by reason
-        // (preserves all recent-commit behaviour for silent + stream switches)
+        // (preserves silent + stream-switch / interruption behaviour)
         let effectiveSilent = silent || (reason != .userAction)
-        let usesSoftPause = reason == .userAction && !effectiveSilent
 
-        if !usesSoftPause {
-            activatePlaybackTeardownGuardFromStop()
-        }
+        activatePlaybackTeardownGuardFromStop()
         hasStartedPlaying = false
         isDeferringFirstPlayKick = false
         
         if isDeallocating {
             stopSynchronously()
-            return
-        }
-
-        // Soft pause: silence on MainActor immediately (no audioQueue hop). Return only after
-        // rate == 0 and isSoftPaused so surface refresh cannot race audible audio.
-        if usesSoftPause {
-            cancelStartupSafetyNet()
-            cancelEarlyICYDropRecreate()
-            player?.pause()
-            player?.rate = 0.0
-            isSoftPaused = true
-            lastEmittedStatus = nil
-            lastObservedTimeControl = nil
-            lastObservedItemStatus = nil
-            safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")
-            #if DEBUG
-            print("[DirectStreamingPlayer] Soft pause complete — rate 0, secured AVPlayerItem retained for same-stream resume")
-            #endif
             return
         }
 
@@ -425,6 +449,11 @@ extension DirectStreamingPlayer {
                 }
 
                 guard self.player != nil || self.playerItem != nil else {
+                    // Item already gone; still drop any leftover Icecast data tasks.
+                    self.activeResourceLoaders.forEach { (_, delegate) in
+                        delegate.cancel()
+                    }
+                    self.activeResourceLoaders.removeAll()
                     if !effectiveSilent {
                         DispatchQueue.main.async {
                             MainActor.assumeIsolated {
@@ -438,7 +467,7 @@ extension DirectStreamingPlayer {
                         }
                     }
                     #if DEBUG
-                    print("[DirectStreamingPlayer] Playback already stopped, skipping cleanup (reason: \(reason))")
+                    print("[DirectStreamingPlayer] Playback already stopped, resource loaders cancelled (reason: \(reason))")
                     #endif
                     return
                 }

@@ -813,7 +813,7 @@ extension SharedPlayerManager {
             language = Self.preferredWidgetLanguage()
         }
         let hasError = prior?.hasError ?? false
-        // Session snapshot + live-chrome projection (``.userPaused``) before soft silence.
+        // Session snapshot + live-chrome projection (``.userPaused``) before engine teardown.
         savePersistedWidgetState(
             visualState: .userPaused,
             language: language,
@@ -827,7 +827,7 @@ extension SharedPlayerManager {
     /// Public async entry point for stopping playback.
     ///
     /// Immediately locks visual state to `.userPaused` (sticky resurrection protection) and persists it,
-    /// then awaits engine soft silence (main app path) or schedules the widget stop action.
+    /// then awaits engine hard teardown (main app path) or schedules the widget stop action.
     ///
     /// - Important: Sticky intent is locked **before** the engine stop so that any in-flight
     ///   attach still suspended on security validation / server selection / session activation
@@ -835,38 +835,50 @@ extension SharedPlayerManager {
     ///   `DirectStreamingPlayer.stop` also advances its attach generation so post-await start
     ///   paths cannot complete against a paused chrome surface.
     ///
-    /// - Important: Media surfaces for **engine-complete** Now Playing rate and a second
-    ///   Live Activity reconcile are refreshed **after** soft-pause completion
-    ///   (`player.pause` + `rate == 0` + `isSoftPaused`). Sticky visual lock +
-    ///   `streamDidStop` remain immediate; the engine is told
+    /// - Important: User pause tears down Icecast. The live body is loaded via
+    ///   a custom ``AVAssetResourceLoader`` + ``StreamingSessionDelegate`` keep-alive
+    ///   `URLSession`. `AVPlayer.pause()` does not cancel that task, so a retained item would
+    ///   keep receiving MP3 while chrome shows paused. Engine-complete means loaders
+    ///   cancelled, item niled, ``isSoftPaused == false``, then ``deactivateAudioSessionAsync()``.
+    ///   Apple’s `canUseNetworkResourcesForLiveStreamingWhilePaused` does not apply (not HLS).
+    ///   Play after pause is ``userRequestedPlay()`` → full ``attachAndPlay`` (Connecting chrome).
+    ///
+    /// - Important: Media surfaces for **engine-complete** Now Playing and a second
+    ///   Live Activity reconcile are refreshed **after** hard teardown + session deactivation.
+    ///   Sticky visual lock + `streamDidStop` remain immediate; the engine is told
     ///   `applyUserPauseVisualLock: false` so it does not re-enter ``setUserPaused()`` /
     ///   ``markAsUserPaused()`` (no second surface storm, no `streamDidPause` after `streamDidStop`).
+    ///   `silent: true` skips nested engine persist / status; this method owns the snapshot write.
     ///
     /// - Important: **Pause honesty (Live Activity):** at sticky lock time this path always
     ///   warms the durable LA toggle mirror to ``.userPaused`` (not gated by home widgets) and,
     ///   on the main app, publishes optimistic ActivityKit ContentState via
     ///   ``WidgetIntentExecution/pushOptimisticLiveActivityToggleContent(visualState:)`` **before**
-    ///   soft silence completes. That replaces a stale system-held Connecting (``.prePlay``)
+    ///   hard teardown completes. That replaces a stale system-held Connecting (``.prePlay``)
     ///   glyph without requiring owned visual to have been ``.playing`` first, and preserves
-    ///   language chrome. Post-silence ``refreshAllMediaSurfaces`` remains the engine-complete
+    ///   language chrome. Post-teardown ``refreshAllMediaSurfaces`` remains the engine-complete
     ///   ownership path (suppresses when optimistic content already matches).
     ///
     /// - Postcondition: visual + intent forced to `.userPaused` (sticky barrier for recovery),
     ///   privacy-gated early sticky session snapshot written when widgets are active,
     ///   durable LA toggle mirror = `.userPaused`, main-app optimistic LA ContentState pushed,
-    ///   engine soft silence awaited (main), authoritative ``saveCurrentState()``
+    ///   engine item gone and audio session deactivated (main), authoritative ``saveCurrentState()``
     ///   performed (privacy-gated; may no-op when early sticky already matched), surfaces
-    ///   notified once after silence, and `streamDidStop` emitted.
+    ///   notified once after teardown, and `streamDidStop` emitted.
+    ///   Does **not** run ``performSessionAndWidgetTeardown`` (paused Live Activity stays until
+    ///   resign-active / terminate).
     ///
     /// - SeeAlso: ``setUserPaused()``, ``markAsUserPaused()``, ``emit(_:)``,
     ///   ``persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()``,
     ///   `PlayerEvent.streamDidStop`,
     ///   `DirectStreamingPlayer.stopAndWait(reason:silent:applyUserPauseVisualLock:)`,
+    ///   `DirectStreamingPlayer.deactivateAudioSessionAsync()`,
     ///   ``persistLiveActivityToggleVisualStateMirror(_:)``,
     ///   ``WidgetIntentExecution/pushOptimisticLiveActivityToggleContent(visualState:)``,
-    ///   ``canProceedWithPlayback()``, CODING_AGENT.md (resurrection protection, SSOT stop path),
+    ///   ``userRequestedPlay()``, ``canProceedWithPlayback()``,
+    ///   CODING_AGENT.md (resurrection protection, SSOT stop path),
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
-    ///   docs/Widget-Presentation-Dataflow.md (sticky pause home refresh authority).
+    ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant, sticky pause home refresh).
     ///
     /// AGENT NOTE: `.streamDidStop` is emitted here after the immediate mutation
     /// because `stop()` is the public authoritative stop entry. Widget vs main paths
@@ -892,7 +904,7 @@ extension SharedPlayerManager {
         updatePlaybackIntent(to: .userPaused)
 
         // Early sticky session snapshot (privacy-gated) so home refresh derivation and
-        // regress checks see .userPaused before soft silence / deferred saveCurrentState.
+        // regress checks see .userPaused before engine teardown / deferred saveCurrentState.
         // Without this, non-carried streamDidStop / playbackIntentChanged re-read lagging
         // .playing and can execute a home playing flash after sticky pause is locked.
         persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()
@@ -916,39 +928,41 @@ extension SharedPlayerManager {
             return
         }
 
-        // Optimistic LA ContentState before soft silence so lock-screen pause glyph tracks
+        // Optimistic LA ContentState before hard teardown so lock-screen pause glyph tracks
         // even when owned content was still Connecting (stale stream-switch freeze).
-        // Engine-complete refreshAllMediaSurfaces below remains the post-silence reconcile.
+        // Engine-complete refreshAllMediaSurfaces below remains the post-teardown reconcile.
         #if LUTHERAN_MAIN_APP
         await WidgetIntentExecution.pushOptimisticLiveActivityToggleContent(visualState: .userPaused)
         #endif
 
-        // Main app path — await soft pause so rate is 0 before Now Playing / Live Activity flip.
-        // applyUserPauseVisualLock: false — sticky lock + streamDidStop already applied above;
-        // a nested setUserPaused would double-refresh surfaces and emit streamDidPause after stop.
+        // Main app path — await Icecast teardown so Now Playing / Live Activity cannot flip
+        // while the keep-alive data task is still running. silent: true skips nested persist
+        // and status (this method already emitted streamDidStop and will save once).
+        // applyUserPauseVisualLock: false — sticky lock already applied above.
         await DirectStreamingPlayer.shared.stopAndWait(
             reason: .userAction,
-            silent: false,
+            silent: true,
             applyUserPauseVisualLock: false
         )
 
         // Keep parsed metadata in the snapshot so widgets can show a subdued last-known
-        // program line while paused. Raw ICY in nowPlayingStreamMetadata is unchanged
-        // for same-stream soft-pause resume re-hydrate.
+        // program line while paused. Next Play is a full attach (new ICY), not soft-resume.
 
-        // Always save after engine silence
+        // Always save after engine teardown
         await saveCurrentState()
         
         notifyMainApp(action: "pause")
         
         #if LUTHERAN_MAIN_APP
-        // Single media-surface refresh after soft silence — engine-complete ownership path.
+        // Item is gone; holding AVAudioSession would keep the process audio-active until
+        // a later lock-cycle teardown. Surfaces refresh after deactivation.
+        _ = await DirectStreamingPlayer.shared.deactivateAudioSessionAsync()
         await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
         await performPostStopWidgetHygiene()
         #endif
         
         #if DEBUG
-        print("[SharedPlayerManager] stop() completed – visualState locked to .userPaused, engine soft-silenced, surfaces refreshed")
+        print("[SharedPlayerManager] stop() completed – visualState locked to .userPaused, Icecast torn down, audio session deactivated, surfaces refreshed")
         #endif
     }
     

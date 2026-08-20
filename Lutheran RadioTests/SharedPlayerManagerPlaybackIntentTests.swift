@@ -74,6 +74,8 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
 
     /// Explicit play after sticky pause clears the lock so a subsequent attach may proceed.
     /// Complements the in-flight discard invariant (pause wins mid-attach; play is required to resume).
+    /// After pause teardown there is no same-stream item, so chrome must go Connecting (``.prePlay``)
+    /// rather than retaining grey pause for a gapless resume that no longer exists.
     func testUserRequestedPlayAfterStopRestoresCanProceed() async {
         await manager.stop()
         let blocked = await manager.canProceedWithPlayback()
@@ -82,8 +84,14 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
         await manager.setUserIntentToPlay()
 
         let intent = await manager.currentPlaybackIntent
+        let visual = await manager.currentVisualState
         let canProceed = await manager.canProceedWithPlayback()
         XCTAssertEqual(intent, .shouldBePlaying)
+        XCTAssertEqual(
+            visual,
+            .prePlay,
+            "Play after pause teardown must use Connecting chrome (no retained Icecast item)"
+        )
         XCTAssertTrue(canProceed)
     }
 

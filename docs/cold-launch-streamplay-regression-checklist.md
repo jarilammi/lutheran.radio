@@ -109,18 +109,18 @@ End with security impact, build status, localization needed.
 
 ---
 
-## 5. Pause, resume, and soft pause
+## 5. Pause, resume, and Icecast teardown
 
 1. **Explicit pause intent** — User/widget/remote pause sets `playbackIntent = .userPaused` and sticky `.userPaused` visual.
 2. **Resume path label** — DEBUG: `resume play, proceeding`; zero `first cold-launch play call` on resume.
-3. **Same-stream soft pause** — `Resumed from soft pause — skipped setStreamAndPlay` when language unchanged and item valid.
-4. **No buffer auto-resume** — After soft pause while `.userPaused`: only `timeControlStatus → 0`; zero `→ 2 | rate: 1.0`; no audible restart.
+3. **User pause tears down Icecast** — ``stop()`` awaits hard `stopAndWait` (resource loaders cancelled, item niled, `isSoftPaused == false`) then ``deactivateAudioSessionAsync()``. A paused keep-alive `URLSession` must not keep receiving the live body. Play after pause is full `attachAndPlay` (Connecting chrome).
+4. **No buffer auto-resume** — After sticky `.userPaused`: zero `timeControlStatus → 2 | rate: 1.0`; no audible restart.
 5. **Buffer observers gated** — `isPlaybackLikelyToKeepUp` / `isPlaybackBufferFull` call `play()` only when `canProceedWithPlayback()` is true.
 6. **Playing KVO enforcement** — `.playing` `timeControlStatus` while intent blocks → `pause()` + `rate = 0`.
-7. **Soft-pause teardown** — Soft pause keeps item, skips full teardown guard; hard stop activates guard synchronously.
-8. **Metadata rehydrate** — Pause→play same stream: `Rehydrating stream metadata from soft-pause stash` when ICY does not re-fire; widget shows program title.
+7. **Hard-teardown guard** — User-action stop activates the playback teardown guard synchronously (same as stream-switch / interruption).
+8. **In-flight discard only** — ``enforceSilenceAfterDiscardedAttach`` may still rate-pause a discarded attach; it is not the unattended user-pause path.
 9. **Stash cleared on language change** — `nowPlayingStreamMetadata` cleared on language switch.
-10. **Pause → switch → play** — Paused on A, model B: decline soft resume, clean stop, reattach, ICY for B (not audio from A).
+10. **Pause → switch → play** — Paused on A, model B: no retained item; switch updates model; Play reattaches B.
 11. **Attached item language** — `attachedItemLanguageCode` matches secured item; mismatch → clean reattach.
 
 ---

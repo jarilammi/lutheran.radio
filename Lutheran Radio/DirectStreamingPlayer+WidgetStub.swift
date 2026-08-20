@@ -157,7 +157,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         silent: Bool = false,
         applyUserPauseVisualLock: Bool = true
     ) async {
-        // Widget stub: no soft-pause engine; return immediately.
+        // Widget stub: no engine; return immediately (production user pause hard-tears down Icecast).
     }
 
     func isActuallyPlaying() -> Bool { false }

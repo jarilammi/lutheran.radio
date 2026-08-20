@@ -390,18 +390,18 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
         XCTAssertFalse(visual.isActivelyPlaying)
     }
 
-    /// Protects the user-pause engine-complete contract: ``stop()`` returns only after soft
-    /// silence (`isSoftPaused`, rate 0 when a player exists), and media-surface coordination
-    /// runs after that barrier — never while soft pause is still in flight.
+    /// Protects the user-pause engine-complete contract: ``stop()`` returns only after Icecast
+    /// hard teardown (`isSoftPaused == false`, item niled), and media-surface coordination
+    /// runs after that barrier — never while the keep-alive data task is still running.
     ///
-    /// Why: Fire-and-forget engine stop allowed Now Playing / Live Activity glyphs to flip
-    /// while audio was still audible. SPM owns sticky `.userPaused` + one
-    /// ``refreshAllMediaSurfaces`` after ``DirectStreamingPlayer/stopAndWait``.
+    /// Why: Retaining the secured item on pause left ``StreamingSessionDelegate`` receiving
+    /// MP3. SPM owns sticky `.userPaused` + one ``refreshAllMediaSurfaces`` after
+    /// ``DirectStreamingPlayer/stopAndWait`` and audio-session deactivation.
     ///
     /// - SeeAlso: ``SharedPlayerManager/stop()``,
     ///   `DirectStreamingPlayer.stopAndWait(reason:silent:applyUserPauseVisualLock:)`,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause / transport coordination).
-    func testStopAwaitsSoftSilenceBeforeReturningAndRefreshingSurfaces() async {
+    func testStopAwaitsHardTeardownBeforeReturningAndRefreshingSurfaces() async {
         SharedPlayerManager._test_setRecordMediaSurfaceCoordinationOrder(true)
         SharedPlayerManager._test_clearMediaSurfaceCoordinationOrderLog()
 
@@ -411,9 +411,16 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
         let softPaused = await MainActor.run {
             DirectStreamingPlayer.shared.test_isSoftPaused
         }
-        XCTAssertTrue(
+        let hasItem = await MainActor.run {
+            DirectStreamingPlayer.shared.test_hasAttachedPlayerItem
+        }
+        XCTAssertFalse(
             softPaused,
-            "stop() must await soft-pause completion before returning (engine-complete barrier)"
+            "stop() must not leave isSoftPaused (retained Icecast item leaves URLSession running)"
+        )
+        XCTAssertFalse(
+            hasItem,
+            "stop() must nil the player item before returning (engine-complete barrier)"
         )
         if let rate = await MainActor.run(body: { DirectStreamingPlayer.shared.test_playerRate }) {
             XCTAssertEqual(
@@ -430,9 +437,7 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
         XCTAssertEqual(intent, .userPaused)
 
         // Under UITestMode, Live Activity is skipped; coordination may be empty or NP-only if
-        // bypass is off. Invariant under test isolation: stop completed with soft silence set.
-        // When coordination is recorded with NP bypass, steps must appear only after silence —
-        // already guaranteed by stop()'s sequential await + refresh ordering.
+        // bypass is off. Invariant under test isolation: stop completed with Icecast torn down.
         SharedPlayerManager._test_setRecordMediaSurfaceCoordinationOrder(false)
         SharedPlayerManager._test_clearMediaSurfaceCoordinationOrderLog()
     }
