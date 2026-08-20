@@ -56,7 +56,8 @@ import Foundation
 @frozen public enum PlaybackPlayEarlyOutcome: Sendable, Equatable {
     /// Sticky `.userPaused` / `.securityLocked` / `.cleared` — resurrection blocked.
     case blockStickyPauseOrLock
-    /// Start pipeline already active (Connecting); keep in-flight work.
+    /// Start pipeline already active (same-stream Connecting); keep in-flight work.
+    /// Orchestrated stream switch must clear the latch before a new ``play()``.
     case skipDuplicateStartPipeline
     /// Engine already audible on matching selection (or UITest chrome equivalent).
     case skipAlreadyAudible
@@ -251,7 +252,10 @@ public enum PlaybackPlayDecision {
             return PlaybackPlayEarlyDecision(outcome: .blockStickyPauseOrLock)
         }
 
-        // 2. Duplicate entry while Connecting / start pipeline active.
+        // 2. Duplicate entry while Connecting / start pipeline active (same stream).
+        //    Orchestrated language switch must clear the latch before this table runs
+        //    (`resetToPrePlayForNewStream` / skip-reset play continuation). Do not treat
+        //    a new destination as a duplicate of the superseded attach.
         if inputs.isPlaybackStartPipelineActive {
             return PlaybackPlayEarlyDecision(outcome: .skipDuplicateStartPipeline)
         }

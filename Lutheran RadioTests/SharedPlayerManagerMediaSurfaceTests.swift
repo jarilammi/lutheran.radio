@@ -231,6 +231,54 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
         XCTAssertTrue(connecting, "Pipeline must remain active until stop or setPlaying")
     }
 
+    /// A new stream choice must drop a superseded Connecting start so the orchestrator’s
+    /// follow-on ``play()`` attaches instead of no-oping as a duplicate.
+    ///
+    /// **Invariant protected:** ``resetToPrePlayForNewStream`` clears
+    /// ``isPlaybackStartPipelineActive`` while keeping ``isStreamSwitchPrePlayHoldActive``.
+    /// Same-stream Connecting still no-ops ``userRequestedPlay()`` (sibling test). Under
+    /// UITestMode, ``play()`` after the clear enters isolation (``.playing``); a leftover
+    /// latch would skip and leave ``.prePlay``.
+    ///
+    /// Why this pattern is required: widget language chips can drain a second switch while
+    /// the previous attach is still waiting on `readyToPlay`. Silent `.streamSwitch` stop
+    /// already invalidates that attach; the actor latch must not outlive it.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
+    ///   ``SharedPlayerManager/play()``, ``SharedPlayerManager/isConnectingPlayback``,
+    ///   ``SharedPlayerManager/isStreamSwitchPrePlayHoldActive``,
+    ///   ``SharedPlayerManager/_test_setPlaybackStartPipelineActive(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   CODING_AGENT.md (fast test patterns).
+    func testResetToPrePlayForNewStreamClearsSupersededStartPipelineSoFollowOnPlayAttaches() async {
+        await manager.stop()
+        await manager.setUserIntentToPlay()
+        await manager._test_setPlaybackStartPipelineActive(true)
+        let connectingBefore = await manager.isConnectingPlayback
+        XCTAssertTrue(connectingBefore, "Precondition: in-flight start latch is set")
+
+        await manager.resetToPrePlayForNewStream(connectingLanguageCode: "de")
+
+        let hold = await manager.isStreamSwitchPrePlayHoldActive
+        let connectingAfterReset = await manager.isConnectingPlayback
+        XCTAssertTrue(hold, "Switch hold must still claim Connecting for resign-active")
+        XCTAssertFalse(
+            connectingAfterReset,
+            "New stream choice must clear the start latch so follow-on play() is not a duplicate skip"
+        )
+
+        await manager.play()
+
+        let visual = await manager.currentVisualState
+        let connectingAfterPlay = await manager.isConnectingPlayback
+        XCTAssertEqual(
+            visual,
+            .playing,
+            "UITest play after a superseded switch must attach (isolation), not skip as duplicate"
+        )
+        XCTAssertFalse(connectingAfterPlay, "Isolation attach clears the start pipeline")
+    }
+
     /// Second ``userRequestedPlay()`` while chrome is already authoritative `.playing` must
     /// no-op: no Connecting thrash, no sticky re-plan, visual stays `.playing`.
     ///

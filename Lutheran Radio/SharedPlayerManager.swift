@@ -225,7 +225,7 @@ import WidgetKit
 /// | .userPaused     | Explicit user play (button, widget, Siri, etc.)   | `userRequestedPlay()` → `setUserIntentToPlay()` first           | .prePlay (Connecting) → .playing | Intent `.shouldBePlaying` immediately; chrome stays Connecting until engine `setPlaying` |
 /// | .playing        | User taps pause/stop (any surface)                | `stop()` or `markAsUserPaused()` at top of method               | .userPaused     | Immediate sticky lock; authoritative snapshot via `saveCurrentState()` / `performActualSave` |
 /// | .playing        | Second explicit play / double-fire (same language)| `userRequestedPlay()` / `play()` — engine already audible       | .playing (unchanged) | **No-op** (optional surface reaffirm): never `attachAndPlay` / item rebuild; engine-truth idempotency only |
-/// | .playing        | User-initiated stream/language switch             | `resetToPrePlayForNewStream(connectingLanguageCode:)` (chrome + clear ICY + destination language) **before** silent engine stop, then `play()` | .prePlay → .playing | Hold prePlay through attach; never advertise `.playing` mid teardown; never prior-language chrome with Connecting; engine `setPlaying` after readyToPlay |
+/// | .playing / Connecting | User-initiated stream/language switch             | `resetToPrePlayForNewStream(connectingLanguageCode:)` (chrome + clear ICY + destination language + **clear start-pipeline latch**) **before** silent engine stop, then `play()` | .prePlay → .playing | Hold prePlay through attach; never advertise `.playing` mid teardown; never prior-language chrome with Connecting; superseded Connecting start must not skip the follow-on `play()`; engine `setPlaying` after readyToPlay |
 /// | .playing        | Mid-session stall / ICY drop / item transient     | `canProceedWithPlayback()` then secured `recreatePlayerItem()` / rate kick (attach generation) | .playing        | Engine-internal; does not call `play()`. Sticky pause blocks admission. |
 /// | .playing        | Host technical recovery (network reconnect, route)| `canProceedWithPlayback()` then permitted raw `play()`          | .playing / .prePlay → .playing | Not explicit user play; still process-local sticky only. |
 /// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
@@ -624,13 +624,21 @@ actor SharedPlayerManager {
     internal var streamSwitchConnectingLanguageCode: String?
 
     /// True while ``play()`` has passed sticky/early guards and has not yet reached authoritative
-    /// ``setPlaying()`` or an abort that clears the pipeline (security lock, sticky pause, stop).
+    /// ``setPlaying()`` or an abort that clears the pipeline (security lock, sticky pause, stop,
+    /// **or** a new-stream ``resetToPrePlayForNewStream`` that supersedes this start).
     ///
     /// Used so media-transport / Live Activity toggles can **cancel connect** (plan pause) instead
     /// of re-entering play during Connecting chrome, and so a second ``userRequestedPlay()`` is
-    /// idempotent while validation/attach is already in flight.
+    /// idempotent while validation/attach is already in flight for **this** stream.
+    ///
+    /// A language/stream switch is not a duplicate of that start: silent `.streamSwitch` stop
+    /// advances ``DirectStreamingPlayer/playbackAttachGeneration``, so the previous attach cannot
+    /// ``setPlaying()``. ``resetToPrePlayForNewStream`` (and the in-app skip-reset play
+    /// continuation) must clear this latch so the orchestrator’s follow-on ``play()`` attaches
+    /// the destination. Do **not** set this flag before ``play()``.
     ///
     /// - SeeAlso: ``isConnectingPlayback``, ``clearPlaybackStartPipeline()``,
+    ///   ``resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     internal var isPlaybackStartPipelineActive = false
 
@@ -645,7 +653,15 @@ actor SharedPlayerManager {
         isPlaybackStartPipelineActive && !currentVisualState.isActivelyPlaying
     }
 
-    /// Clears the in-flight play start pipeline (connect cancel, audible start, security fail, stop).
+    /// Clears the in-flight play start pipeline.
+    ///
+    /// Call from connect cancel (``stop()``), audible ``setPlaying()``, security/sticky abort,
+    /// and when a **new stream choice** supersedes the in-flight attach
+    /// (``resetToPrePlayForNewStream``; ``completeStreamSwitch`` skip-reset play continuation).
+    /// Leaving the latch set after silent `.streamSwitch` stop makes the next ``play()`` a
+    /// duplicate-start no-op (yellow Connecting, no attach).
+    ///
+    /// - SeeAlso: ``isPlaybackStartPipelineActive``, ``play()``
     internal func clearPlaybackStartPipeline() {
         isPlaybackStartPipelineActive = false
     }

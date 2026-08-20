@@ -67,8 +67,8 @@ extension SharedPlayerManager {
     /// Unit-test seam: force or clear the play start pipeline for Connecting-cancel / idempotent-play gates.
     ///
     /// - Parameter active: When `true`, ``isConnectingPlayback`` is true until visual is `.playing`
-    ///   or ``stop()`` / ``setPlaying()`` clears the pipeline.
-    /// - SeeAlso: ``isConnectingPlayback``,
+    ///   or ``stop()`` / ``setPlaying()`` / ``resetToPrePlayForNewStream`` clears the pipeline.
+    /// - SeeAlso: ``isConnectingPlayback``, ``clearPlaybackStartPipeline()``,
     ///   ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:isConnectingPlayback:)``
     func _test_setPlaybackStartPipelineActive(_ active: Bool) {
         isPlaybackStartPipelineActive = active

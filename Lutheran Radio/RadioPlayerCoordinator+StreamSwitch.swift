@@ -272,7 +272,8 @@ extension RadioPlayerCoordinator {
     ///    (`isActivePlaybackIntent`).
     /// 2. If resuming: `resetToPrePlayForNewStream` + Connecting UI **before** engine teardown
     ///    so Live Activity never stays `.playing` mid silent stop (symmetric with
-    ///    `completeStreamSwitch`). If **paused**: ``stampStreamSwitchDestinationLanguage`` +
+    ///    `completeStreamSwitch`). That reset also clears a superseded start-pipeline latch
+    ///    so the follow-on ``play()`` attaches. If **paused**: ``stampStreamSwitchDestinationLanguage`` +
     ///    awaited destination snapshot + media-surface refresh **without** `.prePlay` hold
     ///    (sticky `.userPaused` chrome; language advances immediately).
     /// 3. Engine preparation exclusively via `DirectStreamingPlayer.switchToStream(_:)`
@@ -599,7 +600,8 @@ extension RadioPlayerCoordinator {
     /// 4. If not resuming: clear soft-pause metadata, force `.userPaused` UI, clear destination
     ///    stamp if not holding, announce, return.
     /// 5. If resuming: optional tuning sound + needle animation, second guard,
-    ///    conditional redundant-hold skip, then `SharedPlayerManager.play()`.
+    ///    conditional redundant-hold skip (still clears a superseded start-pipeline latch),
+    ///    then `SharedPlayerManager.play()`.
     /// 6. Final announce.
     ///
     /// **Direct `play()` rule (authoritative):** Inside the active-intent resume branch we
@@ -746,6 +748,10 @@ extension RadioPlayerCoordinator {
                 #if DEBUG
                 print("[RadioPlayerCoordinator] [completeStreamSwitch] Skipping redundant resetToPrePlayForNewStream — hold already active")
                 #endif
+                // Hold already paints Connecting. Still drop a superseded start latch so
+                // this ``play()`` attaches the stream ``switchToStream`` just prepared
+                // instead of no-oping as a duplicate of the previous language’s attach.
+                await SharedPlayerManager.shared.clearPlaybackStartPipeline()
             } else {
                 let intent = await SharedPlayerManager.shared.currentPlaybackIntent
                 await SharedPlayerManager.shared.resetToPrePlayForNewStream(

@@ -303,6 +303,9 @@ extension SharedPlayerManager {
             #if DEBUG
             print("[SharedPlayerManager] play() — start pipeline already active, skipping duplicate entry")
             #endif
+            // Same-stream Connecting only. Orchestrated language switch must have cleared
+            // this latch in ``resetToPrePlayForNewStream`` (or the skip-reset play
+            // continuation) before calling ``play()`` again.
             return nil
 
         case .skipAlreadyAudible:
@@ -1015,14 +1018,21 @@ extension SharedPlayerManager {
     ///     ``mainAppLiveActivityLanguageCode()`` (may still be the prior stream until engine prep).
     ///
     /// - Postcondition: `currentVisualState == .prePlay`, `holdPrePlayVisualUntilPlayback == true`,
-    ///   `initialPlaybackHasRun == false`, soft-pause ICY stash cleared (no stale program title
-    ///   across languages). When `connectingLanguageCode` is non-empty, durable LA language mirror
-    ///   and ``liveActivityLanguageCodeForContentPush()`` report that code for the hold duration.
-    ///   Privacy-gated ``homeWidgetLiveChrome`` projects ``.prePlay`` + destination language (never
-    ///   mid-hold ``.playing``) when the home-widget write gate is open. Main-app media surfaces
-    ///   refreshed so lock-screen chrome shows Connecting + target language.
+    ///   `initialPlaybackHasRun == false`, ``isPlaybackStartPipelineActive == false``, soft-pause
+    ///   ICY stash cleared (no stale program title across languages). When `connectingLanguageCode`
+    ///   is non-empty, durable LA language mirror and ``liveActivityLanguageCodeForContentPush()``
+    ///   report that code for the hold duration. Privacy-gated ``homeWidgetLiveChrome`` projects
+    ///   ``.prePlay`` + destination language (never mid-hold ``.playing``) when the home-widget
+    ///   write gate is open. Main-app media surfaces refreshed so lock-screen chrome shows
+    ///   Connecting + target language. The follow-on ``play()`` is a **new** start — not a
+    ///   duplicate of a superseded Connecting attach.
+    ///
+    /// - Important: Clearing the start-pipeline latch here does **not** arm a new one. Resign-active
+    ///   still preserves this yellow window via ``isStreamSwitchPrePlayHoldActive``. Do not set
+    ///   ``isPlaybackStartPipelineActive`` before ``play()``.
     ///
     /// - SeeAlso: ``liveActivityLanguageCodeForContentPush()``, ``play()``, ``saveCurrentState()``,
+    ///   ``clearPlaybackStartPipeline()``,
     ///   ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
     ///   ``clearSoftPauseMetadataStashForLanguageChange()``,
     ///   ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``,
@@ -1043,6 +1053,17 @@ extension SharedPlayerManager {
         // Note: Always clear .userPaused / .cleared lock for widget pure-play actions
         // This makes widget play/pause 100% reliable (was missing in pure-play path)
         await clearUserPausedLockIfNeeded()
+
+        // A new stream choice supersedes any in-flight ``play()`` start. Silent `.streamSwitch`
+        // stop advances attach generation, so the previous attach cannot ``setPlaying()`` to
+        // clear this latch. Leave it set and the orchestrator’s follow-on ``play()`` no-ops
+        // (`skipDuplicateStartPipeline`) — yellow Connecting, no audio.
+        #if DEBUG
+        if isPlaybackStartPipelineActive {
+            print("[SharedPlayerManager] resetToPrePlayForNewStream — clearing superseded start pipeline")
+        }
+        #endif
+        clearPlaybackStartPipeline()
 
         applyVisualState(.prePlay)
         holdPrePlayVisualUntilPlayback = true

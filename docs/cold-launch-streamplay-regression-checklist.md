@@ -128,7 +128,7 @@ End with security impact, build status, localization needed.
 ## 6. Stream switch (in-app and widget)
 
 1. **Chrome before teardown** — Active-intent switch establishes `resetToPrePlayForNewStream(connectingLanguageCode:)` (Connecting / `.prePlay` hold, ICY stash cleared, **destination** language on LA ContentState / durable language mirror, media surfaces refreshed) **before** silent `.streamSwitch` stop. Live Activity must not advertise `.playing` mid teardown and must not show prior-language chrome for one content push while already Connecting.
-2. **Switch order** — Connecting hold + destination language → `Stream model updated (no player item)` + silent stop → session language snapshot → tuning (in-app) → single `play()`.
+2. **Switch order** — Connecting hold + destination language → `Stream model updated (no player item)` + silent stop → session language snapshot → tuning (in-app) → single `play()`. A switch that lands while the previous attach is still Connecting must print `stream-switch play, proceeding` (and `resetToPrePlayForNewStream — clearing superseded start pipeline` when the latch was set) — **not** `start pipeline already active, skipping duplicate entry`.
 3. **Single streamSwitch stop** — One `FORCE STOPPING … reason: streamSwitch` per switch; zero `userAction` stop during widget switch.
 4. **One observer attach** — One `setupPlaybackObservers` per final attach; early-window recreates are budget-capped (see §8).
 5. **No userPaused lock workaround** — Zero `[Widget] Cleared userPaused lock` during widget switch.

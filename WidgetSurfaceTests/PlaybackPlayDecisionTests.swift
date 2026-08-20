@@ -110,6 +110,8 @@ struct PlaybackPlayDecisionTests {
         #expect(decision.shouldClearStartPipelineOnReturn)
     }
 
+    /// Same-stream Connecting still skips a second ``play()``. Orchestrated stream switch
+    /// must clear the latch before this table runs.
     @Test func skipDuplicateStartPipeline() {
         let decision = PlaybackPlayDecision.evaluateEarlyGates(
             baseInputs(pipeline: true)
