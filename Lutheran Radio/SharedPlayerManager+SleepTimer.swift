@@ -2,8 +2,10 @@
 //  SharedPlayerManager+SleepTimer.swift
 //  Lutheran Radio
 //
-//  Sleep timer: schedules automatic pause via SharedPlayerManager.stop().
-//  Main app target only (no widget / Live Activity countdown in v1).
+//  Sleep timer: countdown authority on SharedPlayerManager; elapsed pause is
+//  ``applySleepTimerElapsedPause()`` (engine-complete interruption stop + audio-session
+//  deactivation; not sticky ``stop()``). Main app target only (no widget / Live
+//  Activity countdown in v1).
 //
 //  UI: SwiftUI `.confirmationDialog` in PlaybackControlsView is the sole presentation;
 //  presets/cancel route through PlayerViewModel into RadioPlayerCoordinator+SleepTimer.
@@ -128,10 +130,11 @@ extension SharedPlayerManager {
     }
 
     private func sleepTimerDidFire() async {
-        // Delegates to applySleepTimerElapsedPause (defined in SharedPlayerManager.swift).
-        // That method writes the .userPaused visual + .sleepTimer intent, stops the player
-        // silently, persists the widget snapshot, and posts SleepTimerNotification so the
-        // main-app coordinator can sync its live UI (see sleepTimerStateDidChange).
+        // Delegates to applySleepTimerElapsedPause (SharedPlayerManager+AppGroup.swift).
+        // That method writes the .userPaused visual + .sleepTimer intent, awaits
+        // engine-complete interruption stop, deactivates the audio session, persists
+        // the widget snapshot, and posts SleepTimerNotification so the main-app
+        // coordinator can sync its live UI (see sleepTimerStateDidChange).
         await applySleepTimerElapsedPause()
     }
 }

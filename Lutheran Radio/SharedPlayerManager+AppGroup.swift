@@ -767,8 +767,17 @@ extension SharedPlayerManager {
     /// - Sets `currentVisualState = .userPaused` (so widgets/Live Activities render paused)
     ///   while `playbackIntent` remains `.sleepTimer` (non-sticky; distinguishable from
     ///   explicit `.userPaused` for resurrection and clear-lock logic).
-    /// - Stops the engine with `reason: .interruption` (deliberately silent: no status
-    ///   emission, teardown guard suppresses KVO).
+    /// - Awaits engine-complete hard stop with `reason: .interruption` (effectiveSilent:
+    ///   no status emission; teardown guard suppresses KVO). Does **not** fire-and-forget
+    ///   ``DirectStreamingPlayer/stop(reason:completion:silent:applyUserPauseVisualLock:)``
+    ///   — Now Playing / Live Activity refresh must not run while the item is still tearing
+    ///   down. `silent: true` skips the nested snapshot write inside the engine stop; this
+    ///   method persists once after the ICY stash clear.
+    /// - Deactivates `AVAudioSession` after the hard stop. Interruption teardown nils the
+    ///   player item (unlike sticky ``stop()`` soft pause, which retains it for same-stream
+    ///   resume), so an active session is leftover. Does **not** run
+    ///   ``performSessionAndWidgetTeardown`` — paused Live Activity / widget chrome stay
+    ///   until resign-active or process-exit teardown.
     /// - Writes the PersistedWidgetState snapshot immediately.
     /// - Posts Darwin "pause" (primarily to wake widget providers) and the
     ///   `SleepTimerNotification.stateDidChange` (isActive=false) for main-app glue.
@@ -783,37 +792,57 @@ extension SharedPlayerManager {
     /// - Precondition: Must only be called from the sleep timer task (after countdown
     ///   reaches zero and not cancelled).
     /// - Postcondition: `currentVisualState == .userPaused`, `currentPlaybackIntent == .sleepTimer`,
-    ///   player is stopped, snapshot persisted, notifications posted.
+    ///   player item is gone, audio session deactivated, snapshot persisted, notifications posted.
     /// - Note: Uses ``PlaybackIntent/sleepTimer`` (not sticky ``.userPaused``) so resume rules
     ///   differ from explicit ``stop()`` / ``markAsUserPaused()`` pause paths.
     ///
     /// - SeeAlso: ``RadioPlayerCoordinator/sleepTimerStateDidChange(_:)``,
     ///   ``PlaybackIntent/sleepTimer``, ``currentVisualState``, ``saveCurrentState()``,
-    ///   `DirectStreamingPlayer.stop(reason:)`, CODING_AGENT.md (Single Source of Truth Principles),
-    ///   SharedPlayerManager.swift (resurrection protection table + "sleepTimer" intent rules).
+    ///   ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``,
+    ///   `DirectStreamingPlayer.stopAndWait(reason:silent:applyUserPauseVisualLock:)`,
+    ///   `DirectStreamingPlayer.deactivateAudioSessionAsync()`,
+    ///   CODING_AGENT.md (Single Source of Truth Principles),
+    ///   SharedPlayerManager.swift (resurrection protection table + "sleepTimer" intent rules),
+    ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant).
     ///
     /// AGENT NOTE: Any future change to stop reason, Darwin posting, or suppression guards
     /// here must also update the observer in RadioPlayerCoordinator so the main-app visual
     /// (green → grey) continues to match the SSOT. Widgets are protected by the snapshot write.
+    /// Do not substitute full session teardown for audio-session deactivation — that would
+    /// end the paused Live Activity while the process is still resident.
     func applySleepTimerElapsedPause() async {
         ensureVisualStateLoaded()
 
         applyVisualState(.userPaused)
         updatePlaybackIntent(to: .sleepTimer)
 
-        DirectStreamingPlayer.shared.stop(reason: .interruption)
+        // Engine-complete: hard interruption stop nils the item. Await before Now Playing /
+        // Live Activity so paused chrome cannot lead a still-attached player. Visual is
+        // already `.userPaused` — skip the engine visual lock. Nested persist is skipped
+        // (`silent: true`); ``saveCurrentState()`` below is the single snapshot write.
+        await DirectStreamingPlayer.shared.stopAndWait(
+            reason: .interruption,
+            silent: true,
+            applyUserPauseVisualLock: false
+        )
 
         // Use canonical clear (emits metadataDidUpdate(nil)). Distinct from language stash.
         _clearIcyMetadataStash()
 
         await saveCurrentState()
         notifyMainApp(action: "pause")
-        await updateNowPlayingInfo()
+
+        // Item is gone; holding the session would keep the app in an audio-active process
+        // until a later lock-cycle teardown. Sticky ``stop()`` keeps the item + session
+        // for soft resume — this path cannot. Surfaces refresh after deactivation so
+        // paused Now Playing / Live Activity do not depend on a live session.
+        _ = await DirectStreamingPlayer.shared.deactivateAudioSessionAsync()
+        await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
 
         await SleepTimerNotification.postStateChange(isActive: false)
 
         #if DEBUG
-        print("[SharedPlayerManager] SleepTimer elapsed — paused with .sleepTimer intent (not sticky .userPaused)")
+        print("[SharedPlayerManager] SleepTimer elapsed — paused with .sleepTimer intent (not sticky .userPaused); engine stop awaited, audio session deactivated")
         #endif
     }
     #endif

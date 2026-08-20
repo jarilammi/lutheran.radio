@@ -197,6 +197,7 @@ End with security impact, build status, localization needed.
 2. **No lldb trap on pause** — Pause with active sleep timer: zero `EXC_BREAKPOINT` at notification post.
 3. **SSOT stop path** — Sleep-timer cancel routes through `SharedPlayerManager.stop()`.
 4. **Preserve across switch** — Active-intent stream switches (`completeStreamSwitch`, `switchToStreamFromWidget`, external/Siri switch helpers) pass `preserveActiveSleepTimer: true` when intent is `.sleepTimer`.
+5. **Elapsed engine-complete cleanup** — ``applySleepTimerElapsedPause()`` awaits ``stopAndWait(reason: .interruption)`` then ``deactivateAudioSessionAsync()``. Does not run ``performSessionAndWidgetTeardown``. Grey `.userPaused` + `.sleepTimer` intent; resume via ``setPlaying()``.
 
 ---
 

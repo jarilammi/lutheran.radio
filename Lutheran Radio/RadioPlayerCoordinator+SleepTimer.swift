@@ -151,8 +151,9 @@ extension RadioPlayerCoordinator {
     /// - `applySleepTimerElapsedPause` forces `currentVisualState = .userPaused` (so
     ///   widgets show paused) while leaving `playbackIntent = .sleepTimer` (non-sticky
     ///   so resurrection logic and clearUserPausedLockIfNeeded can distinguish it).
-    /// - Direct stop uses `reason: .interruption` (effectiveSilent + teardown guard
-    ///   suppresses KVO/status callbacks).
+    /// - Engine-complete ``stopAndWait(reason: .interruption, silent: true)`` then
+    ///   audio-session deactivation (effectiveSilent + teardown guard suppress KVO/status
+    ///   callbacks). Does not run full session/widget teardown.
     /// - The self-posted Darwin pause is suppressed by `DarwinSelfEchoGuard`.
     /// - Therefore this observer must explicitly pull `currentVisualState` and call
     ///   `updateUI(for:)` so the main app chrome (VM → SwiftUI controls tint/glyph,
@@ -163,8 +164,10 @@ extension RadioPlayerCoordinator {
     ///
     /// - SeeAlso: ``SharedPlayerManager/applySleepTimerElapsedPause()``,
     ///   `PlaybackIntent.sleepTimer`, `SleepTimerNotification`,
+    ///   `DirectStreamingPlayer.stopAndWait(reason:silent:applyUserPauseVisualLock:)`,
     ///   `handleStatusChange(_:reasonKey:)`, CODING_AGENT.md (Single Source of Truth Principles),
-    ///   SharedPlayerManager.swift (resurrection table + applySleepTimerElapsedPause).
+    ///   SharedPlayerManager.swift (resurrection table + applySleepTimerElapsedPause),
+    ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant).
     ///
     /// - Note: Only the first remaining-seconds value seeds the local countdown to avoid
     ///   per-second actor hops; this domain owns decrementing locally.

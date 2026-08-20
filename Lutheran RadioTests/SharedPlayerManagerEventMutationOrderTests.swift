@@ -432,7 +432,9 @@ final class SharedPlayerManagerEventMutationOrderTests: XCTestCase {
     /// When the sleep timer elapses, the authoritative pause surface writes grey
     /// `.userPaused` chrome while retaining `.sleepTimer` intent so resurrection,
     /// replay, and coordinator glue can distinguish timer-driven pause from sticky
-    /// explicit pause or recoverable stream failure.
+    /// explicit pause or recoverable stream failure. Engine stop is awaited
+    /// (``stopAndWait``) before persist / media-surface refresh; audio session
+    /// deactivation is a no-op under test isolation.
     ///
     /// **Ordered subsequence:** `visualStateDidChange(.userPaused)` →
     /// `metadataDidUpdate(nil)` (ICY stash clear) → `.persistedWidgetStateDidUpdate`
@@ -447,7 +449,9 @@ final class SharedPlayerManagerEventMutationOrderTests: XCTestCase {
     /// - SeeAlso: ``applySleepTimerElapsedPause()``, ``setSleepTimer(duration:)``,
     ///   ``cancelSleepTimer(restorePlaybackIntent:notifyStateChange:)``,
     ///   ``PlaybackIntent/sleepTimer``, ``testReplayPrefixDistinguishesExplicitPauseFromStreamFailure``,
+    ///   `DirectStreamingPlayer.stopAndWait(reason:silent:applyUserPauseVisualLock:)`,
     ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant),
     ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
     func testApplySleepTimerElapsedPauseEmissionOrderPreservesSleepTimerIntent() async {
         await establishActiveSleepTimerCountdownState()
