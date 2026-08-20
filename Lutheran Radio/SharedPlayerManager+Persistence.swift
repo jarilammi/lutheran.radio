@@ -868,10 +868,13 @@ extension SharedPlayerManager {
     ///   / empty language). When the gate is closed on the main app, **no** key is written.
     ///   Extension process under ``shouldDistrustDurableMirrorPlayPlanning()`` refuses to stamp
     ///   ``.playing`` (must not re-project residual “still playing” chrome after terminate/reboot).
-    ///   Successful write/clear also bumps ``homeWidgetInteractivePaintEpochAppGroupKey``.
+    ///   This process also refuses any stamp after ``hasCompletedProcessExitSessionTeardown()``
+    ///   (delivered quit already cleared the mirror). Successful write/clear also bumps
+    ///   ``homeWidgetInteractivePaintEpochAppGroupKey``.
     /// - SeeAlso: ``loadHomeWidgetLiveChromeMirror()``, ``clearHomeWidgetLiveChromeMirror()``,
     ///   ``bumpHomeWidgetInteractivePaintEpoch(reason:)``,
     ///   ``shouldDistrustDurableMirrorPlayPlanning()``,
+    ///   ``hasCompletedProcessExitSessionTeardown()``,
     ///   ``persistHomeWidgetStreamMetadataMirror(_:)`` (privacy-class peer),
     ///   ``HomeWidgetLiveChrome``, docs/Home-Live-Chrome-App-Group-Mirror-Design.md.
     nonisolated static func persistHomeWidgetLiveChromeMirror(_ chrome: HomeWidgetLiveChrome?) {
@@ -881,6 +884,17 @@ extension SharedPlayerManager {
             #endif
             return
         }
+        // Delivered-quit latch: this dying process already cleared live chrome for passive
+        // Home paint. A racing ``saveCurrentState()`` must not plant factory Connecting.
+        // Latch lives on the main-app compile path only (extension never claims it).
+        #if LUTHERAN_MAIN_APP
+        if Self.hasCompletedProcessExitSessionTeardown() {
+            #if DEBUG
+            print("[SharedPlayerManager] Suppressing home-widget live-chrome stamp (process-exit teardown already completed this process)")
+            #endif
+            return
+        }
+        #endif
         // Extension must not re-stamp residual “playing” chrome after terminate/reboot while
         // Provider paint already treats the mirror as absent. Main-app stamps remain allowed
         // (live process on this boot after factory / recorded boot identity).

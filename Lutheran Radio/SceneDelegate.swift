@@ -204,8 +204,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     /// Entering background: keep widget liveness/snapshot fresh; auto-start LA when playing.
     ///
+    /// Fire-and-forget: swipe-up Home can deliver ``sceneDidDisconnect`` while this Task is
+    /// still queued. ``bumpWidgetLivenessTimestamp`` and live-chrome persist no-op once
+    /// ``hasCompletedProcessExitSessionTeardown()`` is claimed so a late save cannot restore
+    /// interactive Connecting after sentinel `0`.
+    ///
     /// - Parameter scene: The scene entering the background.
-    /// - SeeAlso: ``RadioLiveActivityManager/handleAppWillEnterBackground()``
+    /// - SeeAlso: ``RadioLiveActivityManager/handleAppWillEnterBackground()``,
+    ///   ``SharedPlayerManager/hasCompletedProcessExitSessionTeardown()``,
+    ///   ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``
     func sceneDidEnterBackground(_ scene: UIScene) {
         Task {
             await SharedPlayerManager.shared.recordWidgetLiveness()

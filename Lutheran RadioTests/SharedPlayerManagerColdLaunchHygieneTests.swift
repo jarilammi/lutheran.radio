@@ -46,6 +46,7 @@ import WidgetSurface
 ///   ``SharedPlayerManager/clearSystemNowPlayingMetadataSynchronously()``,
 ///   ``SharedPlayerManager/forceStaleLivenessTimestampForTermination()``,
 ///   ``SharedPlayerManager/performSessionTeardownSynchronouslyForTermination()``,
+///   ``SharedPlayerManager/hasCompletedProcessExitSessionTeardown()``,
 ///   ``SharedPlayerManager/clearAllLocalState()``,
 ///   ``SharedPlayerManager/preferredWidgetLanguage()``,
 ///   ``SharedPlayerManager/mainAppLiveActivityLanguageCode()``,
@@ -666,6 +667,98 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
             XCTAssertTrue(
                 SharedPlayerManager.hasExplicitTerminationSentinel(),
                 "Liveness sentinel must remain after the skipped second call"
+            )
+        }
+    }
+
+    /// Swipe-up Home can run ``recordWidgetLiveness()`` / ``saveCurrentState()`` (including
+    /// ``performActualSave`` identical-snapshot skip, which still bumps) after disconnect
+    /// teardown already wrote sentinel `0` and cleared live chrome. That restored heartbeat
+    /// plus factory ``.prePlay`` paints interactive Connecting on Home instead of `tap_to_open`.
+    ///
+    /// **Invariant protected:** After ``performSessionTeardownSynchronouslyForTermination()``
+    /// claims the process-exit latch, ``bumpWidgetLivenessTimestamp(policy:)`` and
+    /// ``persistHomeWidgetLiveChromeMirror(_:)`` / ``stampHomeWidgetLiveChromeFromSession``
+    /// no-op in **this** process. Sentinel `0` and absent live chrome stay. A later
+    /// isolation reset of the latch (new process / XCTest method) may bump again.
+    ///
+    /// Why this pattern is required: `sceneDidEnterBackground` is fire-and-forget; the
+    /// actor Task can interleave with the waited Live Activity end on the terminate path.
+    /// The latch is process-local so the next main cold launch can still restore liveness
+    /// from foreground ``recordWidgetLiveness()``. Not a `play()` gate.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/hasCompletedProcessExitSessionTeardown()``,
+    ///   ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``,
+    ///   ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
+    ///   ``SharedPlayerManager/isMainAppProcessRecentlyActive()``,
+    ///   ``WidgetLivenessPresentation/shouldShowPassiveTapToOpen(isMainAppRecentlyActive:)``,
+    ///   SceneDelegate.sceneDidEnterBackground,
+    ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant),
+    ///   CODING_AGENT.md (fast test patterns).
+    func testProcessExitTeardownLatchSuppressesLivenessBumpAndLiveChromeRestamp() async {
+        await MainActor.run {
+            SharedPlayerManager._test_resetProcessExitSessionTeardownOnceFlag()
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+
+            SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
+            XCTAssertTrue(
+                SharedPlayerManager.isMainAppProcessRecentlyActive(),
+                "Precondition: privacy-open bump must open the interactive liveness window"
+            )
+            XCTAssertFalse(
+                SharedPlayerManager.hasCompletedProcessExitSessionTeardown(),
+                "Precondition: isolation reset must leave the process-exit latch unclaimed"
+            )
+
+            SharedPlayerManager.performSessionTeardownSynchronouslyForTermination()
+            XCTAssertTrue(
+                SharedPlayerManager.hasCompletedProcessExitSessionTeardown(),
+                "First terminate call must claim the process-exit latch"
+            )
+            XCTAssertTrue(
+                SharedPlayerManager.hasExplicitTerminationSentinel(),
+                "Terminate must write lastUpdateTime sentinel 0"
+            )
+            XCTAssertFalse(
+                SharedPlayerManager.isMainAppProcessRecentlyActive(),
+                "Sentinel 0 must force passive tap_to_open"
+            )
+            XCTAssertTrue(
+                WidgetLivenessPresentation.shouldShowPassiveTapToOpen(
+                    isMainAppRecentlyActive: SharedPlayerManager.isMainAppProcessRecentlyActive()
+                ),
+                "Family views must take the passive branch after delivered quit"
+            )
+            XCTAssertNil(
+                SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+                "Terminate must clear homeWidgetLiveChrome"
+            )
+
+            SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
+            SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+                visualState: .playing,
+                language: "sv",
+                hasError: false,
+                reason: "postTerminateSaveRace"
+            )
+
+            XCTAssertTrue(
+                SharedPlayerManager.hasExplicitTerminationSentinel(),
+                "Dying-process bump must not clear sentinel 0"
+            )
+            XCTAssertFalse(
+                SharedPlayerManager.isMainAppProcessRecentlyActive(),
+                "Dying-process bump must not restore interactive chrome"
+            )
+            XCTAssertNil(
+                SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+                "Dying-process stamp must not plant live chrome after terminate clear"
+            )
+            XCTAssertTrue(
+                WidgetLivenessPresentation.shouldShowPassiveTapToOpen(
+                    isMainAppRecentlyActive: SharedPlayerManager.isMainAppProcessRecentlyActive()
+                ),
+                "Passive tap_to_open must survive the overlapping background save"
             )
         }
     }

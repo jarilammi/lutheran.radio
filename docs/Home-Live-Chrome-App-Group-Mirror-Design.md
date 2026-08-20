@@ -379,7 +379,7 @@ Legend: **W** = may write · **C** = must clear · **—** = no-op · **R** = ma
 | Gate true → false | **C** | **C** | **C** | keep main RAM optional | keep | keep transient rules | **C** residual helper |
 | User privacy clear (`clearAllLocalState`) | **C** (stays **C** through teardown ``performRefresh``; no restamp until foreground lift) | **C** | **C** | **C** | **C** | **C** | **C** |
 | Factory reset cold launch | **C** (or already empty) | **C** | **C** | **C** | **C** as today | as today | as today |
-| App terminate (delivered path) | **C** (recommended) | as today | as today | process dies | LA end + clear as today | as today | **0** sentinel |
+| App terminate (delivered path) | **C** (recommended); this-process restamp no-op after ``hasCompletedProcessExitSessionTeardown()`` | as today | as today | process dies | LA end + clear as today | as today | **0** sentinel; this-process ``bumpWidgetLivenessTimestamp`` no-op so overlapping ``sceneDidEnterBackground`` save cannot restore a positive heartbeat |
 | Force-quit | process dies; next launch factory | next launch purge | next launch | empty | residual reaped as today | as today | ages out / launch purge |
 | Soft silence / pause | **W** `.userPaused` | keep title or clear per ICY policy | clear on auth save as today | **W** | LA path separate | — | **W** throttle |
 | setPlaying | **W** `.playing` | keep/update via ICY | clear optimistic as today | **W** | LA separate | — | **W** |

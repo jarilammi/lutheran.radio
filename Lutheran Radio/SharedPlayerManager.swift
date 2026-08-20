@@ -266,7 +266,7 @@ import WidgetKit
 /// | isPlaying               | Bool                  | (Retired — purged on launch, never written)                  | (none) | Retired playback bool. In-session playback chrome is derived only from the memory snapshot (`visualState.isActivelyPlaying`) and short-lived instant-feedback keys — never from this App Group bool. | Purged only |
 /// | currentLanguage         | String (languageCode) | (Retired — purged on launch, never written)                  | (none) | Retired bare language key. Language SSOT is in-process `PersistedWidgetState.currentLanguage` plus ``preferredWidgetLanguage()`` (snapshot → `bestInitialLanguageCode()` when widgets active → hard `"en"` when not). | Purged only |
 /// | hasError                | Bool                  | (Inside in-process snapshot only; retired App Group bool purged) | `loadSharedState` (from `PersistedWidgetState.hasError`), widgets   | Permanent error flag for UI chrome. Lives inside the in-process session snapshot. Retired standalone App Group bool is purged only. | In-session snapshot; set on security or unrecoverable network failures |
-/// | lastUpdateTime          | Double (epoch)        | ``bumpWidgetLivenessTimestamp(policy:minInterval:)`` (canonical; ``WidgetLivenessWritePolicy``), `performActualSave` / `saveCombinedWidgetState` when home widgets active; extension may **refresh** only while interactive window already open and ``shouldDistrustDurableMirrorPlayPlanning()`` is false; terminate writes sentinel `0` | Widget providers (`isMainAppProcessRecentlyActive` 60 s check); ``hasExplicitTerminationSentinel()`` for presentation / LA mirror distrust / extension liveness honesty | Liveness heartbeat + termination passive-chrome marker. **Never** a main-app play gate. Extension must not open a new 60 s interactive session after main process exit or reboot. | Kept only while home/Control widgets are relevant; removed by privacy clear and when ``WidgetRefreshManager/hasActiveLutheranWidgets`` closes; terminate sets `0` |
+/// | lastUpdateTime          | Double (epoch)        | ``bumpWidgetLivenessTimestamp(policy:minInterval:)`` (canonical; ``WidgetLivenessWritePolicy``), `performActualSave` / `saveCombinedWidgetState` when home widgets active; extension may **refresh** only while interactive window already open and ``shouldDistrustDurableMirrorPlayPlanning()`` is false; terminate writes sentinel `0`; **this-process** bumps/stamps no-op after ``hasCompletedProcessExitSessionTeardown()`` | Widget providers (`isMainAppProcessRecentlyActive` 60 s check, suite re-sync on read); ``hasExplicitTerminationSentinel()`` for presentation / LA mirror distrust / extension liveness honesty | Liveness heartbeat + termination passive-chrome marker. **Never** a main-app play gate. Extension must not open a new 60 s interactive session after main process exit or reboot. A dying-process background save must not clear sentinel `0`. | Kept only while home/Control widgets are relevant; removed by privacy clear and when ``WidgetRefreshManager/hasActiveLutheranWidgets`` closes; terminate sets `0`; dying-process latch keeps `0` until a **new** main process bumps |
 /// | lastUserPauseTime | Double (epoch) | (Retired — purged on launch, never written) | (none) | Was App Group pause barrier. Pause recovery is sticky ``PlaybackIntent`` (``.userPaused``) / ``canProceedWithPlayback()`` only — no wall-clock or residual timestamp gate. | Purged only |
 /// | isInstantFeedback       | Bool                  | Widget handlers (`writeInstantFeedback` / switch path / ``executeOptimisticToggle``) | `loadSharedState` (checked first when language agrees with ``settledLanguageForInstantFeedback()``, or when session and live chrome are both empty) | Signals that a widget action just occurred (optimistic UI)   | Short-lived; cleared after 15s, next authoritative save, privacy clear, or when the home-widget privacy gate closes |
 /// | instantFeedbackTime     | Double (epoch)        | Widget handlers                                              | `loadSharedState`                                                    | Timestamp for the instant feedback validity window           | Same lifetime as `isInstantFeedback` |
@@ -278,7 +278,7 @@ import WidgetKit
 /// | liveActivityToggleVisualState | String (case name) | `RadioLiveActivityManager` on every ContentState push; optimistic LA toggle | ``loadLiveActivityToggleVisualStateMirror()`` + ``WidgetIntentExecution/performLiveActivityToggle()`` | Durable cross-process LA play/pause plan signal when extension memory snapshot is empty | Cleared on LA end, termination, **factory reset**, privacy clear; **not** gated by home-widget `hasActiveWidgets` |
 /// | liveActivityCurrentLanguage | String (languageCode) | `RadioLiveActivityManager` on every ContentState push; optimistic LA paths | ``loadLiveActivityLanguageMirror()`` + ``languageForLiveActivityOrWidgetOptimistic()`` | Durable LA language chrome / optimistic intent language when extension has no session snapshot and home-widget writes are suppressed | Same lifecycle as visual mirror; **not** gated by `hasActiveWidgets` |
 /// | homeWidgetStreamMetadata | Data (JSON ``StreamProgramMetadata``) | ``persistHomeWidgetStreamMetadataMirror(_:)`` via ``persistStreamMetadataForWidgets()`` / ``savePersistedWidgetState`` / privacy-gate open re-stamp | ``loadHomeWidgetStreamMetadataMirror()`` + ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` | Privacy-gated **program title/speaker** for home/Control Providers (extension cannot read main-app session RAM) | Written only while ``hasActiveWidgets`` (or widget-process bypass); cleared on gate close, privacy clear, ICY clear / language hygiene |
-/// | homeWidgetLiveChrome | Data (JSON ``HomeWidgetLiveChrome``) | ``persistHomeWidgetLiveChromeMirror(_:)`` / ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)`` via ``savePersistedWidgetState`` / ``persistWidgetSnapshot`` (sticky early pause, ``setPlaying``, switch hold, ``saveCombinedWidgetState``, ``performActualSave``) + ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()`` + extension optimistic (``persistOptimisticWidgetSnapshot`` / ``signalWidgetSwitchAction`` reasons `optimisticToggle` / `optimisticSwitch`); extension refuses ``.playing`` when ``shouldDistrustDurableMirrorPlayPlanning()`` | ``loadHomeWidgetLiveChromeMirror()`` (suite re-sync on read) + ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` via ``resolveHomeWidgetChromeFields`` (agreement → session; disagreement → fresher `updatedAt`; neither → factory; ``distrustLiveChrome`` ignores residual after terminate/reboot) | Privacy-gated **visual + language + hasError** for home/Control Providers (extension cannot read main-app session RAM) | Written only while ``hasActiveWidgets`` (or widget-process bypass); cleared on gate close, privacy clear, factory residual hygiene, terminate residual hygiene; session-scoped only (OI-1); identity skip on identical visual/language/hasError; paint distrust after dirty exit / reboot |
+/// | homeWidgetLiveChrome | Data (JSON ``HomeWidgetLiveChrome``) | ``persistHomeWidgetLiveChromeMirror(_:)`` / ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)`` via ``savePersistedWidgetState`` / ``persistWidgetSnapshot`` (sticky early pause, ``setPlaying``, switch hold, ``saveCombinedWidgetState``, ``performActualSave``) + ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()`` + extension optimistic (``persistOptimisticWidgetSnapshot`` / ``signalWidgetSwitchAction`` reasons `optimisticToggle` / `optimisticSwitch`); extension refuses ``.playing`` when ``shouldDistrustDurableMirrorPlayPlanning()``; this-process stamps no-op after ``hasCompletedProcessExitSessionTeardown()`` | ``loadHomeWidgetLiveChromeMirror()`` (suite re-sync on read) + ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` via ``resolveHomeWidgetChromeFields`` (agreement → session; disagreement → fresher `updatedAt`; neither → factory; ``distrustLiveChrome`` ignores residual after terminate/reboot) | Privacy-gated **visual + language + hasError** for home/Control Providers (extension cannot read main-app session RAM) | Written only while ``hasActiveWidgets`` (or widget-process bypass); cleared on gate close, privacy clear, factory residual hygiene, terminate residual hygiene; session-scoped only (OI-1); identity skip on identical visual/language/hasError; paint distrust after dirty exit / reboot |
 /// | homeWidgetInteractivePaintEpoch | Int | ``bumpHomeWidgetInteractivePaintEpoch(reason:)`` via live-chrome write/clear + sticky identity-skip wake + ``WidgetIntentExecution/executeOptimisticToggle`` | ``loadHomeWidgetInteractivePaintEpoch()`` + signature publisher + ``SimpleEntry/paintEpoch`` + Darwin/local paint-advanced wake | Wake token only — forces interactive LIVE body re-eval / TimelineEntry identity; **not** a paint field SSOT | Cleared with live chrome; increments on optimistic toggle / chrome write / sticky identity-skip; posts ``homeWidgetInteractivePaintAdvanced`` Darwin + local NC |
 /// | homeWidgetInteractivePaintSignature | String (`epoch\|stableVisual\|lang`) | ``publishHomeWidgetInteractivePaintSignature(visualState:language:epoch:)`` via epoch bump + live-chrome write + optimistic toggle/switch | ``LutheranRadioWidgetEntryView`` ``@AppStorage`` + ``SimpleEntry/paintSignature`` | Wake identity only — String suite flip + TimelineEntry structural identity; never invent visual from the token | Cleared with live chrome; stable visual token via ``HomeWidgetLiveChrome/stableToken(for:)`` |
 /// | recordedSystemBootTime  | Double (epoch of boot) | ``recordCurrentSystemBootTime()`` on LA mirror write + factory reset | ``hasDeviceRebootedSinceLastRecordedBoot()`` / ``shouldDistrustDurableMirrorPlayPlanning()`` (LA + home toggle play plan + Control ``performControlWidgetToggle(isPlayingRequested:)`` play refuse + extension liveness honesty + home live-chrome paint distrust) | Boot identity for post-reboot presentation hygiene | Refuses residual-chrome-alone **play** (LA durable mirror / home live chrome or factory / Control `true`), extension `lastUpdateTime` resurrection, and residual live-chrome **paint** after hard power-off |
@@ -1369,6 +1369,28 @@ actor SharedPlayerManager {
         }
     }
 
+    /// Whether this process already ran delivered-quit teardown.
+    ///
+    /// After the latch is claimed, ``bumpWidgetLivenessTimestamp(policy:minInterval:)`` and
+    /// ``persistHomeWidgetLiveChromeMirror(_:)`` must not reopen interactive chrome. Swipe-up
+    /// Home fires ``sceneDidEnterBackground`` (liveness bump + ``saveCurrentState()``) in a
+    /// Task that can still run during ``sceneDidDisconnect`` / `applicationWillTerminate`.
+    /// A post-sentinel bump restores a positive `lastUpdateTime` while live chrome is already
+    /// cleared, so Providers paint factory ``.prePlay`` as interactive Connecting.
+    ///
+    /// Process-local: a new main process after relaunch starts unlatched and may overwrite
+    /// the sentinel from ``recordWidgetLiveness()`` / foreground save. Never a `play()` gate.
+    ///
+    /// - Returns: `true` after the first ``performSessionTeardownSynchronouslyForTermination()``
+    ///   claim in this process.
+    /// - SeeAlso: ``performSessionTeardownSynchronouslyForTermination()``,
+    ///   ``bumpWidgetLivenessTimestamp(policy:minInterval:)``,
+    ///   ``forceStaleLivenessTimestampForTermination()``,
+    ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant).
+    nonisolated static func hasCompletedProcessExitSessionTeardown() -> Bool {
+        processExitSessionTeardownLatch.withLock { $0.completed }
+    }
+
     #if DEBUG
     /// Resets the process-exit teardown latch so XCTest can exercise the first-call body.
     ///
@@ -1400,13 +1422,16 @@ actor SharedPlayerManager {
     /// Best-effort synchronous session teardown for process exit (`applicationWillTerminate`,
     /// `sceneDidDisconnect`) where async actor work may not complete before exit.
     ///
-    /// Order: liveness sentinel → Live Activity waited end (``handleAppWillTerminate``) →
-    /// cancel pending widget refresh → best-effort timeline reload → Now Playing clear.
+    /// Order: claim process-exit latch → liveness sentinel → Live Activity waited end
+    /// (``handleAppWillTerminate``) → cancel pending widget refresh → best-effort timeline
+    /// reload → Now Playing clear.
     ///
     /// **Single-flight:** delivered quit may invoke both `applicationWillTerminate` and
     /// `sceneDidDisconnect`. This helper is process-local once: the first call runs the
     /// body; a second call is a no-op. Both call sites stay — some kills deliver
     /// disconnect without `applicationWillTerminate`. Force-quit still bypasses both.
+    /// After the latch is claimed, this process must not restore `lastUpdateTime` or
+    /// restamp ``homeWidgetLiveChrome`` (background save Tasks that overlap disconnect).
     ///
     /// - Important: Live Activity end uses a **bounded wait** so Dynamic Island / Lock Screen
     ///   do not retain a stale interactive ContentState after the process dies. Force-quit
@@ -1420,6 +1445,7 @@ actor SharedPlayerManager {
     ///   ``RadioLiveActivityManager/handleAppWillTerminate()``,
     ///   ``clearSystemNowPlayingMetadataSynchronously()``, ``WidgetRefreshTrigger``,
     ///   ``resignActiveSessionTeardownDecision()``,
+    ///   ``hasCompletedProcessExitSessionTeardown()``,
     ///   AppDelegate.applicationWillTerminate,
     ///   SceneDelegate.sceneDidDisconnect,
     ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant),

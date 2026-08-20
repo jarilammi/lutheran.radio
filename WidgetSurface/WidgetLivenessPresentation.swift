@@ -38,7 +38,8 @@ public enum WidgetLivenessPresentation {
     /// Whether family views should render the passive `tap_to_open` launch surface.
     ///
     /// When `false`, family views render full interactive chrome (controls, metadata, flags).
-    /// Post-termination sentinel (`lastUpdateTime == 0`) yields `true` immediately via the SSOT check.
+    /// Post-termination sentinel (`lastUpdateTime == 0`) yields `true` immediately via the SSOT
+    /// check (``isMainAppProcessRecentlyActive()`` re-syncs the App Group suite on read).
     /// Device reboot (boot-identity mismatch) also yields passive chrome even when a residual
     /// pre-reboot `lastUpdateTime` is still inside the 60 s wall-clock window.
     /// Force-quit without reboot may leave a sub-60 s residual interactive window until the

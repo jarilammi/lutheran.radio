@@ -176,7 +176,15 @@ extension SharedPlayerManager {
     /// - clear a termination sentinel (`lastUpdateTime == 0`) by writing a positive timestamp
     /// - re-open interactive chrome after device reboot (boot-identity mismatch)
     ///
-    /// Main-app bumps are unchanged (still privacy-gated only). Liveness remains a *presentation*
+    /// **Dying-process honesty:** After ``hasCompletedProcessExitSessionTeardown()``, this
+    /// process must not write a positive timestamp. `sceneDidEnterBackground` may still run
+    /// ``recordWidgetLiveness()`` / ``saveCurrentState()`` (including
+    /// ``performActualSave`` identical-snapshot skip, which still bumps) while disconnect
+    /// teardown has already written sentinel `0` and cleared live chrome. Restoring the
+    /// heartbeat there paints factory ``.prePlay`` as interactive Connecting on Home.
+    /// A new main process is unlatched and may overwrite `0` from foreground liveness.
+    ///
+    /// Main-app bumps otherwise remain privacy-gated only. Liveness remains a *presentation*
     /// heuristic — never a `play()` / cold-launch gate.
     ///
     /// - Parameters:
@@ -184,6 +192,7 @@ extension SharedPlayerManager {
     ///   - minInterval: Minimum seconds between throttled writes (default 30). Ignored for `.immediate`.
     /// - SeeAlso: ``WidgetLivenessWritePolicy``, ``forceStaleLivenessTimestampForTermination()``,
     ///   ``isMainAppProcessRecentlyActive()``, ``shouldDistrustDurableMirrorPlayPlanning()``,
+    ///   ``hasCompletedProcessExitSessionTeardown()``,
     ///   ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
     ///   ``events``, docs/Event-Driven-Refactor-Roadmap.md,
     ///   docs/Widget-Presentation-Dataflow.md.
@@ -191,6 +200,18 @@ extension SharedPlayerManager {
         policy: WidgetLivenessWritePolicy = .throttled,
         minInterval: TimeInterval = 30
     ) {
+        // Delivered-quit latch: this dying process must not clear sentinel `0` after
+        // ``performSessionTeardownSynchronouslyForTermination()`` already ran.
+        // Latch lives on the main-app compile path only (extension never claims it).
+        #if LUTHERAN_MAIN_APP
+        if Self.hasCompletedProcessExitSessionTeardown() {
+            #if DEBUG
+            print("[SharedPlayerManager] Suppressing liveness timestamp bump (process-exit teardown already completed this process)")
+            #endif
+            return
+        }
+        #endif
+
         // Privacy gate: suppress liveness timestamp (and thus "app was recently running" signal) when no widgets installed.
         //
         // Widget-process bypass remains for privacy only (intent proves a surface exists). It does
@@ -289,13 +310,36 @@ extension SharedPlayerManager {
     /// decision here must also update the widget view branches, the termination call sites,
     /// extension liveness honesty tests, and this doc.
     nonisolated static func isMainAppProcessRecentlyActive() -> Bool {
-        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return false }
-        guard let lastUpdate = defaults.object(forKey: "lastUpdateTime") as? Double else { return false }
+        guard let lastUpdate = synchronizedAppGroupLastUpdateTime() else { return false }
         if lastUpdate == 0 { return false } // explicit termination sentinel written on quit paths
         // Residual App Group heartbeat can survive hard power-off; boot identity is the
         // presentation signal that this process generation did not write it on this boot.
         if hasDeviceRebootedSinceLastRecordedBoot() { return false }
         return Date().timeIntervalSince1970 - lastUpdate < 60
+    }
+
+    /// Reads `lastUpdateTime` after a cross-process App Group re-sync.
+    ///
+    /// Family views and Providers must not keep a stale per-process UserDefaults cache of a
+    /// positive heartbeat after main wrote sentinel `0` (and cleared live chrome). Live-chrome
+    /// load already re-syncs; this is the matching read so ``shouldShowPassiveTapToOpen``
+    /// follows the sentinel instead of painting factory Connecting as interactive.
+    ///
+    /// - Returns: Suite `lastUpdateTime` as a `Double`, or `nil` when the suite or key is absent.
+    /// - SeeAlso: ``isMainAppProcessRecentlyActive()``, ``hasExplicitTerminationSentinel()``,
+    ///   ``loadHomeWidgetLiveChromeMirror()``.
+    nonisolated private static func synchronizedAppGroupLastUpdateTime() -> Double? {
+        let suite = "group.radio.lutheran.shared"
+        CFPreferencesAppSynchronize(suite as CFString)
+        guard let defaults = UserDefaults(suiteName: suite) else { return nil }
+        defaults.synchronize()
+        if let number = CFPreferencesCopyAppValue(
+            "lastUpdateTime" as CFString,
+            suite as CFString
+        ) as? NSNumber {
+            return number.doubleValue
+        }
+        return defaults.object(forKey: "lastUpdateTime") as? Double
     }
 
     /// Returns true when `lastUpdateTime` is the explicit termination sentinel value (0).
@@ -321,8 +365,7 @@ extension SharedPlayerManager {
     /// AGENT NOTE: Do not reintroduce this as a play / cold-launch / resurrection gate.
     /// Update widget presentation + mirror-distrust call sites only when changing semantics.
     nonisolated static func hasExplicitTerminationSentinel() -> Bool {
-        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return false }
-        guard let lastUpdate = defaults.object(forKey: "lastUpdateTime") as? Double else { return false }
+        guard let lastUpdate = synchronizedAppGroupLastUpdateTime() else { return false }
         return lastUpdate == 0
     }
 
@@ -353,6 +396,7 @@ extension SharedPlayerManager {
     ///   metadata remain for providers that fall back and for clean relaunch). Contrast with
     ///   `removeAllLocalPlaybackKeys` (privacy clear).
     /// - SeeAlso: ``isMainAppProcessRecentlyActive()``, ``hasExplicitTerminationSentinel()``,
+    ///   ``hasCompletedProcessExitSessionTeardown()``,
     ///   AppDelegate.applicationWillTerminate, SceneDelegate.sceneDidDisconnect,
     ///   RadioLiveActivityManager.handleAppWillTerminate,
     ///   ``removeAllLocalPlaybackKeys()``, ``clearHomeWidgetLiveChromeMirror()``,
@@ -361,6 +405,10 @@ extension SharedPlayerManager {
     nonisolated static func forceStaleLivenessTimestampForTermination() {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         defaults.set(0.0, forKey: "lastUpdateTime")
+        // Flush sentinel `0` before overlapping background save Tasks and before the widget
+        // process re-syncs liveness. Live-chrome clear below also synchronizes the suite.
+        defaults.synchronize()
+        CFPreferencesAppSynchronize("group.radio.lutheran.shared" as CFString)
         // Clear optimistic transients so the widget does not flash a stale "just played" state
         // on its next render after the main process has exited.
         defaults.removeObject(forKey: "isInstantFeedback")
