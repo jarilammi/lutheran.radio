@@ -743,6 +743,24 @@ struct WidgetSurfaceTests {
         #expect(resumed.currentLanguage == "fi")
     }
 
+    /// Language-only ContentState replace preserves control visual and program metadata.
+    ///
+    /// Post-quiet language long-horizon after freeze must not force `.playing` into the
+    /// sparse slot; dest language rides the owned glyph.
+    @Test func contentStateReplacingCurrentLanguagePreservesVisualAndMetadata() {
+        let metadata = StreamProgramMetadata(programTitle: "Psaltaren 34", speaker: "Lutheran Radio på svenska")
+        let connecting = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .prePlay,
+            streamMetadata: metadata,
+            currentLanguage: "sv"
+        )
+        let dest = connecting.replacingCurrentLanguage("en")
+        #expect(dest.visualState == .prePlay)
+        #expect(dest.streamMetadata == metadata)
+        #expect(dest.currentLanguage == "en")
+        #expect(dest != connecting)
+    }
+
     /// Optimistic stream-switch ContentState advances language and clears prior program metadata.
     ///
     /// Lock-screen language chips must update flag chrome without waiting for main-app attach,

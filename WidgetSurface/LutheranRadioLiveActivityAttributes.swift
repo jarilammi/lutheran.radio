@@ -41,6 +41,8 @@
 // Stream-language chips publish optimistic content via
 // ``ContentState/replacingStreamSwitchDestination(language:visualState:clearStreamMetadata:)``
 // so flag/name/“current” chrome advances before main-app attach drains.
+// Post-quiet language long-horizon after freeze publishes dest language via
+// ``ContentState/replacingCurrentLanguage(_:)`` so the owned glyph is preserved.
 // When ActivityKit does not expose activities in the intent host, a durable App
 // Group mirror of the visual (and language) is used — see
 // ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState`` and
@@ -108,6 +110,29 @@ public struct LutheranRadioLiveActivityAttributes: ActivityAttributes {
         ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
         ///   docs/Widget-Presentation-Dataflow.md.
         public func replacingVisualState(_ visualState: PlayerVisualState) -> ContentState {
+            ContentState(
+                visualState: visualState,
+                streamMetadata: streamMetadata,
+                currentLanguage: currentLanguage
+            )
+        }
+
+        /// Builds content with a new stream language while keeping control visual and
+        /// program metadata unchanged.
+        ///
+        /// Post-quiet language long-horizon after freeze uses this so dest-language chrome
+        /// can still land as a same-visual update. Bundling `.playing` into that sparse
+        /// slot delays language and still fails the glyph. Stream-switch hold still uses
+        /// ``replacingStreamSwitchDestination(language:visualState:clearStreamMetadata:)``
+        /// (Connecting honesty). Does **not** invent `.playing`.
+        ///
+        /// - Parameter currentLanguage: Destination stream language code for language chrome.
+        /// - Returns: A new ``ContentState`` sharing this instance's ``visualState`` and
+        ///   ``streamMetadata``.
+        /// - SeeAlso: ``replacingVisualState(_:)``,
+        ///   ``replacingStreamSwitchDestination(language:visualState:clearStreamMetadata:)``,
+        ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+        public func replacingCurrentLanguage(_ currentLanguage: String) -> ContentState {
             ContentState(
                 visualState: visualState,
                 streamMetadata: streamMetadata,

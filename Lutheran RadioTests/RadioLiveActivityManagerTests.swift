@@ -1636,7 +1636,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
             ),
             "Language quiet must not clear for dual-axis when language already matched"
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             manager._test_shouldClearPlayingQuietForDualAxisLongHorizonFire(
                 playingQuietPending: true,
                 languageStillLags: true,
@@ -1645,7 +1645,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 isStreamSwitchHoldActive: false,
                 isConnectingPlayback: false
             ),
-            "Playing quiet must clear on dual-axis long-horizon language fire when both lag"
+            "After freeze (playing quiet pending while ineligible), dual-axis must not clear playing quiet — language-only owns dest language; playing long-horizon remains the visual rail"
         )
         // Hold blocks dual-axis invent-playing.
         XCTAssertFalse(
@@ -3380,6 +3380,506 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 isRequestEligible: true
             ),
             "Committed language stick at threshold while eligible still may recreate"
+        )
+    }
+
+    /// Delayed re-read is stall truth **and** axis-heal truth, same as `contentUpdates`.
+    ///
+    /// Immediate post-await `content.state` does not axis-heal (apply-in-flight). Language-new
+    /// delayed observation with visual still `.prePlay` while the actor is `.playing` re-arms
+    /// playing ensure and must not wipe stall bookkeeping as a same-stream visual stall.
+    /// Does **not** invent `.playing`; does **not** end while ineligible.
+    func testDelayedRereadObservationRunsAxisHealOnLanguageNewVisualLag() {
+        XCTAssertTrue(
+            manager._test_shouldApplySystemContentUpdateHealAfterObservation(kind: .delayedReread),
+            "Delayed re-read must run axis-heal (contentUpdates may be silent under lock)"
+        )
+        XCTAssertTrue(
+            manager._test_shouldApplySystemContentUpdateHealAfterObservation(kind: .contentUpdates),
+            "contentUpdates yields must run axis-heal"
+        )
+        XCTAssertFalse(
+            manager._test_shouldApplySystemContentUpdateHealAfterObservation(kind: .immediatePostAwait),
+            "Immediate post-await is apply-in-flight and must not axis-heal"
+        )
+
+        let delayedLanguageNew = manager._test_contentUpdateAxisHealPolicy(
+            systemLanguage: "en",
+            systemVisual: .prePlay,
+            destinationLanguage: "en",
+            actorVisual: .playing,
+            isStreamSwitchHoldActive: false,
+            isConnectingPlayback: false,
+            priorObservedLanguage: "sv",
+            priorObservedVisual: .prePlay
+        )
+        XCTAssertTrue(delayedLanguageNew.languageConverged)
+        XCTAssertFalse(delayedLanguageNew.playingConverged)
+        XCTAssertFalse(
+            delayedLanguageNew.resetStalledStreakAndRecreationBudget,
+            "Language-new delayed re-read with Connecting residual must not wipe stall streak"
+        )
+        XCTAssertTrue(
+            delayedLanguageNew.shouldFollowThroughPlayingEnsure,
+            "Language-new delayed re-read with visual still Connecting must re-arm playing ensure"
+        )
+        XCTAssertFalse(delayedLanguageNew.shouldFollowThroughLanguageEnsure)
+        XCTAssertFalse(
+            delayedLanguageNew.cancelPlayingPostSettled,
+            "Must not treat language-new delayed re-read as same-stream visual stall wipe"
+        )
+
+        let sameStreamDelayed = manager._test_contentUpdateAxisHealPolicy(
+            systemLanguage: "en",
+            systemVisual: .prePlay,
+            destinationLanguage: "en",
+            actorVisual: .playing,
+            isStreamSwitchHoldActive: false,
+            isConnectingPlayback: false,
+            priorObservedLanguage: "en",
+            priorObservedVisual: .prePlay
+        )
+        XCTAssertFalse(
+            sameStreamDelayed.shouldFollowThroughPlayingEnsure,
+            "Same-stream delayed re-read (language already dest) must not thrash playing follow-through"
+        )
+    }
+
+    /// DEBUG `contentUpdates` yield line is rate-limited on identical (id, language, visual).
+    ///
+    /// Device recapture must be able to distinguish observer silence from a heal miss.
+    /// Does not log in Release. Does not cite local capture filenames.
+    func testContentUpdatesYieldDiagnosticsAreRateLimited() {
+        let yieldA = manager._test_contentUpdatesYieldDiagnosticsSignature(
+            systemLanguage: "en",
+            systemVisual: .prePlay,
+            activityId: "id-1"
+        )
+        let yieldSame = manager._test_contentUpdatesYieldDiagnosticsSignature(
+            systemLanguage: "en",
+            systemVisual: .prePlay,
+            activityId: "id-1"
+        )
+        let yieldLang = manager._test_contentUpdatesYieldDiagnosticsSignature(
+            systemLanguage: "fi",
+            systemVisual: .prePlay,
+            activityId: "id-1"
+        )
+        let yieldVisual = manager._test_contentUpdatesYieldDiagnosticsSignature(
+            systemLanguage: "en",
+            systemVisual: .playing,
+            activityId: "id-1"
+        )
+        let yieldId = manager._test_contentUpdatesYieldDiagnosticsSignature(
+            systemLanguage: "en",
+            systemVisual: .prePlay,
+            activityId: "id-2"
+        )
+        XCTAssertEqual(yieldA, yieldSame, "Identical yield tuples must share a diagnostics signature")
+        XCTAssertNotEqual(yieldA, yieldLang, "Language mutation must re-arm yield diagnostics")
+        XCTAssertNotEqual(yieldA, yieldVisual, "Visual mutation must re-arm yield diagnostics")
+        XCTAssertNotEqual(yieldA, yieldId, "Activity id change must re-arm yield diagnostics")
+        XCTAssertTrue(
+            manager._test_shouldLogStalledContentDiagnostics(
+                signature: yieldA,
+                lastLoggedSignature: nil
+            ),
+            "First contentUpdates yield must log"
+        )
+        XCTAssertFalse(
+            manager._test_shouldLogStalledContentDiagnostics(
+                signature: yieldA,
+                lastLoggedSignature: yieldA
+            ),
+            "Identical contentUpdates yield must not re-log"
+        )
+        XCTAssertTrue(
+            manager._test_shouldLogStalledContentDiagnostics(
+                signature: yieldLang,
+                lastLoggedSignature: yieldA
+            ),
+            "Changed yield tuple must re-log once"
+        )
+    }
+
+    /// One outstanding visual mutation: while `Activity.update` apply is unconfirmed,
+    /// visual-differing candidates coalesce (latest wins) instead of issuing a second IPC.
+    /// Language-only same-visual candidates still update. Pause replacing playing-ensure
+    /// in-flight must remain the outstanding candidate. Duplicate unconfirmed playing
+    /// pushes also coalesce. Does **not** invent `.playing`; does **not** end while ineligible.
+    ///
+    /// Why this pattern is required: MainActor re-entry during `await Activity.update` and
+    /// playing-ensure / dual-axis loops would otherwise burn the lock-stretch apply budget
+    /// on a Connecting→playing burst. Pure `should*` — no ActivityKit waits.
+    func testVisualDifferingContentPushCoalescesWhileInFlight() {
+        XCTAssertFalse(
+            manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: nil,
+                candidateVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "No in-flight apply must issue the first visual mutation"
+        )
+        XCTAssertTrue(
+            manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .prePlay,
+                candidateVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "Playing while Connecting apply is in-flight must coalesce (not a second visual IPC)"
+        )
+        XCTAssertTrue(
+            manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .playing,
+                candidateVisual: .userPaused,
+                ownedVisual: .prePlay
+            ),
+            "Pause replacing playing-ensure in-flight must coalesce (latest wins; pause remains outstanding)"
+        )
+        XCTAssertTrue(
+            manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .playing,
+                candidateVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "Duplicate unconfirmed playing push must coalesce (playing-ensure 2/3 while 1/3 is in-flight)"
+        )
+        XCTAssertFalse(
+            manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .prePlay,
+                candidateVisual: .prePlay,
+                ownedVisual: .prePlay
+            ),
+            "Language-only same visual as in-flight and owned must still update"
+        )
+
+        let coalescedPlaying = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: nil,
+            currentLanguage: "sv"
+        )
+        let coalescedPaused = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .userPaused,
+            streamMetadata: nil,
+            currentLanguage: "sv"
+        )
+        let observedConnecting = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .prePlay,
+            streamMetadata: nil,
+            currentLanguage: "sv"
+        )
+        let observedPlaying = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: nil,
+            currentLanguage: "sv"
+        )
+        XCTAssertTrue(
+            manager._test_shouldFlushCoalescedContentPushAfterObservation(
+                coalesced: coalescedPlaying,
+                observed: observedConnecting
+            ),
+            "Committed Connecting with coalesced playing must flush once"
+        )
+        XCTAssertTrue(
+            manager._test_shouldFlushCoalescedContentPushAfterObservation(
+                coalesced: coalescedPaused,
+                observed: observedConnecting
+            ),
+            "Committed Connecting with coalesced pause (latest) must flush pause once"
+        )
+        XCTAssertFalse(
+            manager._test_shouldFlushCoalescedContentPushAfterObservation(
+                coalesced: coalescedPlaying,
+                observed: observedPlaying
+            ),
+            "Coalesced playing that already matches observed must not flush"
+        )
+        XCTAssertFalse(
+            manager._test_shouldFlushCoalescedContentPushAfterObservation(
+                coalesced: nil,
+                observed: observedConnecting
+            ),
+            "No coalesced candidate must not flush"
+        )
+    }
+
+    /// Same-stream ineligible resume must not spend an ActivityKit visual apply on
+    /// Connecting over committed ``.userPaused`` / ``.playing``. Stream-switch hold still
+    /// publishes Connecting. First start (owned already Connecting) and request-eligible
+    /// still publish Connecting. Authoritative `.playing` and pause candidates still push.
+    /// Does **not** invent `.playing` during attach.
+    ///
+    /// Why this pattern is required: the last visual apply Apple accepted under lock was
+    /// Connecting on same-stream play-after-pause; later `.playing` mutations dropped.
+    /// Pure `should*` — no ActivityKit waits.
+    func testSameStreamIneligibleResumeDoesNotPushConnectingOverPausedOrPlaying() {
+        XCTAssertTrue(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                isStreamSwitchHoldActive: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .prePlay
+            ),
+            "Ineligible same-stream resume must not overwrite committed pause with Connecting"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                isStreamSwitchHoldActive: false,
+                ownedVisual: .playing,
+                candidateVisual: .prePlay
+            ),
+            "Ineligible same-stream resume must not overwrite committed playing with Connecting"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                isStreamSwitchHoldActive: true,
+                ownedVisual: .playing,
+                candidateVisual: .prePlay
+            ),
+            "Stream-switch hold must still publish Connecting + destination language"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: true,
+                isStreamSwitchHoldActive: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .prePlay
+            ),
+            "Request-eligible (presentable) Connecting honesty must still push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                isStreamSwitchHoldActive: false,
+                ownedVisual: .prePlay,
+                candidateVisual: .prePlay
+            ),
+            "First start with owned already Connecting has nothing better to keep"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                isStreamSwitchHoldActive: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .playing
+            ),
+            "Authoritative playing after attach must still push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                isStreamSwitchHoldActive: false,
+                ownedVisual: .playing,
+                candidateVisual: .userPaused
+            ),
+            "Pause is a true visual mutation and must still push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                isStreamSwitchHoldActive: false,
+                ownedVisual: .thermalPaused,
+                candidateVisual: .prePlay
+            ),
+            "Thermal / security / cleared owned visuals are not paused-or-playing glyphs to keep"
+        )
+    }
+
+    /// After freeze (soft budget exhausted or playing quiet) while request is ineligible,
+    /// post-quiet language long-horizon stays language-only: dest language rides the owned
+    /// glyph (candidate visual == owned visual). Dual-axis long-horizon does not arm or
+    /// fire. Dual-axis settle at ``setPlaying()`` after hold clear is not this rail.
+    /// Playing long-horizon remains the visual rail. Stream-switch hold still Connecting.
+    /// Request-eligible still may co-push. Does **not** invent `.playing`.
+    ///
+    /// Why this pattern is required: same-visual language updates still land under lock;
+    /// bundling `.playing` into the sparse slot delays language and still fails the glyph.
+    /// Pure `should*` — no ActivityKit waits.
+    func testPostQuietLanguageLongHorizonStaysLanguageOnlyAfterFreeze() {
+        XCTAssertTrue(
+            manager._test_shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(
+                freezeSoftBudgetExhausted: true,
+                playingQuietPending: false,
+                isRequestEligible: false
+            ),
+            "Freeze soft budget exhausted while ineligible must keep owned visual on language long-horizon"
+        )
+        XCTAssertTrue(
+            manager._test_shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(
+                freezeSoftBudgetExhausted: false,
+                playingQuietPending: true,
+                isRequestEligible: false
+            ),
+            "Playing quiet pending while ineligible must keep owned visual on language long-horizon"
+        )
+        XCTAssertFalse(
+            manager._test_shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(
+                freezeSoftBudgetExhausted: true,
+                playingQuietPending: true,
+                isRequestEligible: true
+            ),
+            "Request-eligible (presentable) recovery must not force language-only owned visual"
+        )
+        XCTAssertFalse(
+            manager._test_shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(
+                freezeSoftBudgetExhausted: false,
+                playingQuietPending: false,
+                isRequestEligible: false
+            ),
+            "Before freeze, dual-axis long-horizon may still co-push"
+        )
+
+        XCTAssertEqual(
+            manager._test_languageOnlyLongHorizonCandidateVisual(
+                ownedVisual: .prePlay,
+                actorResolvedVisual: .playing,
+                keepOwnedVisual: true
+            ),
+            .prePlay,
+            "After freeze, language-lag candidate visual must equal owned visual (not force .playing)"
+        )
+        XCTAssertEqual(
+            manager._test_languageOnlyLongHorizonCandidateVisual(
+                ownedVisual: .userPaused,
+                actorResolvedVisual: .playing,
+                keepOwnedVisual: true
+            ),
+            .userPaused,
+            "After freeze, language-lag must preserve owned pause rather than force .playing"
+        )
+        XCTAssertEqual(
+            manager._test_languageOnlyLongHorizonCandidateVisual(
+                ownedVisual: .prePlay,
+                actorResolvedVisual: .playing,
+                keepOwnedVisual: false
+            ),
+            .playing,
+            "Before freeze, language long-horizon still uses actor-resolved visual"
+        )
+
+        XCTAssertTrue(
+            manager._test_shouldPreserveOwnedVisualOnLanguageOnlyContentPush(
+                keepOwnedVisualAfterFreeze: true,
+                isStreamSwitchHoldActive: false
+            ),
+            "After freeze without stream-switch hold, language-only push preserves owned visual"
+        )
+        XCTAssertFalse(
+            manager._test_shouldPreserveOwnedVisualOnLanguageOnlyContentPush(
+                keepOwnedVisualAfterFreeze: true,
+                isStreamSwitchHoldActive: true
+            ),
+            "Stream-switch hold must still publish Connecting + destination language"
+        )
+        XCTAssertFalse(
+            manager._test_shouldPreserveOwnedVisualOnLanguageOnlyContentPush(
+                keepOwnedVisualAfterFreeze: false,
+                isStreamSwitchHoldActive: false
+            ),
+            "Before freeze, language ensure still uses actor-resolved visual"
+        )
+
+        XCTAssertFalse(
+            manager._test_shouldArmPostQuietLongHorizonDualAxisEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                dualAxisAlreadyArmed: false,
+                languageStillLags: true,
+                visualStillLags: true,
+                actorVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false,
+                freezeSoftBudgetExhausted: true,
+                playingQuietPending: false
+            ),
+            "After freeze, dual-axis long-horizon must not arm (language-only + playing rails own the slots)"
+        )
+        XCTAssertFalse(
+            manager._test_shouldArmPostQuietLongHorizonDualAxisEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                dualAxisAlreadyArmed: false,
+                languageStillLags: true,
+                visualStillLags: true,
+                actorVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false,
+                freezeSoftBudgetExhausted: false,
+                playingQuietPending: true
+            ),
+            "Playing quiet pending while ineligible must not arm dual-axis long-horizon"
+        )
+        XCTAssertTrue(
+            manager._test_shouldArmPostQuietLongHorizonDualAxisEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                dualAxisAlreadyArmed: false,
+                languageStillLags: true,
+                visualStillLags: true,
+                actorVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Before freeze, both-lag dual-axis long-horizon arm still stands (setPlaying settle first try)"
+        )
+        XCTAssertFalse(
+            manager._test_shouldRunPostQuietLongHorizonDualAxisEnsure(
+                languageStillLags: true,
+                visualStillLags: true,
+                actorVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false,
+                freezeSoftBudgetExhausted: true,
+                playingQuietPending: false,
+                isRequestEligible: false
+            ),
+            "After freeze, language/playing long-horizon fires must not hijack into dual-axis"
+        )
+        XCTAssertTrue(
+            manager._test_shouldArmPostQuietLongHorizonLanguageEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                longHorizonAlreadyArmed: false,
+                destinationLanguage: "en",
+                lastPushedLanguage: "sv",
+                ownedContentLanguage: "sv",
+                isStreamSwitchHoldActive: false
+            ),
+            "After freeze, language lag must still arm language-only long-horizon"
+        )
+        XCTAssertTrue(
+            manager._test_shouldArmPostQuietLongHorizonPlayingEnsure(
+                hasCurrentActivity: true,
+                isRequestEligible: false,
+                longHorizonAlreadyArmed: false,
+                actorVisual: .playing,
+                lastPushedVisual: .playing,
+                ownedContentVisual: .prePlay,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "After freeze, visual lag must still arm playing long-horizon (unlock-heal remains presentable repair)"
+        )
+
+        XCTAssertFalse(
+            manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .playing,
+                candidateVisual: .prePlay,
+                ownedVisual: .prePlay,
+                languageOnlyPreservingOwnedVisual: true
+            ),
+            "Language-only preserving owned Connecting must still update while playing-ensure is in-flight"
+        )
+        XCTAssertTrue(
+            manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .playing,
+                candidateVisual: .prePlay,
+                ownedVisual: .prePlay,
+                languageOnlyPreservingOwnedVisual: false
+            ),
+            "Without language-only preserve, Connecting vs in-flight playing still coalesces"
         )
     }
 

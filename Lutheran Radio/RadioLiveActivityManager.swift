@@ -57,10 +57,38 @@ import WidgetSurface
 /// ## Update Invariant
 /// `Activity.update(...)` occurs **iff** the candidate is not suppressible under
 /// ``shouldSuppressLiveActivityContentPush(lastPushed:candidate:ownedContentLanguage:)``
-/// (or force/initial). Suppress is an **optimization**, not a source of truth:
-/// owned `Activity.content.state.currentLanguage` beats optimistic / aspirational
+/// (or force/initial), is not a same-stream ineligible Connecting overwrite of owned
+/// paused/playing (``shouldSuppressConnectingContentPushWhileIneligible``), **and** is
+/// not coalesced as a second visual mutation while ``inFlightContentPushCandidate`` is
+/// unconfirmed. Suppress is an **optimization**, not a source of truth: owned
+/// `Activity.content.state.currentLanguage` beats optimistic / aspirational
 /// ``lastPushedContent`` — never skip a push when the candidate language is non-empty
 /// and differs from the surface the system still holds.
+///
+/// ## One outstanding visual mutation
+/// `Activity.update` apply is asynchronous. Soft-ensure / dual-axis must not issue a
+/// second visual-differing IPC while the prior apply is unconfirmed — that burns the
+/// lock-stretch apply budget (later glyph changes drop; same-visual language updates
+/// can still land). While ``inFlightContentPushCandidate`` is non-nil, a candidate
+/// whose visual differs — or a duplicate unconfirmed visual — is remembered as
+/// ``pendingCoalescedContentPushCandidate`` (replace, do not queue) and does **not**
+/// call `Activity.update`. After delayed re-read, `contentUpdates`, or an immediate
+/// post-await match, if the coalesced candidate still differs from observed, push
+/// **once**. Pause (``.userPaused``) replacing playing-ensure in-flight is a true
+/// visual mutation: latest wins so pause remains the outstanding candidate. Language-only
+/// candidates (visual matches in-flight **and** owned visual) still update. Soft-ensure
+/// attempt counters still bound the loop; this is IPC coalesce, not a new ensure rail.
+/// Does **not** invent `.playing`. Does **not** end while ineligible.
+///
+/// ## Same-stream ineligible resume must not spend an apply on Connecting
+/// While interactive request is ineligible, ``updateCurrentActivity()`` must not
+/// `Activity.update` Connecting (``.prePlay``) over owned ``.userPaused`` / ``.playing``.
+/// That overwrite is the last visual apply Apple still accepted on same-stream
+/// play-after-pause under lock; later `.playing` mutations then dropped. Stream-switch
+/// hold still publishes Connecting + destination language. First start (owned already
+/// ``.prePlay``) and request-eligible (presentable) still publish Connecting. Does
+/// **not** invent `.playing` during attach. Durable mirrors may still warm Connecting
+/// for extension planning — owned lock-screen glyph is the thing we must not overwrite.
 ///
 /// Intent-path optimistic toggles publish ContentState and align ``lastPushedContent``
 /// so a rapid second tap resolves from the post-toggle glyph; the sequential sticky
@@ -77,6 +105,8 @@ import WidgetSurface
 /// `content.state` re-read after `await update` is apply-in-flight, not stall truth.
 /// Stall / quiet / recreation bookkeeping wait for ``handleActivityContentUpdate``
 /// (`contentUpdates`) or a delayed re-read past ``contentPushApplyConfirmationDelayMilliseconds``.
+/// Both observation kinds run ``applySystemContentUpdateHeal`` with prior
+/// ``lastSystemHeldContent`` (language-new coarsen). Immediate post-await does not.
 /// Pause↔Connecting and Connecting↔playing after hold/connect clear are handshake lag
 /// and do **not** consume ``stalledContentPushRecreationThreshold``. After a bounded
 /// streak of **committed** stalls that leave system-held ContentState lagging, the
@@ -148,11 +178,19 @@ import WidgetSurface
 /// / language peer / dual-axis peer schedule **sparse** delayed re-arms on
 /// ``postQuietLongHorizonEnsureDelayedIntervalsMilliseconds`` (5 s / 15 s / 45 s, max three fires
 /// per freeze generation). Each fire clears quiet once for the lagging axis (or **both** when
-/// dual-axis). When **both** axes lag while the actor is authoritative `.playing` without
-/// hold/connect, the dual-axis rail owns recovery: **one** ``ensureAuthoritativeDualAxisContentIfNeeded()``
-/// per fire (destination language **and** playing visual together) — not two independent short
-/// single-axis budgets that each re-quiet in the same turn. Single-axis rails arm only when the
-/// other axis already matches. Cancelled on ownership end, owned acceptance, actor leaving
+/// dual-axis still owns the freeze). Dual-axis settle at ``setPlaying()`` after hold
+/// clear remains the first co-push. After freeze soft budget exhausts or playing quiet
+/// is pending while request is ineligible, post-quiet language long-horizon stays
+/// **language-only** (``ContentState/replacingCurrentLanguage(_:)`` preserves owned
+/// visual; do not force `.playing`). Playing long-horizon remains the visual rail
+/// (one outstanding visual mutation still coalesces). Unlock-heal remains the
+/// presentable visual repair. Before that freeze, when **both** axes lag while the
+/// actor is authoritative `.playing` without hold/connect, the dual-axis rail owns
+/// recovery: **one** ``ensureAuthoritativeDualAxisContentIfNeeded()`` per fire
+/// (destination language **and** playing visual together) — not two independent short
+/// single-axis budgets that each re-quiet in the same turn. Single-axis rails arm only
+/// when the other axis already matches, or after freeze when dual-axis long-horizon
+/// is skipped. Cancelled on ownership end, owned acceptance, actor leaving
 /// authoritative play, UITestMode / test sanitization, optimistic mutation / settle restart,
 /// destination advance (language/dual re-arm for the new destination), and foreground owned-surface
 /// ensure (presentable cycle owns recovery). After dual-axis long-horizon exhausts without
@@ -172,12 +210,14 @@ import WidgetSurface
 /// hold/connect. Soft-resume from ``.userPaused`` still uses the single-axis settled playing rail.
 ///
 /// ## Partial-acceptance dual-axis heal
-/// System `contentUpdates` and post-`Activity.update` re-reads can advance **one** ContentState
-/// axis while the other still lags (device: destination language accepted with Connecting visual,
-/// or playing visual accepted with prior language). Treat that as progress, not full heal:
-/// clear quiet / cancel post-settled / reset stall streak **only for converged axes**; re-arm the
-/// lagging axis (quiet clear + delayed soft ensure) so language acceptance cannot freeze playing
-/// repair (and the reverse). Soft-ensure inter-attempt spacing is longer while request is
+/// System `contentUpdates` **and** delayed re-read after ``contentPushApplyConfirmationDelayMilliseconds``
+/// can advance **one** ContentState axis while the other still lags (device: destination language
+/// accepted with Connecting visual, or playing visual accepted with prior language). Immediate
+/// post-await `content.state` is apply-in-flight and does **not** axis-heal. Treat committed
+/// progress as progress, not full heal: clear quiet / cancel post-settled / reset stall streak
+/// **only for converged axes**; re-arm the lagging axis (quiet clear + delayed soft ensure) so
+/// language acceptance cannot freeze playing repair (and the reverse) even when `contentUpdates`
+/// is silent under lock. Soft-ensure inter-attempt spacing is longer while request is
 /// ineligible so ActivityKit has an apply window without raising attempt count.
 ///
 /// ## Soft-ensure thrash protection (concurrent collapse + deferred announce-once)
@@ -299,9 +339,10 @@ class RadioLiveActivityManager: ObservableObject {
     /// Immediate `content.state` after `await Activity.update` is apply-in-flight and does
     /// **not** increment this streak. Commit happens on ``handleActivityContentUpdate``
     /// (`contentUpdates`) or a delayed re-read past ``contentPushApplyConfirmationDelayMilliseconds``.
-    /// Handshake lag (pause↔Connecting, Connecting↔playing after hold/connect clear) is
-    /// excluded. Reset when system-held chrome matches the candidate, on matching
-    /// `contentUpdates`, end paths, and when a recreation begins.
+    /// Both of those observation kinds also run ``applySystemContentUpdateHeal``. Handshake
+    /// lag (pause↔Connecting, Connecting↔playing after hold/connect clear) is excluded.
+    /// Reset when system-held chrome matches the candidate, on matching `contentUpdates`,
+    /// end paths, and when a recreation begins.
     /// - SeeAlso: ``isStalledLiveActivityContentPush(candidate:accepted:)``,
     ///   ``shouldCommitStalledContentPushObservation(kind:isStalled:isHandshakeLag:)``,
     ///   ``shouldRecreateInteractiveLiveActivityAfterStalledPushes(consecutiveStalled:recreationsAttempted:threshold:maxRecreations:isRecreationInProgress:)``.
@@ -310,14 +351,30 @@ class RadioLiveActivityManager: ObservableObject {
     /// Last **system-held** `content.state` observed from `contentUpdates`, a delayed
     /// re-read, or a post-update snapshot — never aspirational ``lastPushedContent``.
     ///
-    /// ``handleActivityContentUpdate`` uses this as the prior SSOT for axis-heal coarsen
-    /// so optimistic suppress memory cannot look like a same-stream language match.
-    /// - SeeAlso: ``handleActivityContentUpdate(_:)``, ``lastPushedContent``.
+    /// ``handleActivityContentUpdate`` and delayed re-read capture this as the prior SSOT
+    /// for axis-heal coarsen **before** ``commitContentPushObservation`` overwrites it, so
+    /// optimistic suppress memory cannot look like a same-stream language match.
+    /// - SeeAlso: ``handleActivityContentUpdate(_:)``, ``applySystemContentUpdateHeal(systemContent:priorObservedLanguage:priorObservedVisual:)``,
+    ///   ``lastPushedContent``.
     private var lastSystemHeldContent: LutheranRadioLiveActivityAttributes.ContentState?
 
     /// Candidate submitted to `Activity.update` while apply is still in-flight (immediate
     /// post-await `content.state` still lagged). Compared by delayed re-read / `contentUpdates`.
+    /// Also set before `await Activity.update` so MainActor re-entry during the await
+    /// coalesces visual-differing candidates instead of issuing a second IPC.
     private var inFlightContentPushCandidate: LutheranRadioLiveActivityAttributes.ContentState?
+
+    /// Latest visual-differing candidate remembered while ``inFlightContentPushCandidate``
+    /// is unconfirmed. Replace, do not queue. Flushed once after delayed re-read,
+    /// `contentUpdates`, or an immediate post-await match. Language-only same-visual
+    /// updates are not stored here — they still issue `Activity.update`.
+    /// - SeeAlso: ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:)``.
+    private var pendingCoalescedContentPushCandidate: LutheranRadioLiveActivityAttributes.ContentState?
+
+    /// True while ``updateCurrentActivity()`` is inside `await Activity.update` (and the
+    /// immediate post-await bookkeeping). Flush of a coalesced candidate waits until this
+    /// is false so a language-only / first visual await is not followed by a nested visual IPC.
+    private var isAwaitingLiveActivityContentPushApply = false
 
     /// Delayed apply-confirmation after an in-flight mismatch. Cancelled on a new push,
     /// matching `contentUpdates`, ownership end, or test sanitization.
@@ -689,6 +746,15 @@ class RadioLiveActivityManager: ObservableObject {
     /// - SeeAlso: ``stalledContentDiagnosticsSignature(candidateLanguage:acceptedLanguage:candidateVisual:acceptedVisual:)``,
     ///   ``shouldLogStalledContentDiagnostics(signature:lastLoggedSignature:)``.
     private var lastLoggedStalledContentDiagnosticsSignature: String?
+
+    /// Last DEBUG signature for `contentUpdates` yield diagnostics (system language+visual+id).
+    ///
+    /// Identical tuples log once until the signature changes or ownership ends. Independent of
+    /// stall diagnostics so a stall line cannot suppress a later yield (or the reverse).
+    ///
+    /// - SeeAlso: ``contentUpdatesYieldDiagnosticsSignature(systemLanguage:systemVisual:activityId:)``,
+    ///   ``handleActivityContentUpdate(_:)``.
+    private var lastLoggedContentUpdatesYieldDiagnosticsSignature: String?
 
     /// Whether the "language ensure quiet skip" DEBUG line has already been emitted for the
     /// current quiet engagement (avoids status-callback spam after budget exhaustion).
@@ -1066,6 +1132,21 @@ class RadioLiveActivityManager: ObservableObject {
     /// re-read past ``contentPushApplyConfirmationDelayMilliseconds``. Handshake lag
     /// (pause↔Connecting, Connecting↔playing after hold/connect clear) is excluded.
     ///
+    /// **Same-stream ineligible Connecting skip:** While request is ineligible and
+    /// stream-switch hold is inactive, ``shouldSuppressConnectingContentPushWhileIneligible``
+    /// skips `Activity.update` when the candidate is Connecting (``.prePlay``) and owned
+    /// visual is already ``.userPaused`` or ``.playing``. Keep the committed glyph until
+    /// authoritative `.playing` or a later `.userPaused` is the candidate. Stream-switch
+    /// hold, first start (owned already Connecting), and request-eligible still publish
+    /// Connecting. Durable mirrors still warm. Does **not** invent `.playing`.
+    ///
+    /// **One outstanding visual mutation:** While ``inFlightContentPushCandidate`` is
+    /// unconfirmed, ``shouldCoalesceVisualDifferingContentPushWhileInFlight`` skips a second
+    /// visual-differing `Activity.update` and remembers ``pendingCoalescedContentPushCandidate``
+    /// (latest wins, including pause replacing playing-ensure). Language-only same-visual
+    /// candidates still update. After committed observation, ``flushCoalescedContentPushIfNeeded``
+    /// pushes once when the coalesced candidate still differs from observed.
+    ///
     /// **Stalled system-held chrome recreation:** When a **committed** stall streak of
     /// language (or non-handshake visual) mismatch remains, recreation is considered.
     /// End + request runs **only when** interactive `Activity.request` is eligible
@@ -1074,6 +1155,11 @@ class RadioLiveActivityManager: ObservableObject {
     /// Soft retries (playing ensure) are preferred for pure visual freezes; destroying the only
     /// card under a visibility failure is worse than a stalled glyph.
     ///
+    /// - Parameters:
+    ///   - preservingOwnedVisual: When `true` (post-quiet language long-horizon after freeze),
+    ///     dest language rides ``ContentState/replacingCurrentLanguage(_:)`` so the owned
+    ///     glyph is not overwritten with `.playing`. Stream-switch hold still Connecting.
+    ///     Durable App Group mirrors still warm actor visual + dest language.
     /// - Precondition: Must be called on the main actor (the method is `@MainActor`).
     /// - Postcondition: If an update is sent, `lastPushedContent` reflects the
     ///   system-observed `content.state` after the await. Durable visual + language App Group
@@ -1092,14 +1178,18 @@ class RadioLiveActivityManager: ObservableObject {
     ///   `SharedPlayerManager.didUpdateStreamMetadata`,
     ///   `performActualSave` (the bridge call remains for widget parity),
     ///   ``beginObservingActivityEvents(_:)`` (the Live Activity events surface that
-    ///   keeps `lastPushedContent` aligned), ``isRunningUnderTest``,
+    ///   keeps `lastPushedContent` aligned),
+    ///   ``shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:isStreamSwitchHoldActive:ownedVisual:candidateVisual:)``,
+    ///   ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:languageOnlyPreservingOwnedVisual:)``,
+    ///   ``shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``,
+    ///   ``isRunningUnderTest``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/Widget-Presentation-Dataflow.md,
     ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT),
     ///   docs/cold-launch-streamplay-regression-checklist.md (§6),
     ///   RadioLiveActivityManagerTests
     @MainActor
-    func updateCurrentActivity() async {
+    func updateCurrentActivity(preservingOwnedVisual: Bool = false) async {
         // Defense-in-depth UI test isolation (SSOT). Even if a stale currentActivity reference
         // existed, we must not call Activity.update during test runs.
         if SharedPlayerManager.isRunningInUITestMode {
@@ -1141,24 +1231,36 @@ class RadioLiveActivityManager: ObservableObject {
         let currentLanguage = await manager.liveActivityLanguageCodeForContentPush()
 
         // Authoritative visual at push time — after all prior suspension points.
-        let visualState = await Self.resolveContentPushVisual(from: manager)
-        
-        let candidate = LutheranRadioLiveActivityAttributes.ContentState(
-            visualState: visualState,
-            streamMetadata: streamMetadata,
-            currentLanguage: currentLanguage
-        )
-
-        // Durable App Group mirrors for extension-hosted LA planning / optimistic language.
-        // Always keep warm — even when ActivityKit IPC is suppressed — so lock-screen pause
-        // and language chrome are not inverted when home-widget write suppression leaves the
-        // extension session snapshot empty.
-        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(visualState)
-        SharedPlayerManager.persistLiveActivityLanguageMirror(currentLanguage)
+        // Hold is sampled with visual so same-stream Connecting skip cannot race a
+        // stream-switch that established destination-language Connecting honesty.
+        let (visualState, streamSwitchHoldActive) = await Self.resolveContentPushVisual(from: manager)
 
         // Owned surface language + visual beat optimistic suppress memory (flag + glyph SSOT).
         let ownedLanguage = activity.content.state.currentLanguage
         let ownedVisual = activity.content.state.visualState
+        let preserveOwnedVisual = Self.shouldPreserveOwnedVisualOnLanguageOnlyContentPush(
+            keepOwnedVisualAfterFreeze: preservingOwnedVisual,
+            isStreamSwitchHoldActive: streamSwitchHoldActive
+        )
+        let candidate: LutheranRadioLiveActivityAttributes.ContentState
+        if preserveOwnedVisual {
+            // Dest language on the owned glyph. Durable mirrors below still warm actor visual.
+            candidate = activity.content.state.replacingCurrentLanguage(currentLanguage)
+        } else {
+            candidate = LutheranRadioLiveActivityAttributes.ContentState(
+                visualState: visualState,
+                streamMetadata: streamMetadata,
+                currentLanguage: currentLanguage
+            )
+        }
+
+        // Durable App Group mirrors for extension-hosted LA planning / optimistic language.
+        // Always keep warm — even when ActivityKit IPC is suppressed — so lock-screen pause
+        // and language chrome are not inverted when home-widget write suppression leaves the
+        // extension session snapshot empty. Actor visual stays on the mirror when the
+        // ActivityKit candidate preserves owned visual after freeze.
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(visualState)
+        SharedPlayerManager.persistLiveActivityLanguageMirror(currentLanguage)
         if Self.shouldSuppressLiveActivityContentPush(
             lastPushed: lastPushedContent,
             candidate: candidate,
@@ -1251,10 +1353,79 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
+        // Same-stream ineligible resume: do not spend an ActivityKit visual apply on
+        // Connecting over committed paused/playing. Stream-switch hold still Connecting.
+        // Durable mirrors already warmed above. Must run before visual coalesce so a
+        // Connecting candidate cannot become the outstanding flush.
+        if Self.shouldSuppressConnectingContentPushWhileIneligible(
+            isRequestEligible: requestEligibleForQuiet,
+            isStreamSwitchHoldActive: streamSwitchHoldActive,
+            ownedVisual: ownedVisual,
+            candidateVisual: candidate.visualState
+        ) {
+            #if DEBUG
+            let skipSig = Self.stalledContentDiagnosticsSignature(
+                candidateLanguage: candidate.currentLanguage,
+                acceptedLanguage: ownedLanguage,
+                candidateVisual: candidate.visualState,
+                acceptedVisual: ownedVisual
+            )
+            if Self.shouldLogStalledContentDiagnostics(
+                signature: "connecting-skip|" + skipSig,
+                lastLoggedSignature: lastLoggedStalledContentDiagnosticsSignature
+            ) {
+                lastLoggedStalledContentDiagnosticsSignature = "connecting-skip|" + skipSig
+                print(
+                    "🔴 Live Activity Connecting push skipped (ineligible same-stream resume; " +
+                    "owned visual=\(ownedVisual); keeping paused/playing until authoritative " +
+                    "playing or a later pause is the candidate)"
+                )
+            }
+            #endif
+            return
+        }
+
+        // One outstanding visual mutation: while an Activity.update apply is unconfirmed,
+        // do not issue a second visual-differing IPC. Remember the latest candidate
+        // (pause replaces playing-ensure). Language-only same-visual still updates.
+        if Self.shouldCoalesceVisualDifferingContentPushWhileInFlight(
+            inFlightVisual: inFlightContentPushCandidate?.visualState,
+            candidateVisual: candidate.visualState,
+            ownedVisual: ownedVisual,
+            languageOnlyPreservingOwnedVisual: preserveOwnedVisual
+        ) {
+            pendingCoalescedContentPushCandidate = candidate
+            #if DEBUG
+            let coalesceSig = Self.stalledContentDiagnosticsSignature(
+                candidateLanguage: candidate.currentLanguage,
+                acceptedLanguage: ownedLanguage,
+                candidateVisual: candidate.visualState,
+                acceptedVisual: inFlightContentPushCandidate?.visualState ?? ownedVisual
+            )
+            if Self.shouldLogStalledContentDiagnostics(
+                signature: "visual-coalesce|" + coalesceSig,
+                lastLoggedSignature: lastLoggedStalledContentDiagnosticsSignature
+            ) {
+                lastLoggedStalledContentDiagnosticsSignature = "visual-coalesce|" + coalesceSig
+                print(
+                    "🔴 Live Activity visual push coalesced (in-flight visual=" +
+                    "\(String(describing: inFlightContentPushCandidate?.visualState)); " +
+                    "candidateVisual=\(candidate.visualState); latest remembered; " +
+                    "push once after apply commits)"
+                )
+            }
+            #endif
+            return
+        }
+
         // SAFETY: Activity.update / Activity property access are not Sendable in the current
         // SDK; capture a local strong reference on the main actor, then read content/id only
         // under explicit `unsafe` (same capture pattern as end paths).
         nonisolated(unsafe) let safeActivity = activity
+        // Mark in-flight before the await so MainActor re-entry (playing ensure / dual-axis
+        // during this suspension) coalesces instead of issuing a second visual IPC.
+        inFlightContentPushCandidate = candidate
+        isAwaitingLiveActivityContentPushApply = true
         unsafe await safeActivity.update(.init(state: candidate, staleDate: nil))
 
         // Suppress memory from system-observed content, never unverified aspirational candidate.
@@ -1392,15 +1563,23 @@ class RadioLiveActivityManager: ObservableObject {
             isStalled: contentStalled,
             isHandshakeLag: handshakeLag
         )
+        isAwaitingLiveActivityContentPushApply = false
         if shouldCommitStall {
             consecutiveStalledContentPushes += 1
             cancelInFlightContentPushConfirmation()
+            Task { @MainActor [weak self] in
+                await self?.flushCoalescedContentPushIfNeeded(observed: accepted)
+            }
         } else if Self.shouldResetStalledContentStreak(candidate: candidate, accepted: accepted) {
             // Healthy surface — clear recreation budget so a later freeze can recreate again.
             consecutiveStalledContentPushes = 0
             interactiveContentRecreationsAttempted = 0
-            lastLoggedStalledContentDiagnosticsSignature = nil
+            clearContentPushDiagnosticsSignatures()
             cancelInFlightContentPushConfirmation()
+            // Connecting (or other visual) applied: flush the latest coalesced visual once.
+            Task { @MainActor [weak self] in
+                await self?.flushCoalescedContentPushIfNeeded(observed: accepted)
+            }
         } else if contentStalled {
             scheduleInFlightContentPushConfirmation(candidate: candidate)
         }
@@ -1453,11 +1632,48 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// Cancels an in-flight post-update apply confirmation.
     ///
-    /// - SeeAlso: ``scheduleInFlightContentPushConfirmation(candidate:)``.
-    private func cancelInFlightContentPushConfirmation() {
+    /// - Parameter clearCoalesced: When `true`, also drop ``pendingCoalescedContentPushCandidate``
+    ///   (ownership end / test sanitization). Default `false` keeps the latest remembered
+    ///   visual so a committed observation can still flush it once.
+    /// - SeeAlso: ``scheduleInFlightContentPushConfirmation(candidate:)``,
+    ///   ``flushCoalescedContentPushIfNeeded(observed:)``.
+    private func cancelInFlightContentPushConfirmation(clearCoalesced: Bool = false) {
         inFlightContentPushConfirmationTask?.cancel()
         inFlightContentPushConfirmationTask = nil
         inFlightContentPushCandidate = nil
+        isAwaitingLiveActivityContentPushApply = false
+        if clearCoalesced {
+            pendingCoalescedContentPushCandidate = nil
+        }
+    }
+
+    /// Issues one ``updateCurrentActivity()`` when a remembered visual-differing candidate
+    /// still disagrees with the committed system-held surface.
+    ///
+    /// Call only after ``inFlightContentPushCandidate`` is cleared (apply committed or
+    /// cancelled). Soft-ensure attempt counters still bound later loops; this is the
+    /// single post-commit visual IPC, not a new rail. Pause that replaced playing-ensure
+    /// in-flight is the outstanding candidate (latest wins via actor SSOT on rebuild).
+    ///
+    /// - Parameter observed: System-held `content.state` from delayed re-read,
+    ///   `contentUpdates`, or immediate post-await match.
+    /// - SeeAlso: ``shouldFlushCoalescedContentPushAfterObservation(coalesced:observed:)``,
+    ///   ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:)``.
+    @MainActor
+    private func flushCoalescedContentPushIfNeeded(
+        observed: LutheranRadioLiveActivityAttributes.ContentState
+    ) async {
+        guard inFlightContentPushCandidate == nil else { return }
+        guard !isAwaitingLiveActivityContentPushApply else { return }
+        guard Self.shouldFlushCoalescedContentPushAfterObservation(
+            coalesced: pendingCoalescedContentPushCandidate,
+            observed: observed
+        ) else {
+            pendingCoalescedContentPushCandidate = nil
+            return
+        }
+        pendingCoalescedContentPushCandidate = nil
+        await updateCurrentActivity()
     }
 
     /// End+request or deferred pending ensure after a **committed** stall observation.
@@ -1510,13 +1726,19 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// Applies a delayed re-read or `contentUpdates` observation to stall bookkeeping.
     ///
+    /// Overwrites ``lastSystemHeldContent`` with `observed`. Callers that then
+    /// ``applySystemContentUpdateHeal`` **must** capture prior language/visual before this
+    /// call — otherwise language-new vs same-stream coarsen is lost.
+    ///
     /// - Parameters:
     ///   - candidate: Content submitted (in-flight candidate or actor SSOT).
     ///   - observed: System-held `content.state`.
     ///   - kind: ``.delayedReread`` or ``.contentUpdates`` (not immediate post-await).
     ///   - isStreamSwitchHoldActive: Hold at observation time.
     ///   - isConnectingPlayback: Connect pipeline at observation time.
-    /// - SeeAlso: ``shouldCommitStalledContentPushObservation(kind:isStalled:isHandshakeLag:)``.
+    /// - SeeAlso: ``shouldCommitStalledContentPushObservation(kind:isStalled:isHandshakeLag:)``,
+    ///   ``shouldApplySystemContentUpdateHealAfterObservation(kind:)``,
+    ///   ``applySystemContentUpdateHeal(systemContent:priorObservedLanguage:priorObservedVisual:)``.
     @MainActor
     private func commitContentPushObservation(
         candidate: LutheranRadioLiveActivityAttributes.ContentState,
@@ -1548,7 +1770,7 @@ class RadioLiveActivityManager: ObservableObject {
         } else if Self.shouldResetStalledContentStreak(candidate: candidate, accepted: observed) {
             consecutiveStalledContentPushes = 0
             interactiveContentRecreationsAttempted = 0
-            lastLoggedStalledContentDiagnosticsSignature = nil
+            clearContentPushDiagnosticsSignatures()
             lastPushedContent = Self.suppressMemoryAfterActivityUpdate(
                 candidate: candidate,
                 acceptedSystemContent: observed
@@ -1575,14 +1797,19 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// Schedules a delayed re-read after an immediate post-await mismatch.
     ///
+    /// After the apply window, this path is stall truth **and** axis-heal truth (same as
+    /// `contentUpdates`). Capture prior ``lastSystemHeldContent`` before commit overwrites it.
+    ///
     /// - Parameter candidate: Content submitted to the in-flight `Activity.update`.
     /// - SeeAlso: ``contentPushApplyConfirmationDelayMilliseconds(isRequestEligible:)``,
-    ///   ``handleActivityContentUpdate(_:)``.
+    ///   ``handleActivityContentUpdate(_:)``,
+    ///   ``applySystemContentUpdateHeal(systemContent:priorObservedLanguage:priorObservedVisual:)``.
     @MainActor
     private func scheduleInFlightContentPushConfirmation(
         candidate: LutheranRadioLiveActivityAttributes.ContentState
     ) {
-        cancelInFlightContentPushConfirmation()
+        inFlightContentPushConfirmationTask?.cancel()
+        inFlightContentPushConfirmationTask = nil
         guard let activity = currentActivity else { return }
         inFlightContentPushCandidate = candidate
         let eligible = Self.isInteractiveLiveActivityRequestEligible(
@@ -1602,10 +1829,17 @@ class RadioLiveActivityManager: ObservableObject {
             if self.isRunningUnderTest { return }
             #endif
             guard self.currentActivity != nil else { return }
+            // Prior SSOT before commit overwrites lastSystemHeldContent — language-new
+            // coarsen is lost if we heal against the just-observed state.
+            let priorLanguage = self.lastSystemHeldContent?.currentLanguage
+            let priorVisual = self.lastSystemHeldContent?.visualState
             let observed = unsafe safeActivity.content.state
             let manager = SharedPlayerManager.shared
             let hold = await manager.isStreamSwitchPrePlayHoldActive
             let connecting = await manager.isConnectingPlayback
+            // contentUpdates may have cancelled this task while we awaited actor SSOT;
+            // that path already committed and healed.
+            guard !Task.isCancelled else { return }
             await self.commitContentPushObservation(
                 candidate: candidate,
                 observed: observed,
@@ -1613,17 +1847,29 @@ class RadioLiveActivityManager: ObservableObject {
                 isStreamSwitchHoldActive: hold,
                 isConnectingPlayback: connecting
             )
+            // Apply is committed: clear in-flight, flush the latest coalesced visual once,
+            // then axis-heal (heal may re-arm playing ensure; coalesce will hold further IPC).
             self.inFlightContentPushConfirmationTask = nil
             self.inFlightContentPushCandidate = nil
+            await self.flushCoalescedContentPushIfNeeded(observed: observed)
+            if Self.shouldApplySystemContentUpdateHealAfterObservation(kind: .delayedReread) {
+                await self.applySystemContentUpdateHeal(
+                    systemContent: observed,
+                    priorObservedLanguage: priorLanguage,
+                    priorObservedVisual: priorVisual
+                )
+            }
         }
     }
 
     /// Observation kind for stall / quiet / recreation bookkeeping after `Activity.update`.
     ///
-    /// Immediate post-await `content.state` is apply-in-flight. Stall truth is
-    /// ``contentUpdates`` or a delayed re-read past ``contentPushApplyConfirmationDelayMilliseconds``.
+    /// Immediate post-await `content.state` is apply-in-flight. Stall truth **and**
+    /// axis-heal truth are ``contentUpdates`` or a delayed re-read past
+    /// ``contentPushApplyConfirmationDelayMilliseconds``.
     ///
     /// - SeeAlso: ``shouldCommitStalledContentPushObservation(kind:isStalled:isHandshakeLag:)``,
+    ///   ``shouldApplySystemContentUpdateHealAfterObservation(kind:)``,
     ///   ``updateCurrentActivity()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     enum LiveActivityContentPushObservationKind: Equatable, Sendable {
         /// Immediate `activity.content.state` after `await Activity.update`. Not stall truth.
@@ -1808,6 +2054,137 @@ class RadioLiveActivityManager: ObservableObject {
         guard kind != .immediatePostAwait else { return false }
         if isHandshakeLag { return false }
         return true
+    }
+
+    /// Whether a committed observation should run ``applySystemContentUpdateHeal``.
+    ///
+    /// Stall truth and axis-heal truth share the same observation kinds: ``contentUpdates``
+    /// and delayed re-read. Immediate post-await `content.state` is apply-in-flight and must
+    /// not coarsen quiet or re-arm playing ensure (handshake lag would look like language-new
+    /// or visual-new progress).
+    ///
+    /// - Parameter kind: Observation kind after `Activity.update`.
+    /// - Returns: `true` for ``.delayedReread`` and ``.contentUpdates``.
+    /// - SeeAlso: ``applySystemContentUpdateHeal(systemContent:priorObservedLanguage:priorObservedVisual:)``,
+    ///   ``scheduleInFlightContentPushConfirmation(candidate:)``,
+    ///   ``handleActivityContentUpdate(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldApplySystemContentUpdateHealAfterObservation(
+        kind: LiveActivityContentPushObservationKind
+    ) -> Bool {
+        switch kind {
+        case .immediatePostAwait:
+            return false
+        case .delayedReread, .contentUpdates:
+            return true
+        }
+    }
+
+    /// Whether a Connecting (``.prePlay``) ContentState push must skip `Activity.update`
+    /// so a same-stream ineligible resume does not spend the lock-stretch visual apply
+    /// on yellow chrome the surface already replaced with pause or play.
+    ///
+    /// Home widgets skip Connecting paint on gapless same-stream soft-resume
+    /// (``PlaybackPlayDecision/shouldApplyConnectingPrePlayChrome``). Live Activity is a
+    /// different surface: this gate uses owned ContentState + request eligibility +
+    /// stream-switch hold, not ``canSoftResumeSameStream``. Home honesty does not heal
+    /// the lock-screen glyph.
+    ///
+    /// - Parameters:
+    ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``.
+    ///     Presentable apply is cheap; Connecting honesty stands while eligible.
+    ///   - isStreamSwitchHoldActive: ``SharedPlayerManager/isStreamSwitchPrePlayHoldActive``.
+    ///     Destination-language switch still publishes Connecting; do not skip.
+    ///   - ownedVisual: Owned `content.state.visualState`.
+    ///   - candidateVisual: Visual from ``resolveContentPushVisual(visualState:streamSwitchHold:isConnectingPlayback:)``.
+    /// - Returns: `true` when IPC must skip Connecting (owned paused/playing, ineligible,
+    ///   not stream-switch hold, candidate ``.prePlay``).
+    /// - Important: Does **not** invent `.playing` during attach. First start (owned
+    ///   already ``.prePlay``) still publishes Connecting — nothing better to keep.
+    ///   Pause (``.userPaused``) and authoritative `.playing` candidates still push.
+    /// - SeeAlso: ``updateCurrentActivity()``,
+    ///   ``resolveContentPushVisual(visualState:streamSwitchHold:isConnectingPlayback:)``,
+    ///   ``PlaybackPlayDecision/shouldApplyConnectingPrePlayChrome(visualState:isActivePlaybackIntent:canSoftResumeSameStream:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldSuppressConnectingContentPushWhileIneligible(
+        isRequestEligible: Bool,
+        isStreamSwitchHoldActive: Bool,
+        ownedVisual: PlayerVisualState,
+        candidateVisual: PlayerVisualState
+    ) -> Bool {
+        guard !isRequestEligible else { return false }
+        guard !isStreamSwitchHoldActive else { return false }
+        guard candidateVisual == .prePlay else { return false }
+        switch ownedVisual {
+        case .userPaused, .playing:
+            return true
+        case .prePlay, .cleared, .thermalPaused, .securityLocked:
+            return false
+        }
+    }
+
+    /// Whether a candidate must wait for the in-flight `Activity.update` apply instead of
+    /// issuing another visual-differing IPC.
+    ///
+    /// One outstanding visual mutation: while apply is unconfirmed, later visual-differing
+    /// candidates (and duplicate unconfirmed visuals such as playing-ensure 2/3) are
+    /// remembered and do not call `Activity.update`. Pause (``.userPaused``) replacing
+    /// playing-ensure in-flight coalesces — latest wins so pause is the outstanding
+    /// candidate after commit. Language-only candidates (candidate visual equals in-flight
+    /// visual **and** owned visual) still update — those applies still land under lock.
+    /// After freeze, language-only preserving owned visual also still updates even when
+    /// in-flight visual differs (playing-ensure in-flight vs owned Connecting): same-visual
+    /// language is the apply that still lands; do not bury it behind a visual coalesced flush.
+    ///
+    /// - Parameters:
+    ///   - inFlightVisual: Visual of ``inFlightContentPushCandidate``; `nil` when no apply
+    ///     is outstanding.
+    ///   - candidateVisual: Visual of the new candidate.
+    ///   - ownedVisual: Owned `content.state.visualState`.
+    ///   - languageOnlyPreservingOwnedVisual: ``shouldPreserveOwnedVisualOnLanguageOnlyContentPush(keepOwnedVisualAfterFreeze:isStreamSwitchHoldActive:)``
+    ///     decided this candidate keeps the owned glyph.
+    /// - Returns: `true` when IPC must be skipped and the caller should remember the latest
+    ///   candidate.
+    /// - SeeAlso: ``updateCurrentActivity()``,
+    ///   ``shouldFlushCoalescedContentPushAfterObservation(coalesced:observed:)``,
+    ///   ``flushCoalescedContentPushIfNeeded(observed:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldCoalesceVisualDifferingContentPushWhileInFlight(
+        inFlightVisual: PlayerVisualState?,
+        candidateVisual: PlayerVisualState,
+        ownedVisual: PlayerVisualState,
+        languageOnlyPreservingOwnedVisual: Bool = false
+    ) -> Bool {
+        guard let inFlightVisual else { return false }
+        if languageOnlyPreservingOwnedVisual, candidateVisual == ownedVisual {
+            return false
+        }
+        // Language-only: same visual as in-flight and already on the owned surface.
+        if candidateVisual == inFlightVisual, ownedVisual == candidateVisual {
+            return false
+        }
+        return true
+    }
+
+    /// Whether a remembered coalesced candidate should issue one `Activity.update` after
+    /// the in-flight apply is committed.
+    ///
+    /// Compares language and visual only — ICY metadata is not an outstanding visual
+    /// mutation. Rebuild on flush uses current actor SSOT (latest pause/play wins).
+    ///
+    /// - Parameters:
+    ///   - coalesced: ``pendingCoalescedContentPushCandidate``.
+    ///   - observed: Committed system-held `content.state`.
+    /// - Returns: `true` when language or visual still disagrees with observed.
+    /// - SeeAlso: ``flushCoalescedContentPushIfNeeded(observed:)``,
+    ///   ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:)``.
+    static func shouldFlushCoalescedContentPushAfterObservation(
+        coalesced: LutheranRadioLiveActivityAttributes.ContentState?,
+        observed: LutheranRadioLiveActivityAttributes.ContentState
+    ) -> Bool {
+        guard let coalesced else { return false }
+        return coalesced.visualState != observed.visualState
+            || coalesced.currentLanguage != observed.currentLanguage
     }
 
     /// Start / request disposition for ``startActivity()`` and ``refreshAllMediaSurfaces``
@@ -2055,7 +2432,7 @@ class RadioLiveActivityManager: ObservableObject {
         )
     }
 
-    /// Axis-scoped heal decisions after a system `contentUpdates` yield or equivalent observation.
+    /// Axis-scoped heal decisions after a committed `contentUpdates` or delayed re-read observation.
     ///
     /// Partial acceptance clears / cancels only the converged axis and schedules follow-through
     /// for the lagging axis. Full match resets stall bookkeeping. No-progress yields leave
@@ -2964,23 +3341,103 @@ class RadioLiveActivityManager: ObservableObject {
         return false
     }
 
+    /// Whether post-quiet language long-horizon must keep the owned glyph after freeze.
+    ///
+    /// After freeze soft budget exhausts or playing quiet is pending while request is
+    /// ineligible, Apple still applies same-visual language updates; dual-axis
+    /// playing+language in that sparse slot delays language and still fails the glyph.
+    /// Dual-axis settle at ``setPlaying()`` after hold clear is the first co-push and is
+    /// not this rail. Request-eligible (presentable) recovery still may co-push.
+    ///
+    /// - Parameters:
+    ///   - freezeSoftBudgetExhausted: ``contentEnsureFreezeSoftBudgetExhausted``.
+    ///   - playingQuietPending: ``playingEnsureQuietPending``.
+    ///   - isRequestEligible: Interactive `Activity.request` eligibility.
+    /// - Returns: `true` when language long-horizon must preserve owned visual.
+    /// - Note: Does **not** invent `.playing`. Does **not** end+request.
+    /// - SeeAlso: ``languageOnlyLongHorizonCandidateVisual(ownedVisual:actorResolvedVisual:keepOwnedVisual:)``,
+    ///   ``shouldArmPostQuietLongHorizonDualAxisEnsure(hasCurrentActivity:isRequestEligible:dualAxisAlreadyArmed:languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:freezeSoftBudgetExhausted:playingQuietPending:)``,
+    ///   ``ContentState/replacingCurrentLanguage(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(
+        freezeSoftBudgetExhausted: Bool,
+        playingQuietPending: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard !isRequestEligible else { return false }
+        return freezeSoftBudgetExhausted || playingQuietPending
+    }
+
+    /// Candidate visual for a post-quiet language long-horizon fire.
+    ///
+    /// After freeze, dest language rides the owned glyph. Before freeze (or when
+    /// presentable), actor-resolved visual stands.
+    ///
+    /// - Parameters:
+    ///   - ownedVisual: Owned `content.state.visualState`.
+    ///   - actorResolvedVisual: ``resolveContentPushVisual(visualState:streamSwitchHold:isConnectingPlayback:)``.
+    ///   - keepOwnedVisual: ``shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``.
+    /// - Returns: Owned visual when keeping the glyph; otherwise the actor-resolved visual.
+    /// - SeeAlso: ``shouldPreserveOwnedVisualOnLanguageOnlyContentPush(keepOwnedVisualAfterFreeze:isStreamSwitchHoldActive:)``.
+    static func languageOnlyLongHorizonCandidateVisual(
+        ownedVisual: PlayerVisualState,
+        actorResolvedVisual: PlayerVisualState,
+        keepOwnedVisual: Bool
+    ) -> PlayerVisualState {
+        keepOwnedVisual ? ownedVisual : actorResolvedVisual
+    }
+
+    /// Whether ``updateCurrentActivity(preservingOwnedVisual:)`` may keep the owned glyph.
+    ///
+    /// Stream-switch hold still publishes Connecting + destination language. Same-stream
+    /// Connecting after freeze preserves paused/playing (owned glyph is the thing we
+    /// must not overwrite).
+    ///
+    /// - Parameters:
+    ///   - keepOwnedVisualAfterFreeze: ``shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``.
+    ///   - isStreamSwitchHoldActive: Stream-switch Connecting hold.
+    /// - Returns: `true` when the ActivityKit candidate must use owned visual.
+    /// - SeeAlso: ``ContentState/replacingCurrentLanguage(_:)``.
+    static func shouldPreserveOwnedVisualOnLanguageOnlyContentPush(
+        keepOwnedVisualAfterFreeze: Bool,
+        isStreamSwitchHoldActive: Bool
+    ) -> Bool {
+        guard keepOwnedVisualAfterFreeze else { return false }
+        guard !isStreamSwitchHoldActive else { return false }
+        return true
+    }
+
     /// Whether both ContentState axes lag while the actor is authoritative `.playing` without hold.
     ///
     /// Long-horizon fires use this to clear **both** quiet flags and run dual soft ensure so
-    /// language quiet cannot starve playing repair (and the reverse) under continuous lock.
+    /// language quiet cannot starve playing repair (and the reverse) under continuous lock
+    /// **before** freeze. After freeze / playing quiet while ineligible, dual-axis
+    /// long-horizon is skipped — language-only preserves owned visual; playing long-horizon
+    /// remains the visual rail.
     /// Status-driven ``shouldDeferRedundantLanguagePushWhileQuiet`` already allows IPC when visual
     /// differs; this policy covers soft-ensure entry after quiet engagement.
     ///
     /// - Note: Does **not** invent `.playing` during hold/connect.
-    /// - SeeAlso: ``shouldClearLanguageQuietForDualAxisLongHorizonFire(languageQuietPending:languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
-    ///   ``shouldClearPlayingQuietForDualAxisLongHorizonFire(playingQuietPending:languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``.
+    /// - SeeAlso: ``shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``,
+    ///   ``shouldClearLanguageQuietForDualAxisLongHorizonFire(languageQuietPending:languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``,
+    ///   ``shouldClearPlayingQuietForDualAxisLongHorizonFire(playingQuietPending:languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:freezeSoftBudgetExhausted:isRequestEligible:)``.
     static func shouldRunPostQuietLongHorizonDualAxisEnsure(
         languageStillLags: Bool,
         visualStillLags: Bool,
         actorVisual: PlayerVisualState,
         isStreamSwitchHoldActive: Bool,
-        isConnectingPlayback: Bool
+        isConnectingPlayback: Bool,
+        freezeSoftBudgetExhausted: Bool = false,
+        playingQuietPending: Bool = false,
+        isRequestEligible: Bool = false
     ) -> Bool {
+        if shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(
+            freezeSoftBudgetExhausted: freezeSoftBudgetExhausted,
+            playingQuietPending: playingQuietPending,
+            isRequestEligible: isRequestEligible
+        ) {
+            return false
+        }
         guard actorVisual == .playing else { return false }
         guard !isStreamSwitchHoldActive, !isConnectingPlayback else { return false }
         return languageStillLags && visualStillLags
@@ -2995,7 +3452,10 @@ class RadioLiveActivityManager: ObservableObject {
         visualStillLags: Bool,
         actorVisual: PlayerVisualState,
         isStreamSwitchHoldActive: Bool,
-        isConnectingPlayback: Bool
+        isConnectingPlayback: Bool,
+        freezeSoftBudgetExhausted: Bool = false,
+        playingQuietPending: Bool = false,
+        isRequestEligible: Bool = false
     ) -> Bool {
         guard languageQuietPending else { return false }
         return shouldRunPostQuietLongHorizonDualAxisEnsure(
@@ -3003,7 +3463,10 @@ class RadioLiveActivityManager: ObservableObject {
             visualStillLags: visualStillLags,
             actorVisual: actorVisual,
             isStreamSwitchHoldActive: isStreamSwitchHoldActive,
-            isConnectingPlayback: isConnectingPlayback
+            isConnectingPlayback: isConnectingPlayback,
+            freezeSoftBudgetExhausted: freezeSoftBudgetExhausted,
+            playingQuietPending: playingQuietPending,
+            isRequestEligible: isRequestEligible
         )
     }
 
@@ -3016,7 +3479,9 @@ class RadioLiveActivityManager: ObservableObject {
         visualStillLags: Bool,
         actorVisual: PlayerVisualState,
         isStreamSwitchHoldActive: Bool,
-        isConnectingPlayback: Bool
+        isConnectingPlayback: Bool,
+        freezeSoftBudgetExhausted: Bool = false,
+        isRequestEligible: Bool = false
     ) -> Bool {
         guard playingQuietPending else { return false }
         return shouldRunPostQuietLongHorizonDualAxisEnsure(
@@ -3024,7 +3489,10 @@ class RadioLiveActivityManager: ObservableObject {
             visualStillLags: visualStillLags,
             actorVisual: actorVisual,
             isStreamSwitchHoldActive: isStreamSwitchHoldActive,
-            isConnectingPlayback: isConnectingPlayback
+            isConnectingPlayback: isConnectingPlayback,
+            freezeSoftBudgetExhausted: freezeSoftBudgetExhausted,
+            playingQuietPending: playingQuietPending,
+            isRequestEligible: isRequestEligible
         )
     }
 
@@ -3032,11 +3500,14 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// When both language and visual lag under continuous lock, arming two single-axis rails yields
     /// near-simultaneous fires that each burn a short soft budget and re-quiet without a co-push.
-    /// Prefer one dual-axis horizon generation instead.
+    /// Prefer one dual-axis horizon generation instead — **until** freeze soft budget exhausts
+    /// or playing quiet is pending while ineligible. After that, language-only + playing-only
+    /// rails own the sparse slots (same-visual language still lands; dual-axis visual does not).
     ///
     /// - Note: Does **not** invent `.playing` during hold/connect. Does **not** end+request.
     /// - SeeAlso: ``armPostQuietLongHorizonDualAxisEnsureIfNeeded()``,
-    ///   ``shouldRunPostQuietLongHorizonDualAxisEnsure(languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``.
+    ///   ``shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``,
+    ///   ``shouldRunPostQuietLongHorizonDualAxisEnsure(languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``.
     static func shouldArmPostQuietLongHorizonDualAxisEnsure(
         hasCurrentActivity: Bool,
         isRequestEligible: Bool,
@@ -3045,7 +3516,9 @@ class RadioLiveActivityManager: ObservableObject {
         visualStillLags: Bool,
         actorVisual: PlayerVisualState,
         isStreamSwitchHoldActive: Bool,
-        isConnectingPlayback: Bool
+        isConnectingPlayback: Bool,
+        freezeSoftBudgetExhausted: Bool = false,
+        playingQuietPending: Bool = false
     ) -> Bool {
         guard hasCurrentActivity else { return false }
         guard !dualAxisAlreadyArmed else { return false }
@@ -3055,7 +3528,10 @@ class RadioLiveActivityManager: ObservableObject {
             visualStillLags: visualStillLags,
             actorVisual: actorVisual,
             isStreamSwitchHoldActive: isStreamSwitchHoldActive,
-            isConnectingPlayback: isConnectingPlayback
+            isConnectingPlayback: isConnectingPlayback,
+            freezeSoftBudgetExhausted: freezeSoftBudgetExhausted,
+            playingQuietPending: playingQuietPending,
+            isRequestEligible: isRequestEligible
         )
     }
 
@@ -3068,7 +3544,10 @@ class RadioLiveActivityManager: ObservableObject {
         visualStillLags: Bool,
         actorVisual: PlayerVisualState,
         isStreamSwitchHoldActive: Bool,
-        isConnectingPlayback: Bool
+        isConnectingPlayback: Bool,
+        freezeSoftBudgetExhausted: Bool = false,
+        playingQuietPending: Bool = false,
+        isRequestEligible: Bool = false
     ) -> Bool {
         guard hasCurrentActivity else { return false }
         return shouldRunPostQuietLongHorizonDualAxisEnsure(
@@ -3076,7 +3555,10 @@ class RadioLiveActivityManager: ObservableObject {
             visualStillLags: visualStillLags,
             actorVisual: actorVisual,
             isStreamSwitchHoldActive: isStreamSwitchHoldActive,
-            isConnectingPlayback: isConnectingPlayback
+            isConnectingPlayback: isConnectingPlayback,
+            freezeSoftBudgetExhausted: freezeSoftBudgetExhausted,
+            playingQuietPending: playingQuietPending,
+            isRequestEligible: isRequestEligible
         )
     }
 
@@ -3480,6 +3962,35 @@ class RadioLiveActivityManager: ObservableObject {
         "\(candidateLanguage)|\(acceptedLanguage)|\(candidateVisual)|\(acceptedVisual)"
     }
 
+    /// Compact signature for rate-limited `contentUpdates` yield diagnostics.
+    ///
+    /// - Parameters:
+    ///   - systemLanguage: Yielded `content.state.currentLanguage`.
+    ///   - systemVisual: Yielded `content.state.visualState`.
+    ///   - activityId: Owned ActivityKit id, or `"unowned"` when tracking is empty.
+    /// - Returns: Stable string for identical yield-tuple comparison.
+    /// - SeeAlso: ``shouldLogStalledContentDiagnostics(signature:lastLoggedSignature:)``,
+    ///   ``handleActivityContentUpdate(_:)``.
+    static func contentUpdatesYieldDiagnosticsSignature(
+        systemLanguage: String,
+        systemVisual: PlayerVisualState,
+        activityId: String
+    ) -> String {
+        "\(activityId)|\(systemLanguage)|\(systemVisual)"
+    }
+
+    /// Clears rate-limited DEBUG signatures for stall diagnostics and `contentUpdates` yields.
+    ///
+    /// Call when the freeze pair is no longer current (healthy match, ownership end,
+    /// mutation re-arm, test sanitization).
+    ///
+    /// - SeeAlso: ``lastLoggedStalledContentDiagnosticsSignature``,
+    ///   ``lastLoggedContentUpdatesYieldDiagnosticsSignature``.
+    private func clearContentPushDiagnosticsSignatures() {
+        lastLoggedStalledContentDiagnosticsSignature = nil
+        lastLoggedContentUpdatesYieldDiagnosticsSignature = nil
+    }
+
     /// Whether DEBUG stall diagnostics should emit for this signature.
     ///
     /// Identical candidate/owned freeze pairs log once until the signature changes
@@ -3520,21 +4031,29 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// Stream-switch hold / in-flight connect: never advertise `.playing` while the engine is
     /// tearing down or attaching. When hold is clear and the actor is already `.playing`,
-    /// Connecting must not win (stale concurrent sampler safety).
+    /// Connecting must not win (stale concurrent sampler safety). Hold is returned with
+    /// the visual so ``shouldSuppressConnectingContentPushWhileIneligible`` cannot race a
+    /// destination-language switch that must still publish Connecting.
     ///
     /// - Parameter manager: Main-app ``SharedPlayerManager`` instance.
-    /// - Returns: Visual to encode in the next ActivityKit candidate.
+    /// - Returns: Visual to encode in the next ActivityKit candidate, plus the hold sample
+    ///   used for same-stream ineligible Connecting skip.
     /// - SeeAlso: ``updateCurrentActivity()``, ``SharedPlayerManager/setPlaying()``,
+    ///   ``shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:isStreamSwitchHoldActive:ownedVisual:candidateVisual:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
-    private static func resolveContentPushVisual(from manager: SharedPlayerManager) async -> PlayerVisualState {
+    private static func resolveContentPushVisual(from manager: SharedPlayerManager) async -> (
+        visual: PlayerVisualState,
+        isStreamSwitchHoldActive: Bool
+    ) {
         let visualState = await manager.currentVisualState
         let streamSwitchHold = await manager.isStreamSwitchPrePlayHoldActive
         let connecting = await manager.isConnectingPlayback
-        return resolveContentPushVisual(
+        let visual = resolveContentPushVisual(
             visualState: visualState,
             streamSwitchHold: streamSwitchHold,
             isConnectingPlayback: connecting
         )
+        return (visual, streamSwitchHold)
     }
 
     /// Pure ContentState visual policy for Live Activity pushes (testable without ActivityKit).
@@ -4351,8 +4870,9 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// Call after quiet entry, settled-still-lagging, partial acceptance re-arm, quiet defer,
     /// or post-settled budget exhaustion while request remains ineligible and owned visual lags.
-    /// When language **also** lags, prefers the dual-axis rail (one co-push per fire) over a
-    /// single-axis playing horizon that would race a language peer.
+    /// When language **also** lags **before** freeze, prefers the dual-axis rail (one co-push
+    /// per fire) over a single-axis playing horizon that would race a language peer. After
+    /// freeze, playing long-horizon stays the visual rail (language-only owns dest language).
     ///
     /// - Precondition: Main actor.
     /// - Postcondition: At most one long-horizon playing task (or dual-axis peer); no end+request;
@@ -4390,7 +4910,8 @@ class RadioLiveActivityManager: ObservableObject {
             lastPushedVisual: lastPushedContent?.visualState,
             ownedVisual: currentActivity?.content.state.visualState
         )
-        // Both axes lag → dual-axis rail owns sparse recovery (B3 fire quality).
+        // Both axes lag → dual-axis rail owns sparse recovery before freeze.
+        // After freeze, language-only + playing-only rails own the slots.
         if Self.shouldArmPostQuietLongHorizonDualAxisEnsure(
             hasCurrentActivity: true,
             isRequestEligible: requestEligible,
@@ -4399,13 +4920,22 @@ class RadioLiveActivityManager: ObservableObject {
             visualStillLags: visualLags,
             actorVisual: actorVisual,
             isStreamSwitchHoldActive: hold,
-            isConnectingPlayback: connecting
+            isConnectingPlayback: connecting,
+            freezeSoftBudgetExhausted: contentEnsureFreezeSoftBudgetExhausted,
+            playingQuietPending: playingEnsureQuietPending
         ) {
             await armPostQuietLongHorizonDualAxisEnsureIfNeeded()
             return
         }
-        // Dual already armed for both-lag → do not also arm single-axis playing thrash.
-        if postQuietLongHorizonDualAxisEnsureTask != nil, languageLags, visualLags {
+        let keepLanguageOnlyAfterFreeze = Self.shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(
+            freezeSoftBudgetExhausted: contentEnsureFreezeSoftBudgetExhausted,
+            playingQuietPending: playingEnsureQuietPending,
+            isRequestEligible: requestEligible
+        )
+        if keepLanguageOnlyAfterFreeze {
+            cancelPostQuietLongHorizonDualAxisEnsure()
+        } else if postQuietLongHorizonDualAxisEnsureTask != nil, languageLags, visualLags {
+            // Dual already armed for both-lag → do not also arm single-axis playing thrash.
             return
         }
         guard Self.shouldArmPostQuietLongHorizonPlayingEnsure(
@@ -4429,8 +4959,10 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// Arms sparse post-quiet long-horizon **language** ensure when policy allows.
     ///
-    /// When visual **also** lags, prefers the dual-axis rail. New destinations start a fresh
-    /// freeze (prior language horizon cancelled; dual/language re-arm for the destination).
+    /// When visual **also** lags **before** freeze, prefers the dual-axis rail. After freeze
+    /// soft budget / playing quiet while ineligible, stays language-only (owned visual
+    /// preserved). New destinations start a fresh freeze (prior language horizon cancelled;
+    /// dual/language re-arm for the destination).
     ///
     /// - SeeAlso: ``shouldArmPostQuietLongHorizonLanguageEnsure(hasCurrentActivity:isRequestEligible:longHorizonAlreadyArmed:destinationLanguage:lastPushedLanguage:ownedContentLanguage:isStreamSwitchHoldActive:)``,
     ///   ``armPostQuietLongHorizonDualAxisEnsureIfNeeded()``,
@@ -4472,12 +5004,21 @@ class RadioLiveActivityManager: ObservableObject {
             visualStillLags: visualLags,
             actorVisual: actorVisual,
             isStreamSwitchHoldActive: hold,
-            isConnectingPlayback: connecting
+            isConnectingPlayback: connecting,
+            freezeSoftBudgetExhausted: contentEnsureFreezeSoftBudgetExhausted,
+            playingQuietPending: playingEnsureQuietPending
         ) {
             await armPostQuietLongHorizonDualAxisEnsureIfNeeded()
             return
         }
-        if postQuietLongHorizonDualAxisEnsureTask != nil, languageLags, visualLags {
+        let keepLanguageOnlyAfterFreeze = Self.shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(
+            freezeSoftBudgetExhausted: contentEnsureFreezeSoftBudgetExhausted,
+            playingQuietPending: playingEnsureQuietPending,
+            isRequestEligible: requestEligible
+        )
+        if keepLanguageOnlyAfterFreeze {
+            cancelPostQuietLongHorizonDualAxisEnsure()
+        } else if postQuietLongHorizonDualAxisEnsureTask != nil, languageLags, visualLags {
             return
         }
         guard Self.shouldArmPostQuietLongHorizonLanguageEnsure(
@@ -4497,10 +5038,9 @@ class RadioLiveActivityManager: ObservableObject {
         schedulePostQuietLongHorizonLanguageEnsure(destination: destination)
     }
 
-    /// Arms sparse post-quiet long-horizon **dual-axis** ensure when both axes lag.
-    ///
-    /// Cancels single-axis language/playing horizons so one dual-axis generation owns the freeze
-    /// (B3: one dual ensure per fire, not two short single-axis burns).
+    /// Arms sparse post-quiet long-horizon **dual-axis** ensure when both axes lag **before**
+    /// freeze. After freeze soft budget / playing quiet while ineligible, this no-ops so
+    /// language-only and playing-only rails own the sparse slots.
     ///
     /// - SeeAlso: ``shouldArmPostQuietLongHorizonDualAxisEnsure(hasCurrentActivity:isRequestEligible:dualAxisAlreadyArmed:languageStillLags:visualStillLags:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``,
     ///   ``schedulePostQuietLongHorizonDualAxisEnsure()``,
@@ -4542,7 +5082,9 @@ class RadioLiveActivityManager: ObservableObject {
             visualStillLags: visualLags,
             actorVisual: actorVisual,
             isStreamSwitchHoldActive: hold,
-            isConnectingPlayback: connecting
+            isConnectingPlayback: connecting,
+            freezeSoftBudgetExhausted: contentEnsureFreezeSoftBudgetExhausted,
+            playingQuietPending: playingEnsureQuietPending
         ) else {
             return
         }
@@ -4630,13 +5172,21 @@ class RadioLiveActivityManager: ObservableObject {
                     lastPushedLanguage: self.lastPushedContent?.currentLanguage
                 )
                 let visualLags = true
-                // Both axes lag → one dual-axis co-push (not language ensure then playing ensure).
+                let fireEligible = Self.isInteractiveLiveActivityRequestEligible(
+                    areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
+                    isApplicationActive: UIApplication.shared.applicationState == .active
+                )
+                // Both axes lag → one dual-axis co-push before freeze (not language then playing).
+                // After freeze, playing long-horizon stays the visual rail.
                 if Self.shouldRunPostQuietLongHorizonDualAxisEnsure(
                     languageStillLags: languageLags,
                     visualStillLags: visualLags,
                     actorVisual: actorVisual,
                     isStreamSwitchHoldActive: hold,
-                    isConnectingPlayback: connecting
+                    isConnectingPlayback: connecting,
+                    freezeSoftBudgetExhausted: self.contentEnsureFreezeSoftBudgetExhausted,
+                    playingQuietPending: self.playingEnsureQuietPending,
+                    isRequestEligible: fireEligible
                 ) {
                     self.languageEnsureQuietPendingDestination = nil
                     self.languageEnsureQuietSkipLogged = false
@@ -4785,13 +5335,26 @@ class RadioLiveActivityManager: ObservableObject {
                     lastPushedVisual: self.lastPushedContent?.visualState,
                     ownedVisual: ownedVisual
                 )
-                // Both axes lag → one dual-axis co-push (not language then playing short budgets).
+                let fireEligible = Self.isInteractiveLiveActivityRequestEligible(
+                    areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
+                    isApplicationActive: UIApplication.shared.applicationState == .active
+                )
+                let keepOwnedVisual = Self.shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(
+                    freezeSoftBudgetExhausted: self.contentEnsureFreezeSoftBudgetExhausted,
+                    playingQuietPending: self.playingEnsureQuietPending,
+                    isRequestEligible: fireEligible
+                )
+                // Both axes lag → one dual-axis co-push before freeze.
+                // After freeze, language-only preserves owned visual.
                 if Self.shouldRunPostQuietLongHorizonDualAxisEnsure(
                     languageStillLags: languageLags,
                     visualStillLags: visualLags,
                     actorVisual: actorVisual,
                     isStreamSwitchHoldActive: hold,
-                    isConnectingPlayback: connecting
+                    isConnectingPlayback: connecting,
+                    freezeSoftBudgetExhausted: self.contentEnsureFreezeSoftBudgetExhausted,
+                    playingQuietPending: self.playingEnsureQuietPending,
+                    isRequestEligible: fireEligible
                 ) {
                     self.playingEnsureQuietPending = false
                     self.playingEnsureQuietSkipLogged = false
@@ -4830,7 +5393,9 @@ class RadioLiveActivityManager: ObservableObject {
                 )
                 #endif
 
-                await self.ensureAuthoritativeLanguageContentIfNeeded()
+                await self.ensureAuthoritativeLanguageContentIfNeeded(
+                    preservingOwnedVisual: keepOwnedVisual
+                )
 
                 let accepted = self.currentActivity?.content.state.currentLanguage
                 if accepted == destination {
@@ -4937,13 +5502,20 @@ class RadioLiveActivityManager: ObservableObject {
                     return
                 }
 
+                let fireEligible = Self.isInteractiveLiveActivityRequestEligible(
+                    areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
+                    isApplicationActive: UIApplication.shared.applicationState == .active
+                )
                 guard Self.shouldContinuePostQuietLongHorizonDualAxisEnsure(
                     hasCurrentActivity: true,
                     languageStillLags: languageLags,
                     visualStillLags: visualLags,
                     actorVisual: actorVisual,
                     isStreamSwitchHoldActive: hold,
-                    isConnectingPlayback: connecting
+                    isConnectingPlayback: connecting,
+                    freezeSoftBudgetExhausted: self.contentEnsureFreezeSoftBudgetExhausted,
+                    playingQuietPending: self.playingEnsureQuietPending,
+                    isRequestEligible: fireEligible
                 ) else {
                     // Only one axis still lags (or hold re-armed) — hand off single-axis rails.
                     self.postQuietLongHorizonDualAxisEnsureTask = nil
@@ -5305,16 +5877,16 @@ class RadioLiveActivityManager: ObservableObject {
             )
             #endif
         }
-        // Arm dual-axis LH when both still lag; otherwise residual single-axis rails.
+        // Dual-axis LH before freeze; after freeze the dual arm no-ops and
+        // single-axis rails still need to arm (language-only + playing visual).
         if stillLanguageLags && stillVisualLags {
             await armPostQuietLongHorizonDualAxisEnsureIfNeeded()
-        } else {
-            if stillLanguageLags {
-                await armPostQuietLongHorizonLanguageEnsureIfNeeded()
-            }
-            if stillVisualLags {
-                await armPostQuietLongHorizonPlayingEnsureIfNeeded()
-            }
+        }
+        if stillLanguageLags {
+            await armPostQuietLongHorizonLanguageEnsureIfNeeded()
+        }
+        if stillVisualLags {
+            await armPostQuietLongHorizonPlayingEnsureIfNeeded()
         }
     }
 
@@ -5361,6 +5933,12 @@ class RadioLiveActivityManager: ObservableObject {
     /// (``.prePlay``) remains honest during stream-switch hold; only the language field is
     /// forced to the destination stamp / stream attach.
     ///
+    /// - Parameters:
+    ///   - preservingOwnedVisual: When `true`, ``updateCurrentActivity(preservingOwnedVisual:)``
+    ///     keeps the owned glyph (``ContentState/replacingCurrentLanguage(_:)``). Post-quiet
+    ///     language long-horizon after freeze passes this so dest language does not spend
+    ///     the sparse slot on `.playing`. Stream-switch hold still Connecting.
+    ///
     /// Performs up to ``authoritativeLanguageContentEnsureMaxAttempts`` soft pushes, re-reading
     /// owned `content.state.currentLanguage` after each ``updateCurrentActivity()``. Stops early
     /// when owned language matches destination, the ensure gate clears, or the interactive
@@ -5397,17 +5975,19 @@ class RadioLiveActivityManager: ObservableObject {
     ///   Cheap no-op when owned + last language already match destination, or when quiet for
     ///   the same destination while request remains ineligible, or when a soft-push loop is
     ///   already in flight for this axis.
-    /// - SeeAlso: ``updateCurrentActivity()``, ``shouldEnsureAuthoritativeLanguageContent(destinationLanguage:ownedContentLanguage:lastPushedLanguage:)``,
+    /// - SeeAlso: ``updateCurrentActivity(preservingOwnedVisual:)``, ``shouldEnsureAuthoritativeLanguageContent(destinationLanguage:ownedContentLanguage:lastPushedLanguage:)``,
+    ///   ``shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``,
     ///   ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``,
     ///   ``shouldStartAuthoritativeContentEnsureSoftPushLoop(softPushesAlreadyInFlight:)``,
     ///   ``authoritativeLanguageContentEnsureMaxAttempts``,
     ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
     ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
     ///   ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``,
+    ///   ``ContentState/replacingCurrentLanguage(_:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT).
     @MainActor
-    func ensureAuthoritativeLanguageContentIfNeeded() async {
+    func ensureAuthoritativeLanguageContentIfNeeded(preservingOwnedVisual: Bool = false) async {
         if SharedPlayerManager.isRunningInUITestMode { return }
         #if DEBUG
         if isRunningUnderTest { return }
@@ -5505,7 +6085,7 @@ class RadioLiveActivityManager: ObservableObject {
                 "attempt=\(attempt)/\(Self.authoritativeLanguageContentEnsureMaxAttempts)"
             )
             #endif
-            await updateCurrentActivity()
+            await updateCurrentActivity(preservingOwnedVisual: preservingOwnedVisual)
 
             // Post-update verification: owned language is the surface honesty SSOT.
             let acceptedLanguage = currentActivity?.content.state.currentLanguage
@@ -5790,7 +6370,7 @@ class RadioLiveActivityManager: ObservableObject {
         postQuietLongHorizonDualAxisExhausted = false
         resetContentEnsureFreezeGeneration()
         // New presentable cycle may re-announce deferred recreation if soft ensure still fails.
-        lastLoggedStalledContentDiagnosticsSignature = nil
+        clearContentPushDiagnosticsSignatures()
 
         // Soft path first — dual-axis when both lag, else language then visual.
         // Never end the only card while ActivityKit may still accept updates.
@@ -5898,7 +6478,7 @@ class RadioLiveActivityManager: ObservableObject {
         // New pause/play mutation owns recovery — drop prior freeze long-horizon.
         cancelPostQuietLongHorizonPlayingEnsure()
         cancelPostQuietLongHorizonDualAxisEnsure()
-        lastLoggedStalledContentDiagnosticsSignature = nil
+        clearContentPushDiagnosticsSignatures()
         let metadata =
             lastPushedContent?.streamMetadata
             ?? currentActivity?.content.state.streamMetadata
@@ -5998,7 +6578,7 @@ class RadioLiveActivityManager: ObservableObject {
         cancelPostQuietLongHorizonPlayingEnsure()
         cancelPostQuietLongHorizonDualAxisEnsure()
         // New mutation may re-log stall diagnostics and re-announce deferred recreation once.
-        lastLoggedStalledContentDiagnosticsSignature = nil
+        clearContentPushDiagnosticsSignatures()
         lastPushedContent = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
             streamMetadata: nil,
@@ -6155,7 +6735,7 @@ class RadioLiveActivityManager: ObservableObject {
             cancelPostSettledPlayingEnsureRetries()
             cancelAllPostQuietLongHorizonEnsure()
             currentActivity = nil
-            cancelInFlightContentPushConfirmation()
+            cancelInFlightContentPushConfirmation(clearCoalesced: true)
             lastPushedContent = nil
             lastSystemHeldContent = nil
             consecutiveStalledContentPushes = 0
@@ -6166,7 +6746,7 @@ class RadioLiveActivityManager: ObservableObject {
             playingSettledAcceptanceConsumed = false
             languageEnsureQuietSkipLogged = false
             playingEnsureQuietSkipLogged = false
-            lastLoggedStalledContentDiagnosticsSignature = nil
+            clearContentPushDiagnosticsSignatures()
             if !isRecreatingLiveActivityAfterStalledContent {
                 pendingInteractiveLiveActivityEnsure = false
             }
@@ -6181,7 +6761,7 @@ class RadioLiveActivityManager: ObservableObject {
             cancelPostSettledPlayingEnsureRetries()
             cancelAllPostQuietLongHorizonEnsure()
             currentActivity = nil
-            cancelInFlightContentPushConfirmation()
+            cancelInFlightContentPushConfirmation(clearCoalesced: true)
             lastPushedContent = nil
             lastSystemHeldContent = nil
             consecutiveStalledContentPushes = 0
@@ -6192,7 +6772,7 @@ class RadioLiveActivityManager: ObservableObject {
             playingSettledAcceptanceConsumed = false
             languageEnsureQuietSkipLogged = false
             playingEnsureQuietSkipLogged = false
-            lastLoggedStalledContentDiagnosticsSignature = nil
+            clearContentPushDiagnosticsSignatures()
             if !isRecreatingLiveActivityAfterStalledContent {
                 pendingInteractiveLiveActivityEnsure = false
             }
@@ -6210,7 +6790,7 @@ class RadioLiveActivityManager: ObservableObject {
         cancelPostSettledPlayingEnsureRetries()
         cancelAllPostQuietLongHorizonEnsure()
         currentActivity = nil
-        cancelInFlightContentPushConfirmation()
+        cancelInFlightContentPushConfirmation(clearCoalesced: true)
         lastPushedContent = nil
         lastSystemHeldContent = nil
         consecutiveStalledContentPushes = 0
@@ -6220,7 +6800,7 @@ class RadioLiveActivityManager: ObservableObject {
         playingSettledAcceptanceConsumed = false
         languageEnsureQuietSkipLogged = false
         playingEnsureQuietSkipLogged = false
-        lastLoggedStalledContentDiagnosticsSignature = nil
+        clearContentPushDiagnosticsSignatures()
         // Do not reset interactiveContentRecreationsAttempted here when recreation is mid-flight
         // (end clears tracking before start). Recreation counter is owned by the recreation cycle.
         // Pending ensure survives an in-flight recreation end so a failed replacement start
@@ -6634,9 +7214,12 @@ class RadioLiveActivityManager: ObservableObject {
     /// ``updateCurrentActivity()`` can suppress redundant `Activity.update` IPC.
     /// Axis-scoped heal (async): partial acceptance clears only the converged axis and
     /// follow-through soft-ensures the lagging one — does **not** treat every yield as full heal.
+    /// Delayed re-read runs the same heal when this observer is silent under lock.
     ///
-    /// - SeeAlso: ``applySystemContentUpdateHeal(systemContent:)``,
-    ///   ``contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:)``.
+    /// - SeeAlso: ``applySystemContentUpdateHeal(systemContent:priorObservedLanguage:priorObservedVisual:)``,
+    ///   ``shouldApplySystemContentUpdateHealAfterObservation(kind:)``,
+    ///   ``contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:priorObservedLanguage:priorObservedVisual:)``,
+    ///   ``scheduleInFlightContentPushConfirmation(candidate:)``.
     private func handleActivityContentUpdate(
         _ content: ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>
     ) {
@@ -6647,6 +7230,26 @@ class RadioLiveActivityManager: ObservableObject {
         lastPushedContent = content.state
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(content.state.visualState)
         SharedPlayerManager.persistLiveActivityLanguageMirror(content.state.currentLanguage)
+        #if DEBUG
+        // Rate-limited yield line: proves observer silence vs heal-miss on device without
+        // citing local capture filenames. Identical (id, language, visual) stay quiet.
+        let activityId = currentActivity?.id ?? "unowned"
+        let yieldSig = Self.contentUpdatesYieldDiagnosticsSignature(
+            systemLanguage: content.state.currentLanguage,
+            systemVisual: content.state.visualState,
+            activityId: activityId
+        )
+        if Self.shouldLogStalledContentDiagnostics(
+            signature: yieldSig,
+            lastLoggedSignature: lastLoggedContentUpdatesYieldDiagnosticsSignature
+        ) {
+            lastLoggedContentUpdatesYieldDiagnosticsSignature = yieldSig
+            print(
+                "🔴 Live Activity contentUpdates yield: id=\(activityId) " +
+                "systemLang=\(content.state.currentLanguage) systemVisual=\(content.state.visualState)"
+            )
+        }
+        #endif
         // Axis-aware heal needs actor SSOT (await hops) — schedule without blocking the
         // contentUpdates consumer. Suppress memory already seeded above.
         let inFlightCandidate = inFlightContentPushCandidate
@@ -6665,24 +7268,30 @@ class RadioLiveActivityManager: ObservableObject {
                     isConnectingPlayback: connecting
                 )
             }
-            await self.applySystemContentUpdateHeal(
-                systemContent: content.state,
-                priorObservedLanguage: priorLanguage,
-                priorObservedVisual: priorVisual
-            )
+            // Apply committed via contentUpdates: flush coalesced visual once, then axis-heal.
+            await self.flushCoalescedContentPushIfNeeded(observed: content.state)
+            if Self.shouldApplySystemContentUpdateHealAfterObservation(kind: .contentUpdates) {
+                await self.applySystemContentUpdateHeal(
+                    systemContent: content.state,
+                    priorObservedLanguage: priorLanguage,
+                    priorObservedVisual: priorVisual
+                )
+            }
         }
     }
 
-    /// Applies axis-scoped quiet / post-settled / stall-streak heal after system content yields.
+    /// Applies axis-scoped quiet / post-settled / stall-streak heal after a committed observation.
+    ///
+    /// Runs after `contentUpdates` **or** delayed re-read (not immediate post-await).
     ///
     /// - Parameters:
     ///   - systemContent: Latest `content.state` from ActivityKit.
-    ///   - priorObservedLanguage: Language before this yield (coarsen same-stream thrash).
-    ///   - priorObservedVisual: Visual before this yield.
+    ///   - priorObservedLanguage: Language before this observation (coarsen same-stream thrash).
+    ///   - priorObservedVisual: Visual before this observation.
     /// - Postcondition: Converged axes clear quiet and cancel their post-settled tasks; lagging
     ///   axes retain post-settled work or get **true-new** follow-through soft ensure; stall
     ///   streak resets only when the full candidate is no longer stalled. Never ends the
-    ///   interactive surface.
+    ///   interactive surface. Never invents `.playing`.
     /// - SeeAlso: ``contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:priorObservedLanguage:priorObservedVisual:)``,
     ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
     ///   ``ensureAuthoritativeLanguageContentIfNeeded()``.
@@ -6723,7 +7332,7 @@ class RadioLiveActivityManager: ObservableObject {
         if policy.resetStalledStreakAndRecreationBudget {
             consecutiveStalledContentPushes = 0
             interactiveContentRecreationsAttempted = 0
-            lastLoggedStalledContentDiagnosticsSignature = nil
+            clearContentPushDiagnosticsSignatures()
         }
 
         if policy.clearLanguageQuiet {
@@ -6751,7 +7360,7 @@ class RadioLiveActivityManager: ObservableObject {
         #if DEBUG
         if policy.shouldFollowThroughPlayingEnsure || policy.shouldFollowThroughLanguageEnsure {
             print(
-                "🔴 Live Activity contentUpdates axis heal " +
+                "🔴 Live Activity axis heal " +
                 "(langConverged=\(policy.languageConverged) playConverged=\(policy.playingConverged) " +
                 "followPlay=\(policy.shouldFollowThroughPlayingEnsure) " +
                 "followLang=\(policy.shouldFollowThroughLanguageEnsure) " +
@@ -6854,7 +7463,7 @@ class RadioLiveActivityManager: ObservableObject {
             cancelPostSettledPlayingEnsureRetries()
             cancelAllPostQuietLongHorizonEnsure()
             currentActivity = nil
-            cancelInFlightContentPushConfirmation()
+            cancelInFlightContentPushConfirmation(clearCoalesced: true)
             lastPushedContent = nil
             lastSystemHeldContent = nil
             consecutiveStalledContentPushes = 0
@@ -6864,7 +7473,7 @@ class RadioLiveActivityManager: ObservableObject {
             playingSettledAcceptanceConsumed = false
             languageEnsureQuietSkipLogged = false
             playingEnsureQuietSkipLogged = false
-            lastLoggedStalledContentDiagnosticsSignature = nil
+            clearContentPushDiagnosticsSignatures()
             if !isRecreatingLiveActivityAfterStalledContent {
                 interactiveContentRecreationsAttempted = 0
             }
@@ -6878,7 +7487,7 @@ class RadioLiveActivityManager: ObservableObject {
         cancelPostSettledPlayingEnsureRetries()
         cancelAllPostQuietLongHorizonEnsure()
         currentActivity = nil
-        cancelInFlightContentPushConfirmation()
+        cancelInFlightContentPushConfirmation(clearCoalesced: true)
         lastPushedContent = nil
         lastSystemHeldContent = nil
         consecutiveStalledContentPushes = 0
@@ -6888,7 +7497,7 @@ class RadioLiveActivityManager: ObservableObject {
         playingSettledAcceptanceConsumed = false
         languageEnsureQuietSkipLogged = false
         playingEnsureQuietSkipLogged = false
-        lastLoggedStalledContentDiagnosticsSignature = nil
+        clearContentPushDiagnosticsSignatures()
         if !isRecreatingLiveActivityAfterStalledContent {
             interactiveContentRecreationsAttempted = 0
         }
@@ -7229,14 +7838,20 @@ class RadioLiveActivityManager: ObservableObject {
         visualStillLags: Bool,
         actorVisual: PlayerVisualState,
         isStreamSwitchHoldActive: Bool,
-        isConnectingPlayback: Bool
+        isConnectingPlayback: Bool,
+        freezeSoftBudgetExhausted: Bool = false,
+        playingQuietPending: Bool = false,
+        isRequestEligible: Bool = false
     ) -> Bool {
         Self.shouldRunPostQuietLongHorizonDualAxisEnsure(
             languageStillLags: languageStillLags,
             visualStillLags: visualStillLags,
             actorVisual: actorVisual,
             isStreamSwitchHoldActive: isStreamSwitchHoldActive,
-            isConnectingPlayback: isConnectingPlayback
+            isConnectingPlayback: isConnectingPlayback,
+            freezeSoftBudgetExhausted: freezeSoftBudgetExhausted,
+            playingQuietPending: playingQuietPending,
+            isRequestEligible: isRequestEligible
         )
     }
 
@@ -7318,6 +7933,43 @@ class RadioLiveActivityManager: ObservableObject {
         postQuietLongHorizonDualAxisEnsureTask != nil
     }
 
+    /// White-box seam: post-quiet language long-horizon keeps owned visual after freeze.
+    func _test_shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(
+        freezeSoftBudgetExhausted: Bool,
+        playingQuietPending: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(
+            freezeSoftBudgetExhausted: freezeSoftBudgetExhausted,
+            playingQuietPending: playingQuietPending,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: language-only long-horizon candidate visual after freeze.
+    func _test_languageOnlyLongHorizonCandidateVisual(
+        ownedVisual: PlayerVisualState,
+        actorResolvedVisual: PlayerVisualState,
+        keepOwnedVisual: Bool
+    ) -> PlayerVisualState {
+        Self.languageOnlyLongHorizonCandidateVisual(
+            ownedVisual: ownedVisual,
+            actorResolvedVisual: actorResolvedVisual,
+            keepOwnedVisual: keepOwnedVisual
+        )
+    }
+
+    /// White-box seam: preserve owned visual on language-only ActivityKit candidate.
+    func _test_shouldPreserveOwnedVisualOnLanguageOnlyContentPush(
+        keepOwnedVisualAfterFreeze: Bool,
+        isStreamSwitchHoldActive: Bool
+    ) -> Bool {
+        Self.shouldPreserveOwnedVisualOnLanguageOnlyContentPush(
+            keepOwnedVisualAfterFreeze: keepOwnedVisualAfterFreeze,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive
+        )
+    }
+
     /// White-box seam: dual-axis long-horizon arm policy.
     func _test_shouldArmPostQuietLongHorizonDualAxisEnsure(
         hasCurrentActivity: Bool,
@@ -7327,7 +7979,9 @@ class RadioLiveActivityManager: ObservableObject {
         visualStillLags: Bool,
         actorVisual: PlayerVisualState,
         isStreamSwitchHoldActive: Bool,
-        isConnectingPlayback: Bool
+        isConnectingPlayback: Bool,
+        freezeSoftBudgetExhausted: Bool = false,
+        playingQuietPending: Bool = false
     ) -> Bool {
         Self.shouldArmPostQuietLongHorizonDualAxisEnsure(
             hasCurrentActivity: hasCurrentActivity,
@@ -7337,7 +7991,9 @@ class RadioLiveActivityManager: ObservableObject {
             visualStillLags: visualStillLags,
             actorVisual: actorVisual,
             isStreamSwitchHoldActive: isStreamSwitchHoldActive,
-            isConnectingPlayback: isConnectingPlayback
+            isConnectingPlayback: isConnectingPlayback,
+            freezeSoftBudgetExhausted: freezeSoftBudgetExhausted,
+            playingQuietPending: playingQuietPending
         )
     }
 
@@ -7590,7 +8246,7 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// White-box seam: clear suppress memory between tests (singleton isolation).
     func _test_clearLastPushedContent() {
-        cancelInFlightContentPushConfirmation()
+        cancelInFlightContentPushConfirmation(clearCoalesced: true)
         lastPushedContent = nil
         lastSystemHeldContent = nil
     }
@@ -7779,7 +8435,69 @@ class RadioLiveActivityManager: ObservableObject {
         )
     }
 
-    /// White-box seam: axis-scoped contentUpdates heal policy.
+    /// White-box seam: whether delayed re-read / `contentUpdates` run axis-heal.
+    func _test_shouldApplySystemContentUpdateHealAfterObservation(
+        kind: LiveActivityContentPushObservationKind
+    ) -> Bool {
+        Self.shouldApplySystemContentUpdateHealAfterObservation(kind: kind)
+    }
+
+    /// White-box seam: same-stream ineligible resume must not push Connecting over
+    /// committed paused/playing. Stream-switch hold still Connecting.
+    func _test_shouldSuppressConnectingContentPushWhileIneligible(
+        isRequestEligible: Bool,
+        isStreamSwitchHoldActive: Bool,
+        ownedVisual: PlayerVisualState,
+        candidateVisual: PlayerVisualState
+    ) -> Bool {
+        Self.shouldSuppressConnectingContentPushWhileIneligible(
+            isRequestEligible: isRequestEligible,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            ownedVisual: ownedVisual,
+            candidateVisual: candidateVisual
+        )
+    }
+
+    /// White-box seam: one outstanding visual mutation while apply is in-flight.
+    func _test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
+        inFlightVisual: PlayerVisualState?,
+        candidateVisual: PlayerVisualState,
+        ownedVisual: PlayerVisualState,
+        languageOnlyPreservingOwnedVisual: Bool = false
+    ) -> Bool {
+        Self.shouldCoalesceVisualDifferingContentPushWhileInFlight(
+            inFlightVisual: inFlightVisual,
+            candidateVisual: candidateVisual,
+            ownedVisual: ownedVisual,
+            languageOnlyPreservingOwnedVisual: languageOnlyPreservingOwnedVisual
+        )
+    }
+
+    /// White-box seam: flush coalesced candidate after committed observation.
+    func _test_shouldFlushCoalescedContentPushAfterObservation(
+        coalesced: LutheranRadioLiveActivityAttributes.ContentState?,
+        observed: LutheranRadioLiveActivityAttributes.ContentState
+    ) -> Bool {
+        Self.shouldFlushCoalescedContentPushAfterObservation(
+            coalesced: coalesced,
+            observed: observed
+        )
+    }
+
+    /// White-box seam: `contentUpdates` yield diagnostics signature (rate-limit key).
+    func _test_contentUpdatesYieldDiagnosticsSignature(
+        systemLanguage: String,
+        systemVisual: PlayerVisualState,
+        activityId: String
+    ) -> String {
+        Self.contentUpdatesYieldDiagnosticsSignature(
+            systemLanguage: systemLanguage,
+            systemVisual: systemVisual,
+            activityId: activityId
+        )
+    }
+
+    /// White-box seam: axis-scoped contentUpdates / delayed re-read heal policy.
     func _test_contentUpdateAxisHealPolicy(
         systemLanguage: String,
         systemVisual: PlayerVisualState,
