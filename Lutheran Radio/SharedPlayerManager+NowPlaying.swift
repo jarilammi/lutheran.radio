@@ -27,7 +27,8 @@ enum MediaSurfaceLiveActivityMode: Sendable {
     case none
     /// Push when an activity is already active; no-op when `currentActivity == nil`.
     case updateIfActive
-    /// Start on first `.playing` transition, otherwise update (``setPlaying()`` policy).
+    /// Start when request is eligible and unowned; update an already-owned surface
+    /// (eligible or not); ineligible + unowned records pending ensure (``setPlaying()`` policy).
     case startOrUpdate
 }
 
@@ -598,21 +599,33 @@ extension SharedPlayerManager {
                 Self._test_recordMediaSurfaceCoordinationStep(.liveActivityUpdate)
                 #endif
             case .startOrUpdate:
-                // SAFETY: `currentActivity` is MainActor-isolated; read it on the main actor
-                // before choosing start vs. update from the SharedPlayerManager actor.
-                let needsStart = await MainActor.run {
-                    RadioLiveActivityManager.shared.currentActivity == nil
+                // SAFETY: `currentActivity` and application state are MainActor-isolated.
+                // Start consults ``interactiveLiveActivityStartDisposition``: owned →
+                // update only (never startActivity end+request); eligible + unowned →
+                // request; ineligible + unowned → pending ensure (no request, no leading end).
+                let startDisposition = await MainActor.run {
+                    RadioLiveActivityManager.interactiveLiveActivityStartDisposition(
+                        isRequestEligible: RadioLiveActivityManager.isInteractiveLiveActivityRequestEligible(
+                            areActivitiesEnabled: RadioLiveActivityManager.areActivitiesEnabledOnThisHost,
+                            isApplicationActive: UIApplication.shared.applicationState == .active
+                        ),
+                        hasOwnedActivity: RadioLiveActivityManager.shared.currentActivity != nil
+                    )
                 }
-                if needsStart {
+                switch startDisposition {
+                case .request:
                     await RadioLiveActivityManager.shared.startActivity()
                     #if DEBUG
                     Self._test_recordMediaSurfaceCoordinationStep(.liveActivityStart)
                     #endif
-                } else {
+                case .updateOwned:
                     await RadioLiveActivityManager.shared.updateCurrentActivity()
                     #if DEBUG
                     Self._test_recordMediaSurfaceCoordinationStep(.liveActivityUpdate)
                     #endif
+                case .deferPendingEnsure:
+                    // ``startActivity()`` records pending ensure without Activity.request / end.
+                    await RadioLiveActivityManager.shared.startActivity()
                 }
                 await RadioLiveActivityManager.shared.ensureAuthoritativeLanguageContentIfNeeded()
             }

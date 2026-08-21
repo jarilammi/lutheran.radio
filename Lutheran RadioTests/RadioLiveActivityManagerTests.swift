@@ -2033,6 +2033,24 @@ class RadioLiveActivityManagerTests: XCTestCase {
             ),
             "Matched playing visual must not enter quiet"
         )
+        XCTAssertFalse(
+            manager._test_shouldEnterPlayingEnsureQuietPending(
+                playingStillStalled: true,
+                isRequestEligible: false,
+                ownedContentVisual: .prePlay,
+                isAuthoritativePlayingWithoutHold: true
+            ),
+            "Post-clamp owned Connecting while actor is playing without hold must not enter quiet"
+        )
+        XCTAssertTrue(
+            manager._test_shouldEnterPlayingEnsureQuietPending(
+                playingStillStalled: true,
+                isRequestEligible: false,
+                ownedContentVisual: .userPaused,
+                isAuthoritativePlayingWithoutHold: true
+            ),
+            "Owned pause vs playing after budget still enters quiet while ineligible"
+        )
 
         XCTAssertFalse(
             manager._test_shouldRunPlayingContentEnsureSoftPushes(
@@ -2132,7 +2150,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
     /// ``updateCurrentActivity`` must not re-submit the same `.playing` candidate forever.
     /// Pause honesty (userPaused) and language mutations remain non-suppressed.
     func testPlayingOnlyStatusPushDefersWhileQuietPending() {
-        XCTAssertTrue(
+        XCTAssertFalse(
             manager._test_shouldDeferRedundantPlayingPushWhileQuiet(
                 candidateVisual: .playing,
                 ownedContentVisual: .prePlay,
@@ -2141,7 +2159,18 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 quietPending: true,
                 isRequestEligible: false
             ),
-            "Playing-only stall while quiet and ineligible must defer ActivityKit IPC"
+            "Post-clamp Connecting owned visual must not starve the playing push while quiet"
+        )
+        XCTAssertTrue(
+            manager._test_shouldDeferRedundantPlayingPushWhileQuiet(
+                candidateVisual: .playing,
+                ownedContentVisual: .userPaused,
+                ownedContentLanguage: "fi",
+                candidateLanguage: "fi",
+                quietPending: true,
+                isRequestEligible: false
+            ),
+            "Playing-only stall against owned pause while quiet and ineligible must defer ActivityKit IPC"
         )
         XCTAssertFalse(
             manager._test_shouldDeferRedundantPlayingPushWhileQuiet(
@@ -3254,6 +3283,243 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 isRequestEligible: true
             ),
             "Eligible request alone must not recreate below stall threshold"
+        )
+    }
+
+    /// Immediate post-await `content.state` is apply-in-flight; stall/quiet/recreate wait for
+    /// delayed re-read or `contentUpdates`. Handshake lag does not consume recreation.
+    ///
+    /// Protects foreground kill-after-accept and Connecting→playing bursts: one immediate
+    /// mismatch must not recreate; delayed match resets; language stick after the apply
+    /// window still may. Does **not** invent `.playing` during hold; does **not** end while
+    /// ineligible.
+    func testContentPushStallOracleWaitsForApplyConfirmation() {
+        XCTAssertEqual(
+            manager._test_contentPushApplyConfirmationDelayMilliseconds(isRequestEligible: true),
+            RadioLiveActivityManager.authoritativeContentEnsureEligibleInterAttemptDelayMilliseconds,
+            "Eligible apply-window matches the first soft-ensure eligible delay"
+        )
+        XCTAssertEqual(
+            manager._test_contentPushApplyConfirmationDelayMilliseconds(isRequestEligible: false),
+            RadioLiveActivityManager.authoritativeContentEnsureIneligibleInterAttemptDelaysMilliseconds[0],
+            "Ineligible apply-window matches the first ineligible soft-ensure delay"
+        )
+
+        XCTAssertFalse(
+            manager._test_shouldCommitStalledContentPushObservation(
+                kind: .immediatePostAwait,
+                isStalled: true,
+                isHandshakeLag: false
+            ),
+            "Immediate post-await mismatch must not commit stall (apply-in-flight)"
+        )
+        XCTAssertFalse(
+            manager._test_shouldCommitStalledContentPushObservation(
+                kind: .immediatePostAwait,
+                isStalled: true,
+                isHandshakeLag: true
+            ),
+            "Immediate handshake mismatch must not commit stall"
+        )
+        XCTAssertTrue(
+            manager._test_shouldCommitStalledContentPushObservation(
+                kind: .delayedReread,
+                isStalled: true,
+                isHandshakeLag: false
+            ),
+            "Delayed re-read of a true language/visual freeze must commit stall"
+        )
+        XCTAssertFalse(
+            manager._test_shouldCommitStalledContentPushObservation(
+                kind: .delayedReread,
+                isStalled: true,
+                isHandshakeLag: true
+            ),
+            "Delayed handshake (Connecting→playing) must not consume recreation streak"
+        )
+        XCTAssertTrue(
+            manager._test_shouldCommitStalledContentPushObservation(
+                kind: .contentUpdates,
+                isStalled: true,
+                isHandshakeLag: false
+            ),
+            "contentUpdates mismatch after the apply window is stall truth"
+        )
+        XCTAssertFalse(
+            manager._test_shouldCommitStalledContentPushObservation(
+                kind: .contentUpdates,
+                isStalled: false,
+                isHandshakeLag: false
+            ),
+            "contentUpdates match must not increment stall (clears quiet via reset path)"
+        )
+        XCTAssertFalse(
+            manager._test_shouldCommitStalledContentPushObservation(
+                kind: .delayedReread,
+                isStalled: false,
+                isHandshakeLag: false
+            ),
+            "Delayed match must not increment stall"
+        )
+
+        let atThreshold = RadioLiveActivityManager.stalledContentPushRecreationThreshold
+        XCTAssertFalse(
+            manager._test_shouldPerformStalledContentRecreation(
+                consecutiveStalled: 0,
+                recreationsAttempted: 0,
+                isRecreationInProgress: false,
+                isRequestEligible: true
+            ),
+            "Immediate mismatch that does not increment streak must not recreate"
+        )
+        XCTAssertTrue(
+            manager._test_shouldPerformStalledContentRecreation(
+                consecutiveStalled: atThreshold,
+                recreationsAttempted: 0,
+                isRecreationInProgress: false,
+                isRequestEligible: true
+            ),
+            "Committed language stick at threshold while eligible still may recreate"
+        )
+    }
+
+    /// Pause↔Connecting and Connecting↔playing after hold/connect clear are handshake lag.
+    ///
+    /// Eligible 50 ms bursts must not spend ``stalledContentPushRecreationThreshold``.
+    /// Language mismatch is never handshake. Hold still in flight is not the post-clamp
+    /// playing handshake (``resolveContentPushVisual`` clamps `.playing` to `.prePlay`).
+    func testConnectingPlayingHandshakeDoesNotConsumeRecreationStreak() {
+        XCTAssertTrue(
+            manager._test_isConnectingPlayingHandshakeLag(
+                candidateLanguage: "et",
+                acceptedLanguage: "et",
+                candidateVisual: .playing,
+                acceptedVisual: .prePlay,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Connecting→playing after hold clear is handshake lag"
+        )
+        XCTAssertTrue(
+            manager._test_isConnectingPlayingHandshakeLag(
+                candidateLanguage: "et",
+                acceptedLanguage: "et",
+                candidateVisual: .prePlay,
+                acceptedVisual: .userPaused,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Pause→Connecting is handshake lag"
+        )
+        XCTAssertTrue(
+            manager._test_isConnectingPlayingHandshakeLag(
+                candidateLanguage: "et",
+                acceptedLanguage: "et",
+                candidateVisual: .userPaused,
+                acceptedVisual: .prePlay,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Connecting→pause is handshake lag (pause honesty still pushes)"
+        )
+        XCTAssertFalse(
+            manager._test_isConnectingPlayingHandshakeLag(
+                candidateLanguage: "de",
+                acceptedLanguage: "en",
+                candidateVisual: .playing,
+                acceptedVisual: .prePlay,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Language stick is never handshake — delayed mismatch may still recreate"
+        )
+        XCTAssertFalse(
+            manager._test_isConnectingPlayingHandshakeLag(
+                candidateLanguage: "et",
+                acceptedLanguage: "et",
+                candidateVisual: .playing,
+                acceptedVisual: .userPaused,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false
+            ),
+            "Pause vs playing (soft-resume freeze) is not Connecting handshake"
+        )
+        XCTAssertFalse(
+            manager._test_isConnectingPlayingHandshakeLag(
+                candidateLanguage: "et",
+                acceptedLanguage: "et",
+                candidateVisual: .playing,
+                acceptedVisual: .prePlay,
+                isStreamSwitchHoldActive: true,
+                isConnectingPlayback: false
+            ),
+            "Hold still active is not the post-clear playing handshake"
+        )
+
+        XCTAssertFalse(
+            manager._test_shouldCommitStalledContentPushObservation(
+                kind: .delayedReread,
+                isStalled: true,
+                isHandshakeLag: true
+            ),
+            "Eligible Connecting→playing burst must not commit stall after the apply window"
+        )
+        XCTAssertTrue(
+            manager._test_shouldCommitStalledContentPushObservation(
+                kind: .delayedReread,
+                isStalled: true,
+                isHandshakeLag: false
+            ),
+            "True language stick after wait still commits stall"
+        )
+    }
+
+    /// ``startActivity()`` and ``refreshAllMediaSurfaces`` `.startOrUpdate` consult
+    /// ``interactiveLiveActivityStartDisposition``: owned always updates (never request);
+    /// eligible + unowned may request; ineligible + unowned records pending ensure
+    /// (no request, no leading end). Recreation ends first so start sees unowned.
+    func testInteractiveLiveActivityStartRequiresRequestEligibility() {
+        XCTAssertEqual(
+            manager._test_interactiveLiveActivityStartDisposition(
+                isRequestEligible: true,
+                hasOwnedActivity: false
+            ),
+            .request,
+            "Eligible + unowned may Activity.request"
+        )
+        XCTAssertEqual(
+            manager._test_interactiveLiveActivityStartDisposition(
+                isRequestEligible: true,
+                hasOwnedActivity: true
+            ),
+            .updateOwned,
+            "Eligible + owned must update the existing surface (never startActivity end+request)"
+        )
+        XCTAssertEqual(
+            manager._test_interactiveLiveActivityStartDisposition(
+                isRequestEligible: false,
+                hasOwnedActivity: false
+            ),
+            .deferPendingEnsure,
+            "Ineligible + unowned must not request; pending ensure only"
+        )
+        XCTAssertEqual(
+            manager._test_interactiveLiveActivityStartDisposition(
+                isRequestEligible: false,
+                hasOwnedActivity: true
+            ),
+            .updateOwned,
+            "Ineligible + owned must update the existing surface (never end)"
+        )
+        manager._test_setPendingInteractiveLiveActivityEnsure(false)
+        XCTAssertFalse(manager._test_pendingInteractiveLiveActivityEnsure())
+        // Policy-only: applying defer disposition is ``startActivity()`` itself; tests
+        // never call real Activity.request. Pending-ensure after failed start remains.
+        XCTAssertTrue(
+            manager._test_shouldMarkPendingInteractiveLiveActivityEnsureAfterStartAttempt(
+                currentActivityIsNil: true
+            ),
+            "Unowned ineligible start records pending ensure (same flag as failed request)"
         )
     }
 
