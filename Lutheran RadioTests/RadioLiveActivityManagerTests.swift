@@ -3603,20 +3603,20 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
-    /// Same-stream ineligible resume must not spend an ActivityKit visual apply on
-    /// Connecting over committed ``.userPaused`` / ``.playing``. Stream-switch hold still
-    /// publishes Connecting. First start (owned already Connecting) and request-eligible
-    /// still publish Connecting. Authoritative `.playing` and pause candidates still push.
-    /// Does **not** invent `.playing` during attach.
+    /// Ineligible Connecting must not spend an ActivityKit visual apply over committed
+    /// ``.userPaused`` / ``.playing`` — same-stream resume **and** stream-switch hold
+    /// after dest language has landed. Eligible switch still publishes Connecting.
+    /// First start (owned already Connecting) still publishes Connecting. Authoritative
+    /// `.playing` and pause candidates still push. Does **not** invent `.playing`.
     ///
-    /// Why this pattern is required: the last visual apply Apple accepted under lock was
-    /// Connecting on same-stream play-after-pause; later `.playing` mutations dropped.
+    /// Why this pattern is required: Apple still applies ineligible Connecting over a
+    /// committed pause/play glyph; later `.playing` then either drops or lands only
+    /// because owned had become Connecting. Hold no longer authorizes that overwrite.
     /// Pure `should*` — no ActivityKit waits.
     func testSameStreamIneligibleResumeDoesNotPushConnectingOverPausedOrPlaying() {
         XCTAssertTrue(
             manager._test_shouldSuppressConnectingContentPushWhileIneligible(
                 isRequestEligible: false,
-                isStreamSwitchHoldActive: false,
                 ownedVisual: .userPaused,
                 candidateVisual: .prePlay
             ),
@@ -3625,7 +3625,6 @@ class RadioLiveActivityManagerTests: XCTestCase {
         XCTAssertTrue(
             manager._test_shouldSuppressConnectingContentPushWhileIneligible(
                 isRequestEligible: false,
-                isStreamSwitchHoldActive: false,
                 ownedVisual: .playing,
                 candidateVisual: .prePlay
             ),
@@ -3633,17 +3632,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
         XCTAssertFalse(
             manager._test_shouldSuppressConnectingContentPushWhileIneligible(
-                isRequestEligible: false,
-                isStreamSwitchHoldActive: true,
-                ownedVisual: .playing,
-                candidateVisual: .prePlay
-            ),
-            "Stream-switch hold must still publish Connecting + destination language"
-        )
-        XCTAssertFalse(
-            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
                 isRequestEligible: true,
-                isStreamSwitchHoldActive: false,
                 ownedVisual: .userPaused,
                 candidateVisual: .prePlay
             ),
@@ -3651,8 +3640,15 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
         XCTAssertFalse(
             manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: true,
+                ownedVisual: .playing,
+                candidateVisual: .prePlay
+            ),
+            "Eligible stream-switch Connecting honesty must still push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
                 isRequestEligible: false,
-                isStreamSwitchHoldActive: false,
                 ownedVisual: .prePlay,
                 candidateVisual: .prePlay
             ),
@@ -3661,7 +3657,6 @@ class RadioLiveActivityManagerTests: XCTestCase {
         XCTAssertFalse(
             manager._test_shouldSuppressConnectingContentPushWhileIneligible(
                 isRequestEligible: false,
-                isStreamSwitchHoldActive: false,
                 ownedVisual: .userPaused,
                 candidateVisual: .playing
             ),
@@ -3670,7 +3665,6 @@ class RadioLiveActivityManagerTests: XCTestCase {
         XCTAssertFalse(
             manager._test_shouldSuppressConnectingContentPushWhileIneligible(
                 isRequestEligible: false,
-                isStreamSwitchHoldActive: false,
                 ownedVisual: .playing,
                 candidateVisual: .userPaused
             ),
@@ -3679,11 +3673,365 @@ class RadioLiveActivityManagerTests: XCTestCase {
         XCTAssertFalse(
             manager._test_shouldSuppressConnectingContentPushWhileIneligible(
                 isRequestEligible: false,
-                isStreamSwitchHoldActive: false,
                 ownedVisual: .thermalPaused,
                 candidateVisual: .prePlay
             ),
             "Thermal / security / cleared owned visuals are not paused-or-playing glyphs to keep"
+        )
+    }
+
+    /// Ineligible dest-language over a committed pause/play glyph is language-only:
+    /// dest language rides owned visual (``ContentState/replacingCurrentLanguage(_:)``)
+    /// even during stream-switch hold. Eligible switch still publishes Connecting.
+    /// Dest matching owned is Connecting skip (including during hold) — not this helper.
+    /// Language-only candidate visual is not a Connecting skip. Owned already Connecting
+    /// still publishes Connecting. Does **not** invent `.playing`.
+    ///
+    /// Why this pattern is required: bundling dest language with Connecting under lock
+    /// is a visual-differing apply Apple drops, so intermediate dest language never
+    /// reaches `content.state`. Language ensure 3/3 must use the language-only candidate.
+    /// Pure `should*` — no ActivityKit waits.
+    func testIneligibleLanguageMutationPreservesOwnedVisualInsteadOfConnecting() {
+        XCTAssertTrue(
+            manager._test_shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+                isRequestEligible: false,
+                destinationLanguage: "de",
+                ownedLanguage: "sv",
+                ownedVisual: .userPaused
+            ),
+            "Ineligible dest-language over committed pause must preserve owned visual"
+        )
+        XCTAssertTrue(
+            manager._test_shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+                isRequestEligible: false,
+                destinationLanguage: "en",
+                ownedLanguage: "de",
+                ownedVisual: .playing
+            ),
+            "Ineligible dest-language over committed playing must preserve owned visual"
+        )
+        XCTAssertTrue(
+            manager._test_shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+                isRequestEligible: false,
+                destinationLanguage: "de",
+                ownedLanguage: nil,
+                ownedVisual: .userPaused
+            ),
+            "Missing owned language with dest lag still preserves a committed pause glyph"
+        )
+        XCTAssertFalse(
+            manager._test_shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+                isRequestEligible: true,
+                destinationLanguage: "de",
+                ownedLanguage: "sv",
+                ownedVisual: .userPaused
+            ),
+            "Request-eligible (presentable) switch must still publish Connecting + dest language"
+        )
+        XCTAssertFalse(
+            manager._test_shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+                isRequestEligible: false,
+                destinationLanguage: "sv",
+                ownedLanguage: "sv",
+                ownedVisual: .userPaused
+            ),
+            "Dest matching owned is not a language mutation — same-stream Connecting skip owns that path"
+        )
+        XCTAssertFalse(
+            manager._test_shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+                isRequestEligible: false,
+                destinationLanguage: "",
+                ownedLanguage: "sv",
+                ownedVisual: .userPaused
+            ),
+            "Empty dest language must not force language-only"
+        )
+        XCTAssertFalse(
+            manager._test_shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+                isRequestEligible: false,
+                destinationLanguage: "de",
+                ownedLanguage: "sv",
+                ownedVisual: .prePlay
+            ),
+            "Owned already Connecting has nothing better to keep — Connecting still allowed"
+        )
+        XCTAssertFalse(
+            manager._test_shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+                isRequestEligible: false,
+                destinationLanguage: "de",
+                ownedLanguage: "sv",
+                ownedVisual: .thermalPaused
+            ),
+            "Thermal / security / cleared owned visuals are not pause-or-playing glyphs to keep"
+        )
+
+        // Freeze-path preserve still yields to stream-switch hold; ineligible language
+        // mutation independently preserves during hold. Combined decision is language-only.
+        XCTAssertFalse(
+            manager._test_shouldPreserveOwnedVisualOnLanguageOnlyContentPush(
+                keepOwnedVisualAfterFreeze: true,
+                isStreamSwitchHoldActive: true
+            ),
+            "Freeze long-horizon preserve still does not override stream-switch hold by itself"
+        )
+        XCTAssertTrue(
+            manager._test_shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+                isRequestEligible: false,
+                destinationLanguage: "de",
+                ownedLanguage: "sv",
+                ownedVisual: .userPaused
+            ),
+            "Ineligible language mutation preserves owned visual even while stream-switch hold is active"
+        )
+
+        // Dest matching owned: Connecting skip fires even during hold (candidate .prePlay).
+        // Language-only candidate (visual already owned) is not a Connecting skip.
+        XCTAssertTrue(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .prePlay
+            ),
+            "Ineligible Connecting over committed pause must skip after dest language has landed, including during hold"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: true,
+                ownedVisual: .userPaused,
+                candidateVisual: .prePlay
+            ),
+            "Eligible stream-switch Connecting honesty must still push"
+        )
+
+        // After language-only preserve, candidate visual equals owned — Connecting skip
+        // does not apply (candidate is not .prePlay). Language-only coalesce still allows IPC.
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .userPaused
+            ),
+            "Language-only candidate (owned visual) is not a Connecting skip"
+        )
+        XCTAssertFalse(
+            manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .prePlay,
+                candidateVisual: .userPaused,
+                ownedVisual: .userPaused,
+                languageOnlyPreservingOwnedVisual: true
+            ),
+            "Language-only preserving owned visual must still update while a visual apply is in-flight"
+        )
+        XCTAssertEqual(
+            manager._test_languageOnlyLongHorizonCandidateVisual(
+                ownedVisual: .userPaused,
+                actorResolvedVisual: .prePlay,
+                keepOwnedVisual: true
+            ),
+            .userPaused,
+            "Language-only candidate visual equals owned pause, not Connecting"
+        )
+    }
+
+    /// After dest language has landed on owned pause/playing while request is ineligible,
+    /// stream-switch Connecting must not `Activity.update` ``.prePlay`` over that glyph.
+    /// Dest-lag remains language-only (candidate visual equals owned; Connecting skip
+    /// does not see ``.prePlay``). Eligible switch still publishes Connecting. First
+    /// start (owned already Connecting) still publishes Connecting. Pause as a new
+    /// visual still pushes. Does **not** invent `.playing`.
+    ///
+    /// Why this pattern is required: dest-lag already rewrites to language-only before
+    /// Connecting skip; after Apple applies dest language on owned pause, hold is still
+    /// active and a Connecting candidate would overwrite that glyph. Pure `should*` —
+    /// no ActivityKit waits.
+    func testIneligibleStreamSwitchDoesNotPushConnectingAfterDestLanguageLanded() {
+        XCTAssertFalse(
+            manager._test_shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+                isRequestEligible: false,
+                destinationLanguage: "en",
+                ownedLanguage: "en",
+                ownedVisual: .userPaused
+            ),
+            "Dest matching owned is not a language mutation — Connecting skip owns that path"
+        )
+        XCTAssertTrue(
+            manager._test_shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+                isRequestEligible: false,
+                destinationLanguage: "en",
+                ownedLanguage: "sv",
+                ownedVisual: .userPaused
+            ),
+            "Dest-lag over committed pause must still be language-only"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .prePlay
+            ),
+            "Ineligible Connecting over committed pause must skip after dest language has landed"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .playing,
+                candidateVisual: .prePlay
+            ),
+            "Ineligible Connecting over committed playing must skip after dest language has landed"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: true,
+                ownedVisual: .userPaused,
+                candidateVisual: .prePlay
+            ),
+            "Eligible stream-switch Connecting honesty must still push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .userPaused
+            ),
+            "Language-only candidate (owned visual) is not a Connecting skip"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .prePlay,
+                candidateVisual: .prePlay
+            ),
+            "First start with owned already Connecting has nothing better to keep"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .playing,
+                candidateVisual: .userPaused
+            ),
+            "Pause as a new visual must still push"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .playing
+            ),
+            "Closing Connecting overwrite leaves owned pause; freeze playing skip still drops visual-differing playing"
+        )
+    }
+
+    /// After freeze, ineligible playing / dual-axis must not issue visual-differing
+    /// `Activity.update`. Play re-arm may clear quiet / freeze generation; that does
+    /// not authorize `.playing` IPC over a committed pause/play glyph. Language-only
+    /// still updates. Pause as a new visual still updates. Dual-axis settle after
+    /// hold clear while owned is Connecting (freeze not exhausted) still may push
+    /// `.playing`. Eligible still pushes. Does **not** invent `.playing`.
+    ///
+    /// Why this pattern is required: play mutation after pause re-arms playing ensure
+    /// while request is ineligible; Apple drops those visual mutations and they can
+    /// delay language-only applies that still land. Pure `should*` — no ActivityKit waits.
+    func testIneligibleFreezeDoesNotPushVisualDifferingPlaying() {
+        XCTAssertTrue(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: true,
+                ownedVisual: .userPaused,
+                candidateVisual: .playing
+            ),
+            "Ineligible freeze exhausted + owned pause must not spend playing IPC"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .playing
+            ),
+            "Play re-arm that cleared freeze generation still must not spend playing IPC over committed pause"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: true,
+                ownedVisual: .prePlay,
+                candidateVisual: .playing
+            ),
+            "After freeze, owned Connecting must not spend playing IPC while ineligible"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: true,
+                freezeSoftBudgetExhausted: true,
+                ownedVisual: .userPaused,
+                candidateVisual: .playing
+            ),
+            "Request-eligible (presentable) playing honesty must still push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: false,
+                ownedVisual: .prePlay,
+                candidateVisual: .playing
+            ),
+            "Dual-axis settle after hold clear while owned is Connecting (freeze not exhausted) still may push playing"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: true,
+                ownedVisual: .playing,
+                candidateVisual: .userPaused
+            ),
+            "Pause as a new visual must still push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: true,
+                ownedVisual: .userPaused,
+                candidateVisual: .userPaused
+            ),
+            "Language-only (candidate visual equals owned) must still update"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: true,
+                ownedVisual: .userPaused,
+                candidateVisual: .prePlay
+            ),
+            "Connecting skip owns Connecting candidates; this helper is playing-only"
+        )
+
+        // Ineligible dest-language over committed pause still language-only (must not regress).
+        XCTAssertTrue(
+            manager._test_shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+                isRequestEligible: false,
+                destinationLanguage: "de",
+                ownedLanguage: "sv",
+                ownedVisual: .userPaused
+            ),
+            "Ineligible dest-language over committed pause must still preserve owned visual"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: true,
+                ownedVisual: .userPaused,
+                candidateVisual: .userPaused
+            ),
+            "After language-only preserve, candidate visual equals owned — playing skip must not block that IPC"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .playing
+            ),
+            "Connecting skip remains independent; playing-over-pause is this helper, not Connecting skip"
         )
     }
 

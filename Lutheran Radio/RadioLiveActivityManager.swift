@@ -57,10 +57,16 @@ import WidgetSurface
 /// ## Update Invariant
 /// `Activity.update(...)` occurs **iff** the candidate is not suppressible under
 /// ``shouldSuppressLiveActivityContentPush(lastPushed:candidate:ownedContentLanguage:)``
-/// (or force/initial), is not a same-stream ineligible Connecting overwrite of owned
-/// paused/playing (``shouldSuppressConnectingContentPushWhileIneligible``), **and** is
-/// not coalesced as a second visual mutation while ``inFlightContentPushCandidate`` is
-/// unconfirmed. Suppress is an **optimization**, not a source of truth: owned
+/// (or force/initial), is not an ineligible Connecting overwrite of owned
+/// paused/playing (``shouldSuppressConnectingContentPushWhileIneligible`` — same-stream
+/// resume **and** stream-switch hold after dest language has landed), is not an
+/// ineligible dest-language Connecting bundle over a committed pause/play glyph
+/// (``shouldPreserveOwnedVisualOnIneligibleLanguageMutation`` keeps owned visual),
+/// is not a visual-differing `.playing` push while request is ineligible after freeze
+/// or over a committed pause/play glyph
+/// (``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible``),
+/// **and** is not coalesced as a second visual mutation while
+/// ``inFlightContentPushCandidate`` is unconfirmed. Suppress is an **optimization**, not a source of truth: owned
 /// `Activity.content.state.currentLanguage` beats optimistic / aspirational
 /// ``lastPushedContent`` — never skip a push when the candidate language is non-empty
 /// and differs from the surface the system still holds.
@@ -85,10 +91,52 @@ import WidgetSurface
 /// `Activity.update` Connecting (``.prePlay``) over owned ``.userPaused`` / ``.playing``.
 /// That overwrite is the last visual apply Apple still accepted on same-stream
 /// play-after-pause under lock; later `.playing` mutations then dropped. Stream-switch
-/// hold still publishes Connecting + destination language. First start (owned already
-/// ``.prePlay``) and request-eligible (presentable) still publish Connecting. Does
-/// **not** invent `.playing` during attach. Durable mirrors may still warm Connecting
-/// for extension planning — owned lock-screen glyph is the thing we must not overwrite.
+/// hold still publishes Connecting + destination language **when request-eligible**
+/// (presentable honesty). After dest language has landed on owned pause/playing while
+/// still ineligible, hold-active Connecting is also skipped (sibling section). First
+/// start (owned already ``.prePlay``) and request-eligible still publish Connecting.
+/// Does **not** invent `.playing` during attach. Durable mirrors may still warm
+/// Connecting for extension planning — owned lock-screen glyph is the thing we must
+/// not overwrite.
+///
+/// ## Ineligible language mutation is language-only
+/// While request is ineligible, dest language ≠ owned `content.state.currentLanguage`,
+/// and owned visual is already ``.userPaused`` / ``.playing``,
+/// ``updateCurrentActivity()`` builds ``ContentState/replacingCurrentLanguage(_:)``
+/// so dest language rides the committed glyph. Bundling dest language with Connecting
+/// (stream-switch hold) is a visual-differing apply Apple drops under lock — language
+/// is dropped with it. Language ensure 3/3 uses this candidate (do not spend attempts
+/// on Connecting+language). Eligible switch, first start (owned already Connecting),
+/// and owned visual that is not yet pause/playing still publish Connecting. Durable
+/// mirrors + in-app chrome may still be Connecting / dest language. Does **not**
+/// invent `.playing`. Does **not** end while ineligible.
+///
+/// ## Ineligible stream-switch Connecting after dest language landed
+/// While request is ineligible, dest language already matches owned
+/// `content.state.currentLanguage`, and owned visual is already ``.userPaused`` /
+/// ``.playing``, ``shouldSuppressConnectingContentPushWhileIneligible`` skips
+/// `Activity.update` Connecting (``.prePlay``) **even during stream-switch hold**.
+/// Dest-lag is already language-only above (candidate visual equals owned; this
+/// skip does not see ``.prePlay``). After that language-only apply, hold is still
+/// active and a Connecting candidate would overwrite the committed glyph. Eligible
+/// switch still publishes Connecting via ``isInteractiveLiveActivityRequestEligible``.
+/// First start (owned already Connecting) still publishes Connecting. Dual-axis
+/// settle while ineligible with owned still Connecting (freeze not exhausted) stays
+/// for first start / owned already Connecting — not as recovery from this overwrite.
+/// Unlock / become-active remains the presentable playing-glyph repair. Does **not**
+/// invent `.playing`. Does **not** end while ineligible.
+///
+/// ## Ineligible freeze must not spend visual-differing playing IPC
+/// While request is ineligible, freeze soft budget is exhausted **or** owned visual is
+/// already a committed ``.userPaused`` / ``.playing`` glyph, ``updateCurrentActivity()``
+/// must not `Activity.update` candidate `.playing` when that visual differs from owned.
+/// Play re-arm (``recordOptimisticToggleContent``) may still clear quiet for a later
+/// **eligible** cycle; it does not by itself authorize this IPC. Language-only (dest
+/// language on the owned glyph) still updates. Pause as a **new** visual (owned playing
+/// → candidate ``.userPaused``) still updates. Dual-axis settle after hold clear while
+/// owned is still Connecting (freeze not exhausted) still may push `.playing`. Unlock /
+/// become-active remains the presentable playing-glyph repair. Does **not** invent
+/// `.playing`. Does **not** end while ineligible. Does **not** add another ensure rail.
 ///
 /// Intent-path optimistic toggles publish ContentState and align ``lastPushedContent``
 /// so a rapid second tap resolves from the post-toggle glyph; the sequential sticky
@@ -1132,13 +1180,44 @@ class RadioLiveActivityManager: ObservableObject {
     /// re-read past ``contentPushApplyConfirmationDelayMilliseconds``. Handshake lag
     /// (pause↔Connecting, Connecting↔playing after hold/connect clear) is excluded.
     ///
-    /// **Same-stream ineligible Connecting skip:** While request is ineligible and
-    /// stream-switch hold is inactive, ``shouldSuppressConnectingContentPushWhileIneligible``
-    /// skips `Activity.update` when the candidate is Connecting (``.prePlay``) and owned
-    /// visual is already ``.userPaused`` or ``.playing``. Keep the committed glyph until
-    /// authoritative `.playing` or a later `.userPaused` is the candidate. Stream-switch
-    /// hold, first start (owned already Connecting), and request-eligible still publish
-    /// Connecting. Durable mirrors still warm. Does **not** invent `.playing`.
+    /// **Same-stream ineligible Connecting skip:** While request is ineligible,
+    /// ``shouldSuppressConnectingContentPushWhileIneligible`` skips `Activity.update`
+    /// when the candidate is Connecting (``.prePlay``) and owned visual is already
+    /// ``.userPaused`` or ``.playing``. Keep the committed glyph until authoritative
+    /// `.playing` or a later `.userPaused` is the candidate. Hold does **not** authorize
+    /// this IPC while ineligible (dest-landed skip below). First start (owned already
+    /// Connecting) and request-eligible still publish Connecting. Durable mirrors still
+    /// warm. Does **not** invent `.playing`.
+    ///
+    /// **Ineligible language-only:** While request is ineligible, dest language differs
+    /// from owned language, and owned visual is already ``.userPaused`` / ``.playing``,
+    /// ``shouldPreserveOwnedVisualOnIneligibleLanguageMutation`` keeps the owned glyph
+    /// via ``ContentState/replacingCurrentLanguage(_:)`` — including during stream-switch
+    /// hold. Eligible switch still Connecting + dest language. Language ensure 3/3 uses
+    /// the same candidate. Does **not** invent `.playing`.
+    ///
+    /// **Ineligible stream-switch Connecting after dest language landed:** Dest-lag is
+    /// already language-only above (candidate visual equals owned; Connecting skip does
+    /// not see ``.prePlay``). After dest matches owned, hold is still active, and the
+    /// candidate is Connecting over committed pause/playing,
+    /// ``shouldSuppressConnectingContentPushWhileIneligible`` skips that overwrite.
+    /// Eligible switch still Connecting via ``isInteractiveLiveActivityRequestEligible``.
+    /// Dual-axis settle while ineligible with owned still Connecting (freeze not
+    /// exhausted) stays for first start / owned already Connecting. Does **not** invent
+    /// `.playing`.
+    ///
+    /// **Ineligible freeze playing skip:** While request is ineligible, freeze soft
+    /// budget is exhausted **or** owned visual is already ``.userPaused`` / ``.playing``,
+    /// ``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible`` skips
+    /// `Activity.update` when the candidate is `.playing` and differs from owned.
+    /// ``recordOptimisticToggleContent`` may still clear quiet for a later eligible
+    /// cycle; it does not authorize this IPC. Language-only still updates
+    /// (``shouldPreserveOwnedVisualOnIneligibleLanguageMutation`` already made
+    /// candidate visual equal owned). Pause as a new visual still updates.
+    /// Dual-axis settle after hold clear while owned is Connecting (freeze not
+    /// exhausted) still may push `.playing`. Durable mirrors already warmed. Must
+    /// run before visual coalesce so a dropped `.playing` candidate cannot become
+    /// the outstanding flush. Does **not** invent `.playing`.
     ///
     /// **One outstanding visual mutation:** While ``inFlightContentPushCandidate`` is
     /// unconfirmed, ``shouldCoalesceVisualDifferingContentPushWhileInFlight`` skips a second
@@ -1158,7 +1237,9 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Parameters:
     ///   - preservingOwnedVisual: When `true` (post-quiet language long-horizon after freeze),
     ///     dest language rides ``ContentState/replacingCurrentLanguage(_:)`` so the owned
-    ///     glyph is not overwritten with `.playing`. Stream-switch hold still Connecting.
+    ///     glyph is not overwritten with `.playing`. Stream-switch hold still Connecting
+    ///     on this freeze path. Independently, ineligible dest-language mutations over a
+    ///     committed pause/play glyph also preserve owned visual (including during hold).
     ///     Durable App Group mirrors still warm actor visual + dest language.
     /// - Precondition: Must be called on the main actor (the method is `@MainActor`).
     /// - Postcondition: If an update is sent, `lastPushedContent` reflects the
@@ -1179,7 +1260,9 @@ class RadioLiveActivityManager: ObservableObject {
     ///   `performActualSave` (the bridge call remains for widget parity),
     ///   ``beginObservingActivityEvents(_:)`` (the Live Activity events surface that
     ///   keeps `lastPushedContent` aligned),
-    ///   ``shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:isStreamSwitchHoldActive:ownedVisual:candidateVisual:)``,
+    ///   ``shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:)``,
+    ///   ``shouldPreserveOwnedVisualOnIneligibleLanguageMutation(isRequestEligible:destinationLanguage:ownedLanguage:ownedVisual:)``,
+    ///   ``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(isRequestEligible:freezeSoftBudgetExhausted:ownedVisual:candidateVisual:)``,
     ///   ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:languageOnlyPreservingOwnedVisual:)``,
     ///   ``shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``,
     ///   ``isRunningUnderTest``,
@@ -1231,17 +1314,32 @@ class RadioLiveActivityManager: ObservableObject {
         let currentLanguage = await manager.liveActivityLanguageCodeForContentPush()
 
         // Authoritative visual at push time — after all prior suspension points.
-        // Hold is sampled with visual so same-stream Connecting skip cannot race a
-        // stream-switch that established destination-language Connecting honesty.
+        // Hold is sampled with visual so freeze-path language-only preserve still
+        // yields to stream-switch hold. Connecting skip uses request eligibility,
+        // not this hold sample — eligible switch still publishes Connecting.
         let (visualState, streamSwitchHoldActive) = await Self.resolveContentPushVisual(from: manager)
 
         // Owned surface language + visual beat optimistic suppress memory (flag + glyph SSOT).
         let ownedLanguage = activity.content.state.currentLanguage
         let ownedVisual = activity.content.state.visualState
-        let preserveOwnedVisual = Self.shouldPreserveOwnedVisualOnLanguageOnlyContentPush(
-            keepOwnedVisualAfterFreeze: preservingOwnedVisual,
-            isStreamSwitchHoldActive: streamSwitchHoldActive
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
+            isApplicationActive: UIApplication.shared.applicationState == .active
         )
+        // Freeze long-horizon preserve (not during stream-switch hold) OR ineligible
+        // dest-language over a committed pause/play glyph (including during hold).
+        let preserveIneligibleLanguage = Self.shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+            isRequestEligible: requestEligible,
+            destinationLanguage: currentLanguage,
+            ownedLanguage: ownedLanguage,
+            ownedVisual: ownedVisual
+        )
+        let preserveOwnedVisual =
+            Self.shouldPreserveOwnedVisualOnLanguageOnlyContentPush(
+                keepOwnedVisualAfterFreeze: preservingOwnedVisual,
+                isStreamSwitchHoldActive: streamSwitchHoldActive
+            )
+            || preserveIneligibleLanguage
         let candidate: LutheranRadioLiveActivityAttributes.ContentState
         if preserveOwnedVisual {
             // Dest language on the owned glyph. Durable mirrors below still warm actor visual.
@@ -1261,6 +1359,27 @@ class RadioLiveActivityManager: ObservableObject {
         // ActivityKit candidate preserves owned visual after freeze.
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(visualState)
         SharedPlayerManager.persistLiveActivityLanguageMirror(currentLanguage)
+        #if DEBUG
+        if preserveIneligibleLanguage {
+            let langOnlySig = Self.stalledContentDiagnosticsSignature(
+                candidateLanguage: currentLanguage,
+                acceptedLanguage: ownedLanguage,
+                candidateVisual: candidate.visualState,
+                acceptedVisual: ownedVisual
+            )
+            if Self.shouldLogStalledContentDiagnostics(
+                signature: "lang-only-ineligible|" + langOnlySig,
+                lastLoggedSignature: lastLoggedStalledContentDiagnosticsSignature
+            ) {
+                lastLoggedStalledContentDiagnosticsSignature = "lang-only-ineligible|" + langOnlySig
+                print(
+                    "🔴 Live Activity language-only (ineligible dest language; " +
+                    "owned visual=\(ownedVisual); candidate visual matches owned; " +
+                    "eligible switch still Connecting)"
+                )
+            }
+        }
+        #endif
         if Self.shouldSuppressLiveActivityContentPush(
             lastPushed: lastPushedContent,
             candidate: candidate,
@@ -1280,17 +1399,13 @@ class RadioLiveActivityManager: ObservableObject {
         // status re-pushes for the same destination. Durable mirrors already warmed above.
         // Visual mutations still push. Re-arm: destination change, eligibility, become-active,
         // or contentUpdates (see languageEnsureQuietPendingDestination).
-        let requestEligibleForQuiet = Self.isInteractiveLiveActivityRequestEligible(
-            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
-            isApplicationActive: UIApplication.shared.applicationState == .active
-        )
         if Self.shouldDeferRedundantLanguagePushWhileQuiet(
             candidateLanguage: candidate.currentLanguage,
             ownedContentLanguage: ownedLanguage,
             ownedContentVisual: ownedVisual,
             candidateVisual: candidate.visualState,
             quietPendingDestination: languageEnsureQuietPendingDestination,
-            isRequestEligible: requestEligibleForQuiet
+            isRequestEligible: requestEligible
         ) {
             // Quiet language-only stall: durable mirrors already warm; no ActivityKit IPC.
             // Rate-limit DEBUG — status callbacks re-hit this every attach frame.
@@ -1328,7 +1443,7 @@ class RadioLiveActivityManager: ObservableObject {
             ownedContentLanguage: ownedLanguage,
             candidateLanguage: candidate.currentLanguage,
             quietPending: playingEnsureQuietPending,
-            isRequestEligible: requestEligibleForQuiet
+            isRequestEligible: requestEligible
         ) {
             #if DEBUG
             let deferSig = Self.stalledContentDiagnosticsSignature(
@@ -1353,13 +1468,14 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
-        // Same-stream ineligible resume: do not spend an ActivityKit visual apply on
-        // Connecting over committed paused/playing. Stream-switch hold still Connecting.
+        // Ineligible Connecting over committed pause/playing: skip even during
+        // stream-switch hold (dest language already matching owned). Dest-lag is
+        // language-only above (candidate visual equals owned; this skip does not
+        // see .prePlay). Eligible switch still Connecting via isRequestEligible.
         // Durable mirrors already warmed above. Must run before visual coalesce so a
         // Connecting candidate cannot become the outstanding flush.
         if Self.shouldSuppressConnectingContentPushWhileIneligible(
-            isRequestEligible: requestEligibleForQuiet,
-            isStreamSwitchHoldActive: streamSwitchHoldActive,
+            isRequestEligible: requestEligible,
             ownedVisual: ownedVisual,
             candidateVisual: candidate.visualState
         ) {
@@ -1376,9 +1492,44 @@ class RadioLiveActivityManager: ObservableObject {
             ) {
                 lastLoggedStalledContentDiagnosticsSignature = "connecting-skip|" + skipSig
                 print(
-                    "🔴 Live Activity Connecting push skipped (ineligible same-stream resume; " +
-                    "owned visual=\(ownedVisual); keeping paused/playing until authoritative " +
-                    "playing or a later pause is the candidate)"
+                    "🔴 Live Activity Connecting push skipped (ineligible Connecting over " +
+                    "committed pause/playing; owned visual=\(ownedVisual); keeping " +
+                    "paused/playing until authoritative playing or a later pause is " +
+                    "the candidate)"
+                )
+            }
+            #endif
+            return
+        }
+
+        // Ineligible freeze: do not spend an ActivityKit visual apply on `.playing`
+        // over a committed pause/play glyph (or after freeze soft-budget exhaust).
+        // Play re-arm may have cleared quiet; that does not authorize this IPC.
+        // Language-only already preserved owned visual above. Pause as a new visual
+        // still pushes. Must run before visual coalesce so dropped playing cannot
+        // become the outstanding flush. Durable mirrors already warmed.
+        if Self.shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+            isRequestEligible: requestEligible,
+            freezeSoftBudgetExhausted: contentEnsureFreezeSoftBudgetExhausted,
+            ownedVisual: ownedVisual,
+            candidateVisual: candidate.visualState
+        ) {
+            #if DEBUG
+            let skipSig = Self.stalledContentDiagnosticsSignature(
+                candidateLanguage: candidate.currentLanguage,
+                acceptedLanguage: ownedLanguage,
+                candidateVisual: candidate.visualState,
+                acceptedVisual: ownedVisual
+            )
+            if Self.shouldLogStalledContentDiagnostics(
+                signature: "playing-skip-ineligible|" + skipSig,
+                lastLoggedSignature: lastLoggedStalledContentDiagnosticsSignature
+            ) {
+                lastLoggedStalledContentDiagnosticsSignature = "playing-skip-ineligible|" + skipSig
+                print(
+                    "🔴 Live Activity playing visual push skipped (ineligible freeze; " +
+                    "owned visual=\(ownedVisual); keep paused/playing until presentable " +
+                    "unlock-heal; language-only and pause honesty still update)"
                 )
             }
             #endif
@@ -1482,7 +1633,7 @@ class RadioLiveActivityManager: ObservableObject {
             shouldRearmFromPartialPolicy: partialLanguageRearm,
             freezeSoftBudgetExhausted: contentEnsureFreezeSoftBudgetExhausted,
             partialPostSettledAlreadyScheduled: contentEnsureFreezePartialPostSettledScheduled,
-            isRequestEligible: requestEligibleForQuiet
+            isRequestEligible: requestEligible
         ) {
             playingEnsureQuietPending = false
             playingEnsureQuietSkipLogged = false
@@ -1490,7 +1641,7 @@ class RadioLiveActivityManager: ObservableObject {
                 shouldRearmFromPartialPolicy: partialLanguageRearm,
                 softPushesInFlight: playingEnsureSoftPushesInFlight,
                 partialPostSettledAlreadyScheduled: contentEnsureFreezePartialPostSettledScheduled,
-                isRequestEligible: requestEligibleForQuiet
+                isRequestEligible: requestEligible
             ) {
                 schedulePostSettledPlayingEnsureRetriesIfNeeded()
                 contentEnsureFreezePartialPostSettledScheduled = true
@@ -1516,7 +1667,7 @@ class RadioLiveActivityManager: ObservableObject {
         }
         if partialVisualRearm {
             let allowLanguageQuietClear =
-                requestEligibleForQuiet
+                requestEligible
                 || !contentEnsureFreezeSoftBudgetExhausted
                 || !contentEnsureFreezePartialPostSettledScheduled
             if allowLanguageQuietClear {
@@ -1524,7 +1675,7 @@ class RadioLiveActivityManager: ObservableObject {
                 languageEnsureQuietSkipLogged = false
                 if !languageEnsureSoftPushesInFlight,
                    !candidate.currentLanguage.isEmpty,
-                   !contentEnsureFreezePartialPostSettledScheduled || requestEligibleForQuiet {
+                   !contentEnsureFreezePartialPostSettledScheduled || requestEligible {
                     schedulePostSettledLanguageEnsureRetriesIfNeeded(
                         destination: candidate.currentLanguage
                     )
@@ -2081,42 +2232,99 @@ class RadioLiveActivityManager: ObservableObject {
     }
 
     /// Whether a Connecting (``.prePlay``) ContentState push must skip `Activity.update`
-    /// so a same-stream ineligible resume does not spend the lock-stretch visual apply
-    /// on yellow chrome the surface already replaced with pause or play.
+    /// so an ineligible resume or stream-switch does not spend the lock-stretch visual
+    /// apply on yellow chrome the surface already replaced with pause or play.
     ///
     /// Home widgets skip Connecting paint on gapless same-stream soft-resume
     /// (``PlaybackPlayDecision/shouldApplyConnectingPrePlayChrome``). Live Activity is a
-    /// different surface: this gate uses owned ContentState + request eligibility +
-    /// stream-switch hold, not ``canSoftResumeSameStream``. Home honesty does not heal
-    /// the lock-screen glyph.
+    /// different surface: this gate uses owned ContentState + request eligibility, not
+    /// ``canSoftResumeSameStream`` and not stream-switch hold. Home honesty does not
+    /// heal the lock-screen glyph.
+    ///
+    /// Dest-lag while ineligible is language-only
+    /// (``shouldPreserveOwnedVisualOnIneligibleLanguageMutation``) *before* this gate,
+    /// so dest-lag never presents ``.prePlay`` here. After dest language has landed,
+    /// dest matches owned and this skip still fires for a Connecting candidate over
+    /// committed pause/playing — including during stream-switch hold.
     ///
     /// - Parameters:
     ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``.
     ///     Presentable apply is cheap; Connecting honesty stands while eligible.
-    ///   - isStreamSwitchHoldActive: ``SharedPlayerManager/isStreamSwitchPrePlayHoldActive``.
-    ///     Destination-language switch still publishes Connecting; do not skip.
     ///   - ownedVisual: Owned `content.state.visualState`.
-    ///   - candidateVisual: Visual from ``resolveContentPushVisual(visualState:streamSwitchHold:isConnectingPlayback:)``.
+    ///   - candidateVisual: Visual from ``resolveContentPushVisual(visualState:streamSwitchHold:isConnectingPlayback:)``
+    ///     after language-only preserve (candidate visual equals owned when dest lags).
     /// - Returns: `true` when IPC must skip Connecting (owned paused/playing, ineligible,
-    ///   not stream-switch hold, candidate ``.prePlay``).
+    ///   candidate ``.prePlay``).
     /// - Important: Does **not** invent `.playing` during attach. First start (owned
     ///   already ``.prePlay``) still publishes Connecting — nothing better to keep.
     ///   Pause (``.userPaused``) and authoritative `.playing` candidates still push.
+    ///   Eligible switch still publishes Connecting. Does **not** skip Connecting when
+    ///   candidate visual already equals owned (language-only).
     /// - SeeAlso: ``updateCurrentActivity()``,
+    ///   ``shouldPreserveOwnedVisualOnIneligibleLanguageMutation(isRequestEligible:destinationLanguage:ownedLanguage:ownedVisual:)``,
     ///   ``resolveContentPushVisual(visualState:streamSwitchHold:isConnectingPlayback:)``,
     ///   ``PlaybackPlayDecision/shouldApplyConnectingPrePlayChrome(visualState:isActivePlaybackIntent:canSoftResumeSameStream:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func shouldSuppressConnectingContentPushWhileIneligible(
         isRequestEligible: Bool,
-        isStreamSwitchHoldActive: Bool,
         ownedVisual: PlayerVisualState,
         candidateVisual: PlayerVisualState
     ) -> Bool {
         guard !isRequestEligible else { return false }
-        guard !isStreamSwitchHoldActive else { return false }
         guard candidateVisual == .prePlay else { return false }
         switch ownedVisual {
         case .userPaused, .playing:
+            return true
+        case .prePlay, .cleared, .thermalPaused, .securityLocked:
+            return false
+        }
+    }
+
+    /// Whether a visual-differing `.playing` ContentState push must skip `Activity.update`
+    /// while request is ineligible after freeze, or while the surface already holds a
+    /// committed pause/play glyph.
+    ///
+    /// Play re-arm (``recordOptimisticToggleContent`` / ``rearmPlayingEnsureQuietPending``)
+    /// clears playing quiet and freeze generation so a **later eligible** cycle can heal.
+    /// That re-arm must not by itself spend lock-stretch visual IPC on `.playing` Apple
+    /// drops — language-only still lands; pause as a new visual still lands. Unlock /
+    /// become-active remains the presentable playing-glyph repair.
+    ///
+    /// - Parameters:
+    ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``.
+    ///     Presentable apply is cheap; `.playing` honesty stands while eligible.
+    ///   - freezeSoftBudgetExhausted: ``contentEnsureFreezeSoftBudgetExhausted``. After
+    ///     exhaust, even owned Connecting must not spend `.playing` IPC while ineligible.
+    ///   - ownedVisual: Owned `content.state.visualState` (last committed Apple visual).
+    ///   - candidateVisual: Visual of the ActivityKit candidate after language-only
+    ///     preserve / Connecting skip.
+    /// - Returns: `true` when IPC must skip visual-differing `.playing`.
+    /// - Important: Does **not** skip pause (``.userPaused``) as a new visual. Does
+    ///   **not** skip language-only (candidate visual already equals owned). Does
+    ///   **not** skip dual-axis settle after hold clear while owned is still
+    ///   Connecting and freeze is not exhausted. Does **not** invent `.playing`.
+    /// - SeeAlso: ``updateCurrentActivity()``,
+    ///   ``shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:)``,
+    ///   ``shouldPreserveOwnedVisualOnIneligibleLanguageMutation(isRequestEligible:destinationLanguage:ownedLanguage:ownedVisual:)``,
+    ///   ``recordOptimisticToggleContent(visualState:)``,
+    ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+        isRequestEligible: Bool,
+        freezeSoftBudgetExhausted: Bool,
+        ownedVisual: PlayerVisualState,
+        candidateVisual: PlayerVisualState
+    ) -> Bool {
+        guard !isRequestEligible else { return false }
+        guard candidateVisual == .playing else { return false }
+        guard candidateVisual != ownedVisual else { return false }
+        if freezeSoftBudgetExhausted {
+            return true
+        }
+        switch ownedVisual {
+        case .userPaused, .playing:
+            // Last committed visual is already this pause/play glyph. Toggle re-arm
+            // may have cleared freeze generation; still do not spend `.playing` IPC.
             return true
         case .prePlay, .cleared, .thermalPaused, .securityLocked:
             return false
@@ -3389,15 +3597,18 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// Whether ``updateCurrentActivity(preservingOwnedVisual:)`` may keep the owned glyph.
     ///
-    /// Stream-switch hold still publishes Connecting + destination language. Same-stream
-    /// Connecting after freeze preserves paused/playing (owned glyph is the thing we
-    /// must not overwrite).
+    /// Stream-switch hold still publishes Connecting + destination language on this
+    /// freeze path. Ineligible dest-language over committed pause/playing is a sibling
+    /// (``shouldPreserveOwnedVisualOnIneligibleLanguageMutation``) and may still
+    /// preserve during hold. Same-stream Connecting after freeze preserves paused/playing
+    /// (owned glyph is the thing we must not overwrite).
     ///
     /// - Parameters:
     ///   - keepOwnedVisualAfterFreeze: ``shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``.
     ///   - isStreamSwitchHoldActive: Stream-switch Connecting hold.
     /// - Returns: `true` when the ActivityKit candidate must use owned visual.
-    /// - SeeAlso: ``ContentState/replacingCurrentLanguage(_:)``.
+    /// - SeeAlso: ``shouldPreserveOwnedVisualOnIneligibleLanguageMutation(isRequestEligible:destinationLanguage:ownedLanguage:ownedVisual:)``,
+    ///   ``ContentState/replacingCurrentLanguage(_:)``.
     static func shouldPreserveOwnedVisualOnLanguageOnlyContentPush(
         keepOwnedVisualAfterFreeze: Bool,
         isStreamSwitchHoldActive: Bool
@@ -3405,6 +3616,50 @@ class RadioLiveActivityManager: ObservableObject {
         guard keepOwnedVisualAfterFreeze else { return false }
         guard !isStreamSwitchHoldActive else { return false }
         return true
+    }
+
+    /// Whether an ineligible language mutation must keep the owned glyph instead of
+    /// publishing Connecting over a committed pause or play.
+    ///
+    /// Stream-switch hold still publishes Connecting + destination language when
+    /// request is **eligible** (presentable honesty). While ineligible, bundling dest
+    /// language with Connecting is a visual-differing `Activity.update` that Apple
+    /// drops under lock — dest language is dropped with it. Same-visual language
+    /// updates still land. Language ensure 3/3 uses this candidate (do not spend
+    /// attempts on Connecting+language).
+    ///
+    /// - Parameters:
+    ///   - isRequestEligible: Interactive `Activity.request` eligibility.
+    ///   - destinationLanguage: ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``.
+    ///   - ownedLanguage: Owned `content.state.currentLanguage`.
+    ///   - ownedVisual: Owned `content.state.visualState`.
+    /// - Returns: `true` when the ActivityKit candidate must use
+    ///   ``ContentState/replacingCurrentLanguage(_:)`` (owned visual + dest language).
+    /// - Important: Does **not** invent `.playing`. Does **not** skip Connecting when
+    ///   eligible, when owned visual is still Connecting, or when dest language already
+    ///   matches owned. Dest matching owned is Connecting skip
+    ///   (``shouldSuppressConnectingContentPushWhileIneligible``), including during hold.
+    /// - SeeAlso: ``updateCurrentActivity(preservingOwnedVisual:)``,
+    ///   ``shouldPreserveOwnedVisualOnLanguageOnlyContentPush(keepOwnedVisualAfterFreeze:isStreamSwitchHoldActive:)``,
+    ///   ``shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:)``,
+    ///   ``ensureAuthoritativeLanguageContentIfNeeded(preservingOwnedVisual:)``,
+    ///   ``ContentState/replacingCurrentLanguage(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+        isRequestEligible: Bool,
+        destinationLanguage: String,
+        ownedLanguage: String?,
+        ownedVisual: PlayerVisualState
+    ) -> Bool {
+        guard !isRequestEligible else { return false }
+        guard !destinationLanguage.isEmpty else { return false }
+        if let ownedLanguage, ownedLanguage == destinationLanguage { return false }
+        switch ownedVisual {
+        case .userPaused, .playing:
+            return true
+        case .prePlay, .cleared, .thermalPaused, .securityLocked:
+            return false
+        }
     }
 
     /// Whether both ContentState axes lag while the actor is authoritative `.playing` without hold.
@@ -4032,14 +4287,15 @@ class RadioLiveActivityManager: ObservableObject {
     /// Stream-switch hold / in-flight connect: never advertise `.playing` while the engine is
     /// tearing down or attaching. When hold is clear and the actor is already `.playing`,
     /// Connecting must not win (stale concurrent sampler safety). Hold is returned with
-    /// the visual so ``shouldSuppressConnectingContentPushWhileIneligible`` cannot race a
-    /// destination-language switch that must still publish Connecting.
+    /// the visual so freeze-path language-only preserve still yields to stream-switch
+    /// hold. Connecting skip uses request eligibility + owned/candidate visual, not this
+    /// hold sample — eligible switch still publishes Connecting via ``isInteractiveLiveActivityRequestEligible``.
     ///
     /// - Parameter manager: Main-app ``SharedPlayerManager`` instance.
     /// - Returns: Visual to encode in the next ActivityKit candidate, plus the hold sample
-    ///   used for same-stream ineligible Connecting skip.
+    ///   used for freeze-path language-only preserve (not Connecting skip).
     /// - SeeAlso: ``updateCurrentActivity()``, ``SharedPlayerManager/setPlaying()``,
-    ///   ``shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:isStreamSwitchHoldActive:ownedVisual:candidateVisual:)``,
+    ///   ``shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private static func resolveContentPushVisual(from manager: SharedPlayerManager) async -> (
         visual: PlayerVisualState,
@@ -4112,6 +4368,7 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ``shouldStartAuthoritativeContentEnsureSoftPushLoop(softPushesAlreadyInFlight:)``,
     ///   ``authoritativePlayingContentEnsureMaxAttempts``,
     ///   ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(isRequestEligible:freezeSoftBudgetExhausted:ownedVisual:candidateVisual:)``,
     ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @MainActor
@@ -4155,6 +4412,33 @@ class RadioLiveActivityManager: ObservableObject {
             areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
+        // Ineligible freeze: skip the soft-push loop so inter-attempt delays do not
+        // run for IPC ``updateCurrentActivity()`` would drop. Quiet re-arm from
+        // ``recordOptimisticToggleContent`` still stands for a later eligible cycle.
+        // Language-only and pause honesty go through ``updateCurrentActivity()``.
+        if let ownedVisual,
+           Self.shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+               isRequestEligible: requestEligible,
+               freezeSoftBudgetExhausted: contentEnsureFreezeSoftBudgetExhausted,
+               ownedVisual: ownedVisual,
+               candidateVisual: .playing
+           )
+        {
+            #if DEBUG
+            if Self.shouldLogEnsureQuietSkipOnce(
+                softPushesSuppressedByQuiet: true,
+                alreadyLoggedQuietSkip: playingEnsureQuietSkipLogged
+            ) {
+                playingEnsureQuietSkipLogged = true
+                print(
+                    "🔴 Live Activity playing ensure skipped (ineligible freeze; " +
+                    "owned=\(ownedVisual); keep paused/playing until presentable unlock-heal)"
+                )
+            }
+            #endif
+            return
+        }
+
         guard Self.shouldRunPlayingContentEnsureSoftPushes(
             needsPlayingEnsure: true,
             quietPending: playingEnsureQuietPending,
@@ -5672,6 +5956,23 @@ class RadioLiveActivityManager: ObservableObject {
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
 
+        // Visual-differing `.playing` while ineligible after freeze / over a committed
+        // pause/play glyph: do not burn the dual-axis loop on IPC that
+        // ``updateCurrentActivity()`` would drop. When dest language still lags,
+        // fall through — ineligible language-only preserve keeps owned visual.
+        if visualLags,
+           let ownedVisual = currentActivity?.content.state.visualState,
+           Self.shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+               isRequestEligible: requestEligible,
+               freezeSoftBudgetExhausted: contentEnsureFreezeSoftBudgetExhausted,
+               ownedVisual: ownedVisual,
+               candidateVisual: .playing
+           ),
+           !languageLags
+        {
+            return
+        }
+
         for attempt in 1...Self.authoritativePlayingContentEnsureMaxAttempts {
             guard currentActivity != nil else { return }
 
@@ -5975,7 +6276,13 @@ class RadioLiveActivityManager: ObservableObject {
     ///   Cheap no-op when owned + last language already match destination, or when quiet for
     ///   the same destination while request remains ineligible, or when a soft-push loop is
     ///   already in flight for this axis.
+    /// - Note: Ineligible dest-language over a committed pause/play glyph is language-only
+    ///   inside ``updateCurrentActivity()`` (``shouldPreserveOwnedVisualOnIneligibleLanguageMutation``),
+    ///   so this loop's default ``preservingOwnedVisual: false`` still does not spend
+    ///   attempts on Connecting+language while request is ineligible.
+    ///
     /// - SeeAlso: ``updateCurrentActivity(preservingOwnedVisual:)``, ``shouldEnsureAuthoritativeLanguageContent(destinationLanguage:ownedContentLanguage:lastPushedLanguage:)``,
+    ///   ``shouldPreserveOwnedVisualOnIneligibleLanguageMutation(isRequestEligible:destinationLanguage:ownedLanguage:ownedVisual:)``,
     ///   ``shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``,
     ///   ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``,
     ///   ``shouldStartAuthoritativeContentEnsureSoftPushLoop(softPushesAlreadyInFlight:)``,
@@ -6454,10 +6761,15 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Parameter visualState: Optimistic control visual (`.userPaused` or `.playing`).
     /// - Postcondition: ``lastPushedContent`` reflects `visualState` with preserved metadata
     ///   and language when any source is available; durable toggle mirrors stay the caller's
-    ///   job (already written before this alignment); ``playingEnsureQuietPending`` cleared.
+    ///   job (already written before this alignment); ``playingEnsureQuietPending`` cleared
+    ///   so a **later eligible** cycle can heal. Clearing quiet does **not** authorize
+    ///   ineligible visual-differing `.playing` IPC
+    ///   (``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible``).
     /// - Note: Does not call `Activity.update` — the intent path owns that IPC via
     ///   `Activity.activities` so extension-hosted and main-hosted toggles share one push site.
-    /// - SeeAlso: ``updateCurrentActivity()``, ``recordOptimisticStreamSwitchContent(language:visualState:)``,
+    /// - SeeAlso: ``updateCurrentActivity()``,
+    ///   ``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(isRequestEligible:freezeSoftBudgetExhausted:ownedVisual:candidateVisual:)``,
+    ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
     ///   ``WidgetIntentExecution/performLiveActivityToggle()``,
     ///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
@@ -8442,17 +8754,46 @@ class RadioLiveActivityManager: ObservableObject {
         Self.shouldApplySystemContentUpdateHealAfterObservation(kind: kind)
     }
 
-    /// White-box seam: same-stream ineligible resume must not push Connecting over
-    /// committed paused/playing. Stream-switch hold still Connecting.
+    /// White-box seam: ineligible dest-language over committed pause/play keeps owned visual.
+    func _test_shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+        isRequestEligible: Bool,
+        destinationLanguage: String,
+        ownedLanguage: String?,
+        ownedVisual: PlayerVisualState
+    ) -> Bool {
+        Self.shouldPreserveOwnedVisualOnIneligibleLanguageMutation(
+            isRequestEligible: isRequestEligible,
+            destinationLanguage: destinationLanguage,
+            ownedLanguage: ownedLanguage,
+            ownedVisual: ownedVisual
+        )
+    }
+
+    /// White-box seam: ineligible freeze must not push visual-differing `.playing`.
+    func _test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+        isRequestEligible: Bool,
+        freezeSoftBudgetExhausted: Bool,
+        ownedVisual: PlayerVisualState,
+        candidateVisual: PlayerVisualState
+    ) -> Bool {
+        Self.shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+            isRequestEligible: isRequestEligible,
+            freezeSoftBudgetExhausted: freezeSoftBudgetExhausted,
+            ownedVisual: ownedVisual,
+            candidateVisual: candidateVisual
+        )
+    }
+
+    /// White-box seam: ineligible Connecting must not overwrite committed pause/playing
+    /// (same-stream resume **and** stream-switch hold after dest language has landed).
+    /// Eligible switch still Connecting via ``isInteractiveLiveActivityRequestEligible``.
     func _test_shouldSuppressConnectingContentPushWhileIneligible(
         isRequestEligible: Bool,
-        isStreamSwitchHoldActive: Bool,
         ownedVisual: PlayerVisualState,
         candidateVisual: PlayerVisualState
     ) -> Bool {
         Self.shouldSuppressConnectingContentPushWhileIneligible(
             isRequestEligible: isRequestEligible,
-            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
             ownedVisual: ownedVisual,
             candidateVisual: candidateVisual
         )
