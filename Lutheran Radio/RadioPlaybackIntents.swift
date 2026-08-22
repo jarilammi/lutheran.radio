@@ -256,7 +256,7 @@ struct SwitchToLanguageIntent: AppIntent {
 
 /// Zero-config Siri / Shortcuts / Spotlight discovery for play, pause, and language switch.
 ///
-/// English source phrases below are the extraction keys. Spoken forms for all 29
+/// English source phrases below are the extraction keys. Spoken forms for all 32
 /// app languages live in ``AppShortcuts.xcstrings`` (Apple-required table name).
 ///
 /// - Important: Do not move these utterances into `Localizable.xcstrings`. Siri

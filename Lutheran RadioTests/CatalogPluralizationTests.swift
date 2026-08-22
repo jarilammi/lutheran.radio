@@ -84,6 +84,12 @@ final class CatalogPluralizationTests: XCTestCase {
         XCTAssertEqual(minutesRemaining(12, locale: "it"), "12 minuti rimanenti")
     }
 
+    func testPortugueseSleepTimerUsesSingularAndPlural() {
+        XCTAssertEqual(minutesRemaining(1, locale: "pt"), "1 minuto restante")
+        XCTAssertEqual(minutesRemaining(2, locale: "pt"), "2 minutos restantes")
+        XCTAssertEqual(minutesRemaining(12, locale: "pt"), "12 minutos restantes")
+    }
+
     // MARK: - %lld languages
 
     func testEnglishLanguageCountUsesSingularAndPlural() {
@@ -99,6 +105,11 @@ final class CatalogPluralizationTests: XCTestCase {
     func testItalianLanguageCountUsesSingularAndPlural() {
         XCTAssertEqual(languageCount(1, locale: "it"), "1 lingua")
         XCTAssertEqual(languageCount(5, locale: "it"), "5 lingue")
+    }
+
+    func testPortugueseLanguageCountUsesSingularAndPlural() {
+        XCTAssertEqual(languageCount(1, locale: "pt"), "1 língua")
+        XCTAssertEqual(languageCount(5, locale: "pt"), "5 línguas")
     }
 
     func testPolishLanguageCountUsesOneFewMany() {

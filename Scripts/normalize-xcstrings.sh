@@ -10,7 +10,7 @@
 #   Without normalization this creates huge "reorder" diffs even for tiny changes.
 #
 # Catalogs (never implied — pick exactly one):
-#   Localizable.xcstrings   29-language UI / intent titles / descriptions
+#   Localizable.xcstrings   UI / intent titles / descriptions (README Localizations)
 #                           (default when you pass no argument)
 #   AppShortcuts.xcstrings  Apple-required Siri utterance table
 #                           (Play / Start / Pause / Stop ${applicationName}

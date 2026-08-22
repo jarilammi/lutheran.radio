@@ -147,6 +147,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -674,6 +680,24 @@
             }
           }
         },
+        "pt" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld língua"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld línguas"
+                }
+              }
+            }
+          }
+        },
         "ro" : {
           "variations" : {
             "plural" : {
@@ -996,6 +1020,12 @@
             "value" : "Dotknij dwukrotnie, aby wybrać urządzenie wyjścia audio"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toque duas vezes para selecionar o dispositivo de saída de áudio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1184,6 +1214,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wyświetla informacje o bieżącym programie radiowym"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostra informações sobre o programa de rádio atual"
           }
         },
         "ro" : {
@@ -1376,6 +1412,12 @@
             "value" : "Przełącza odtwarzanie strumienia radiowego"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ativa ou desativa a reprodução do fluxo de rádio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1564,6 +1606,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wybierz, za ile odtwarzanie się zatrzyma"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escolha quanto tempo até a reprodução parar"
           }
         },
         "ro" : {
@@ -1756,6 +1804,12 @@
             "value" : "Reguluje głośność odtwarzania"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajusta o volume de reprodução"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1941,6 +1995,12 @@
           }
         },
         "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "pt" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -2137,6 +2197,12 @@
             "value" : "Logo Lutheran Radio"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logótipo Lutheran Radio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2325,6 +2391,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauza"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausar"
           }
         },
         "ro" : {
@@ -2518,6 +2590,12 @@
             "value" : "Zdjęcie %@"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto de %@"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2706,6 +2784,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwórz"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir"
           }
         },
         "ro" : {
@@ -2898,6 +2982,12 @@
             "value" : "Wyłącznik czasowy"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temporizador de desligamento"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3086,6 +3176,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Głośność"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume"
           }
         },
         "ro" : {
@@ -3615,6 +3711,24 @@
             }
           }
         },
+        "pt" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld por cento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld por cento"
+                }
+              }
+            }
+          }
+        },
         "ro" : {
           "variations" : {
             "plural" : {
@@ -3937,6 +4051,12 @@
             "value" : "Kontynuuj"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuar"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4125,6 +4245,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ponów"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tentar novamente"
           }
         },
         "ro" : {
@@ -4317,6 +4443,12 @@
             "value" : "Zezwalaj na tę sesję"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permitir nesta sessão"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4505,6 +4637,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zawsze zezwalaj"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permitir sempre"
           }
         },
         "ro" : {
@@ -4697,6 +4835,12 @@
             "value" : "Nie teraz"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agora não"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4885,6 +5029,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wyczyść"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpar"
           }
         },
         "ro" : {
@@ -5077,6 +5227,12 @@
             "value" : "Wyczyszczono"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpo"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5265,6 +5421,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spowoduje to zatrzymanie odtwarzania, usunięcie danych widżetu i Live Activity oraz wyczyszczenie ostatniego stanu słuchania z tego urządzenia. Tej czynności nie można cofnąć."
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isto irá parar a reprodução, remover os dados do widget e da Live Activity e apagar o estado de audição recente deste dispositivo. A ação não pode ser anulada."
           }
         },
         "ro" : {
@@ -5457,6 +5619,12 @@
             "value" : "Wyczyść lokalny stan odtwarzania"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpar estado de reprodução local"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5645,6 +5813,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Konfiguracja widżetu Lutheran Radio."
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuração do widget da Lutheran Radio."
           }
         },
         "ro" : {
@@ -5838,6 +6012,12 @@
             "value" : "Błąd połączenia"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erro de ligação"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6029,6 +6209,12 @@
             "value" : "Kontroluj odtwarzanie Lutheran Radio i zobacz bieżącą stację."
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controle a reprodução da Lutheran Radio e veja a estação atual."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6217,6 +6403,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kontroluj odtwarzanie i przełączaj się między strumieniami językowymi."
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controle a reprodução e mude entre fluxos de idioma."
           }
         },
         "ro" : {
@@ -6410,6 +6602,12 @@
             "value" : "Zmniejsz głośność"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diminuir volume"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6601,6 +6799,12 @@
             "value" : "Zwiększ głośność"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aumentar volume"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6789,6 +6993,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwarza"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A reproduzir"
           }
         },
         "ro" : {
@@ -6982,6 +7192,12 @@
             "value" : "Język"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7170,6 +7386,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kod języka"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código de idioma"
           }
         },
         "ro" : {
@@ -7363,6 +7585,12 @@
             "value" : "Angielski"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inglês"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7552,6 +7780,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estoński"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estónio"
           }
         },
         "ro" : {
@@ -7745,6 +7979,12 @@
             "value" : "Fiński"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finlandês"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7934,6 +8174,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Niemiecki"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alemão"
           }
         },
         "ro" : {
@@ -8127,6 +8373,12 @@
             "value" : "Szwedzki"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sueco"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8316,6 +8568,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Transmisja na żywo"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Transmissão em direto"
           }
         },
         "ro" : {
@@ -8509,6 +8767,12 @@
             "value" : "Tylko lokalnie"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apenas local"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8695,6 +8959,12 @@
           }
         },
         "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "pt" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -8891,6 +9161,12 @@
             "value" : "Następny język"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma seguinte"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9080,6 +9356,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwórz/Wstrzymaj"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir/Pausar"
           }
         },
         "ro" : {
@@ -9273,6 +9555,12 @@
             "value" : "Odtwarzanie"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reprodução"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9462,6 +9750,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poprzedni język"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma anterior"
           }
         },
         "ro" : {
@@ -9654,6 +9948,12 @@
             "value" : "Aplikacja używa danych mobilnych, co może generować koszty w zależności od Twojego planu taryfowego."
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A app está a usar dados móveis, o que pode gerar custos consoante o seu plano de dados."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9842,6 +10142,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Użycie danych mobilnych"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilização de dados móveis"
           }
         },
         "ro" : {
@@ -10034,6 +10340,12 @@
             "value" : "Brak informacji o utworze"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sem informação da faixa"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10222,6 +10534,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Teraz gra"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A reproduzir agora"
           }
         },
         "ro" : {
@@ -10414,6 +10732,12 @@
             "value" : "Dobrze"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10603,6 +10927,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Najpierw otwórz aplikację"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra primeiro a app"
           }
         },
         "ro" : {
@@ -10797,6 +11127,12 @@
             "value" : "Wstrzymaj Lutheran Radio"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausar Lutheran Radio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10988,6 +11324,12 @@
             "value" : "Wstrzymaj odtwarzanie Lutheran Radio."
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausar a reprodução da Lutheran Radio."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11176,6 +11518,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwórz"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir"
           }
         },
         "ro" : {
@@ -11369,6 +11717,12 @@
             "value" : "Odtwórz Lutheran Radio"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir Lutheran Radio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11557,6 +11911,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwarzaj lub zatrzymaj Lutheran Radio."
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir ou pausar Lutheran Radio."
           }
         },
         "ro" : {
@@ -11750,6 +12110,12 @@
             "value" : "Odtwórz lub wznów Lutheran Radio."
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir ou retomar Lutheran Radio."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11938,6 +12304,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nie można rozpocząć odtwarzania z powodu niepowodzenia weryfikacji bezpieczeństwa. Proszę sprawdzić połączenie internetowe i upewnić się, że aplikacja jest zaktualizowana. Jeśli problem nadal występuje, uruchom ponownie aplikację i spróbuj jeszcze raz."
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível iniciar a reprodução devido a uma falha na validação de segurança. Verifique a sua ligação à Internet e certifique-se de que a app está atualizada. Se o problema continuar, reinicie a app e tente novamente."
           }
         },
         "ro" : {
@@ -12130,6 +12502,12 @@
             "value" : "Weryfikacja zabezpieczeń nie powiodła się"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falha na validação de segurança"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12319,6 +12697,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wybierz %@"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selecionar %@"
           }
         },
         "ro" : {
@@ -12848,6 +13232,24 @@
             }
           }
         },
+        "pt" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuto restante"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutos restantes"
+                }
+              }
+            }
+          }
+        },
         "ro" : {
           "variations" : {
             "plural" : {
@@ -13170,6 +13572,12 @@
             "value" : "Anuluj wyłącznik"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelar temporizador"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13358,6 +13766,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minut"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minutos"
           }
         },
         "ro" : {
@@ -13550,6 +13964,12 @@
             "value" : "30 minut"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 minutos"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13738,6 +14158,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 minut"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 minutos"
           }
         },
         "ro" : {
@@ -13930,6 +14356,12 @@
             "value" : "60 minut"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 minutos"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14118,6 +14550,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wyłącznik czasowy"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temporizador de desligamento"
           }
         },
         "ro" : {
@@ -14310,6 +14748,12 @@
             "value" : "Serwery streamingowe odnowiły swoje certyfikaty SSL. Aplikacja działa w trybie kompatybilności. Prosimy o aktualizację do najnowszej wersji, gdy będzie dostępna, dla optymalnego bezpieczeństwa."
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os servidores de transmissão renovaram os certificados SSL. A app está a funcionar em modo de compatibilidade. Atualize para a versão mais recente quando estiver disponível para uma segurança ótima."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14498,6 +14942,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Certyfikat zaktualizowany"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certificado atualizado"
           }
         },
         "ro" : {
@@ -14691,6 +15141,12 @@
             "value" : "Rozpocznij lub wznów odtwarzanie Lutheran Radio."
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar ou retomar a reprodução da Lutheran Radio."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14879,6 +15335,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rozpocznij lub zatrzymaj odtwarzanie Lutheran Radio."
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar ou parar a reprodução da Lutheran Radio."
           }
         },
         "ro" : {
@@ -15071,6 +15533,12 @@
             "value" : "Bufor"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buffer"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15259,6 +15727,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Łączy"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ligar"
           }
         },
         "ro" : {
@@ -15451,6 +15925,12 @@
             "value" : "Niepowodzenie"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erro"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15641,6 +16121,12 @@
             "value" : "Offline"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sem ligação"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15829,6 +16315,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauza"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausa"
           }
         },
         "ro" : {
@@ -16022,6 +16514,12 @@
             "value" : "Wstrzymane – Trwa połączenie"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Em pausa – Chamada ativa"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16211,6 +16709,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwarzanie nie powiodło się: %@"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falha na reprodução: %@"
           }
         },
         "ro" : {
@@ -16404,6 +16908,12 @@
             "value" : "Gra"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16592,6 +17102,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bezpieczeństwo"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Segurança"
           }
         },
         "ro" : {
@@ -16784,6 +17300,12 @@
             "value" : "Certyfikat SSL odnowiony - zaktualizuj aplikację wkrótce"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certificado SSL renovado – atualize a app em breve"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16972,6 +17494,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zatrzymano"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parado"
           }
         },
         "ro" : {
@@ -17164,6 +17692,12 @@
             "value" : "Wył"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desligado"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17352,6 +17886,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Za gorące"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivo quente"
           }
         },
         "ro" : {
@@ -17544,6 +18084,12 @@
             "value" : "Emisja jest tymczasowo niedostępna. Spróbuj ponownie później."
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A emissão não está temporariamente disponível. Tente novamente mais tarde."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17732,6 +18278,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Emisja niedostępna"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Emissão indisponível"
           }
         },
         "ro" : {
@@ -17925,6 +18477,12 @@
             "value" : "Przełącz strumień językowy Lutheran Radio."
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mudar o fluxo de idioma da Lutheran Radio."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18113,6 +18671,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Przełącz strumień"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mudar fluxo"
           }
         },
         "ro" : {
@@ -18306,6 +18870,12 @@
             "value" : "Przełącz na %@"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mudar para %@"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18494,6 +19064,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Przełącz na inny strumień językowy z Aktywności na żywo."
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mudar para outro fluxo de idioma a partir da Live Activity."
           }
         },
         "ro" : {
@@ -18686,6 +19262,12 @@
             "value" : "Przełącz na inny strumień językowy."
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mudar para outro fluxo de idioma."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18875,6 +19457,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Przełączono na %@"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mudado para %@"
           }
         },
         "ro" : {
@@ -19069,6 +19657,12 @@
             "value" : "Stuknij, aby otworzyć"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toque para abrir"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19258,6 +19852,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Przełącz Lutheran Radio"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ativar/desativar Lutheran Radio"
           }
         },
         "ro" : {
@@ -19450,6 +20050,12 @@
             "value" : "Przełącz odtwarzanie Lutheran Radio"
           }
         },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ativar/desativar a reprodução da Lutheran Radio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19638,6 +20244,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Przełącz odtwarzanie/pauzę z Aktywności na żywo."
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ativar/desativar reprodução/pausa a partir da Live Activity."
           }
         },
         "ro" : {
@@ -19829,6 +20441,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Przełącz odtwarzanie"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ativar/desativar reprodução"
           }
         },
         "ro" : {
@@ -20358,6 +20976,24 @@
             }
           }
         },
+        "pt" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume definido para %lld por cento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume definido para %lld por cento"
+                }
+              }
+            }
+          }
+        },
         "ro" : {
           "variations" : {
             "plural" : {
@@ -20678,6 +21314,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Konfiguracja widżetu"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuração do widget"
           }
         },
         "ro" : {

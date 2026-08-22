@@ -8,8 +8,8 @@
 //
 //  Invariant: every phrase in `LutheranRadioShortcuts` is extracted as
 //  `Play ${applicationName}` (etc.) and `AppShortcuts.xcstrings` ships a
-//  translated value for every UI language in README Localizations (the 29
-//  stream-language codes plus French and Italian). Every value keeps
+//  translated value for every UI language in README Localizations (the 32
+//  language codes). Every value keeps
 //  `${applicationName}`; parameterized phrases also keep `${language}`.
 //  Xcode binds only the first phrase of each `AppShortcut` initializer, so
 //  the provider must register one shortcut per utterance (no stale keys).
@@ -27,13 +27,12 @@ import XCTest
 
 final class AppShortcutsLocalizationTests: XCTestCase {
 
-    /// UI catalog languages: README Localizations / Localizable + AppShortcuts coverage.
-    /// Stream catalog remains the 29 codes in CODING_AGENT.md; `knownRegions` also lists
-    /// `pt` whose catalog translations are not in this change.
+    /// UI catalog languages: README Localizations / Localizable + AppShortcuts coverage
+    /// (the 32 language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "hr", "hu", "is", "it", "kl", "lt", "lv", "nb", "nl",
-        "nn", "pl", "ro", "ru", "se", "sk", "sl", "sq", "sv",
+        "nn", "pl", "pt", "ro", "ru", "se", "sk", "sl", "sq", "sv",
     ]
 
     private let requiredPhraseKeys: [String] = [
@@ -187,6 +186,25 @@ final class AppShortcutsLocalizationTests: XCTestCase {
         XCTAssertEqual(
             compiledPhrase("Switch ${applicationName} to ${language}", language: "it"),
             "Passa ${applicationName} a ${language}"
+        )
+    }
+
+    func testCompiledPortuguesePlayAndPausePhrasesAreNative() {
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName}", language: "pt"),
+            "Reproduzir ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Pause ${applicationName}", language: "pt"),
+            "Pausar ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName} in ${language}", language: "pt"),
+            "Reproduzir ${applicationName} em ${language}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Switch ${applicationName} to ${language}", language: "pt"),
+            "Mudar ${applicationName} para ${language}"
         )
     }
 
