@@ -53,6 +53,9 @@ extension WidgetRefreshManager {
         ///
         /// Covers immediate event-path `.prePlay` storms and sticky pause/lock duplicates.
         case coalescedIdenticalNonPlaying
+        /// Identical sticky-pause matched ``inFlightIdenticalPauseWake`` (visual + language + epoch)
+        /// while the first wake is still awaiting execute-time discard / WidgetCenter.
+        case coalescedInFlightIdenticalPause
         /// Execute-time home wake discarded on the session-lag leg (soft-resume reverse race, etc.).
         case discardedStaleDebouncedRegress
         /// Execute-time home wake discarded on the memory-lag leg (residual sticky, mid-hold
@@ -301,8 +304,9 @@ extension WidgetRefreshManager {
     /// Resets debounce, coalesce, and last-known refresh state for timing-isolated unit tests.
     ///
     /// Cancels pending work items and clears ``lastRefreshTime`` / ``lastKnownState`` /
-    /// ``lastPaintEpochAtSuccessfulReload`` so successive tests do not inherit coalesce
-    /// windows or a stale paint-epoch token from prior drives.
+    /// ``lastPaintEpochAtSuccessfulReload`` / ``inFlightIdenticalPauseWake`` so successive
+    /// tests do not inherit coalesce windows or a stale paint-epoch / in-flight token
+    /// from prior drives.
     ///
     /// - SeeAlso: ``_test_setBypassUITestModeForDebounceObservation(_:)``,
     ///   ``WidgetRefreshManagerEventTests``.
@@ -312,6 +316,7 @@ extension WidgetRefreshManager {
         lastRefreshTime = nil
         lastKnownState = nil
         lastPaintEpochAtSuccessfulReload = 0
+        inFlightIdenticalPauseWake = nil
         refreshCount = 0
         adaptiveInterval = 0.5
     }
