@@ -70,6 +70,12 @@
             "value" : "Set ${applicationName} á pause"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mets ${applicationName} en pause"
+          }
+        },
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
@@ -247,6 +253,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spæl ${applicationName}"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joue ${applicationName}"
           }
         },
         "gag" : {
@@ -428,6 +440,12 @@
             "value" : "Spæl ${applicationName} á ${language}"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joue ${applicationName} en ${language}"
+          }
+        },
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
@@ -605,6 +623,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byrja ${applicationName}"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lance ${applicationName}"
           }
         },
         "gag" : {
@@ -786,6 +810,12 @@
             "value" : "Steðga ${applicationName}"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrête ${applicationName}"
+          }
+        },
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
@@ -963,6 +993,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skift ${applicationName} til ${language}"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passe ${applicationName} en ${language}"
           }
         },
         "gag" : {
