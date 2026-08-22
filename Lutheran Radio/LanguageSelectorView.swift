@@ -23,7 +23,9 @@ import SwiftUI
 /// Pure idiomatic SwiftUI view for the horizontal flag selector row ("tuner").
 ///
 /// Renders the available streams as emoji flags using `DirectStreamingPlayer.availableStreams`
-/// (the single source of truth for the 21-language set and their visual order).
+/// (the single source of truth for the five playable streams — en, de, fi, sv, et — and
+/// their visual order). UI localization is the 32-language README Localizations table
+/// and is not this row.
 ///
 /// Receives only the current selected index (as a plain `let`) and a selection closure.
 /// The stream list is read directly from the static `DirectStreamingPlayer.availableStreams`
@@ -43,8 +45,8 @@ import SwiftUI
 /// / Live Activity surfaces.
 ///
 /// - SeeAlso: ``PlayerViewModel``, `RadioPlayerCoordinator.handleLanguageSelection(at:)`,
-///   `DirectStreamingPlayer.availableStreams`, `RadioPlayerView`,
-///   CODING_AGENT.md (narrow inputs for separate View types),
+///   `DirectStreamingPlayer.availableStreams`, `RadioPlayerView`, README.md Localizations,
+///   CODING_AGENT.md (Localization; narrow inputs for separate View types),
 ///   PlayerViewModel.swift (Main Player Presentation Dataflow).
 struct LanguageSelectorView: View {
     let selectedStreamIndex: Int

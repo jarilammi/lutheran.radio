@@ -6,7 +6,7 @@
 
 Listen to Lutheran Radio on iOS.
 
-Siri Shortcuts and voice control are supported out of the box ("Hey Siri, play Lutheran Radio", "Play Lutheran Radio in Finnish", "Pause Lutheran Radio", etc.). Invocation phrases are localized for all 29 app languages in `AppShortcuts.xcstrings` (Apple-required table; not `Localizable.xcstrings`) so a Finnish or German Siri user can speak a native phrase. The shortcuts appear automatically in the Shortcuts app and Spotlight with zero configuration.
+Siri Shortcuts and voice control are supported out of the box ("Hey Siri, play Lutheran Radio", "Play Lutheran Radio in Finnish", "Pause Lutheran Radio", etc.). Invocation phrases are localized for every UI language in `AppShortcuts.xcstrings` (Apple-required table; not `Localizable.xcstrings`) so a Finnish, German, French, Italian, or Portuguese Siri user can speak a native phrase. The shortcuts appear automatically in the Shortcuts app and Spotlight with zero configuration.
 
 ## Contents
 
@@ -40,11 +40,13 @@ The app is fully localized in the following languages:
 - Estonian (et)
 - Faroese (fo)
 - Finnish (fi)
+- French (fr)
 - Gagauz (gag)
 - German (de)
 - Greek (el)
 - Hungarian (hu)
 - Icelandic (is)
+- Italian (it)
 - Kalaallisut (kl)
 - Latvian (lv)
 - Lithuanian (lt)
@@ -52,6 +54,7 @@ The app is fully localized in the following languages:
 - Norwegian Bokmål (nb)
 - Norwegian Nynorsk (nn)
 - Polish (pl)
+- Portuguese (pt)
 - Romanian (ro)
 - Russian (ru)
 - Slovak (sk)

@@ -37,15 +37,19 @@ public func displayFlag(for code: String) -> String {
 /// Localized display name for a stream language code (Live Activity alt buttons and previews).
 ///
 /// Prefer the stream catalog name when the caller supplies ``preferredStreamLanguage``
-/// (full 21-language list with locale-correct labels). Otherwise uses curated
-/// `Localizable` keys for en/de/fi/sv/et, then `code.capitalized`.
+/// (locale-correct labels from the five playable streams). Otherwise uses curated
+/// `Localizable` keys for en/de/fi/sv/et (translated in all 32 UI languages), then
+/// `code.capitalized`.
 ///
 /// - Parameters:
 ///   - code: BCP-47-style language code (e.g. `"fi"`).
 ///   - preferredStreamLanguage: Authoritative language label from the app stream catalog
 ///     when available; pass `nil` for pure curated/capitalized resolution only.
 /// - Returns: Non-empty display name suitable for UI.
-/// - SeeAlso: ``displayFlag(for:)``, docs/Widget-Functionality-Roadmap.md.
+/// - Important: Playback catalog membership is five streams; UI localization is the
+///   32-language README Localizations table. Do not treat this helper as a 32-stream list.
+/// - SeeAlso: ``displayFlag(for:)``, README.md Localizations, CODING_AGENT.md (Localization),
+///   docs/Widget-Functionality-Roadmap.md.
 public func displayLanguageName(
     for code: String,
     preferredStreamLanguage: String? = nil
