@@ -99,6 +99,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -489,6 +495,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld tungumál"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld lingua"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld lingue"
                 }
               }
             }
@@ -924,6 +948,12 @@
             "value" : "Tvöfalt snerta til að velja hljóðúttakstæki"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tocca due volte per selezionare il dispositivo di uscita audio"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1106,6 +1136,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sýnir upplýsingar um núverandi útvarpsþátt"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostra informazioni sul programma radiofonico in corso"
           }
         },
         "kl" : {
@@ -1292,6 +1328,12 @@
             "value" : "Skiptir á milli spilunar og pásu á útvarpsstreyminu"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva o disattiva la riproduzione del flusso radio"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1474,6 +1516,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veldu hversu lengi þar til spilun stöðvast"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli dopo quanto tempo interrompere la riproduzione"
           }
         },
         "kl" : {
@@ -1660,6 +1708,12 @@
             "value" : "Stillir spilunarhljóðstyrkinn"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regola il volume di riproduzione"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1839,6 +1893,12 @@
           }
         },
         "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -2029,6 +2089,12 @@
             "value" : "Merki Lutheran Radio"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logo Lutheran Radio"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2211,6 +2277,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hlé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausa"
           }
         },
         "kl" : {
@@ -2398,6 +2470,12 @@
             "value" : "Mynd af %@"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto di %@"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2580,6 +2658,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spila"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproduci"
           }
         },
         "kl" : {
@@ -2766,6 +2850,12 @@
             "value" : "Svefntími"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timer di spegnimento"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2948,6 +3038,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hljóðstyrkur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume"
           }
         },
         "kl" : {
@@ -3340,6 +3436,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld prósent"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld percento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld percento"
                 }
               }
             }
@@ -3775,6 +3889,12 @@
             "value" : "Halda áfram"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continua"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3957,6 +4077,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aftur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riprova"
           }
         },
         "kl" : {
@@ -4143,6 +4269,12 @@
             "value" : "Leyfa fyrir þessa setu"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Consenti per questa sessione"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4325,6 +4457,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Leyfa alltaf"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Consenti sempre"
           }
         },
         "kl" : {
@@ -4511,6 +4649,12 @@
             "value" : "Ekki núna"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non ora"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4693,6 +4837,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hreinsa"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancella"
           }
         },
         "kl" : {
@@ -4879,6 +5029,12 @@
             "value" : "Hreinsað"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancellato"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5061,6 +5217,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Þetta mun stöðva afspilun, fjarlægja græju- og Live Activity gögn og hreinsa nýlega hlustunarstöðu af þessu tæki. Aðgerðin er ekki afturkræf."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo interromperà la riproduzione, rimuoverà i dati del widget e dell’Attività in tempo reale e cancellerà lo stato di ascolto recente da questo dispositivo. L’azione non può essere annullata."
           }
         },
         "kl" : {
@@ -5247,6 +5409,12 @@
             "value" : "Hreinsa staðbundinn afspilunarstöðu"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancella lo stato di riproduzione locale"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5429,6 +5597,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stillingar fyrir Lutheran Radio græju."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configurazione del widget Lutheran Radio."
           }
         },
         "kl" : {
@@ -5616,6 +5790,12 @@
             "value" : "Tengingarvilla"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Errore di connessione"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5801,6 +5981,12 @@
             "value" : "Stýrðu spilun Lutheran Radio og sjáðu núverandi stöð."
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controlla la riproduzione di Lutheran Radio e vedi la stazione attuale."
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5983,6 +6169,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stýrðu spilun og skiptu á milli tungumálastrauma."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controlla la riproduzione e passa da un flusso linguistico all’altro."
           }
         },
         "kl" : {
@@ -6170,6 +6362,12 @@
             "value" : "Lækka hljóðstyrk"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riduci il volume"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6355,6 +6553,12 @@
             "value" : "Hækka hljóðstyrk"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aumenta il volume"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6537,6 +6741,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Er að spila"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In riproduzione"
           }
         },
         "kl" : {
@@ -6724,6 +6934,12 @@
             "value" : "Tungumál"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lingua"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6906,6 +7122,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tungumálskóði"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codice lingua"
           }
         },
         "kl" : {
@@ -7093,6 +7315,12 @@
             "value" : "Enska"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inglese"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7276,6 +7504,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Eistneska"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estone"
           }
         },
         "kl" : {
@@ -7463,6 +7697,12 @@
             "value" : "Finnska"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finlandese"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7646,6 +7886,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Þýska"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tedesco"
           }
         },
         "kl" : {
@@ -7833,6 +8079,12 @@
             "value" : "Sænska"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svedese"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8016,6 +8268,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Bein útsending"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Diretta"
           }
         },
         "kl" : {
@@ -8203,6 +8461,12 @@
             "value" : "Aðeins staðbundið"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo locale"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8383,6 +8647,12 @@
           }
         },
         "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "it" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -8573,6 +8843,12 @@
             "value" : "Næsta tungumál"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lingua successiva"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8756,6 +9032,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spila/Pása"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproduci/Pausa"
           }
         },
         "kl" : {
@@ -8943,6 +9225,12 @@
             "value" : "Spilun"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproduzione"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9126,6 +9414,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fyrra tungumál"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lingua precedente"
           }
         },
         "kl" : {
@@ -9312,6 +9606,12 @@
             "value" : "Forritið notar farsímagögn, sem getur valdið kostnaði eftir gagnaplaninu þínu."
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’app sta usando i dati cellulare, il che può comportare costi in base al tuo piano dati."
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9494,6 +9794,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Farsímagagna notkun"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uso dei dati cellulare"
           }
         },
         "kl" : {
@@ -9680,6 +9986,12 @@
             "value" : "Engar upplýsingar um lag"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuna informazione sul brano"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9862,6 +10174,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spilar núna"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ora in riproduzione"
           }
         },
         "kl" : {
@@ -10048,6 +10366,12 @@
             "value" : "Í lagi"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10231,6 +10555,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opnaðu forritið fyrst"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri prima l’app"
           }
         },
         "kl" : {
@@ -10419,6 +10749,12 @@
             "value" : "Gera hlé á Lutheran Radio"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mettere in pausa Lutheran Radio"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10604,6 +10940,12 @@
             "value" : "Gera hlé á afspilun Lutheran Radio."
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mettere in pausa la riproduzione di Lutheran Radio."
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10786,6 +11128,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spila"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproduci"
           }
         },
         "kl" : {
@@ -10973,6 +11321,12 @@
             "value" : "Spila Lutheran Radio"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproduci Lutheran Radio"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11155,6 +11509,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spilaðu eða settu Lutheran Radio á bið."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riprodurre o mettere in pausa Lutheran Radio."
           }
         },
         "kl" : {
@@ -11342,6 +11702,12 @@
             "value" : "Spila eða halda áfram með Lutheran Radio."
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riprodurre o riprendere Lutheran Radio."
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11524,6 +11890,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ekki er hægt að hefja spilun vegna bilunar í öryggisstaðfestingu. Vinsamlegast athugaðu internettenginguna þína og gakktu úr skugga um að appið sé uppfært. Ef vandamálið heldur áfram, endurræstu appið og reyndu aftur."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile avviare la riproduzione a causa di un errore di convalida della sicurezza. Controlla la connessione Internet e assicurati che l’app sia aggiornata. Se il problema persiste, riavvia l’app e riprova."
           }
         },
         "kl" : {
@@ -11710,6 +12082,12 @@
             "value" : "Öryggisstaðfesting mistókst"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Convalida della sicurezza non riuscita"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11893,6 +12271,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veldu %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seleziona %@"
           }
         },
         "kl" : {
@@ -12285,6 +12669,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld mínútur eftir"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuto rimanente"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuti rimanenti"
                 }
               }
             }
@@ -12720,6 +13122,12 @@
             "value" : "Hætta við tíma"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annulla timer"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12902,6 +13310,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 mínútur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minuti"
           }
         },
         "kl" : {
@@ -13088,6 +13502,12 @@
             "value" : "30 mínútur"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 minuti"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13270,6 +13690,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 mínútur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 minuti"
           }
         },
         "kl" : {
@@ -13456,6 +13882,12 @@
             "value" : "60 mínútur"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 minuti"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13638,6 +14070,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Svefntími"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timer di spegnimento"
           }
         },
         "kl" : {
@@ -13824,6 +14262,12 @@
             "value" : "Streymisþjónarnir hafa endurnýjað SSL vottorð sín. Forritið keyrir í samhæfnisstillingu. Vinsamlegast uppfærðu í nýjustu útgáfu þegar hún er tiltæk fyrir besta öryggi."
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I server di streaming hanno rinnovato i certificati SSL. L’app funziona in modalità di compatibilità. Aggiorna all’ultima versione non appena disponibile per una sicurezza ottimale."
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14006,6 +14450,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vottorð uppfært"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certificato aggiornato"
           }
         },
         "kl" : {
@@ -14193,6 +14643,12 @@
             "value" : "Byrjaðu eða haltu áfram spilun Lutheran Radio."
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avviare o riprendere la riproduzione di Lutheran Radio."
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14375,6 +14831,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byrjaðu eða stöðvaðu spilun Lutheran Radio."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avviare o interrompere la riproduzione di Lutheran Radio."
           }
         },
         "kl" : {
@@ -14561,6 +15023,12 @@
             "value" : "Biðminni"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buffer"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14743,6 +15211,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tengist"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connessione"
           }
         },
         "kl" : {
@@ -14929,6 +15403,12 @@
             "value" : "Mistókst"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Errore"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15113,6 +15593,12 @@
             "value" : "Ótengt"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15295,6 +15781,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bið"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausa"
           }
         },
         "kl" : {
@@ -15482,6 +15974,12 @@
             "value" : "Í bið – Símtal virkt"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In pausa – Chiamata in corso"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15665,6 +16163,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spilun mistókst: %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproduzione non riuscita: %@"
           }
         },
         "kl" : {
@@ -15852,6 +16356,12 @@
             "value" : "Spilar"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproduzione"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16034,6 +16544,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Öryggi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sicurezza"
           }
         },
         "kl" : {
@@ -16220,6 +16736,12 @@
             "value" : "SSL vottorð endurnýjað - uppfærðu forrit bráðum"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certificato SSL rinnovato – aggiorna l’app a breve"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16402,6 +16924,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stöðvað"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermato"
           }
         },
         "kl" : {
@@ -16588,6 +17116,12 @@
             "value" : "Úti"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spento"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16770,6 +17304,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tæki heitt"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivo caldo"
           }
         },
         "kl" : {
@@ -16956,6 +17496,12 @@
             "value" : "Útsendingin er tímabundið ótiltæk. Reyndu aftur síðar."
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La trasmissione non è temporaneamente disponibile. Riprova più tardi."
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17138,6 +17684,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Útsending ótiltæk"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trasmissione non disponibile"
           }
         },
         "kl" : {
@@ -17325,6 +17877,12 @@
             "value" : "Skipta um tungumál streymi Lutheran Radio."
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiare il flusso linguistico di Lutheran Radio."
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17507,6 +18065,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skipta um straum"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambia flusso"
           }
         },
         "kl" : {
@@ -17694,6 +18258,12 @@
             "value" : "Skipta yfir í %@"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passa a %@"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17876,6 +18446,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skipta yfir í annan tungumálastraum úr Live-virkni."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passa a un altro flusso linguistico dall’Attività in tempo reale."
           }
         },
         "kl" : {
@@ -18062,6 +18638,12 @@
             "value" : "Skipta yfir í annan tungumálastraum."
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passa a un altro flusso linguistico."
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18245,6 +18827,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skipt yfir í %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passato a %@"
           }
         },
         "kl" : {
@@ -18433,6 +19021,12 @@
             "value" : "Pikka til að opna"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tocca per aprire"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18616,6 +19210,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skipta um Lutheran Radio"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva/disattiva Lutheran Radio"
           }
         },
         "kl" : {
@@ -18802,6 +19402,12 @@
             "value" : "Skipta um Lutheran Radio spilun"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva/disattiva la riproduzione di Lutheran Radio"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18984,6 +19590,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skipta á milli spilunar og pásu úr Live-virkni."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva/disattiva riproduzione/pausa dall’Attività in tempo reale."
           }
         },
         "kl" : {
@@ -19169,6 +19781,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skipta spilun"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva/disattiva riproduzione"
           }
         },
         "kl" : {
@@ -19561,6 +20179,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "Hljóðstyrkur stilltur á %lld prósent"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume impostato al %lld percento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume impostato al %lld percento"
                 }
               }
             }
@@ -19994,6 +20630,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Græjustillingar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configurazione del widget"
           }
         },
         "kl" : {

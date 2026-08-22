@@ -23,10 +23,10 @@ import XCTest
 final class PlaybackKeyboardMenuTests: XCTestCase {
 
     /// UI catalog languages: README Localizations / Localizable coverage (29 stream
-    /// codes plus French). Italian and Portuguese remain in `knownRegions` only.
+    /// codes plus French and Italian). Portuguese remains in `knownRegions` only.
     private let supportedLanguages: [String] = [
         "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
-        "fo", "fr", "gag", "hr", "hu", "is", "kl", "lt", "lv", "nb", "nl",
+        "fo", "fr", "gag", "hr", "hu", "is", "it", "kl", "lt", "lv", "nb", "nl",
         "nn", "pl", "ro", "ru", "se", "sk", "sl", "sq", "sv",
     ]
 

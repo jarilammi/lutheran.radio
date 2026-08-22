@@ -100,6 +100,12 @@
             "value" : "Gera hlé á ${applicationName}"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metti in pausa ${applicationName}"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -283,6 +289,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spila ${applicationName}"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproduci ${applicationName}"
           }
         },
         "kl" : {
@@ -470,6 +482,12 @@
             "value" : "Spila ${applicationName} á ${language}"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproduci ${applicationName} in ${language}"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -653,6 +671,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byrja ${applicationName}"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avvia ${applicationName}"
           }
         },
         "kl" : {
@@ -840,6 +864,12 @@
             "value" : "Stöðva ${applicationName}"
           }
         },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ferma ${applicationName}"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1023,6 +1053,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skipta ${applicationName} yfir í ${language}"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passa ${applicationName} a ${language}"
           }
         },
         "kl" : {
