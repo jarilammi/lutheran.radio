@@ -119,6 +119,41 @@
   <text x="510" y="460" font-family="Arial" font-size="10" text-anchor="middle">Slovak</text>
   <text x="510" y="472" font-family="Arial" font-size="9" text-anchor="middle" fill="#ddd">slovenčina</text>
 
+  <!-- Czech - West Slavic, next to Slovak / Polish -->
+  <ellipse cx="455" cy="500" rx="32" ry="20" fill="#48c9b0" opacity="0.8"/>
+  <text x="455" y="495" font-family="Arial" font-size="10" text-anchor="middle">Czech</text>
+  <text x="455" y="507" font-family="Arial" font-size="9" text-anchor="middle" fill="#ddd">čeština</text>
+
+  <!-- Hungarian - Ugric, south-east of Slovak -->
+  <ellipse cx="580" cy="515" rx="38" ry="22" fill="#d35400" opacity="0.8"/>
+  <text x="580" y="510" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Hungarian</text>
+  <text x="580" y="522" font-family="Arial" font-size="9" text-anchor="middle" fill="#fdebd0">magyar</text>
+
+  <!-- Portuguese - Romance, Iberian west of French -->
+  <ellipse cx="145" cy="520" rx="42" ry="22" fill="#a569bd" opacity="0.8"/>
+  <text x="145" y="515" font-family="Arial" font-size="10" text-anchor="middle">Portuguese</text>
+  <text x="145" y="527" font-family="Arial" font-size="9" text-anchor="middle" fill="#ddd">português</text>
+
+  <!-- Spanish - Romance, south of Portuguese / west of French -->
+  <ellipse cx="200" cy="560" rx="36" ry="20" fill="#8e44ad" opacity="0.8"/>
+  <text x="200" y="555" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Spanish</text>
+  <text x="200" y="567" font-family="Arial" font-size="9" text-anchor="middle" fill="#f5eef8">español</text>
+
+  <!-- Italian - Romance, south-east of French -->
+  <ellipse cx="375" cy="530" rx="36" ry="22" fill="#af7ac5" opacity="0.8"/>
+  <text x="375" y="525" font-family="Arial" font-size="10" text-anchor="middle">Italian</text>
+  <text x="375" y="537" font-family="Arial" font-size="9" text-anchor="middle" fill="#5b2c6f">italiano</text>
+
+  <!-- Bulgarian - South Slavic, east of Hungarian -->
+  <ellipse cx="670" cy="540" rx="38" ry="22" fill="#148f77" opacity="0.8"/>
+  <text x="670" y="535" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Bulgarian</text>
+  <text x="670" y="547" font-family="Arial" font-size="9" text-anchor="middle" fill="#d5f5e3">български</text>
+
+  <!-- Greek - Hellenic, south of Bulgarian -->
+  <ellipse cx="640" cy="575" rx="34" ry="20" fill="#f4d03f" opacity="0.85"/>
+  <text x="640" y="570" font-family="Arial" font-size="10" text-anchor="middle">Greek</text>
+  <text x="640" y="582" font-family="Arial" font-size="9" text-anchor="middle" fill="#7d6608">ελληνικά</text>
+
   <!-- Optional connecting lines (to show relationships) -->
   <g stroke="#ccd3e0" stroke-width="1" opacity="0.35">
     <!-- English connecting to German area -->
@@ -129,5 +164,17 @@
     <path d="M290 440 L340 430" fill="none"/>
     <!-- Slovak connecting to Polish area -->
     <path d="M510 465 L480 440" fill="none"/>
+    <!-- Czech connecting to Slovak -->
+    <path d="M455 500 L510 465" fill="none"/>
+    <!-- Hungarian connecting to Slovak -->
+    <path d="M580 515 L510 465" fill="none"/>
+    <!-- Portuguese / Spanish connecting toward French -->
+    <path d="M145 520 L200 560 L260 480" fill="none"/>
+    <!-- Italian connecting toward French -->
+    <path d="M375 530 L320 470" fill="none"/>
+    <!-- Bulgarian connecting to Hungarian -->
+    <path d="M670 540 L580 515" fill="none"/>
+    <!-- Greek connecting to Bulgarian -->
+    <path d="M640 575 L670 540" fill="none"/>
   </g>
 </svg>

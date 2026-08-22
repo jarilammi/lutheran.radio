@@ -804,6 +804,9 @@
 				cs,
 				sl,
 				hr,
+				fr,
+				it,
+				pt,
 			);
 			mainGroup = B7AFC6A32CCD7D0A00BDDD83;
 			minimizedProjectReferenceProxies = 1;
@@ -1179,7 +1182,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 26.6.1;
+				MARKETING_VERSION = 27.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.LutheranRadio.LutheranRadioWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1210,7 +1213,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 26.6.1;
+				MARKETING_VERSION = 27.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.LutheranRadio.LutheranRadioWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1242,7 +1245,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 26.6.1;
+				MARKETING_VERSION = 27.0.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
 				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.Core;
@@ -1281,7 +1284,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 26.6.1;
+				MARKETING_VERSION = 27.0.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
 				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.Core;
@@ -1307,7 +1310,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 26.6.1;
+				MARKETING_VERSION = 27.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.CoreTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -1327,7 +1330,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 26.6.1;
+				MARKETING_VERSION = 27.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.CoreTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -1404,7 +1407,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 26.6.1;
+				MARKETING_VERSION = 27.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.LutheranRadio;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LUTHERAN_MAIN_APP";
@@ -1438,7 +1441,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 26.6.1;
+				MARKETING_VERSION = 27.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.LutheranRadio;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1604,7 +1607,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 26.6.1;
+				MARKETING_VERSION = 27.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.LutheranRadioTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -1623,7 +1626,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 26.6.1;
+				MARKETING_VERSION = 27.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.LutheranRadioTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -1641,7 +1644,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 26.6.1;
+				MARKETING_VERSION = 27.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.LutheranRadioUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -1659,7 +1662,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 26.6.1;
+				MARKETING_VERSION = 27.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.LutheranRadioUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;

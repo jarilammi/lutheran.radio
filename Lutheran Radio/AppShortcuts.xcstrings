@@ -70,6 +70,12 @@
             "value" : "Set ${applicationName} á pause"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mets ${applicationName} en pause"
+          }
+        },
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
@@ -92,6 +98,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gera hlé á ${applicationName}"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metti in pausa ${applicationName}"
           }
         },
         "kl" : {
@@ -134,6 +146,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wstrzymaj ${applicationName}"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausar ${applicationName}"
           }
         },
         "ro" : {
@@ -249,6 +267,12 @@
             "value" : "Spæl ${applicationName}"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joue ${applicationName}"
+          }
+        },
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
@@ -271,6 +295,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spila ${applicationName}"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproduci ${applicationName}"
           }
         },
         "kl" : {
@@ -313,6 +343,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwórz ${applicationName}"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir ${applicationName}"
           }
         },
         "ro" : {
@@ -428,6 +464,12 @@
             "value" : "Spæl ${applicationName} á ${language}"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joue ${applicationName} en ${language}"
+          }
+        },
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
@@ -450,6 +492,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spila ${applicationName} á ${language}"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riproduci ${applicationName} in ${language}"
           }
         },
         "kl" : {
@@ -492,6 +540,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwórz ${applicationName} po ${language}"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir ${applicationName} em ${language}"
           }
         },
         "ro" : {
@@ -607,6 +661,12 @@
             "value" : "Byrja ${applicationName}"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lance ${applicationName}"
+          }
+        },
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
@@ -629,6 +689,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byrja ${applicationName}"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avvia ${applicationName}"
           }
         },
         "kl" : {
@@ -671,6 +737,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uruchom ${applicationName}"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar ${applicationName}"
           }
         },
         "ro" : {
@@ -786,6 +858,12 @@
             "value" : "Steðga ${applicationName}"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrête ${applicationName}"
+          }
+        },
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
@@ -808,6 +886,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stöðva ${applicationName}"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ferma ${applicationName}"
           }
         },
         "kl" : {
@@ -850,6 +934,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zatrzymaj ${applicationName}"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parar ${applicationName}"
           }
         },
         "ro" : {
@@ -965,6 +1055,12 @@
             "value" : "Skift ${applicationName} til ${language}"
           }
         },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passe ${applicationName} en ${language}"
+          }
+        },
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
@@ -987,6 +1083,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skipta ${applicationName} yfir í ${language}"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passa ${applicationName} a ${language}"
           }
         },
         "kl" : {
@@ -1029,6 +1131,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Przełącz ${applicationName} na ${language}"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mudar ${applicationName} para ${language}"
           }
         },
         "ro" : {

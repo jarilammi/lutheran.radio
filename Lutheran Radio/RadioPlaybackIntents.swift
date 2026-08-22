@@ -66,7 +66,11 @@ struct RadioLanguageEntity: AppEntity {
 
 struct RadioLanguageQuery: EntityQuery {
     /// Returns the 5 supported streams as suggested entities for Siri / Shortcuts parameter pickers.
-    /// Uses the SSOT availableStreams (exactly the 5 playable ones; full 21 UI languages are separate).
+    /// Uses the SSOT ``availableStreams`` (exactly the five playable streams: en, de, fi, sv, et).
+    /// UI localization is the 32-language README Localizations table and is separate.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/availableStreams``, README.md Localizations,
+    ///   CODING_AGENT.md (Localization).
     func suggestedEntities() async throws -> [RadioLanguageEntity] {
         let streams = SharedPlayerManager.shared.availableStreams
         return streams.map { stream in
@@ -256,7 +260,7 @@ struct SwitchToLanguageIntent: AppIntent {
 
 /// Zero-config Siri / Shortcuts / Spotlight discovery for play, pause, and language switch.
 ///
-/// English source phrases below are the extraction keys. Spoken forms for all 29
+/// English source phrases below are the extraction keys. Spoken forms for all 32
 /// app languages live in ``AppShortcuts.xcstrings`` (Apple-required table name).
 ///
 /// - Important: Do not move these utterances into `Localizable.xcstrings`. Siri

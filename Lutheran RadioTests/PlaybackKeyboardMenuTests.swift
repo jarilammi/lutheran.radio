@@ -3,7 +3,7 @@
 //  Lutheran RadioTests
 //
 //  Protects keyboard / menu playback verbs: wrapping adjacent-stream index math,
-//  Localizable titles for all 29 languages, and AppDelegate selectors that
+//  Localizable titles for every UI language, and AppDelegate selectors that
 //  forward to ``handleTogglePlayback()`` / ``handleAdjacentLanguageSelection(offset:)``
 //  (existing play and switch SSOTs — not a new play entry).
 //
@@ -22,11 +22,12 @@ import XCTest
 
 final class PlaybackKeyboardMenuTests: XCTestCase {
 
-    /// Same 29 codes as CODING_AGENT.md / README Localizations.
+    /// UI catalog languages: README Localizations / Localizable coverage (the 32
+    /// language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
-        "fo", "gag", "hr", "hu", "is", "kl", "lt", "lv", "nb", "nl",
-        "nn", "pl", "ro", "ru", "se", "sk", "sl", "sq", "sv",
+        "fo", "fr", "gag", "hr", "hu", "is", "it", "kl", "lt", "lv", "nb", "nl",
+        "nn", "pl", "pt", "ro", "ru", "se", "sk", "sl", "sq", "sv",
     ]
 
     private let menuKeys: [String] = [
@@ -82,7 +83,7 @@ final class PlaybackKeyboardMenuTests: XCTestCase {
 
     // MARK: - Localizable catalog completeness
 
-    /// Every menu title key ships a translated value for all 29 app languages.
+    /// Every menu title key ships a translated value for every UI catalog language.
     func testLocalizableCatalogCoversEveryMenuKeyAndLanguage() throws {
         let catalog = try loadLocalizableCatalog()
         let strings = try XCTUnwrap(catalog["strings"] as? [String: Any])
