@@ -138,6 +138,18 @@ import WidgetSurface
 /// become-active remains the presentable playing-glyph repair. Does **not** invent
 /// `.playing`. Does **not** end while ineligible. Does **not** add another ensure rail.
 ///
+/// ## Missing-card start (sessionNeeds)
+/// ``ensureInteractiveLiveActivityIfNeeded()`` requests a **missing** interactive card
+/// only when ``sessionNeedsInteractiveLiveActivity`` is true: authoritative playing,
+/// Connecting attach (``isConnectingPlayback`` or stream-switch hold), or this-process
+/// sticky ``.userPaused``. Factory-idle ``.prePlay`` (reset complete, pipeline not
+/// started, hold inactive) is **false** — do not ``startActivity()`` a Connecting card
+/// before ``play()`` enters the start pipeline. Do **not** arm
+/// ``isPlaybackStartPipelineActive`` before ``play()`` to cover that window. This is
+/// missing-card start policy only; never end the only interactive surface while request
+/// is ineligible. Background auto-start remains ``handleAppWillEnterBackground()``
+/// (`isPlaying` only). Request eligibility is a separate start gate.
+///
 /// Intent-path optimistic toggles publish ContentState and align ``lastPushedContent``
 /// so a rapid second tap resolves from the post-toggle glyph; the sequential sticky
 /// lock / soft-silence path then converges actor state. Stream-switch optimistic
@@ -2868,8 +2880,8 @@ class RadioLiveActivityManager: ObservableObject {
     ///     or failed request.
     ///   - hasCurrentActivity: Whether this process already owns an interactive activity.
     ///   - sessionNeedsInteractiveLiveActivity: Playback session still needs LA chrome
-    ///     (authoritative playing / Connecting / sticky pause with live session — see
-    ///     ``sessionNeedsInteractiveLiveActivity(isPlaying:visualState:)``).
+    ///     (authoritative playing / Connecting attach / sticky pause — see
+    ///     ``sessionNeedsInteractiveLiveActivity(isPlaying:visualState:isConnectingPlayback:isStreamSwitchPrePlayHoldActive:)``).
     ///   - areActivitiesEnabled: User/system Live Activities enabled.
     ///   - isRequestEligible: Application is active (presentable for `Activity.request`).
     /// - Returns: `true` when start should run once (no owned activity, enabled, eligible,
@@ -2894,23 +2906,46 @@ class RadioLiveActivityManager: ObservableObject {
             && (pendingEnsure || !hasCurrentActivity)
     }
 
-    /// Session policy for whether an interactive Live Activity is still meaningful.
+    /// Session policy for whether a **missing** interactive Live Activity should be requested.
     ///
-    /// Matches background auto-start intent: authoritative playing, Connecting attach, or
-    /// sticky pause while the main process still owns a live session (paused LA is intentional).
+    /// Authoritative playing, Connecting attach, or this-process sticky pause still need
+    /// chrome. Factory-idle ``PlayerVisualState/prePlay`` (reset complete, start pipeline
+    /// not active, stream-switch hold inactive) does **not** — become-active ensure must
+    /// not ``startActivity()`` a Connecting card before ``play()`` enters the pipeline.
+    /// If attach then fails, that card would remain with no engine.
+    ///
+    /// **Missing-card start only.** Does not end an owned interactive activity. Does not
+    /// arm ``SharedPlayerManager/isPlaybackStartPipelineActive`` before ``play()`` (that
+    /// latch is a duplicate same-stream start). Background auto-start remains
+    /// ``handleAppWillEnterBackground()`` (`isPlaying` only). Request eligibility
+    /// (``isInteractiveLiveActivityRequestEligible``) is a separate start gate.
     ///
     /// - Parameters:
     ///   - isPlaying: Shared snapshot / App Group `isPlaying` (background auto-start input).
     ///   - visualState: In-memory ``PlayerVisualState``.
-    /// - Returns: `true` when start/ensure should be considered for a missing activity.
-    /// - SeeAlso: ``handleAppWillEnterBackground()``, ``ensureInteractiveLiveActivityIfNeeded()``.
+    ///   - isConnectingPlayback: ``SharedPlayerManager/isConnectingPlayback`` — start
+    ///     pipeline active and not yet audible.
+    ///   - isStreamSwitchPrePlayHoldActive: ``SharedPlayerManager/isStreamSwitchPrePlayHoldActive``.
+    ///     Stream-switch Connecting chrome after ``resetToPrePlayForNewStream`` **clears**
+    ///     the start latch; hold is still a live attach, not factory idle.
+    /// - Returns: `true` when missing-card start/ensure should be considered.
+    /// - Postcondition: Factory-idle `.prePlay` is `false`. `.cleared` /
+    ///   `.securityLocked` / `.thermalPaused` stay `false` unless `isPlaying`,
+    ///   connecting attach, or `.userPaused` already covers them.
+    /// - SeeAlso: ``handleAppWillEnterBackground()``, ``ensureInteractiveLiveActivityIfNeeded()``,
+    ///   ``SharedPlayerManager/isConnectingPlayback``,
+    ///   ``SharedPlayerManager/isStreamSwitchPrePlayHoldActive``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func sessionNeedsInteractiveLiveActivity(
         isPlaying: Bool,
-        visualState: PlayerVisualState
+        visualState: PlayerVisualState,
+        isConnectingPlayback: Bool = false,
+        isStreamSwitchPrePlayHoldActive: Bool = false
     ) -> Bool {
         if isPlaying { return true }
         if visualState.isActivelyPlaying { return true }
-        if visualState == .prePlay { return true }
+        if isConnectingPlayback { return true }
+        if isStreamSwitchPrePlayHoldActive { return true }
         if visualState == .userPaused { return true }
         return false
     }
@@ -8937,11 +8972,15 @@ class RadioLiveActivityManager: ObservableObject {
     /// White-box seam: session-needs policy for interactive LA ensure/start.
     func _test_sessionNeedsInteractiveLiveActivity(
         isPlaying: Bool,
-        visualState: PlayerVisualState
+        visualState: PlayerVisualState,
+        isConnectingPlayback: Bool = false,
+        isStreamSwitchPrePlayHoldActive: Bool = false
     ) -> Bool {
         Self.sessionNeedsInteractiveLiveActivity(
             isPlaying: isPlaying,
-            visualState: visualState
+            visualState: visualState,
+            isConnectingPlayback: isConnectingPlayback,
+            isStreamSwitchPrePlayHoldActive: isStreamSwitchPrePlayHoldActive
         )
     }
 
@@ -9282,7 +9321,7 @@ extension RadioLiveActivityManager {
     ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
     ///   ``shouldInvokeOwnedSurfaceForegroundEnsure(hasCurrentActivity:lastOwnedSurfaceForegroundEnsureAt:now:debounceInterval:languageEnsureQuietPending:playingEnsureQuietPending:pendingInteractiveLiveActivityEnsure:contentEnsureStillNeeded:isRequestEligible:)``,
     ///   ``shouldEnsureInteractiveLiveActivityStart(pendingEnsure:hasCurrentActivity:sessionNeedsInteractiveLiveActivity:areActivitiesEnabled:isRequestEligible:)``,
-    ///   ``sessionNeedsInteractiveLiveActivity(isPlaying:visualState:)``,
+    ///   ``sessionNeedsInteractiveLiveActivity(isPlaying:visualState:isConnectingPlayback:isStreamSwitchPrePlayHoldActive:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @MainActor
     func ensureInteractiveLiveActivityIfNeeded() async {
@@ -9363,9 +9402,13 @@ extension RadioLiveActivityManager {
         let manager = SharedPlayerManager.shared
         let isPlaying = manager.loadSharedState().isPlaying
         let visualState = await manager.currentVisualState
+        let connecting = await manager.isConnectingPlayback
+        let hold = await manager.isStreamSwitchPrePlayHoldActive
         let sessionNeeds = Self.sessionNeedsInteractiveLiveActivity(
             isPlaying: isPlaying,
-            visualState: visualState
+            visualState: visualState,
+            isConnectingPlayback: connecting,
+            isStreamSwitchPrePlayHoldActive: hold
         )
 
         if !sessionNeeds {

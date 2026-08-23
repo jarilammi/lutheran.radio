@@ -4393,6 +4393,16 @@ class RadioLiveActivityManagerTests: XCTestCase {
     }
 
     /// Foreground ensure starts only when eligible, enabled, ownership empty, and session needs chrome.
+    ///
+    /// **Invariant protected:** missing-card ``sessionNeedsInteractiveLiveActivity`` is
+    /// false for factory-idle `.prePlay` (no start pipeline, no stream-switch hold).
+    /// Authoritative playing, Connecting attach, stream-switch hold, and this-process
+    /// `.userPaused` still need chrome. `.cleared` / `.thermalPaused` / `.securityLocked`
+    /// stay false unless `isPlaying` already covers them. This is start policy only —
+    /// does not end an owned activity while request is ineligible.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/sessionNeedsInteractiveLiveActivity(isPlaying:visualState:isConnectingPlayback:isStreamSwitchPrePlayHoldActive:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     func testForegroundEnsureStartPolicy() {
         XCTAssertTrue(
             manager._test_sessionNeedsInteractiveLiveActivity(
@@ -4407,11 +4417,28 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 visualState: .playing
             )
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             manager._test_sessionNeedsInteractiveLiveActivity(
                 isPlaying: false,
                 visualState: .prePlay
-            )
+            ),
+            "Factory-idle .prePlay must not request a Connecting card before play() starts"
+        )
+        XCTAssertTrue(
+            manager._test_sessionNeedsInteractiveLiveActivity(
+                isPlaying: false,
+                visualState: .prePlay,
+                isConnectingPlayback: true
+            ),
+            "Start-pipeline Connecting attach still needs a missing interactive card"
+        )
+        XCTAssertTrue(
+            manager._test_sessionNeedsInteractiveLiveActivity(
+                isPlaying: false,
+                visualState: .prePlay,
+                isStreamSwitchPrePlayHoldActive: true
+            ),
+            "Stream-switch hold is Connecting attach, not factory idle"
         )
         XCTAssertTrue(
             manager._test_sessionNeedsInteractiveLiveActivity(
@@ -4426,6 +4453,20 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 visualState: .cleared
             ),
             "Cleared / idle session must not request interactive chrome"
+        )
+        XCTAssertFalse(
+            manager._test_sessionNeedsInteractiveLiveActivity(
+                isPlaying: false,
+                visualState: .thermalPaused
+            ),
+            "Thermal pause without playing/connecting must not request a missing card"
+        )
+        XCTAssertFalse(
+            manager._test_sessionNeedsInteractiveLiveActivity(
+                isPlaying: false,
+                visualState: .securityLocked
+            ),
+            "Security lock without playing/connecting must not request a missing card"
         )
 
         XCTAssertTrue(
