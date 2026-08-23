@@ -432,8 +432,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // Stored selection state stays on the façade (extensions cannot declare stored properties).
 
     var lastServerSelectionTime: Date?
-    /// Live throttle for ``selectOptimalServer(completion:)`` is a 10-second wall-clock window
-    /// checked against ``lastServerSelectionTime`` (hardcoded in the server-selection domain).
+    /// Wall-clock stamp of the last measured cluster (or fallback). ``selectOptimalServer``
+    /// throttles every context for ``serverSelectionThrottleInterval``. Same-stream hard-resume
+    /// may additionally reuse this stamp for ``sameStreamWarmServerReuseInterval`` via
+    /// ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``.
+    /// Network-path reconnect nils the stamp.
     var serverSelectionWorkItem: DispatchWorkItem?
     /// Track deallocation state (stop / observer teardown).
     var isDeallocating = false

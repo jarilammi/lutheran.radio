@@ -93,6 +93,13 @@ public enum StopReason: Sendable {
 }
 
 /// How `DirectStreamingPlayer` should attach or resume the secured `AVPlayerItem`.
+///
+/// ``resume`` is same-stream hard-resume after user pause (Icecast already torn down).
+/// The engine may reuse a warm selected cluster for that case; ``streamSwitch``
+/// and ``coldLaunch`` still ping after the 10 s throttle.
+///
+/// - SeeAlso: ``PlaybackPlayDecision/attachContext(classification:declinedSoftPauseForLanguageChange:)``,
+///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause / play-after-pause attach)
 @frozen public enum PlaybackAttachContext: Sendable, Equatable {
     case coldLaunch
     case streamSwitch

@@ -113,7 +113,7 @@ End with security impact, build status, localization needed.
 
 1. **Explicit pause intent** — User/widget/remote pause sets `playbackIntent = .userPaused` and sticky `.userPaused` visual.
 2. **Resume path label** — DEBUG: `resume play, proceeding`; zero `first cold-launch play call` on resume.
-3. **User pause tears down Icecast** — ``stop()`` awaits hard `stopAndWait` (resource loaders cancelled, item niled, `isSoftPaused == false`) then ``deactivateAudioSessionAsync()``. A paused keep-alive `URLSession` must not keep receiving the live body. Play after pause is full `attachAndPlay` (Connecting chrome).
+3. **User pause tears down Icecast** — ``stop()`` awaits hard `stopAndWait` (resource loaders cancelled, item niled, `isSoftPaused == false`) then ``deactivateAudioSessionAsync()``. A paused keep-alive `URLSession` must not keep receiving the live body. Play after pause is full `attachAndPlay` (Connecting chrome). Same-stream resume (``PlaybackAttachContext/resume``) may reuse the last selected cluster inside ``sameStreamWarmServerReuseInterval`` without a new ping pair; language switch still pings after the 10 s throttle.
 4. **No buffer auto-resume** — After sticky `.userPaused`: zero `timeControlStatus → 2 | rate: 1.0`; no audible restart.
 5. **Buffer observers gated** — `isPlaybackLikelyToKeepUp` / `isPlaybackBufferFull` call `play()` only when `canProceedWithPlayback()` is true.
 6. **Playing KVO enforcement** — `.playing` `timeControlStatus` while intent blocks → `pause()` + `rate = 0`.

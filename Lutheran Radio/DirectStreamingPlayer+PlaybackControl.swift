@@ -141,6 +141,8 @@ extension DirectStreamingPlayer {
         print("[DirectStreamingPlayer] Security validation passed — creating player for \(selectedStream.languageCode)")
         #endif
         
+        // Recovery / cold engine `play()` must ping after the 10 s throttle. Same-stream
+        // warm reuse is only ``PlaybackAttachContext/resume`` via ``attachAndPlay``.
         let streamURL = await urlWithOptimalServer(for: selectedStream)
         guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
             enforceSilenceAfterDiscardedAttach()

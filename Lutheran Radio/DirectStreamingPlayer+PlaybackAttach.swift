@@ -5,6 +5,8 @@
 //  Created by Jari Lammi on 24.7.2026.
 //
 //  Playback attach domain (generation, soft-pause, silence-after-discard, prepareStreamChoice / attachAndPlay, startPlayback).
+//  Same-stream hard-resume (``PlaybackAttachContext/resume``) forwards
+//  ``allowSameStreamWarmReuse`` into ``urlWithOptimalServer``; stream switch and cold launch do not.
 //
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
 //  DirectStreamingPlayer remains the public façade; this file owns one domain.
@@ -15,7 +17,7 @@
 //
 //  - SeeAlso: DirectStreamingPlayer.swift, PlaybackAttachState, SharedPlayerManager.play(),
 //    DirectStreamingPlayer+SecuredPlayerItem.swift, DirectStreamingPlayer+PlayerItemRecovery.swift,
-//    CODING_AGENT.md (Single Source of Truth Principles).
+//    DirectStreamingPlayer+ServerSelection.swift, CODING_AGENT.md (Single Source of Truth Principles).
 //
 
 import Foundation
@@ -151,8 +153,13 @@ extension DirectStreamingPlayer {
     /// - Parameters:
     ///   - stream: Target stream model (language / URL template).
     ///   - context: Cold launch, stream switch, or same-stream resume attach semantics.
+    ///     ``PlaybackAttachContext/resume`` allows warm cluster reuse in
+    ///     ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``; stream switch and cold launch
+    ///     still ping after the 10 s throttle. User pause remains Icecast hard-tear
+    ///     (``isSoftPaused`` stays false).
     /// - SeeAlso: ``prepareStreamChoice(_:preparation:)``, ``startPlayback(context:attachGeneration:)``,
     ///   ``shouldContinueInFlightAttach(startedAt:)``, ``PlaybackAttachState``,
+    ///   ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``,
     ///   ``SharedPlayerManager/play()``.
     ///
     /// - Note: MainActor-isolated with ``play()`` so attach generation begin/end and silence
@@ -172,7 +179,10 @@ extension DirectStreamingPlayer {
         // Cover the primary attach path (not only recovery `play()`) so stop during
         // connect/first-play can invalidate generation and soft-silence consistently.
         let attachGeneration = beginInFlightPlaybackAttach()
-        await prepareSecuredPlayerItem(for: stream)
+        await prepareSecuredPlayerItem(
+            for: stream,
+            allowSameStreamWarmReuse: context == .resume
+        )
 
         guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
             enforceSilenceAfterDiscardedAttach()
@@ -214,8 +224,17 @@ extension DirectStreamingPlayer {
     }
 
     /// Model update + optional clean stop + secured `AVPlayerItem` prepare (no audible kick).
+    ///
+    /// - Parameters:
+    ///   - stream: Target stream model (language / URL template).
+    ///   - allowSameStreamWarmReuse: Forwarded to ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``.
+    ///     `true` only for ``PlaybackAttachContext/resume`` (same-stream hard-resume after user
+    ///     pause). Stream switch and ``setStream(to:)`` keep the default `false` so language
+    ///     change still pings when the 10 s throttle has expired. Does not set ``isSoftPaused``.
+    /// - SeeAlso: ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``,
+    ///   ``DirectStreamingPlayer/shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``
     @MainActor
-    func prepareSecuredPlayerItem(for stream: Stream) async {
+    func prepareSecuredPlayerItem(for stream: Stream, allowSameStreamWarmReuse: Bool = false) async {
         // UI Test isolation: prevent even model-only prepares from triggering
         // urlWithOptimalServer (which may ping) or AVURLAsset/resourceLoader work.
         guard !isTesting else {
@@ -267,7 +286,10 @@ extension DirectStreamingPlayer {
 
         selectedStream = stream
 
-        let url = await urlWithOptimalServer(for: stream)
+        let url = await urlWithOptimalServer(
+            for: stream,
+            allowSameStreamWarmReuse: allowSameStreamWarmReuse
+        )
         await preparePlayerItem(for: url)
 
         #if DEBUG
@@ -399,7 +421,10 @@ extension DirectStreamingPlayer {
         // We do this here (outside MainActor.run) so the run closure stays synchronous,
         // matching every other MainActor.run site in the file and avoiding overload resolution
         // issues under the widget extension's compilation context.
-        let coldLaunchURL = await urlWithOptimalServer(for: selectedStream)
+        let streamURL = await urlWithOptimalServer(
+            for: selectedStream,
+            allowSameStreamWarmReuse: context == .resume
+        )
         guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
             await enforceSilenceAfterDiscardedAttach()
             return
@@ -429,7 +454,7 @@ extension DirectStreamingPlayer {
                 print("[DirectStreamingPlayer] \(debugAttachContextLabel(context)): no currentItem after AVPlayer init → attaching fresh item")
                 #endif
                 
-                let newItem = self.makeSecuredPlayerItem(for: coldLaunchURL)
+                let newItem = self.makeSecuredPlayerItem(for: streamURL)
                 player.replaceCurrentItem(with: newItem)
                 self.playerItem = newItem
                 self.bindAttachedItemToSelectedStream()
