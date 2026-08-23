@@ -158,7 +158,7 @@ extension SharedPlayerManager {
     ///   ``clearUserPausedLockIfNeeded()``, ``canProceedWithPlayback()``,
     ///   ``stop()``,
     ///   RadioPlayerCoordinator (canonical switch methods + shims),
-    ///   ``isRunningInUITestMode``, ViewController.viewDidLoad,
+    ///   ``isRunningInUITestMode``, ViewController.viewDidLoad factory hygiene,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause during connect),
     ///   CODING_AGENT.md (test isolation requirements), <doc:Architecture>, <doc:Security-Invariants>.
     ///

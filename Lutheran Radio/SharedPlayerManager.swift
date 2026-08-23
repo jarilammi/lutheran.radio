@@ -164,8 +164,9 @@ import WidgetKit
 ///   (DEBUG / attach classification only; does not drive sticky resurrection guards).
 /// - Sticky `.userPaused` / `.securityLocked` / `.cleared` is *never* bypassed
 ///   (enforced at the top of `play()` via ``PlaybackPlayDecision``).
-/// - User-initiated main open after factory reset uses special tuning + one cold `play()`;
-///   cold play is not time-bounded (no process-age grace window).
+/// - User-initiated main open after factory reset uses special tuning + one cold `play()`
+///   on the first **presentable** scene (become-active); cold play is not time-bounded
+///   (no process-age grace window). Background scene-create after jetsam waits.
 ///
 /// Cold-launch special casing is minimal; the one-shot is subordinate to
 /// `currentPlaybackIntent`.
@@ -231,7 +232,7 @@ import WidgetKit
 /// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
 /// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
 /// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()` then visual/intent re-check | (unchanged or forced .userPaused) | Restore does not start audio; engine resume only when still allowed. Sticky intent only — no prior-process App Group play gate. |
-/// | cold launch     | **User-initiated** main open after quit / terminate / reboot (icon, open URL, Siri) | `resetToFactoryDefaultsOnLaunch()` then special tuning + cold-play path | .prePlay → .playing (when allowed) | Factory reset clears prior play status (OI-1); termination liveness remains widget passive chrome only; product “open app = radio” when sticky pause absent — **not** residual App Group play restore; residual reboot chrome alone (main process not resident) is a different honesty contract |
+/// | cold launch     | **User-initiated** main open after quit / terminate / reboot (icon, open URL, Siri) — first **presentable** scene | `resetToFactoryDefaultsOnLaunch()` immediately, then special tuning + cold-play on become-active (or already-`.active` after hygiene) | .prePlay → .playing (when allowed) | Factory reset clears prior play status (OI-1) even if the process was created in the background; termination liveness remains widget passive chrome only; product “open app = radio” when sticky pause absent **and** a scene is presentable — **not** residual App Group play restore; jetsam / last-media background relaunch waits; residual reboot chrome alone (main process not resident) is a different honesty contract |
 ///
 /// ### App Group Keys & Memory-Only Visual Policy (group.radio.lutheran.shared)
 ///
@@ -496,7 +497,7 @@ actor SharedPlayerManager {
     //   • calling `setupAudioSession` or activating AVAudioSession
     //   • starting SecurityModelValidator / CertificateValidator work
     // Failure to do so re-introduces the 5-minute launch hang for `test-without-building`.
-    // The ViewController cold-launch guard + the early return in `play()` are the
+    // Presentable cold launch + the early return in `play()` are the
     // two primary choke points; engine methods in DirectStreamingPlayer provide defense-in-depth.
 
     internal var initialPlaybackHasRun = false
@@ -1104,7 +1105,7 @@ actor SharedPlayerManager {
     /// **user-initiated** open that just started main. In-session thermal sanitization and
     /// sticky pause/lock continue until this process ends.
     ///
-    /// - Precondition: Safe to call from main-app launch (`ViewController` cold-launch Task) and tests.
+    /// - Precondition: Safe to call from main-app launch (`ViewController` factory-hygiene Task) and tests.
     /// - Postcondition: `loadPersistedWidgetState()` returns `nil`; widgets show safe defaults;
     ///   system Now Playing metadata cleared (main app); durable LA toggle visual + language
     ///   mirrors cleared; recorded boot identity aligned to this boot; residual App Group
@@ -1133,6 +1134,9 @@ actor SharedPlayerManager {
             widgetVisualState: .prePlay,
             staleLiveness: false
         )
+        // Headset remotes must exist before the first presentable scene (and before ``play()``)
+        // so a background relaunch can honor an explicit remote play. Idempotent.
+        await configureNowPlayingControlsIfNeeded()
         #else
         Self.clearPersistedVisualStateKeysFromDisk()
         Self.clearInMemorySessionSnapshot()

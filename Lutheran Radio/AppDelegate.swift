@@ -29,7 +29,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Residual system Now Playing can survive dirty process exit and device reboot
         // (`MPNowPlayingInfoCenter` is OS-owned, not App Group). Clear metadata as early as
         // possible on process start — before scene attach, residual remote taps, and the
-        // ViewController cold-launch Task that later re-publishes under intentional auto-play.
+        // presentable cold launch that later re-publishes under intentional auto-play.
         // Factory reset repeats phase-1 clear via ``teardownNowPlayingSession()`` before special
         // tuning / ``play()``; this earliest wipe shrinks the post-reboot stale-card window.
         //
@@ -37,10 +37,20 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // - Postcondition: `nowPlayingInfo == nil`, `playbackState == .stopped` until a later
         //   intentional ``updateNowPlayingInfo()`` after audible start.
         // - SeeAlso: ``SharedPlayerManager/clearSystemNowPlayingMetadataSynchronously()``,
+        //   ``SharedPlayerManager/configureNowPlayingControlsIfNeeded()``,
         //   ``SharedPlayerManager/teardownNowPlayingSession()``,
         //   ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
         //   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
         SharedPlayerManager.clearSystemNowPlayingMetadataSynchronously()
+
+        // Headset / lock-screen remotes must exist before the first presentable scene so a
+        // jetsam / last-media background relaunch can honor an explicit remote play without
+        // waiting for ``play()``. Does not start audio. Skipped under `-UITestMode`.
+        if !SharedPlayerManager.isRunningInUITestMode {
+            Task {
+                await SharedPlayerManager.shared.configureNowPlayingControlsIfNeeded()
+            }
+        }
 
         #if DEBUG
         print("[AppDelegate] didFinishLaunching — residual system Now Playing metadata cleared")

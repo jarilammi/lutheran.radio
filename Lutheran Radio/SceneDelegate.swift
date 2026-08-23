@@ -12,7 +12,8 @@
 //    ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)``,
 //    ``SharedPlayerManager/discardResidualPendingActionsAndArmMailboxForThisProcess()``,
 //    ``SharedPlayerManager/performSessionTeardownSynchronouslyForTermination()``,
-//    ViewController cold-launch Task, docs/Widget-Presentation-Dataflow.md, CODING_AGENT.md.
+//    ViewController factory-hygiene Task, ``RadioPlayerCoordinator/notePresentableSceneForColdLaunchPlayback()``,
+//    docs/Widget-Presentation-Dataflow.md, CODING_AGENT.md.
 //
 
 import UIKit
@@ -37,7 +38,8 @@ import UIKit
 /// **`lutheranradio://open` honesty:** ``ViewController/handleOpenFromLiveActivity()`` only runs
 /// the resurrection / state-sync check and does **not** invent a new play intent. Cold-launch
 /// auto-play (special tuning + ``play()`` when sticky intent is absent) is owned by the
-/// ``ViewController`` viewDidLoad Task — orthogonal to this open handler.
+/// coordinator presentable cold launch — first ``sceneDidBecomeActive`` after factory hygiene
+/// (or already-`.active` after that reset). Orthogonal to this open handler.
 ///
 /// **Privacy:** Scheme payloads are local action tokens only (no external personal data).
 ///
@@ -95,17 +97,20 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window = nil
     }
 
-    /// Becomes active: drain pending widget commands (when honest), lift privacy-clear
+    /// Becomes active: drain pending widget commands (when honest), run the presentable
+    /// cold launch if factory hygiene already marked it ready, lift privacy-clear
     /// write-suppression hold, then refresh privacy gate, liveness, snapshot, and Live Activity
     /// ensure.
     ///
-    /// Pending drain is intentional **before** the async liveness Task so in-session widget
+    /// Pending drain is intentional **before** the async Task so in-session widget
     /// taps are processed promptly. Residual pre-process / pre-boot commands are refused by
     /// ``SharedPlayerManager/getPendingActionIfFresh(maxAge:)`` until cold-launch factory arms
-    /// the mailbox (before special tuning).
+    /// the mailbox (before special tuning). Presentable cold play runs **after** that drain
+    /// and **before** Live Activity ensure (factory-idle `.prePlay` does not request a card).
     ///
     /// - Parameter scene: The scene that became active.
     /// - SeeAlso: ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
+    ///   ``RadioPlayerCoordinator/notePresentableSceneForColdLaunchPlayback()``,
     ///   ``SharedPlayerManager/discardResidualPendingActionsAndArmMailboxForThisProcess()``,
     ///   ``WidgetRefreshManager/liftPrivacyClearWriteSuppressionHoldForForegroundDetect()``,
     ///   ``WidgetRefreshManager/refreshHasActiveWidgets()``
@@ -125,9 +130,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // teardown refresh that ran inside `clearAllLocalState`.
         // Privacy gate refresh before liveness/save so a widget re-added while backgrounded
         // can receive writes again. Fire-and-forget; save paths consult the refreshed flag.
+        // Presentable cold launch: factory hygiene may still be in flight (then mark-ready
+        // proceeds once reset finishes); jetsam background launches never reach here until
+        // the user opens the app.
         // LA ensure restores a missing card after deferred recreation / failed request, or
         // soft-reconciles language/visual when ownership is already non-nil.
         Task { @MainActor in
+            if let viewController = self.window?.rootViewController as? ViewController {
+                await viewController.notePresentableSceneForColdLaunchPlayback()
+            }
             WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
             await WidgetRefreshManager.shared.refreshHasActiveWidgets()
             await SharedPlayerManager.shared.recordWidgetLiveness()
@@ -252,7 +263,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         // Simple deep links (`play` / `pause` / `toggle` / `open` / `switch`).
         // `open` → resurrection check only on the handler; cold auto-play may still run
-        // from ViewController's launch Task when sticky intent is absent.
+        // from presentable cold launch on become-active when sticky intent is absent.
         handleURLScheme(url, from: scene)
     }
 

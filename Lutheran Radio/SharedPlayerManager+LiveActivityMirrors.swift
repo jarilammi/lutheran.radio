@@ -721,7 +721,7 @@ extension SharedPlayerManager {
     /// (this process lifetime, after arm) is executable via ``getPendingActionIfFresh(maxAge:)``.
     ///
     /// - Postcondition: mailbox empty; ``pendingActionMailboxAcceptingExecution`` is `true`.
-    /// - SeeAlso: ``getPendingActionIfFresh(maxAge:)``, ViewController cold-launch Task,
+    /// - SeeAlso: ``getPendingActionIfFresh(maxAge:)``, ViewController factory-hygiene Task,
     ///   ``RadioPlayerCoordinator/checkForPendingWidgetActions()``.
     nonisolated static func discardResidualPendingActionsAndArmMailboxForThisProcess() {
         clearPendingActionMailbox()

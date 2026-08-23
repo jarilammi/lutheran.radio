@@ -177,8 +177,13 @@ extension SharedPlayerManager {
     /// - Precondition: Main-app ``SharedPlayerManager``; no-op in the widget extension.
     /// - Postcondition: Supported commands enabled; unsupported commands disabled.
     ///   Idempotent after the first successful install for this process.
+    /// Installed at process start (``AppDelegate`` after residual NP clear, and again from
+    /// ``resetToFactoryDefaultsOnLaunch()``) so headset remotes exist before the first
+    /// presentable scene — without calling ``play()``.
+    ///
     /// - SeeAlso: ``submitMediaTransportCommand(_:)``, ``updateNowPlayingInfo()``,
     ///   ``userRequestedPlay()``, ``stop()``,
+    ///   AppDelegate.application(_:didFinishLaunchingWithOptions:),
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     func configureNowPlayingControlsIfNeeded() async {
         guard !isRunningInWidget() else { return }

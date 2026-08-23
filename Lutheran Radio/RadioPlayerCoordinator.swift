@@ -96,14 +96,18 @@ import WidgetSurface
 /// **Special tuning:** Production cold-launch clip is ``playSpecialTuningSound(completion:)``
 /// (implementation in `+Tuning.swift`) — session/clip start via
 /// ``DirectStreamingPlayer/startLocalClipPlayer``, finish via `AVAudioPlayerDelegate` →
-/// ``TuningSoundCoordinator``. Stream-switch delight uses ``playTuningSound(animateNeedleTo:)``
-/// (duration-based; no main-stream gate). Host interruption/route paths call ``stopTuningSound()``.
+/// ``TuningSoundCoordinator``. Presentable cold launch (``markPresentableColdLaunchPlaybackReady`` /
+/// ``notePresentableSceneForColdLaunchPlayback``) is the sole production caller. Stream-switch
+/// delight uses ``playTuningSound(animateNeedleTo:)`` (duration-based; no main-stream gate).
+/// Host interruption/route paths call ``stopTuningSound()``.
 ///
 /// - SeeAlso: ``SharedPlayerManager/signalWidgetPendingAction(visualState:action:language:)``,
 ///   ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
 ///   ``SharedPlayerManager/setSleepTimer(duration:)``,
+///   ``markPresentableColdLaunchPlaybackReady(initialStream:)``,
 ///   `RadioPlayerChromeVisualResolver`, `TuningSoundCoordinator`,
 ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+///   docs/Widget-Presentation-Dataflow.md,
 ///   docs/Widget-Functionality-Roadmap.md, CODING_AGENT.md (Single Source of Truth Principles).
 @MainActor
 final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
@@ -125,7 +129,7 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     // | Play / pause toggle | (this file) | handlePlayAction / handlePauseAction / handleTogglePlayback / handleUserTogglePlayback / pausePlayback / stopPlayback public shims |
     // | Privacy clear | (this file) | confirmAndClearLocalState + localStateCleared observer |
     // | Layout / energy hooks | (this file) | notifyLayoutChange, viewDidAppearResurrectionCheck, memory/energy forwarders |
-    // | Wiring / cold launch | (this file) | wireAndInitialSetup, performColdLaunchPlaybackIfAllowed, metadata registration, haptics prepare |
+    // | Wiring / cold launch | (this file) | wireAndInitialSetup, presentable cold launch (`markPresentableColdLaunchPlaybackReady` / `notePresentableSceneForColdLaunchPlayback`), performColdLaunchPlaybackIfAllowed, metadata registration, haptics prepare |
     //
     // Cross-layer owners (do not re-home into this façade):
     // - AVPlayer / attach / recovery / rate pause → DirectStreamingPlayer
@@ -198,6 +202,16 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     let visualChromeEventObserver = WidgetEventObserver<PlayerEvent>()
     /// Observation task seam for SSOT chrome paint (cancelled in deinit / restart).
     var visualChromeObservationTask: Task<Void, Never>?
+
+    // Presentable cold launch (owned here). ViewController factory hygiene
+    // **marks ready**; SceneDelegate `sceneDidBecomeActive` (or already-`.active` after hygiene)
+    // **notes** presentable. Audio starts only when both have happened. Jetsam /
+    // background scene-create waits for the next presentable open.
+    // Stored here because extensions cannot declare stored properties.
+    var isColdLaunchPlaybackReady = false
+    var hasConsumedPresentableColdLaunchPlayback = false
+    var hasObservedPresentableSceneForColdLaunch = false
+    var coldLaunchInitialStream: DirectStreamingPlayer.Stream?
     // Tuning clip stamps (owned by +Tuning; deep coupling to TuningSoundCoordinator +
     // startLocalClipPlayer remains). Internal access so the extension file and language-
     // selection wait path on this file can share the same flags.
@@ -366,13 +380,124 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: stream)
     }
 
-    /// Called from the async portion of VC viewDidLoad Task after tuning sound + model-only set.
-    /// Owns the sticky-intent guard + SharedPlayerManager.play() launch for cold start (prePlay path).
+    /// Records that factory-reset hygiene finished and a cold auto-play is waiting.
+    ///
+    /// Does **not** start audio. Special tuning + ``play()`` run only from
+    /// ``attemptPresentableColdLaunchPlaybackIfNeeded()`` after a presentable scene
+    /// is noted (first ``sceneDidBecomeActive``, or already-`.active` after hygiene).
+    ///
+    /// - Parameter initialStream: Model-only stream prepared during hygiene.
+    /// - Postcondition: ``isColdLaunchPlaybackReady`` is true. If presentable was
+    ///   already noted, presentable cold launch may proceed immediately.
+    /// - SeeAlso: ``notePresentableSceneForColdLaunchPlayback()``,
+    ///   ``performColdLaunchPlaybackIfAllowed(initialStream:)``,
+    ///   docs/Widget-Presentation-Dataflow.md (user-initiated main open)
+    func markPresentableColdLaunchPlaybackReady(initialStream: DirectStreamingPlayer.Stream) async {
+        coldLaunchInitialStream = initialStream
+        isColdLaunchPlaybackReady = true
+        #if DEBUG
+        print("[RadioPlayerCoordinator] Marked presentable cold-launch playback ready")
+        #endif
+        await attemptPresentableColdLaunchPlaybackIfNeeded()
+    }
+
+    /// Records that a scene became presentable (become-active / already-active after hygiene).
+    ///
+    /// Call **after** pending-action drain. Jetsam / background relaunch never delivers
+    /// this until the user opens the app; headset remotes remain available via
+    /// ``SharedPlayerManager/configureNowPlayingControlsIfNeeded()`` at process start.
+    ///
+    /// - Postcondition: ``hasObservedPresentableSceneForColdLaunch`` is true. If hygiene
+    ///   already marked presentable cold launch ready, special tuning + ``play()`` may run once.
+    /// - SeeAlso: ``markPresentableColdLaunchPlaybackReady(initialStream:)``,
+    ///   SceneDelegate.sceneDidBecomeActive,
+    ///   docs/Widget-Presentation-Dataflow.md
+    func notePresentableSceneForColdLaunchPlayback() async {
+        hasObservedPresentableSceneForColdLaunch = true
+        await attemptPresentableColdLaunchPlaybackIfNeeded()
+    }
+
+    /// Runs special tuning + cold ``play()`` once when hygiene has marked ready **and** a
+    /// presentable scene has been noted.
+    ///
+    /// - Important: Does not consult `lastUpdateTime` or boot identity (presentation
+    ///   only). This-process sticky intent still blocks. Does not set
+    ///   ``isPlaybackStartPipelineActive`` before ``play()``.
+    /// - SeeAlso: ``performColdLaunchPlaybackIfAllowed(initialStream:)``
+    private func attemptPresentableColdLaunchPlaybackIfNeeded() async {
+        guard !hasConsumedPresentableColdLaunchPlayback else { return }
+        guard isColdLaunchPlaybackReady else { return }
+        guard hasObservedPresentableSceneForColdLaunch else {
+            #if DEBUG
+            print("[RadioPlayerCoordinator] Cold-launch playback ready; waiting for presentable scene")
+            #endif
+            return
+        }
+        hasConsumedPresentableColdLaunchPlayback = true
+
+        let initialStream = coldLaunchInitialStream
+            ?? SharedPlayerManager.streamForLanguageCode(
+                SharedPlayerManager.preferredMainAppInitialLanguageCode()
+            )
+
+        await SharedPlayerManager.shared.refreshVisualStateFromPersistence()
+        let intent = await SharedPlayerManager.shared.currentPlaybackIntent
+        if intent.isStickyPauseOrLock {
+            #if DEBUG
+            print("[RadioPlayerCoordinator] Blocked presentable cold-launch tuning + playback — sticky playbackIntent (this process)")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("[RadioPlayerCoordinator] Presentable cold launch proceeding to tuning (no sticky intent)")
+        #endif
+
+        // XCTest / `-UITestMode` skip the wav so the host does not play audio; unit tests
+        // still reach ``play()`` isolation via ``performColdLaunchPlaybackIfAllowed``.
+        // XCUITest never marks ready (ViewController returns before presentable cold launch).
+        if !SharedPlayerManager.isRunningInUITestMode {
+            await playSpecialTuningSound()
+        }
+
+        let visualStateAfterTuning = await SharedPlayerManager.shared.currentVisualState
+        let intentAfterTuning = await SharedPlayerManager.shared.currentPlaybackIntent
+        #if DEBUG
+        print("[RadioPlayerCoordinator] After tuning — visualState = \(visualStateAfterTuning), intent = \(intentAfterTuning)")
+        #endif
+
+        guard visualStateAfterTuning == .prePlay
+            || visualStateAfterTuning == .cleared
+            || visualStateAfterTuning.shouldAutoPlayOrResume
+            || intentAfterTuning == .cleared
+        else {
+            #if DEBUG
+            print("[RadioPlayerCoordinator] Blocked initial playback — state = \(visualStateAfterTuning)")
+            #endif
+            return
+        }
+
+        guard streamingPlayer.hasInternetConnection else { return }
+
+        if !SharedPlayerManager.hasActiveWidgets {
+            await WidgetRefreshManager.shared.refreshHasActiveWidgets()
+        }
+
+        await updateUserDefaultsLanguage(initialStream.languageCode)
+        streamingPlayer.resetTransientErrors()
+        await performColdLaunchPlaybackIfAllowed(initialStream: initialStream)
+        streamingPlayer.setVolume(1.0)
+    }
+
+    /// Sticky-intent guard + ``SharedPlayerManager/play()`` for the presentable cold-start path.
     ///
     /// Process isolation: only this-process sticky intent blocks. Prior-process termination
     /// liveness is presentation-only and is never consulted here.
     ///
-    /// - SeeAlso: ``SharedPlayerManager/play()``, ViewController cold-launch Task,
+    /// - Parameter initialStream: Catalog stream prepared during hygiene (language already
+    ///   stamped by presentable cold launch before this call).
+    /// - SeeAlso: ``markPresentableColdLaunchPlaybackReady(initialStream:)``,
+    ///   ``SharedPlayerManager/play()``,
     ///   ``SharedPlayerManager/hasExplicitTerminationSentinel()`` (widget chrome only).
     func performColdLaunchPlaybackIfAllowed(initialStream: DirectStreamingPlayer.Stream) async {
         // Ensure snapshot + intent are authoritative before deciding cold auto-play.
@@ -668,7 +793,7 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         switch visualState {
         case .prePlay:
             #if DEBUG
-            print("[RadioPlayerCoordinator] viewDidAppear → prePlay on cold launch → SKIPPING (handled in viewDidLoad after tuning)")
+            print("[RadioPlayerCoordinator] viewDidAppear → prePlay on cold launch → SKIPPING (handled on first presentable scene after factory hygiene)")
             #endif
         case .playing:
             #if DEBUG
@@ -730,4 +855,25 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         #endif
     }
 }
+
+#if DEBUG
+extension RadioPlayerCoordinator {
+    /// Whether factory hygiene has marked presentable cold launch ready.
+    var _test_isColdLaunchPlaybackReady: Bool { isColdLaunchPlaybackReady }
+
+    /// Whether presentable cold launch has already run (play, sticky skip, or visual block).
+    var _test_hasConsumedPresentableColdLaunchPlayback: Bool { hasConsumedPresentableColdLaunchPlayback }
+
+    /// Whether a presentable scene has been noted (become-active or already-active after hygiene).
+    var _test_hasObservedPresentableSceneForColdLaunch: Bool { hasObservedPresentableSceneForColdLaunch }
+
+    /// Resets the presentable cold-launch handshake so isolated tests do not inherit a completed run.
+    func _test_resetPresentableColdLaunchPlaybackSeams() {
+        isColdLaunchPlaybackReady = false
+        hasConsumedPresentableColdLaunchPlayback = false
+        hasObservedPresentableSceneForColdLaunch = false
+        coldLaunchInitialStream = nil
+    }
+}
+#endif
 

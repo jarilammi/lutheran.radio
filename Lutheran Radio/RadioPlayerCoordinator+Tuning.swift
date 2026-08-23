@@ -24,7 +24,7 @@
 //  behavior that mutates them.
 //
 //  Public/entry surfaces on the same type:
-//  - ``playSpecialTuningSound(completion:)`` — host cold-launch Task
+//  - ``playSpecialTuningSound(completion:)`` — presentable cold launch
 //  - ``playTuningSound(animateNeedleTo:)`` — language / stream-switch paths
 //  - ``stopTuningSound()`` — host interruption / route / disconnect chrome stop
 //
@@ -42,7 +42,7 @@ extension RadioPlayerCoordinator {
 
     // MARK: - Tuning sounds (stream selection delight + cold-launch special clip)
 
-    /// Plays the one-shot cold-launch special tuning clip, then signals ``TuningSoundCoordinator``.
+    /// Plays the cold-launch special tuning clip, then signals ``TuningSoundCoordinator``.
     ///
     /// Session configuration and clip start go through
     /// ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)`` so
@@ -50,9 +50,9 @@ extension RadioPlayerCoordinator {
     /// `SharedPlayerManager.play()` after the coordinator wait — this method must not start the
     /// secured stream.
     ///
-    /// AGENT NOTE: Single production owner for the special cold-launch clip. The thin host only
-    /// invokes this method from its cold-launch Task; it does not retain clip state or conform to
-    /// `AVAudioPlayerDelegate`.
+    /// AGENT NOTE: Single production owner for the special cold-launch clip. Presentable
+    /// cold launch invokes this after factory hygiene + first become-active; the host does not
+    /// retain clip state or conform to `AVAudioPlayerDelegate`.
     ///
     /// - Parameter completion: Optional early-exit hook; successful start finishes via
     ///   `AVAudioPlayerDelegate` → ``TuningSoundCoordinator/notifyPlaybackFinished(source:)``.

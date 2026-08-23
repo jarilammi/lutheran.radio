@@ -142,7 +142,7 @@ class ViewController: UIViewController {
     // | Darwin widget notify | ViewController+DarwinWidgetNotify.swift | CF Darwin observer install/teardown; launch 1…5 s drain burst; pause self-echo guard hop |
     // | Engine path observation | ViewController+NetworkPathObservation.swift | ``observeEngineNetworkPath`` / sample handler / cellular alert presentation / ``handleNetworkReconnection`` / path-callback clear; no host monitor |
     // | Layout hosting | ViewController+LayoutHosting.swift | ``setupUI`` hosting controller + background insert; ``viewDidLayoutSubviews`` → coordinator ``notifyLayoutChange`` |
-    // | Cold launch / lifecycle | (this file) | viewDidLoad Task (UITestMode, resurrection, special tuning, first play); viewDidAppear resurrection |
+    // | Cold launch / lifecycle | (this file) | viewDidLoad Task (UITestMode, factory hygiene, mark presentable cold launch ready); viewDidAppear resurrection |
     // | Public shims | (this file) | SceneDelegate / URL / Siri / widget-action / keyboard-menu entry → coordinator or SPM |
     // | DEBUG test seams | (this file) | Drain bypass forwarders for WidgetIntentContractTests |
     //
@@ -328,14 +328,18 @@ class ViewController: UIViewController {
     // MARK: - Lifecycle Methods
     /// Initializes the view hierarchy and initial stream selection.
     ///
-    /// Cold-launch playback decision lives in the trailing async Task. When the process
-    /// was launched with "-UITestMode" (see XCUITest targets), the Task short-circuits
-    /// immediately after a clean .prePlay UI update: no tuning sound, no identifying
+    /// Cold-launch **hygiene** lives in the trailing async Task (factory reset, model-only
+    /// stream, `.prePlay` UI). Auto-play is **not** decided here: presentable cold launch
+    /// runs special tuning + ``play()`` only on the first presentable scene after that
+    /// reset. When the process was launched with "-UITestMode" (see XCUITest targets),
+    /// the Task short-circuits immediately after a clean .prePlay UI update: no factory
+    /// reset, no presentable cold launch, no tuning sound, no identifying
     /// PersistedWidgetState writes, and no call to `SharedPlayerManager.play()`.
-    /// This guarantees the streaming system (and security validation) stay idle until
-    /// an explicit test interaction.
+    /// This guarantees the streaming system (and security validation) stay idle
+    /// until an explicit test interaction.
     ///
     /// - SeeAlso: ``SharedPlayerManager/isRunningInUITestMode``, ``SharedPlayerManager/play()``,
+    ///   ``RadioPlayerCoordinator/markPresentableColdLaunchPlaybackReady(initialStream:)``,
     ///   CODING_AGENT.md (UI test isolation requirements + launch arguments).
     /// - Note: Performs heavy setup; defers non-critical tasks with asyncAfter for better launch performance.
     override func viewDidLoad() {
@@ -442,14 +446,20 @@ class ViewController: UIViewController {
             }
 
             // Memory-only policy: purge any stale on-disk visual keys and reset to factory .prePlay
-            // before resurrection guards or tuning.
+            // immediately — even if this process was created in the background (jetsam / last-media
+            // relaunch). Residual hygiene must not wait for become-active.
             //
-            // User-initiated main open: this process started because the human opened main
-            // (icon / open URL / Siri). After factory reset, product policy is open app = radio
-            // (special tuning then play when sticky intent is absent) — not App Group play restore.
+            // Auto-play is **not** this Task. After factory reset, product policy is open app =
+            // radio only on the first **presentable** scene (special tuning then play when sticky
+            // intent is absent) — not App Group play restore, and not a background scene-create.
             // Residual post-reboot surprise is orthogonal: discard residual pending + clear residual
             // NP so pre-reboot mailbox / media cards cannot surprise-attach *before* that user path.
             // (``discardResidualPendingActionsAndArmMailboxForThisProcess`` via factory reset.)
+            //
+            // - SeeAlso: ``RadioPlayerCoordinator/markPresentableColdLaunchPlaybackReady(initialStream:)``,
+            //   ``RadioPlayerCoordinator/notePresentableSceneForColdLaunchPlayback()``,
+            //   SharedPlayerManager.hasExplicitTerminationSentinel (presentation only),
+            //   docs/Widget-Presentation-Dataflow.md (user-initiated main open vs residual surprise).
             await SharedPlayerManager.shared.resetToFactoryDefaultsOnLaunch()
             
             let initialStream = SharedPlayerManager.streamForLanguageCode(languageCode)
@@ -466,126 +476,18 @@ class ViewController: UIViewController {
             // Actual image processing is deferred until playback is stable; choosing the initial lang
             // for prep is acceptable (not an "I listened" signal).
             backgroundImageController.scheduleDeferredForStreamSwitch(initialStream)
-            
-            // ─────────────────────────────────────────────────────────────────────────
-            // User-initiated main-open play guard — MUST run before any tuning sound or play().
-            //
-            // Loads in-session visual + intent (memory-only; always .prePlay after
-            // ``resetToFactoryDefaultsOnLaunch()`` above on a true cold process).
-            //
-            // Process isolation: only **this-process** sticky intent blocks auto-start
-            // (`.userPaused` / `.cleared` / `.securityLocked`). Prior-process App Group
-            // termination liveness (`lastUpdateTime == 0`) is **not** consulted — that
-            // key is residual widget passive chrome / durable-mirror distrust only
-            // (post-reboot residual presentation while main is not resident). Play status
-            // never survives process exit.
-            //
-            // Tuning sound is deliberately *after* this gate so a sticky launch never
-            // emits the connection clip.
-            //
-            // - Precondition: UITest short-circuit already returned above; user (or open URL)
-            //   started this main process.
-            // - Postcondition (blocked path): UI reflects loaded visual; no tuning, no play.
-            // - SeeAlso: SharedPlayerManager.play (parallel sticky early return),
-            //   SharedPlayerManager.hasExplicitTerminationSentinel (presentation only),
-            //   docs/Widget-Presentation-Dataflow.md (user-initiated main open vs residual surprise),
-            //   CODING_AGENT.md (SSOT resurrection, currentPlaybackIntent),
-            //   RadioPlayerCoordinator.performColdLaunchPlaybackIfAllowed.
-            // ─────────────────────────────────────────────────────────────────────────
-            await SharedPlayerManager.shared.refreshVisualStateFromPersistence()
-            let visualState = await SharedPlayerManager.shared.currentVisualState
-            let intent = await SharedPlayerManager.shared.currentPlaybackIntent
-            
-            if intent.isStickyPauseOrLock {
-                #if DEBUG
-                print("[ViewController] Blocked cold-launch tuning + playback — sticky playbackIntent (this process)")
-                #endif
-                // Show the correct visual (e.g. grey paused) rather than forcing .prePlay.
-                self.updateUI(for: visualState)
-                return
-            }
-            
-            #if DEBUG
-            print("[ViewController] Cold launch proceeding to tuning (no sticky intent)")
-            #endif
-            
-            // Early UI to .prePlay for needle/selector positioning (matches prior behavior for allowed cold launches).
-            self.updateUI(for: .prePlay)
-            
-            // Special cold-launch clip: coordinator owns clip + TuningSoundCoordinator gate.
-            // SharedPlayerManager.play() awaits the same gate after this returns.
-            await self.radioPlayerCoordinator.playSpecialTuningSound()
-            
-            // Re-fetch after tuning: persistence refresh and thermal sanitization may have
-            // updated in-memory state while the tuning clip played.
-            let visualStateAfterTuning = await SharedPlayerManager.shared.currentVisualState
-            let intentAfterTuning = await SharedPlayerManager.shared.currentPlaybackIntent
-            
-            #if DEBUG
-            print("[ViewController] After tuning — visualState = \(visualStateAfterTuning), intent = \(intentAfterTuning)")
-            #endif
-            
-            // Post-clear (or normal first) cold launch first play.
-            // The early sticky guard above already returned for .userPaused/.cleared-intent/
-            // security cases (see resurrection policy). Reaching here means we are
-            // in the permitted .prePlay / .cleared visual path for a clean launch.
-            //
-            // Identifying writes (snapshot seed + lastUpdateTime bump) happen only on this
-            // success path so that clearAllLocalState + post-clear launches do not re-create
-            // deleted data until the first explicit or allowed cold play.
-            guard visualStateAfterTuning == .prePlay || visualStateAfterTuning == .cleared || visualStateAfterTuning.shouldAutoPlayOrResume || intentAfterTuning == .cleared else {
-                #if DEBUG
-                print("[ViewController] Blocked initial playback — state = \(visualStateAfterTuning)")
-                #endif
-                return
-            }
-            
-            if intentAfterTuning == .cleared {
-                #if DEBUG
-                print("[ViewController] post-clear cold launch — allowing initial playback and state creation")
-                #endif
-            }
-            
-            guard self.streamingPlayer.hasInternetConnection else { return }
-            
-            // In-session widget refresh only (no on-disk visual persistence). Re-query widget
-            // presence so saveCurrentState / performActualSave can update the in-memory session
-            // snapshot after play() attaches.
-            if !SharedPlayerManager.hasActiveWidgets {
-                await WidgetRefreshManager.shared.refreshHasActiveWidgets()
-            }
 
-            await radioPlayerCoordinator.updateUserDefaultsLanguage(initialStream.languageCode)
-            
-            #if DEBUG
-            print("[ViewController] Starting initial stream playback after tuning (single source)")
-            #endif
-            
-            self.streamingPlayer.resetTransientErrors()
-            
-            // ONE central call — play() waits on TuningSoundCoordinator until the special clip finishes.
-            // viewDidAppear will NOT trigger another play() for .prePlay.
-            // Cold-launch initial playback: permitted direct call to play() after coordinator
-            // guard (see RadioPlayerCoordinator.performColdLaunchPlaybackIfAllowed and
-            // userRequestedPlay Precondition in SPM). Not an "explicit tap" path.
-            await SharedPlayerManager.shared.play()
-            // Full relative engine gain; system output volume is SSOT via `MPVolumeView`.
-            self.restoreEngineVolumeToUnity()
+            // Mark presentable cold launch ready. If become-active already ran (slow factory reset /
+            // ActivityKit end) **or** the scene is already `.active`, the coordinator proceeds
+            // immediately. If this process is backgrounded (jetsam), it waits.
+            await self.radioPlayerCoordinator.markPresentableColdLaunchPlaybackReady(initialStream: initialStream)
+            if UIApplication.shared.applicationState == .active {
+                await self.radioPlayerCoordinator.notePresentableSceneForColdLaunchPlayback()
+            }
         }
     }
     
     // viewDidLayoutSubviews + setupUI: ViewController+LayoutHosting.swift
-
-    /// Sets `DirectStreamingPlayer` relative gain to 1.0 after stream attach.
-    ///
-    /// System output level is owned by iOS (`MPVolumeView` / hardware buttons). This path
-    /// does not read or write App Group volume preferences (retired orphan key purged on
-    /// launch via ``SharedPlayerManager/clearPersistedVisualStateKeysFromDisk()``).
-    ///
-    /// - SeeAlso: `VolumeAndAirPlayRow`, ``DirectStreamingPlayer/setVolume(_:)``
-    private func restoreEngineVolumeToUnity() {
-        streamingPlayer.setVolume(1.0)
-    }
 
     // Darwin widget notify install + launch 1…5 s drain burst live in
     // ViewController+DarwinWidgetNotify.swift (isolation map: Darwin widget notify).
@@ -597,7 +499,8 @@ class ViewController: UIViewController {
         
         // ───────────────────────────────────────────────────────────────────
         // SAFE playback trigger in viewDidAppear — ONLY for resurrection cases
-        // NO auto-play on cold launch (prePlay). That is handled in viewDidLoad after tuning.
+        // NO auto-play on cold launch (prePlay). That is handled on the first presentable
+        // scene after factory hygiene (presentable cold launch).
         // ───────────────────────────────────────────────────────────────────
         Task { @MainActor in
             let visualState = await SharedPlayerManager.shared.currentVisualState
@@ -609,7 +512,7 @@ class ViewController: UIViewController {
             switch visualState {
             case .prePlay:
                 #if DEBUG
-                print("[ViewController] viewDidAppear → prePlay on cold launch → SKIPPING (handled in viewDidLoad after tuning)")
+                print("[ViewController] viewDidAppear → prePlay on cold launch → SKIPPING (handled on first presentable scene after factory hygiene)")
                 #endif
                 // Do nothing — playback already started from viewDidLoad Task
                 
@@ -839,10 +742,23 @@ extension ViewController {
     /// Simply foregrounds the app and runs the coordinator's resurrection / state sync check.
     /// Respects all sticky .userPaused / .securityLocked rules exactly like viewDidAppear.
     /// No new playback intent is created here — this is pure navigation / surface activation.
+    /// Presentable cold auto-play (if still ready) is owned by
+    /// ``notePresentableSceneForColdLaunchPlayback()`` on become-active, not this open handler.
     public func handleOpenFromLiveActivity() {
         Task { @MainActor in
             await radioPlayerCoordinator.viewDidAppearResurrectionCheck()
         }
+    }
+
+    /// First presentable scene after factory hygiene: drain already ran; now the coordinator
+    /// may run presentable cold launch (special tuning + ``play()`` when allowed).
+    ///
+    /// SceneDelegate calls this after pending-action drain and before Live Activity ensure.
+    ///
+    /// - SeeAlso: ``RadioPlayerCoordinator/notePresentableSceneForColdLaunchPlayback()``,
+    ///   SceneDelegate.sceneDidBecomeActive
+    func notePresentableSceneForColdLaunchPlayback() async {
+        await radioPlayerCoordinator.notePresentableSceneForColdLaunchPlayback()
     }
 }
 

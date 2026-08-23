@@ -31,9 +31,10 @@ import WidgetSurface
 /// docs/Widget-Presentation-Dataflow.md:
 ///
 /// 1. **User-initiated main open** — icon, Siri open, or `lutheranradio://open` starts a new
-///    main process. After ``resetToFactoryDefaultsOnLaunch()``, product policy is “open = radio”
-///    (special tuning then ``play()`` when sticky intent is absent). That path is **user-driven**:
-///    the human brought the main app to the foreground.
+///    main process **and** a scene becomes presentable. After ``resetToFactoryDefaultsOnLaunch()``,
+///    product policy is “open = radio” (special tuning then ``play()`` when sticky intent is
+///    absent). That path is **user-driven**: the human brought the main app to the foreground.
+///    Jetsam / last-media background relaunch runs factory hygiene immediately but waits.
 /// 2. **Residual post-reboot / dirty-exit surprise** — App Group liveness, live chrome, pending
 ///    mailbox, or OS Now Playing left over after force-quit or power cycle must **not** look like
 ///    a live session or attach audio **without** that main-open path. Extension refuse / passive
@@ -132,7 +133,7 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
     ///
     /// - SeeAlso: ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
     ///   ``SharedPlayerManager/teardownNowPlayingSession()``,
-    ///   ViewController cold-launch Task, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   ViewController factory-hygiene Task, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/Widget-Presentation-Dataflow.md (residual post-reboot surprise).
     func testFactoryResetClearsResidualSystemNowPlayingBeforeUserInitiatedMainOpen() async {
         await MainActor.run {
@@ -319,7 +320,7 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
     ///
     /// **Invariant protected:** After ``resetToFactoryDefaultsOnLaunch()`` the new process has
     /// ``.prePlay`` + active ``PlaybackIntent`` + ``shouldAutoPlayOrResume``. That is the
-    /// precondition for the `ViewController` cold-launch Task (special tuning then
+    /// precondition for presentable cold launch (special tuning then
     /// ``play()``) when the **user** starts main — icon, Siri, or passive-widget open URL.
     ///
     /// Residual post-reboot honesty (passive home, NP clear, pending discard, durable-mirror
@@ -332,7 +333,7 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
     /// extension contract suites.
     ///
     /// - SeeAlso: ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
-    ///   ``PlayerVisualState/shouldAutoPlayOrResume``, ViewController cold-launch Task,
+    ///   ``PlayerVisualState/shouldAutoPlayOrResume``, presentable cold launch,
     ///   docs/Widget-Presentation-Dataflow.md (User-initiated main open vs residual surprise).
     func testUserInitiatedMainOpenRemainsEligibleAfterFactoryReset() async {
         await manager.resetToFactoryDefaultsOnLaunch()
@@ -411,7 +412,7 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
     ///
     /// - SeeAlso: ``SharedPlayerManager/play()``, ``PlaybackPlayDecision/evaluateEarlyGates(_:)``,
     ///   ``SharedPlayerManager/hasExplicitTerminationSentinel()``,
-    ///   ViewController cold-launch guard, SharedPlayerManager resurrection table.
+    ///   presentable cold launch, SharedPlayerManager resurrection table.
     func testTerminationSentinelDoesNotBlockPlayWhenIntentActive() async {
         let suite = "group.radio.lutheran.shared"
         let defaults = UserDefaults(suiteName: suite)
@@ -924,5 +925,162 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
         // Leave a clean App Group for sibling suites.
         SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
         SharedPlayerManager.clearLiveActivityLanguageMirror()
+    }
+
+    // MARK: - Presentable cold launch
+
+    /// Factory hygiene must not start audio until a presentable scene is noted.
+    ///
+    /// **Invariant protected:** After ``resetToFactoryDefaultsOnLaunch()``,
+    /// ``markPresentableColdLaunchPlaybackReady(initialStream:)`` without
+    /// ``notePresentableSceneForColdLaunchPlayback()`` leaves visual `.prePlay` and
+    /// does not run auto-play. Jetsam / last-media background relaunch waits.
+    ///
+    /// - SeeAlso: ``RadioPlayerCoordinator/markPresentableColdLaunchPlaybackReady(initialStream:)``,
+    ///   docs/Widget-Presentation-Dataflow.md (user-initiated main open).
+    @MainActor
+    func testPresentableColdLaunchWaitsUntilSceneIsNoted() async {
+        await manager.resetToFactoryDefaultsOnLaunch()
+        let coordinator = makePresentableColdLaunchCoordinator()
+        let stream = SharedPlayerManager.streamForLanguageCode("en")
+
+        await coordinator.markPresentableColdLaunchPlaybackReady(initialStream: stream)
+
+        XCTAssertTrue(coordinator._test_isColdLaunchPlaybackReady)
+        XCTAssertFalse(
+            coordinator._test_hasObservedPresentableSceneForColdLaunch,
+            "Mark-ready must not invent a presentable scene"
+        )
+        XCTAssertFalse(
+            coordinator._test_hasConsumedPresentableColdLaunchPlayback,
+            "Presentable cold launch must wait for become-active / already-active"
+        )
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(
+            visual,
+            .prePlay,
+            "Background / non-presentable hygiene must not call play()"
+        )
+    }
+
+    /// First presentable scene after hygiene runs cold play once.
+    ///
+    /// **Invariant protected:** Ready then note runs auto-play once and
+    /// ``play()`` isolation (XCTest) lands `.playing`. A second note does not
+    /// re-enter. Does not wait on ActivityKit.
+    ///
+    /// - SeeAlso: ``RadioPlayerCoordinator/notePresentableSceneForColdLaunchPlayback()``,
+    ///   ``SharedPlayerManager/play()``.
+    @MainActor
+    func testPresentableColdLaunchRunsOnceWhenReadyAndPresentable() async {
+        await manager.resetToFactoryDefaultsOnLaunch()
+        let coordinator = makePresentableColdLaunchCoordinator()
+        let stream = SharedPlayerManager.streamForLanguageCode("en")
+
+        await coordinator.markPresentableColdLaunchPlaybackReady(initialStream: stream)
+        await coordinator.notePresentableSceneForColdLaunchPlayback()
+
+        XCTAssertTrue(coordinator._test_hasConsumedPresentableColdLaunchPlayback)
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(
+            visual,
+            .playing,
+            "Presentable open after factory reset must invoke play() when sticky intent is absent"
+        )
+
+        await manager.setUserPaused()
+        await coordinator.notePresentableSceneForColdLaunchPlayback()
+        let visualAfterSecondNote = await manager.currentVisualState
+        XCTAssertEqual(
+            visualAfterSecondNote,
+            .userPaused,
+            "Presentable cold launch must not play again on a later become-active"
+        )
+    }
+
+    /// Noting presentable before hygiene marks ready still waits; mark-ready then proceeds.
+    ///
+    /// **Invariant protected:** ``sceneDidBecomeActive`` may fire while factory reset
+    /// (ActivityKit end) is still in flight. Noting first must not play. Mark-ready after
+    /// that note must consume once.
+    @MainActor
+    func testPresentableColdLaunchAllowsBecomeActiveBeforeHygieneReady() async {
+        await manager.resetToFactoryDefaultsOnLaunch()
+        let coordinator = makePresentableColdLaunchCoordinator()
+        let stream = SharedPlayerManager.streamForLanguageCode("en")
+
+        await coordinator.notePresentableSceneForColdLaunchPlayback()
+        XCTAssertTrue(coordinator._test_hasObservedPresentableSceneForColdLaunch)
+        XCTAssertFalse(coordinator._test_hasConsumedPresentableColdLaunchPlayback)
+        var visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .prePlay, "Presentable-before-ready must not play")
+
+        await coordinator.markPresentableColdLaunchPlaybackReady(initialStream: stream)
+        XCTAssertTrue(coordinator._test_hasConsumedPresentableColdLaunchPlayback)
+        visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .playing)
+    }
+
+    /// This-process sticky pause still blocks presentable cold play.
+    ///
+    /// **Invariant protected:** After hygiene + sticky ``.userPaused``, presentable
+    /// cold launch completes without a successful auto-play. Explicit ``userRequestedPlay()``
+    /// remains the resume path. `lastUpdateTime` is not consulted.
+    @MainActor
+    func testPresentableColdLaunchSkipsPlayWhenStickyIntent() async {
+        await manager.resetToFactoryDefaultsOnLaunch()
+        await manager.setUserPaused()
+        let coordinator = makePresentableColdLaunchCoordinator()
+        let stream = SharedPlayerManager.streamForLanguageCode("en")
+
+        await coordinator.markPresentableColdLaunchPlaybackReady(initialStream: stream)
+        await coordinator.notePresentableSceneForColdLaunchPlayback()
+
+        XCTAssertTrue(coordinator._test_hasConsumedPresentableColdLaunchPlayback)
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(
+            visual,
+            .userPaused,
+            "Sticky this-process pause must block presentable auto-play"
+        )
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertTrue(intent.isStickyPauseOrLock)
+    }
+
+    /// Factory reset installs Now Playing remotes without starting audio.
+    ///
+    /// **Invariant protected:** After ``resetToFactoryDefaultsOnLaunch()``, play / pause /
+    /// toggle / stop are enabled so a background relaunch can honor an explicit headset
+    /// command. Visual stays `.prePlay` (this test does not note presentable).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/configureNowPlayingControlsIfNeeded()``.
+    func testFactoryResetInstallsNowPlayingRemotesWithoutStartingPlay() async {
+        await manager.resetToFactoryDefaultsOnLaunch()
+
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .prePlay)
+        let remotesConfigured = await manager.remoteCommandsConfigured
+        XCTAssertTrue(
+            remotesConfigured,
+            "Factory reset must install remotes before the first presentable scene"
+        )
+
+        await MainActor.run {
+            let center = MPRemoteCommandCenter.shared()
+            XCTAssertTrue(center.playCommand.isEnabled)
+            XCTAssertTrue(center.pauseCommand.isEnabled)
+            XCTAssertTrue(center.togglePlayPauseCommand.isEnabled)
+            XCTAssertTrue(center.stopCommand.isEnabled)
+        }
+    }
+
+    @MainActor
+    private func makePresentableColdLaunchCoordinator() -> RadioPlayerCoordinator {
+        let coordinator = RadioPlayerCoordinator(
+            backgroundImageController: BackgroundImageController(),
+            streamingPlayer: DirectStreamingPlayer.shared
+        )
+        coordinator._test_resetPresentableColdLaunchPlaybackSeams()
+        return coordinator
     }
 }
