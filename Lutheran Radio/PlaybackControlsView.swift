@@ -119,9 +119,12 @@ struct PlaybackControlsView: View {
     /// inside the dialog invokes this, which reaches `RadioPlayerCoordinator.confirmAndClearLocalState()`.
     /// Always shown after the presets (regardless of active timer state).
     ///
-    /// - Note: The action itself shows a secondary confirmation UIAlertController (title + message + destructive confirm).
+    /// - Note: The action builds a secondary confirmation `UIAlertController`. The host
+    ///   presents it only after this `.confirmationDialog` container has disappeared
+    ///   (``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``).
     ///   The clear performs `SharedPlayerManager.clearAllLocalState()` and related resets.
     /// - SeeAlso: `RadioPlayerCoordinator.confirmAndClearLocalState`, `SharedPlayerManager.clearAllLocalState`,
+    ///   ``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     var onClearLocalStateTapped: (() -> Void)? = nil
 
@@ -234,8 +237,11 @@ struct PlaybackControlsView: View {
                 }
 
                 // Privacy: clear recent playback/widget/Live Activity App Group state (not Core security data).
-                // Secondary UIAlert lives on RadioPlayerCoordinator.confirmAndClearLocalState.
-                // - SeeAlso: SharedPlayerManager.clearAllLocalState, <doc:Architecture>, CODING_AGENT.md.
+                // Secondary UIAlert is built in confirmAndClearLocalState; the host presents
+                // it after this confirmationDialog container has disappeared.
+                // - SeeAlso: SharedPlayerManager.clearAllLocalState,
+                //   ViewController.presentCoordinatorAlertAfterOutgoingPresentationSettles,
+                //   <doc:Architecture>, CODING_AGENT.md.
                 Button(
                     String(localized: "clear_local_state_title", table: "Localizable"),
                     role: .destructive

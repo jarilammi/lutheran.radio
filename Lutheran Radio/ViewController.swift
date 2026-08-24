@@ -141,7 +141,7 @@ class ViewController: UIViewController {
     // | Audio session observers | ViewController+AudioSessionObservers.swift | Interruption + route NotificationCenter install/handlers; ``reconfigureAudioSession`` → engine configure; intent-gated recovery play; tuning chrome stop on began |
     // | Darwin widget notify | ViewController+DarwinWidgetNotify.swift | CF Darwin observer install/teardown; launch 1…5 s drain burst; pause self-echo guard hop |
     // | Engine path observation | ViewController+NetworkPathObservation.swift | ``observeEngineNetworkPath`` / sample handler / cellular alert presentation / ``handleNetworkReconnection`` / path-callback clear; no host monitor |
-    // | Layout hosting | ViewController+LayoutHosting.swift | ``setupUI`` hosting controller + background insert; ``viewDidLayoutSubviews`` → coordinator ``notifyLayoutChange`` |
+    // | Layout hosting | ViewController+LayoutHosting.swift | ``setupUI`` hosting controller + background insert; ``viewDidLayoutSubviews`` → coordinator ``notifyLayoutChange``; ``presentCoordinatorAlertAfterOutgoingPresentationSettles`` (confirmationDialog container gone, then layoutIfNeeded, then UIAlert) |
     // | Cold launch / lifecycle | (this file) | viewDidLoad Task (UITestMode, factory hygiene, mark presentable cold launch ready); viewDidAppear resurrection |
     // | Public shims | (this file) | SceneDelegate / URL / Siri / widget-action / keyboard-menu entry → coordinator or SPM |
     // | DEBUG test seams | (this file) | Drain bypass forwarders for WidgetIntentContractTests |
@@ -353,7 +353,9 @@ class ViewController: UIViewController {
         // lives on SwiftUI VolumeAndAirPlayRow / SystemVolumeVoiceOver / MPVolumeView
         // (identifier volumeSlider).
         
-        // Playback audio session is configured in DirectStreamingPlayer.init (single owner).
+        // Playback audio session: DirectStreamingPlayer is the single owner.
+        // Construction does not activate; first clip / play / attach await
+        // ``configureAudioSessionAsync()``.
         
         // Haptics owned by RadioPlayerCoordinator.wireAndInitialSetup() (single owner).
         // UIImpact only — do not add a CHHapticEngine (see HapticPlaybackPolicy).
@@ -367,17 +369,14 @@ class ViewController: UIViewController {
         // Hosted root already uses ``playerViewModel`` (lazy hosting controller); no mock swap.
         radioPlayerCoordinator.viewModel = playerViewModel
         radioPlayerCoordinator.viewController = self
-        // Always defer the actual present(...) for coordinator-driven UIAlertControllers.
-        // This protects against "Unable to simultaneously satisfy constraints" (320pt autoresizing
-        // mask vs. internal ~366pt alert content width from _UIAlertControllerPhoneTVMacView)
-        // when an alert is triggered synchronously from a SwiftUI .confirmationDialog action
-        // (e.g. "Clear local state") while widget refreshes, background image updates, or other
-        // layout work is in progress on the main thread. The extra runloop tick lets the
-        // outgoing presentation container finish tearing down its constraints.
+        // Coordinator UIAlertControllers (privacy-clear confirm, security, SSL) present
+        // after the sleep-timer `.confirmationDialog` container has disappeared, then
+        // `layoutIfNeeded` on this host + hosting view. One extra run-loop hop is not
+        // enough when widget refresh + background-image CI share the main thread with
+        // glass-popover teardown (320 autoresizing vs ~357 alert width). Do not disable
+        // the confirmationDialog; do not fight UIKit's glass host constraints.
         radioPlayerCoordinator.presentAlert = { [weak self] alert in
-            DispatchQueue.main.async { [weak self] in
-                self?.present(alert, animated: true)
-            }
+            self?.presentCoordinatorAlertAfterOutgoingPresentationSettles(alert)
         }
         radioPlayerCoordinator.wireAndInitialSetup()
         
@@ -559,7 +558,8 @@ class ViewController: UIViewController {
     // setupFastWidgetActionChecking: ViewController+DarwinWidgetNotify.swift
     // Engine path observation + cellular alert + reconnect: ViewController+NetworkPathObservation.swift
     // Audio session interruption / route + reconfigure: ViewController+AudioSessionObservers.swift
-    // setupUI + viewDidLayoutSubviews: ViewController+LayoutHosting.swift
+    // setupUI + viewDidLayoutSubviews + coordinator-alert present settle:
+    // ViewController+LayoutHosting.swift (``presentCoordinatorAlertAfterOutgoingPresentationSettles``).
 
     // Status changes: StreamingPlayerDelegate.onStatusChange → coordinator handleStatusChange.
     // ICY metadata: coordinator registers DirectStreamingPlayer.onMetadataChange in wireAndInitialSetup.

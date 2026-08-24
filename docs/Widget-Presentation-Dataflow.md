@@ -319,6 +319,10 @@ Home widgets and Live Activities derive chrome from snapshots / ContentState. Th
 
 Both paths share ``updateUI(for:)`` dedupe (`lastAppliedVisualState`). Observation is **non-forcing**: it never mutates SPM, never calls `play()`/`stop()`, and never bypasses privacy write suppression. ``RadioPlayerView`` does not observe ``PlayerEvent``; chrome paint is coordinator-owned only.
 
+### In-app privacy-clear confirmation alert
+
+The sleep-timer surface in `PlaybackControlsView` is a SwiftUI `.confirmationDialog`. The destructive “Clear local state” row builds a secondary `UIAlertController` in ``RadioPlayerCoordinator/confirmAndClearLocalState()``. ``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)`` presents that alert only after the dialog’s container has disappeared (hosting-controller presented chain + dismiss `transitionCoordinator`), then one extra run-loop hop and `layoutIfNeeded` on the host and player hosting view. Presenting the UIKit alert while the glass popover is still in the hierarchy fights autoresizing width 320 against `_UIAlertControllerPhoneTVMacView` content width ~357; UIKit recovers by breaking the alert constraint. Do **not** disable the confirmationDialog. Do **not** set `translatesAutoresizingMaskIntoConstraints` on UIKit’s glass host. Security / SSL coordinator alerts use the same present hook.
+
 ### Soft-resume hold contract
 
 Same-stream soft-resume (`canSoftResumeSameStream`) intentionally **skips** stamping Connecting (``.prePlay``) and retains residual sticky visual until engine ``setPlaying()``:
@@ -346,7 +350,7 @@ Same-stream soft-resume (`canSoftResumeSameStream`) intentionally **skips** stam
 | Main app | Primary: ``visualStateDidChange`` → ``updateUI``; status race lead only (this section) |
 | Live Activity | ``setPlaying`` → dual-axis settle when owned is prePlay, settled language/playing acceptance (soft-ensure re-arm + delayed post-settled), soft ensure, sparse long-horizon while ineligible; thrash smart-loosen cool-down after freeze soft budget; presentable-window heal via foreground owned-surface ensure; mid-lock acceptance residual open — see [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) |
 
-**SeeAlso:** ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``, ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``, ``RadioPlayerChromeVisualResolver``, ``SharedPlayerManager/setPlaying()``, ``SharedPlayerManager/makeEventsStreamWithReplay()``, [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) (main-app chrome consumer), [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md), `Lutheran RadioTests/RadioPlayerChromeVisualResolverTests.swift`.
+**SeeAlso:** ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``, ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``, ``RadioPlayerChromeVisualResolver``, ``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``, ``SharedPlayerManager/setPlaying()``, ``SharedPlayerManager/makeEventsStreamWithReplay()``, [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) (main-app chrome consumer), [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md), `Lutheran RadioTests/RadioPlayerChromeVisualResolverTests.swift`.
 
 ---
 
@@ -387,6 +391,7 @@ Full stacking matrix, language/playing ensure, dual-axis / long-horizon / thrash
 - `SharedPlayerManager.swift` (+ Persistence / AppGroup extensions) — `PersistedWidgetState`, App Group SSOT table (``homeWidgetLiveChrome``, ``homeWidgetStreamMetadata``), `isMainAppProcessRecentlyActive`, `forceStaleLivenessTimestampForTermination`, `bumpWidgetLivenessTimestamp`, live-chrome stamp/clear helpers.
 - `RadioLiveActivityManager.swift`, `WidgetRefreshManager.swift`, `AppDelegate.swift`, `SceneDelegate.swift`.
 - `RadioPlayerCoordinator+StatusDistribution.swift` — main-app chrome dual path: ``beginObservingVisualStateForChrome()`` (primary SSOT paint), ``handleStatusChange`` (demoted adapter), pure ``RadioPlayerChromeVisualResolver`` (soft-resume hold promote, sticky pause, Connecting race, supersession gate).
+- `ViewController+LayoutHosting.swift` — ``presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)`` (privacy-clear / security / SSL `UIAlertController` after sleep-timer `.confirmationDialog` container disappears).
 - `CODING_AGENT.md` — Documentation & Comment Standards, Single Source of Truth Principles, cross-target shared files.
 - [`docs/Home-Live-Chrome-App-Group-Mirror-Design.md`](Home-Live-Chrome-App-Group-Mirror-Design.md) — mechanism SSOT for privacy-gated home live chrome (writers, Provider order, privacy clear, success criteria).
 - [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) — widget backlog, test coverage, `WidgetSurface` coordinator status, freshness stack.

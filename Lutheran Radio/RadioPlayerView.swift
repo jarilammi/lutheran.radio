@@ -97,11 +97,14 @@ struct RadioPlayerView: View {
     /// Called when the user selects the destructive "Clear local state" option inside the
     /// sleep timer `.confirmationDialog` (`PlaybackControlsView`).
     /// Wired from ViewController to `radioPlayerCoordinator.confirmAndClearLocalState()`.
-    /// The coordinator shows a secondary confirmation UIAlert then calls the SSOT
-    /// `SharedPlayerManager.clearAllLocalState()`.
+    /// The coordinator builds a secondary confirmation `UIAlertController`; the host
+    /// presents it after this dialog’s container has disappeared, then the confirm
+    /// path calls SSOT `SharedPlayerManager.clearAllLocalState()`.
     ///
     /// - SeeAlso: `PlaybackControlsView.onClearLocalStateTapped`,
-    ///   `RadioPlayerCoordinator.confirmAndClearLocalState`, CODING_AGENT.md.
+    ///   `RadioPlayerCoordinator.confirmAndClearLocalState`,
+    ///   ``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``,
+    ///   CODING_AGENT.md.
     var onClearLocalStateTapped: (() -> Void)? = nil
 
     /// Keeps the previously stale "sleep_timer_sheet_title" string active in the localization
