@@ -168,6 +168,9 @@ These rules are especially strict for anything that could affect security invari
    - Every user-visible string must use `String(localized:)` / `NSLocalizedString` with table `"Localizable"`.
    - Never hard-code English strings.
    - All 32 languages in the README Localizations table must remain supported (bg, cs, da, de, el, en, es, et, fi, fit, fo, fr, gag, hr, hu, is, it, kl, lt, lv, nb, nl, nn, pl, pt, ro, ru, se, sk, sl, sq, sv). Playback catalog membership remains the five radio streams (en, de, fi, sv, et).
+   - Apple-mandated catalog exceptions (do **not** put these keys in `Localizable.xcstrings`):
+     - Siri utterances → `Lutheran Radio/AppShortcuts.xcstrings` (Siri trains from that table only).
+     - Widget extension gallery section (`CFBundleDisplayName`) → `LutheranRadioWidget/InfoPlist.xcstrings`. The OS reads `InfoPlist.strings`, not `Localizable`. Keep values in lockstep with `"lutheran_radio_title"`. `INFOPLIST_KEY_CFBundleDisplayName` is the development-language fallback and must be `"Lutheran Radio"` — never the target identifier `LutheranRadioWidget`.
 
 4. **iOS 26+ and Swift Toolchain**
    - Minimum deployment target is **iOS 26.2** (no exceptions).

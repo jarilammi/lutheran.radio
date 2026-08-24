@@ -76,6 +76,8 @@ Count strings (`%lld languages`, `sleep_timer_accessibility_remaining`, `accessi
 
 Siri App Shortcut utterances (`Play / Start / Pause / Stop ${applicationName}`, `Play ${applicationName} in ${language}`, `Switch ${applicationName} to ${language}`) live in [`Lutheran Radio/AppShortcuts.xcstrings`](Lutheran%20Radio/AppShortcuts.xcstrings). Apple trains recognition from that dedicated table only — do not add those phrases to `Localizable.xcstrings`. Every utterance must keep `${applicationName}` (and `${language}` on parameterized phrases). Intent titles and descriptions stay in `Localizable.xcstrings`.
 
+The widget gallery **section** name is the extension `CFBundleDisplayName` in [`LutheranRadioWidget/InfoPlist.xcstrings`](LutheranRadioWidget/InfoPlist.xcstrings). WidgetKit does not read that key from `Localizable.xcstrings`. Keep every language in lockstep with `"lutheran_radio_title"`. The generated Info.plist fallback (`INFOPLIST_KEY_CFBundleDisplayName`) is `"Lutheran Radio"` — never the target identifier `LutheranRadioWidget`. Per-widget titles (`.configurationDisplayName` / Control `.displayName`) stay on `"lutheran_radio_title"` in `Localizable.xcstrings`.
+
 ## Local Development and Contributing
 
 ### AI Coding Instructions
