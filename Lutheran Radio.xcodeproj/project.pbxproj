@@ -1174,7 +1174,7 @@
 				ENABLE_POINTER_AUTHENTICATION = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LutheranRadioWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = LutheranRadioWidget;
+				INFOPLIST_KEY_CFBundleDisplayName = "Lutheran Radio";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1205,7 +1205,7 @@
 				ENABLE_POINTER_AUTHENTICATION = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LutheranRadioWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = LutheranRadioWidget;
+				INFOPLIST_KEY_CFBundleDisplayName = "Lutheran Radio";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LD_RUNPATH_SEARCH_PATHS = (
