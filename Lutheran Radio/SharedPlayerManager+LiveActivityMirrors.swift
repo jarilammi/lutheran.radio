@@ -9,11 +9,12 @@
 //
 //  Purpose: Live Activity durable visual/language App Group mirrors, boot identity,
 //  extension-hosted toggle planning helpers, and widget-refresh / play-pause
-//  optimistic language derivation. Play/pause instant feedback follows
-//  ``settledLanguageForInstantFeedback()`` (session vs ``homeWidgetLiveChrome`` by
-//  the same freshness rule as ``resolveHomeWidgetChromeFields``). A leftover
-//  session code is not a valid match when chrome is strictly fresher. A lagging
-//  Live Activity language mirror must not win.
+//  optimistic language derivation. Play/pause **proposal**, instant-feedback write,
+//  and ``loadSharedState()`` read all follow ``settledLanguageForInstantFeedback()``
+//  (session vs ``homeWidgetLiveChrome`` by the same freshness rule as
+//  ``resolveHomeWidgetChromeFields``). A leftover session code is not a valid
+//  match when chrome is strictly fresher. A lagging Live Activity language
+//  mirror must not win.
 
 //
 //  - SeeAlso: SharedPlayerManager.swift, CODING_AGENT.md (cross-target membership exceptions).
@@ -158,35 +159,45 @@ extension SharedPlayerManager {
     }
 
     /// Language code for extension/main optimistic play/pause paths that still write instant
-    /// feedback or pending language (not for Live Activity view chrome).
+    /// feedback, pending language, or the durable Live Activity language mirror (not for
+    /// Live Activity **view** chrome).
     ///
     /// Resolve order (first non-empty wins):
-    /// 1. In-process session snapshot (`PersistedWidgetState.currentLanguage`)
-    /// 2. Privacy-gated ``homeWidgetLiveChrome`` language (settled / optimistic home paint)
-    /// 3. Durable Live Activity language mirror (``loadLiveActivityLanguageMirror()``)
-    /// 4. ``preferredWidgetLanguage()`` (may hard-default `"en"` under no-widgets)
+    /// 1. ``settledLanguageForInstantFeedback()`` — session vs privacy-gated
+    ///    ``homeWidgetLiveChrome`` by the same freshness rule as
+    ///    ``resolveHomeWidgetChromeFields`` (chrome wins only when `updatedAt` is strictly
+    ///    newer; ties stay session)
+    /// 2. Durable Live Activity language mirror (``loadLiveActivityLanguageMirror()``)
+    /// 3. ``preferredWidgetLanguage()`` (may hard-default `"en"` under no-widgets)
     ///
-    /// Session and live chrome are the stream the user just paused or resumed. The durable
-    /// language mirror can still hold a prior Live Activity ``ContentState`` language after a
-    /// destination switch (fire ≠ accept). Play/pause must not re-introduce that prior code
-    /// into ``instantFeedbackLanguage``.
+    /// Play/pause must propose the stream the user just paused or resumed. A leftover
+    /// in-process session code is **not** that stream when live chrome is already strictly
+    /// fresher. The durable language mirror can still hold a prior Live Activity
+    /// ``ContentState`` language after a destination switch (fire ≠ accept) and must not
+    /// win while session or live chrome already name the stream.
     ///
-    /// Instant-feedback **write** and ``loadSharedState()`` **read** settle language via
-    /// ``settledLanguageForInstantFeedback()`` (freshness), not this function’s session-first
-    /// `.first`. This resolver still prefers the first session / chrome code so callers that
-    /// only need “any settled stream” stay session-contiguous.
+    /// Instant-feedback **write** and ``loadSharedState()`` **read** use the same freshness
+    /// helper; this function is the play/pause **proposal** so ``handleWidgetPlay()`` /
+    /// ``handleWidgetStop()`` and Live Activity toggle mirror warming do not pass leftover
+    /// session into ``writeInstantFeedback(language:)`` or ``persistLiveActivityLanguageMirror(_:)``.
+    /// Writer coerce and the read ignore remain defense in depth.
+    ///
+    /// ``settledSessionOrHomeLiveChromeLanguages()`` stays session-first for callers that
+    /// only need “a settled stream exists” — do not use that list’s ``.first`` here.
     ///
     /// Live Activity **views** must not call this — they use `context.state.currentLanguage` only.
     ///
+    /// - Returns: Non-empty language code for optimistic play/pause writes.
     /// - SeeAlso: ``writeInstantFeedback(language:)``, ``loadSharedState()``,
     ///   ``persistLiveActivityLanguageMirror(_:)``,
     ///   ``settledSessionOrHomeLiveChromeLanguages()``,
     ///   ``settledLanguageForInstantFeedback()``,
     ///   ``languageForInstantFeedbackWrite(_:)``,
     ///   ``WidgetIntentExecution/performLiveActivityToggle()``,
+    ///   ``WidgetIntentExecution/languageForPlayPauseOptimisticWrite(resolutionLanguage:)``,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
     nonisolated static func languageForLiveActivityOrWidgetOptimistic() -> String {
-        if let settled = settledSessionOrHomeLiveChromeLanguages().first {
+        if let settled = settledLanguageForInstantFeedback() {
             return settled
         }
         if let mirrorLanguage = loadLiveActivityLanguageMirror(), !mirrorLanguage.isEmpty {
@@ -198,10 +209,10 @@ extension SharedPlayerManager {
     /// Non-empty language codes from the in-process session snapshot and privacy-gated
     /// ``homeWidgetLiveChrome`` (session first; chrome appended when it differs).
     ///
-    /// Play/pause optimistic **callers** that only need “a settled stream exists” still
-    /// use this pair (``.first``). Instant-feedback **write** and ``loadSharedState()``
-    /// **read** must not treat every element as a valid match — a leftover session code
-    /// plus fresher chrome yields `[stale, current]`, and `contains` would re-plant the
+    /// Callers that only need “a settled stream exists” may use this pair. Play/pause
+    /// **proposal**, instant-feedback **write**, and ``loadSharedState()`` **read** must
+    /// not treat every element as a valid match — a leftover session code plus fresher
+    /// chrome yields `[stale, current]`, and ``.first`` / `contains` would re-plant the
     /// stale code. Those paths use ``settledLanguageForInstantFeedback()`` instead.
     ///
     /// - Returns: Zero, one, or two distinct non-empty language codes.
@@ -223,7 +234,8 @@ extension SharedPlayerManager {
         return codes
     }
 
-    /// Single settled language for instant-feedback write and ``loadSharedState()`` read.
+    /// Single settled language for play/pause proposal, instant-feedback write, and
+    /// ``loadSharedState()`` read.
     ///
     /// Session vs privacy-gated ``homeWidgetLiveChrome`` use the same freshness comparison
     /// as ``languageForWidgetRefreshDerivation(fallbackLanguage:)`` and
@@ -237,12 +249,13 @@ extension SharedPlayerManager {
     ///   are empty (first-tap / no-settled — callers store `proposed`).
     /// - Important: A leftover session code is **not** a valid instant-feedback match
     ///   merely because it appears in ``settledSessionOrHomeLiveChromeLanguages()``.
-    ///   Play/pause must not re-plant that leftover after chrome already names the
-    ///   current stream. Optimistic switch may still store the destination when it
-    ///   already matches this fresher settled source.
+    ///   Play/pause must not propose or re-plant that leftover after chrome already
+    ///   names the current stream. Optimistic switch may still store the destination
+    ///   when it already matches this fresher settled source.
     /// - Important: Durable Live Activity language is never consulted. Privacy write
     ///   suppression is unchanged (this helper only reads).
     /// - SeeAlso: ``languageForInstantFeedbackWrite(_:)``, ``loadSharedState()``,
+    ///   ``languageForLiveActivityOrWidgetOptimistic()``,
     ///   ``settledSessionOrHomeLiveChromeLanguages()``,
     ///   ``languageForWidgetRefreshDerivation(fallbackLanguage:)``,
     ///   ``resolveHomeWidgetChromeFields``,

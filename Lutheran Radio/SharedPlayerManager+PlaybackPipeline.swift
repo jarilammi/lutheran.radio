@@ -1562,8 +1562,9 @@ extension SharedPlayerManager {
     internal func handleWidgetPlay() {
         ensureVisualStateLoadedForWidget()
         
-        // Instant visual feedback: session / live chrome first so play of a settled
-        // stream does not restamp a lagging Live Activity language into the 15 s window.
+        // Instant visual feedback: freshness-settled session / live chrome so play of a
+        // settled stream does not restamp leftover session or a lagging Live Activity
+        // language into the 15 s window.
         let optimisticLanguage = Self.languageForLiveActivityOrWidgetOptimistic()
         Self.writeInstantFeedback(language: optimisticLanguage)
         
@@ -1595,8 +1596,9 @@ extension SharedPlayerManager {
     internal func handleWidgetStop() {
         ensureVisualStateLoadedForWidget()
         
-        // Instant visual feedback: session / live chrome first so pause of a settled
-        // stream does not restamp a lagging Live Activity language into the 15 s window.
+        // Instant visual feedback: freshness-settled session / live chrome so pause of a
+        // settled stream does not restamp leftover session or a lagging Live Activity
+        // language into the 15 s window.
         let optimisticLanguage = Self.languageForLiveActivityOrWidgetOptimistic()
         Self.writeInstantFeedback(language: optimisticLanguage)
         

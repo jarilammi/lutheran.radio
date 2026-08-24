@@ -471,6 +471,7 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
 
         XCTAssertEqual(SharedPlayerManager.settledLanguageForInstantFeedback(), "et")
         XCTAssertEqual(SharedPlayerManager.languageForInstantFeedbackWrite("sv"), "et")
+        XCTAssertEqual(SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(), "et")
 
         SharedPlayerManager.writeInstantFeedback(language: "sv")
         XCTAssertEqual(
@@ -487,6 +488,71 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
         defaults.set(true, forKey: "isInstantFeedback")
         defaults.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
         defaults.set("sv", forKey: "instantFeedbackLanguage")
+        XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
+    }
+
+    /// ``handleWidgetStop()`` must propose fresher live chrome, not leftover session ``.first``.
+    ///
+    /// **Invariant protected:** Leftover session `sv` (older stamp) plus
+    /// ``homeWidgetLiveChrome`` `et` (newer `updatedAt`) →
+    /// ``languageForLiveActivityOrWidgetOptimistic()`` returns `et` **before**
+    /// ``writeInstantFeedback(language:)``. ``handleWidgetStop()`` then stores `et`.
+    /// Durable LA language remains unused. Writer coerce stays defense in depth.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/handleWidgetStop()``,
+    ///   ``SharedPlayerManager/languageForLiveActivityOrWidgetOptimistic()``,
+    ///   ``SharedPlayerManager/settledLanguageForInstantFeedback()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
+    func testHandleWidgetStopProposesFresherLiveChromeEtNotLeftoverSessionSv() async {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        // false→true restamp is an unstructured Task. Let it finish before planting
+        // leftover session vs fresher chrome, or it restamps chrome from session.
+        await Task.yield()
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(100))
+        defer {
+            SharedPlayerManager.removeAllLocalPlaybackKeys()
+        }
+
+        SharedPlayerManager.inMemorySessionWidgetSnapshot = SharedPlayerManager.PersistedWidgetState(
+            visualState: .playing,
+            currentLanguage: "sv",
+            lastLanguageChangeTime: Date(timeIntervalSince1970: 1_000),
+            streamMetadata: nil,
+            hasError: false
+        )
+        let chromeStamp = Date().timeIntervalSince1970 + 60
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "et",
+                hasError: false,
+                updatedAt: chromeStamp,
+                stampReason: "setPlaying"
+            )
+        )
+        SharedPlayerManager.persistLiveActivityLanguageMirror("sv")
+
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.currentLanguage,
+            "et",
+            "Planted chrome must survive the gate-open restamp before proposal asserts"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.settledSessionOrHomeLiveChromeLanguages().first,
+            "sv"
+        )
+        XCTAssertEqual(SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(), "et")
+
+        await manager.handleWidgetStop()
+
+        XCTAssertEqual(
+            UserDefaults(suiteName: "group.radio.lutheran.shared")?.string(forKey: "instantFeedbackLanguage"),
+            "et"
+        )
         XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
     }
 }

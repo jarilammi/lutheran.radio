@@ -40,11 +40,13 @@ extension SharedPlayerManager {
     /// termination sentinel); instant-feedback language keys still write when the privacy gate
     /// allows so short optimistic language paint can proceed without resurrecting liveness.
     ///
-    /// Play/pause callers must pass the settled session / ``homeWidgetLiveChrome`` language
-    /// (``languageForLiveActivityOrWidgetOptimistic()``). This writer still **coerces** a
-    /// disagreeing caller language via ``languageForInstantFeedbackWrite(_:)`` so neither
-    /// an empty extension session (device locale) nor a leftover session code can plant
-    /// that language while fresher ``homeWidgetLiveChrome`` already names the stream.
+    /// Play/pause callers propose ``settledLanguageForInstantFeedback()`` via
+    /// ``languageForLiveActivityOrWidgetOptimistic()`` /
+    /// ``WidgetIntentExecution/languageForPlayPauseOptimisticWrite(resolutionLanguage:)``.
+    /// This writer still **coerces** a disagreeing caller language via
+    /// ``languageForInstantFeedbackWrite(_:)`` so neither an empty extension session
+    /// (device locale) nor a leftover session code can plant that language while fresher
+    /// ``homeWidgetLiveChrome`` already names the stream.
     /// Stream-switch callers persist the **destination** into session + live chrome first,
     /// so the destination is already the fresher settled source and is stored as given.
     /// The 15 s ``loadSharedState()`` window does not let a disagreeing instant-feedback

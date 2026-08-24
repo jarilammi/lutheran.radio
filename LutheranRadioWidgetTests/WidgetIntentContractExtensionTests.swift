@@ -1570,6 +1570,7 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         }
         XCTAssertEqual(defaults.string(forKey: "instantFeedbackLanguage"), "et")
         XCTAssertEqual(SharedPlayerManager.languageForInstantFeedbackWrite("sv"), "et")
+        XCTAssertEqual(SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(), "et")
     }
 
     /// Leftover in-process session `sv` must not re-plant instant feedback when
@@ -1602,6 +1603,58 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         XCTAssertEqual(SharedPlayerManager.settledLanguageForInstantFeedback(), "et")
     }
 
+    /// Play/pause **proposal** must use fresher live chrome, not leftover session ``.first``.
+    ///
+    /// **Invariant protected:** Leftover extension-session `sv` (older stamp) plus
+    /// ``homeWidgetLiveChrome`` `et` (newer `updatedAt`) →
+    /// ``languageForLiveActivityOrWidgetOptimistic()`` and
+    /// ``languageForPlayPauseOptimisticWrite(resolutionLanguage:)`` return `et` **before**
+    /// writer coerce. ``settledSessionOrHomeLiveChromeLanguages().first`` remains `sv`.
+    /// Home pause persists `et`. Durable LA language is unused at proposal time.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/languageForLiveActivityOrWidgetOptimistic()``,
+    ///   ``WidgetIntentExecution/languageForPlayPauseOptimisticWrite(resolutionLanguage:)``,
+    ///   ``SharedPlayerManager/settledLanguageForInstantFeedback()``,
+    ///   ``WidgetIntentExecution/performHomeWidgetPause()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
+    func testPlayPauseProposalUsesFresherLiveChromeEtNotLeftoverSessionSv() async {
+        plantLeftoverSessionLanguage("sv", sessionStamp: 1_000)
+        plantHomeWidgetLiveChrome(language: "et", updatedAt: 2_000)
+        SharedPlayerManager.persistLiveActivityLanguageMirror("sv")
+
+        XCTAssertEqual(
+            SharedPlayerManager.settledSessionOrHomeLiveChromeLanguages().first,
+            "sv",
+            "Session-first list still exposes leftover sv; play/pause must not use .first"
+        )
+        XCTAssertEqual(SharedPlayerManager.settledLanguageForInstantFeedback(), "et")
+        XCTAssertEqual(SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(), "et")
+        XCTAssertEqual(
+            WidgetIntentExecution.languageForPlayPauseOptimisticWrite(resolutionLanguage: "sv"),
+            "et"
+        )
+        XCTAssertEqual(WidgetIntentExecution.languageForPlayPauseOptimisticWrite(), "et")
+
+        await WidgetIntentExecution.performHomeWidgetPause()
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+        XCTAssertEqual(defaults.string(forKey: "instantFeedbackLanguage"), "et")
+        XCTAssertEqual(SharedPlayerManager.loadPersistedWidgetState()?.currentLanguage, "et")
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.currentLanguage,
+            "et"
+        )
+        XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
+        XCTAssertEqual(
+            SharedPlayerManager.loadLiveActivityLanguageMirror(),
+            "et",
+            "Optimistic pause must warm the durable LA language mirror from freshness-settled et"
+        )
+    }
+
     /// Older chrome must not beat a fresher session `et` (ties stay session).
     ///
     /// **Invariant protected:** Leftover ``instantFeedbackLanguage`` `sv` is ignored
@@ -1615,6 +1668,7 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         plantExtensionInstantFeedbackLanguage("sv")
 
         XCTAssertEqual(SharedPlayerManager.languageForInstantFeedbackWrite("sv"), "et")
+        XCTAssertEqual(SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(), "et")
         XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
 
         plantLeftoverSessionLanguage("et", sessionStamp: 1_500)
@@ -1625,6 +1679,7 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
             "et",
             "Equal stamps prefer session, matching resolveHomeWidgetChromeFields"
         )
+        XCTAssertEqual(SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(), "et")
         XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
     }
 

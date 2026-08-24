@@ -321,10 +321,10 @@ enum WidgetIntentExecution {
             return
         }
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(optimisticTarget)
-        // Warm the language mirror from session / live chrome (same resolve as play/pause
-        // instant feedback). Do not re-stamp a lagging ContentState language when the
-        // settled stream has already advanced — that prior code would then win the
-        // durable-mirror fallback on the next play/pause.
+        // Warm the language mirror from freshness-settled session / live chrome (same
+        // resolve as play/pause proposal). Do not re-stamp leftover session or a lagging
+        // ContentState language when the settled stream has already advanced — that prior
+        // code would then win the durable-mirror fallback on the next play/pause.
         let optimisticLanguage = SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic()
         if !optimisticLanguage.isEmpty {
             SharedPlayerManager.persistLiveActivityLanguageMirror(optimisticLanguage)
@@ -594,23 +594,30 @@ enum WidgetIntentExecution {
 
     /// Session / ``homeWidgetLiveChrome`` language for play/pause optimistic writes.
     ///
-    /// Empty extension RAM (OI-1) must not fall through to ``preferredWidgetLanguage()``
-    /// (device locale) when live chrome already holds the settled stream.
-    /// ``settledSessionOrHomeLiveChromeLanguages()`` re-syncs the App Group suite.
+    /// Proposes ``SharedPlayerManager/settledLanguageForInstantFeedback()`` so leftover
+    /// in-process session language is not passed into ``executeOptimisticToggle(plan:language:)``
+    /// when live chrome is already strictly fresher. Empty extension RAM (OI-1) still
+    /// follows stamped chrome (that helper re-syncs the App Group suite) and must not
+    /// fall through to ``preferredWidgetLanguage()`` (device locale).
+    ///
+    /// ``executeOptimisticToggle(plan:language:)`` still coerces via
+    /// ``SharedPlayerManager/languageForInstantFeedbackWrite(_:)`` before persist
+    /// (empty-RAM locale and leftover-session defense in depth).
     ///
     /// - Parameter resolutionLanguage: Optional chrome-field language already resolved for
     ///   this intent (used only when session and live chrome are both empty).
-    /// - Returns: First settled session / live-chrome code, else `resolutionLanguage`, else
-    ///   ``SharedPlayerManager/preferredWidgetLanguage()``.
-    /// - SeeAlso: ``SharedPlayerManager/settledSessionOrHomeLiveChromeLanguages()``,
-    ///   ``SharedPlayerManager/settledLanguageForInstantFeedback()``,
+    /// - Returns: Freshness-settled session / live-chrome code, else `resolutionLanguage`,
+    ///   else ``SharedPlayerManager/preferredWidgetLanguage()``.
+    /// - SeeAlso: ``SharedPlayerManager/settledLanguageForInstantFeedback()``,
+    ///   ``SharedPlayerManager/languageForLiveActivityOrWidgetOptimistic()``,
+    ///   ``SharedPlayerManager/settledSessionOrHomeLiveChromeLanguages()``,
     ///   ``SharedPlayerManager/languageForInstantFeedbackWrite(_:)``,
     ///   ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``.
-    private static func languageForPlayPauseOptimisticWrite(
+    static func languageForPlayPauseOptimisticWrite(
         resolutionLanguage: String? = nil
     ) -> String {
         WidgetIntentCoordinators.languageForOptimisticUpdate(
-            persistedLanguage: SharedPlayerManager.settledSessionOrHomeLiveChromeLanguages().first
+            persistedLanguage: SharedPlayerManager.settledLanguageForInstantFeedback()
                 ?? resolutionLanguage,
             preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
         )
@@ -647,10 +654,10 @@ enum WidgetIntentExecution {
     /// - Parameters:
     ///   - plan: Home-widget or Control-widget toggle plan.
     ///   - language: Language code from ``languageForPlayPauseOptimisticWrite(resolutionLanguage:)``
-    ///     (session / ``homeWidgetLiveChrome`` — the stream just paused or resumed).
-    ///     Coerced again via ``SharedPlayerManager/languageForInstantFeedbackWrite(_:)`` so a
-    ///     locale fallback cannot persist into the optimistic snapshot or instant-feedback keys
-    ///     while live chrome already names the stream.
+    ///     (freshness-settled session / ``homeWidgetLiveChrome`` — the stream just paused or
+    ///     resumed). Coerced again via ``SharedPlayerManager/languageForInstantFeedbackWrite(_:)``
+    ///     so a locale fallback or leftover session code cannot persist into the optimistic
+    ///     snapshot or instant-feedback keys while fresher live chrome already names the stream.
     /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``,
     ///   ``pushOptimisticLiveActivityToggleContent(visualState:)``,
     ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``,
