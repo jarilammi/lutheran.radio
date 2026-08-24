@@ -270,6 +270,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // - Interruption/route observers: `+AudioSessionInterruption.swift` (not configure).
     // - Never call `setCategory` / `setActive` outside `+AudioSession`. Local clips call
     //   ``configureAudioSessionAsync()`` from `+LocalClipPlayer` only (no direct setActive).
+    // - Construction does **not** activate. First clip / `play()` / ``attachAndPlay`` /
+    //   host ``reconfigureAudioSession()`` already await ``configureAudioSessionAsync()``.
+    //   Factory-reset ``deactivateAudioSessionAsync()`` (Now Playing phase 2) therefore
+    //   cannot race an in-flight init configure.
     //
     // Thermal / energy ownership (domain file + façade stored token + computed flag):
     // - Observers + teardown live in `+ThermalProtection.swift`; `thermalObserver` and
@@ -735,11 +739,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         super.init()
         
-        // Now async (uses configureAudioSessionAsync under the hood). Fire-and-forget is safe here:
-        // activation is non-blocking and any playback paths re-ensure / await as needed.
-        Task { @MainActor in
-            await setupAudioSession()
-        }
+        // Do not activate AVAudioSession from construction. Factory-reset teardown
+        // (``resetToFactoryDefaultsOnLaunch`` → ``teardownNowPlayingSession`` →
+        // ``deactivateAudioSessionAsync``) runs on the same process start. An overlapping
+        // fire-and-forget ``setupAudioSession()`` raced that deactivate (SessionCore
+        // OSStatus -50). First local clip, ``play()``, ``attachAndPlay``, and host
+        // ``reconfigureAudioSession()`` already await ``configureAudioSessionAsync()``.
         setupNetworkMonitoring()
         
         #if DEBUG
@@ -818,11 +823,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         super.init()
         
-        // Now async (uses configureAudioSessionAsync under the hood). Fire-and-forget is safe here:
-        // activation is non-blocking and any playback paths re-ensure / await as needed.
-        Task { @MainActor in
-            await setupAudioSession()
-        }
+        // Do not activate AVAudioSession from construction. Same contract as the designated
+        // init: factory-reset teardown deactivates on this process start; first clip /
+        // play / attach / host reconfigure already await ``configureAudioSessionAsync()``.
         setupNetworkMonitoring()
         
         // Low Power Mode observation: +ThermalProtection.swift (no immediate playback action)

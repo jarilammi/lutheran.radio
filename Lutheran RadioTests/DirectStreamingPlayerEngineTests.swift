@@ -6,12 +6,16 @@
 //
 //  Real-engine integration coverage for ``DirectStreamingPlayer`` under the XCTest
 //  host: attach-generation discard, hard-teardown barriers, early-window recovery,
-//  UITestMode audio short-circuits, and production type / DNSSEC factory surfaces.
+//  UITestMode audio short-circuits (construction does not activate AVAudioSession;
+//  first clip / play / attach await configure), and production type / DNSSEC factory
+//  surfaces.
 //
 //  Mock doubles and pure unit scenarios live in ``DirectStreamingPlayerMockTests``.
 //
 //  - SeeAlso: ``DirectStreamingPlayer``, ``SharedPlayerManager``,
+//    ``DirectStreamingPlayer/configureAudioSessionAsync()``,
 //    docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+//    docs/Widget-Presentation-Dataflow.md (user-initiated main open),
 //    docs/cold-launch-streamplay-regression-checklist.md.
 //
 
@@ -82,6 +86,29 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         let missing = URL(fileURLWithPath: "/tmp/lutheran-radio-local-clip-test-missing.wav")
         let result = try await DirectStreamingPlayer.shared.startLocalClipPlayer(contentsOf: missing)
         XCTAssertNil(result, "startLocalClipPlayer must return nil under UITestMode without throwing")
+    }
+
+    /// Construction does not activate `AVAudioSession`. Factory-reset teardown deactivates
+    /// the session on the same process start; first clip / play / attach already await
+    /// ``configureAudioSessionAsync()``. This gate asserts the UITestMode no-op seam on
+    /// that first-use path — it does not activate a real session.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/configureAudioSessionAsync()``,
+    ///   ``DirectStreamingPlayer/setupAudioSession()``,
+    ///   ``DirectStreamingPlayer/deactivateAudioSessionAsync()``,
+    ///   ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
+    ///   docs/Widget-Presentation-Dataflow.md (user-initiated main open).
+    func testConfigureAndSetupAudioSessionNoOpUnderUITestMode() async {
+        XCTAssertTrue(
+            SharedPlayerManager.isRunningInUITestMode,
+            "XCTest host must report UITestMode so engine audio paths stay silent"
+        )
+        await DirectStreamingPlayer.shared.setupAudioSession()
+        let configured = await DirectStreamingPlayer.shared.configureAudioSessionAsync()
+        XCTAssertFalse(
+            configured,
+            "configureAudioSessionAsync must no-op under UITestMode (first clip/play await this; init must not activate)"
+        )
     }
 
     // MARK: - Static Type Tests (testing real types without creating instances)

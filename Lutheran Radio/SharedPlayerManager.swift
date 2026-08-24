@@ -1116,6 +1116,9 @@ actor SharedPlayerManager {
     ///   ``clearPersistedVisualStateKeysFromDisk()``, ``clearLiveActivityToggleVisualStateMirror()``,
     ///   ``clearLiveActivityLanguageMirror()``,
     ///   ``discardResidualPendingActionsAndArmMailboxForThisProcess()``,
+    ///   ``teardownNowPlayingSession()``,
+    ///   `DirectStreamingPlayer.configureAudioSessionAsync()`,
+    ///   `DirectStreamingPlayer.deactivateAudioSessionAsync()`,
     ///   ViewController.viewDidLoad, docs/Widget-Presentation-Dataflow.md (User-initiated main
     ///   open vs residual surprise), docs/Event-Driven-Refactor-Roadmap.md (OI-1), CODING_AGENT.md
     ///   (SSOT principles).

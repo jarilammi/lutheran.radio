@@ -162,7 +162,9 @@ extension ViewController {
     /// so prepare/play (and any implicit activation) stay off the main actor.
     ///
     /// Playback entry points inside the player call `configureAudioSessionAsync()` (or the
-    /// thin `setupAudioSession()` wrapper) directly.
+    /// thin `setupAudioSession()` wrapper) directly. Engine construction does **not**
+    /// activate — first clip / play / attach await configure so factory-reset deactivate
+    /// cannot race init ``setCategory``.
     ///
     /// - SeeAlso: ``DirectStreamingPlayer/configureAudioSessionAsync()``,
     ///   ``DirectStreamingPlayer/deactivateAudioSessionAsync()``,

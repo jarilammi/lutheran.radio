@@ -125,7 +125,7 @@ These are **different contracts**. Agents and contributors must not collapse the
 
 #### User-initiated main open (intentional cold play)
 
-Opening the **main** process after a cold start is expected to start radio (special tuning, then stream) when sticky intent does not block **and** a scene is presentable (`sceneDidBecomeActive`, or already `.active` after factory hygiene). That is a **user-driven** product choice: the human brought the app to the foreground. Factory reset, mailbox arm, and `.prePlay` UI still run immediately even if iOS created the process in the background (jetsam / last-media relaunch); auto-play waits. Headset remotes are installed at process start without calling ``play()``.
+Opening the **main** process after a cold start is expected to start radio (special tuning, then stream) when sticky intent does not block **and** a scene is presentable (`sceneDidBecomeActive`, or already `.active` after factory hygiene). That is a **user-driven** product choice: the human brought the app to the foreground. Factory reset, mailbox arm, and `.prePlay` UI still run immediately even if iOS created the process in the background (jetsam / last-media relaunch); auto-play waits. Headset remotes are installed at process start without calling ``play()``. Engine construction does **not** activate `AVAudioSession`. Factory-reset teardown may deactivate the session (Now Playing phase 2); first special-tuning clip and ``play()`` already await ``DirectStreamingPlayer/configureAudioSessionAsync()``, so that deactivate cannot race an in-flight init ``setCategory``.
 
 Examples (all user-initiated main open):
 
@@ -156,7 +156,7 @@ If the user later opens main, that open is **user-initiated** again (table row 2
 - **Not** gated by `lastUpdateTime == 0` (termination liveness remains presentation-only).
 - **Not** the same as residual chrome that still looks interactive after reboot while the main process is not resident.
 
-**SeeAlso:** ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``, resurrection table cold-launch row in `SharedPlayerManager.swift`, ``WidgetLivenessPresentation``, ``shouldDistrustDurableMirrorPlayPlanning()``, [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) (Now Playing residual + re-publish after intentional attach), [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) (OI-1).
+**SeeAlso:** ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``, resurrection table cold-launch row in `SharedPlayerManager.swift`, ``WidgetLivenessPresentation``, ``shouldDistrustDurableMirrorPlayPlanning()``, ``DirectStreamingPlayer/configureAudioSessionAsync()``, ``DirectStreamingPlayer/deactivateAudioSessionAsync()``, [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) (Now Playing residual + re-publish after intentional attach), [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) (OI-1).
 
 ### Why This Design Is Conservative
 - Prefer explicit shutdown + passive **widget/LA** UI over optimistic "keep the surfaces alive" without a live engine.

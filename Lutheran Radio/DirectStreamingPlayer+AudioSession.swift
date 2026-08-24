@@ -14,6 +14,10 @@
 //  Ownership (do not invert):
 //  - This domain owns **category + activate/deactivate** for the shared `.playback` session
 //    (``configureAudioSessionAsync()``, ``setupAudioSession()``, ``deactivateAudioSessionAsync()``).
+//  - Construction does **not** activate. First clip / ``play()`` / ``attachAndPlay`` /
+//    host ``reconfigureAudioSession()`` already await configure. Factory-reset
+//    ``deactivateAudioSessionAsync()`` (Now Playing phase 2) therefore cannot race an
+//    in-flight init ``setCategory``.
 //  - Interruption / route *observers* live in `+AudioSessionInterruption.swift` (separate domain).
 //  - Local file-clip construction lives in `+LocalClipPlayer.swift`; it calls
 //    ``configureAudioSessionAsync()`` and never `setActive` on MainActor.
@@ -63,10 +67,12 @@ extension DirectStreamingPlayer {
     ///   "This method can lead to UI unresponsiveness if called on the main thread.
     ///    Consider using the asynchronous activate/deactivate API instead."
     ///
-    /// All audio activation paths (init setup, `play()`, `startPlayback`, stream switches,
-    /// tuning sound, interruption recovery, route changes, category changes) must flow through
-    /// this method, the thin `setupAudioSession()` wrapper, or (from ViewController) via
-    /// `reconfigureAudioSession()`.
+    /// All audio activation paths (`play()`, `startPlayback`, stream switches, tuning
+    /// clips via ``startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``, interruption
+    /// recovery, route changes, category changes) must flow through this method, the thin
+    /// `setupAudioSession()` wrapper, or (from ViewController) via `reconfigureAudioSession()`.
+    /// Engine construction does **not** activate — factory-reset teardown deactivates on
+    /// the same process start, and first clip / play / attach already await this helper.
     ///
     /// Call sites are already structured as `Task { @MainActor in await ... }` or direct
     /// `await` from @MainActor contexts. The main thread remains responsive during activation.
@@ -100,6 +106,7 @@ extension DirectStreamingPlayer {
     ///   ``startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
     ///   `ViewController.reconfigureAudioSession()`,
     ///   `ViewController.handleInterruption(_:)`, `ViewController.handleRouteChange(_:)`,
+    ///   ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
     ///   CODING_AGENT.md (AV session + documentation rules).
     @MainActor
     func configureAudioSessionAsync() async -> Bool {
@@ -260,11 +267,17 @@ extension DirectStreamingPlayer {
     /// - On iOS 27.0+: uses the non-blocking `deactivateWithOptions:completionHandler:` via dynamic dispatch.
     /// - On iOS 26.x: performs the synchronous `setActive(false)` off the main thread.
     ///
-    /// All future explicit deactivation (e.g. on full stop, backgrounding with no active
-    /// playback, or explicit teardown) must go through this method.
+    /// All explicit deactivation (full stop, factory-reset Now Playing phase 2, privacy
+    /// teardown, sleep-timer elapsed pause) must go through this method.
+    ///
+    /// Factory-reset teardown may deactivate a session that construction never activated.
+    /// That is expected: engine init does not call ``setupAudioSession()``.
     ///
     /// - Returns: `true` on success (or no-op success under test/widget conditions).
-    /// - SeeAlso: ``configureAudioSessionAsync()``
+    /// - SeeAlso: ``configureAudioSessionAsync()``, ``setupAudioSession()``,
+    ///   ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
+    ///   ``SharedPlayerManager/teardownNowPlayingSession()``,
+    ///   docs/Widget-Presentation-Dataflow.md (user-initiated main open).
     @MainActor
     func deactivateAudioSessionAsync() async -> Bool {
         if Bundle.main.bundleURL.pathExtension == "appex" {
@@ -344,14 +357,18 @@ extension DirectStreamingPlayer {
 
     /// Thin async wrapper around ``configureAudioSessionAsync()``.
     ///
-    /// Single owner for playback AVAudioSession category+activation for cold launch,
-    /// stream switches, and tuning sound paths.
+    /// First local clip, ``play()``, and attach already await configure. Do **not** call
+    /// this from ``DirectStreamingPlayer`` construction — factory-reset teardown
+    /// deactivates the session on the same process start, and an overlapping init
+    /// configure raced that deactivate (SessionCore OSStatus -50).
     ///
     /// Under `isTesting` (SSOT `SharedPlayerManager.isRunningInUITestMode`) this is a no-op.
     /// Prevents background audio side effects during tests / launch performance tests.
     ///
-    /// - SeeAlso: ``configureAudioSessionAsync()``, ``startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
-    ///   `play()`, `startPlayback(context:)`.
+    /// - SeeAlso: ``configureAudioSessionAsync()``, ``deactivateAudioSessionAsync()``,
+    ///   ``startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
+    ///   `play()`, `startPlayback(context:)`,
+    ///   ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``.
     @MainActor
     func setupAudioSession() async {
         // Widget / extension safety: no-op when running in appex (see configureAudioSessionAsync).
