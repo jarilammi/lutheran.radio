@@ -385,7 +385,8 @@ Full stacking matrix, language/playing ensure, dual-axis / long-horizon / thrash
 - `WidgetSurface/WidgetProviderPresentationAssembly.swift` — pure Provider presentation slice assembly.
 - Membership-exception `WidgetDisplayModels.swift` — ``WidgetProviderSnapshotResolver`` (``resolveHomeWidgetChromeFields`` freshness for visual/language/hasError; program metadata peer; actor hygiene; stream-catalog labels), catalog-aware ``displayLanguageName(for:)`` wrapper, ``WidgetIntentExecution``; calls `SharedPlayerManager` / `WidgetRefreshManager` for hygiene and optimistic intent side effects.
 - `WidgetSurface/HomeWidgetLiveChrome.swift` — pure ``HomeWidgetLiveChrome`` payload + identity-skip helper (presentation-only).
-- `LutheranRadioWidget.swift` — `SimpleEntry`, `Provider`, family views, `WidgetMetadataRegion` (thin delegates to coordinators + factory).
+- `LutheranRadioWidget.swift` — `SimpleEntry`, `Provider`, family views, `WidgetMetadataRegion` (thin delegates to coordinators + factory). Per-widget gallery title is `.configurationDisplayName` → `"lutheran_radio_title"`.
+- `LutheranRadioWidget/InfoPlist.xcstrings` — extension `CFBundleDisplayName` (WidgetKit gallery **section** name). The OS reads `InfoPlist.strings`, not `Localizable`. Keep in lockstep with `"lutheran_radio_title"`; never restore the target identifier `LutheranRadioWidget`.
 - `LutheranRadioWidgetLiveActivity.swift` — `LutheranRadioLiveActivityWidget`, `LockScreenLiveActivityView`, Dynamic Island regions, intents.
 - `LutheranRadioWidgetControl.swift` — Control widget `Value` + toggle (same derivation path as home widgets).
 - `SharedPlayerManager.swift` (+ Persistence / AppGroup extensions) — `PersistedWidgetState`, App Group SSOT table (``homeWidgetLiveChrome``, ``homeWidgetStreamMetadata``), `isMainAppProcessRecentlyActive`, `forceStaleLivenessTimestampForTermination`, `bumpWidgetLivenessTimestamp`, live-chrome stamp/clear helpers.
@@ -398,7 +399,7 @@ Full stacking matrix, language/playing ensure, dual-axis / long-horizon / thrash
 - [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) — non-forcing `PlayerEvent` consumers including main-app chrome observation; OI-1 + live projection note.
 - [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) — Connecting-until-audible, soft-resume publish, LA settled acceptance (orthogonal to main chrome status adapter).
 
-All user-visible strings use `String(localized: "...", table: "Localizable")`.
+All user-visible Swift strings use `String(localized: "...", table: "Localizable")`. The widget gallery section name is the Apple-mandated `LutheranRadioWidget/InfoPlist.xcstrings` exception (`CFBundleDisplayName`).
 
 ## See Also
 

@@ -141,6 +141,15 @@ extension UIColor {
 // See docs/Widget-Functionality-Roadmap.md (Tier 3 provider audit) for which paths
 // require an actor hop versus safe direct ``loadPersistedWidgetState()`` reads.
 
+/// Home-screen widget (small / medium / large).
+///
+/// WidgetKit gallery **section** name is the extension `CFBundleDisplayName`
+/// (`LutheranRadioWidget/InfoPlist.xcstrings`), not this configuration title.
+/// Keep both in lockstep with `"lutheran_radio_title"`. Never restore the
+/// target identifier `LutheranRadioWidget` as the gallery section.
+///
+/// - SeeAlso: `LutheranRadioWidget/InfoPlist.xcstrings`, `lutheran_radio_title`,
+///   docs/Widget-Presentation-Dataflow.md, CODING_AGENT.md (Localization).
 struct LutheranRadioWidget: Widget {
     let kind: String = "LutheranRadioWidget"
 

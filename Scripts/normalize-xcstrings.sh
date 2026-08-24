@@ -19,6 +19,9 @@
 #                           Localizable. Must be requested explicitly so a
 #                           Localizable restabilize never surprises the Siri
 #                           catalog with a reorder diff.
+#   InfoPlist.xcstrings     Widget extension CFBundleDisplayName (gallery
+#                           section). The OS reads InfoPlist.strings, not
+#                           Localizable. Pass the path explicitly.
 #
 # What a successful run does:
 #   - Forces alphabetical order on all string *keys* (top level).
@@ -40,6 +43,7 @@
 #   ./Scripts/normalize-xcstrings.sh --localizable
 #   ./Scripts/normalize-xcstrings.sh --app-shortcuts
 #   ./Scripts/normalize-xcstrings.sh "Lutheran Radio/AppShortcuts.xcstrings"
+#   ./Scripts/normalize-xcstrings.sh LutheranRadioWidget/InfoPlist.xcstrings
 #
 # AGENT NOTE: AppShortcuts is opt-in on purpose. A default (or --localizable)
 # run must not touch AppShortcuts.xcstrings. There is no --all: run twice if
@@ -75,6 +79,7 @@ Catalog:
 
   <path-to.xcstrings>
       that file only (relative paths are from the repo root)
+      (e.g. LutheranRadioWidget/InfoPlist.xcstrings)
 
   -h, --help
       this message
