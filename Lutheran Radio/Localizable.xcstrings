@@ -20494,7 +20494,7 @@
       }
     },
     "volume_set_to" : {
-      "comment" : "VoiceOver announcement after a volume step. String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the percent via String(localized:defaultValue:).",
+      "comment" : "VoiceOver announcement after a volume step. String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the percent via String(localized:defaultValue:). A literal percent sign in a translation must be written %% (stringsdict is a format string; %-mut / %-ii would be consumed as a specifier).",
       "localizations" : {
         "bg" : {
           "variations" : {
@@ -20826,13 +20826,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Hørigutit %lld %-mut settet"
+                  "value" : "Hørigutit %lld %%-mut settet"
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Hørigutit %lld %-mut settet"
+                  "value" : "Hørigutit %lld %%-mut settet"
                 }
               }
             }
@@ -21054,19 +21054,19 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Hárdu lea settet %lld %-ii"
+                  "value" : "Hárdu lea settet %lld %%-ii"
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Hárdu lea settet %lld %-ii"
+                  "value" : "Hárdu lea settet %lld %%-ii"
                 }
               },
               "two" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Hárdu lea settet %lld %-ii"
+                  "value" : "Hárdu lea settet %lld %%-ii"
                 }
               }
             }
