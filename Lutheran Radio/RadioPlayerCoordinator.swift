@@ -161,9 +161,10 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     /// `+StatusDistribution` and other domain peels.
     nonisolated let streamingPlayer: DirectStreamingPlayer
 
-    // Weak back-ref for the few services that remain difficult to move in a single mechanical pass
-    // (primarily presenting security/stream alerts that were previously implemented directly on VC,
-    // and saveStateForWidget which is a one-line thin forwarder). All heavy decision paths stay here.
+    // Weak back-ref for presenting security/stream alerts that were previously implemented
+    // directly on VC. Persist after widget-action completion uses this type's
+    // ``saveStateForWidget()`` (thin ``SharedPlayerManager/saveCurrentState()`` forwarder).
+    // All heavy decision paths stay here.
     weak var viewController: ViewController?
 
     // Presenting hook (injected by VC so alerts can be shown without giving coordinator a full VC ref for layout).

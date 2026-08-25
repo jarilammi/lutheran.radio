@@ -197,6 +197,14 @@ extension RadioPlayerCoordinator {
         // visualState update will cause the controls to show correct glyph.
     }
 
+    /// Thin persist forwarder: writes the authoritative `PersistedWidgetState` snapshot
+    /// through ``SharedPlayerManager/saveCurrentState()`` for widgets and Live Activities.
+    ///
+    /// Debouncing lives in ``WidgetRefreshManager``; this path does not apply its own throttle.
+    /// Host `ViewController` widget-action completion calls this method (no second copy).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/saveCurrentState()``,
+    ///   ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``
     func saveStateForWidget() {
         Task {
             await SharedPlayerManager.shared.saveCurrentState()

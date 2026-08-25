@@ -541,19 +541,9 @@ class ViewController: UIViewController {
         }
     }
     
-    /// Thin delegate to `SharedPlayerManager.saveCurrentState()` so widgets and Live Activities
-    /// receive the authoritative `PersistedWidgetState` snapshot. Debouncing lives in
-    /// `WidgetRefreshManager`; this path does not apply its own throttle.
-    ///
-    ///
-    ///
-    ///
-    /// - SeeAlso: `SharedPlayerManager.saveCurrentState()`, `WidgetRefreshManager.refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`
-    func saveStateForWidget() {
-        Task {
-            await SharedPlayerManager.shared.saveCurrentState()
-        }
-    }
+    // Persist after widget-action completion: ``RadioPlayerCoordinator/saveStateForWidget()``
+    // (thin ``SharedPlayerManager/saveCurrentState()`` forwarder). Debouncing lives in
+    // `WidgetRefreshManager`; that path does not apply its own throttle.
 
     // setupFastWidgetActionChecking: ViewController+DarwinWidgetNotify.swift
     // Engine path observation + cellular alert + reconnect: ViewController+NetworkPathObservation.swift
@@ -708,7 +698,7 @@ extension ViewController {
     /// Public method to switch to a specific language stream (callable from SceneDelegate).
     /// - Parameter languageCode: The ISO language code to switch to (e.g., "en", "de", "fi", "sv", "et").
     public func handleSwitchToLanguage(_ languageCode: String) {
-        // Full external switch orchestration (stop + tuning + setStream + userDefaults + reset + play sequencing + UI) lives in RadioPlayerCoordinator.
+        // Full external switch orchestration (stop + tuning + prepareStreamChoice / attachAndPlay + userDefaults + reset + play sequencing + UI) lives in RadioPlayerCoordinator.
         radioPlayerCoordinator.handleSwitchToLanguage(languageCode)
     }
 
@@ -866,10 +856,10 @@ extension ViewController: StreamingPlayerDelegate {
                 #endif
             }
             
-            saveStateForWidget()
+            radioPlayerCoordinator.saveStateForWidget()
             
             #if DEBUG
-            print("[ViewController] Widget action '\(action)' completed → saveStateForWidget")
+            print("[ViewController] Widget action '\(action)' completed → coordinator.saveStateForWidget")
             #endif
             
             // Clear the pending action (actor-isolated)

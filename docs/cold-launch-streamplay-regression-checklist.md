@@ -87,7 +87,7 @@ End with security impact, build status, localization needed.
 2. **Playback intent** — `currentPlaybackIntent` / `PlaybackIntent` is authoritative for “user wants audio.” Includes `.cleared` (from privacy clear) as a sticky blocker (isStickyPauseOrLock) alongside `.userPaused` / `.securityLocked`. Do not conflate with grey `.userPaused` visual after stream failure.
 3. **Visual state** — `currentVisualState` / `PlayerVisualState` drives UI only; switch auto-resume gates on `playbackIntent.isActivePlaybackIntent`.
 4. **Widget snapshot** — `PersistedWidgetState` via `loadPersistedWidgetState` / `savePersistedWidgetState` only.
-5. **Cold-launch model** — `setSelectedStreamModelOnly` without `AVPlayerItem`; secured attach in `setStream` → `preparePlayerItem`.
+5. **Cold-launch model** — `setSelectedStreamModelOnly` without `AVPlayerItem`; secured attach in `attachAndPlay` → `prepareSecuredPlayerItem`.
 6. **Widget pause/play** — Extension signals Darwin; main app uses `SharedPlayerManager.stop()` / `play()` — no duplicated player logic in widget.
 7. **Widget language switch** — Extension: `SwitchStreamIntent` → `signalWidgetSwitchAction` (App Group + Darwin only; never main-app `DirectStreamingPlayer.switchToStream` in extension). Main app: `handleWidgetSwitchToLanguage` mirrors `completeStreamSwitch`: model-only → single `stop(.streamSwitch)` → `play()`.
 
@@ -96,7 +96,7 @@ End with security impact, build status, localization needed.
 ## 4. Cold launch and first play
 
 1. **Model before item** — `Stream model updated (no player item)` before secured `AVPlayerItem` attach.
-2. **Single secured item** — One item per cold launch; reuse via `setStream` / `startPlayback`.
+2. **Single secured item** — One item per cold launch; reuse via `prepareSecuredPlayerItem` / `startPlayback`.
 3. **Playing visual timing** — `.playing` is applied via deferred ``setPlaying()`` after soft-resume success or engine ready-to-play (not an early pre-`setStreamAndPlay` optimistic paint).
 4. **Play-path label** — DEBUG: `cold-launch first play, proceeding` (not resume/switch mislabels). First automatic play is gated by factory reset + sticky intent + prePlay one-shot only (no wall-clock “resurrection relaxed” window).
 5. **Startup safety net** — At most once on cold-launch first attach (`initialPlaybackRetryCount == 0`); not on resume or soft-pause resume.
