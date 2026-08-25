@@ -1,43 +1,15 @@
 # Core Module
 
-The `Core` module is the central, isolated foundation of **lutheran.radio**. It contains all security-critical logic and shared infrastructure, designed with strict separation of concerns and full Swift 6 concurrency compliance.
+Canonical `Core` documentation lives in DocC, not this leftover root file.
 
-## Purpose
+Read, in this order, for security work:
 
-- Act as the **single source of truth** for all security policies and configuration.
-- Isolate security validation logic to make it auditable, testable, and impossible to accidentally bypass.
-- Provide shared utilities and managers used across the rest of the app.
+1. `Core/Core.docc/Core.md` — module overview
+2. `Core/Core.docc/Articles/Security-Invariants.md`
+3. `Core/Core.docc/Articles/Architecture.md`
+4. `README.md` security sections (snapshot, pinning, verification commands)
+5. `CODING_AGENT.md` (Core Framework Surface Area)
 
-## Key Components
+`SharedPlayerManager` is **not** a Core component. Security policy and validation live exclusively in `Core/Configuration/`, `Core/Actors/`, and `Core/Security/` (`SecurityConfiguration`, `SecurityModelValidator`, `CertificateValidator`, `CertificateFingerprint`).
 
-### SecurityConfiguration
-- Centralized constants and rules (expected security model, sole live leaf pin via `pinnedFingerprintDigests`, sole media apex `preferredStreamingDomainSuffixes` = `siikkari.net`, cache durations, time skew tolerance, `requiresDNSSECValidationForStreaming`, etc.).
-- The **only** place that produces secure `URLSessionConfiguration` values via `makeSecureEphemeralConfiguration()` / `applySecureNetworkingRequirements(to:)`. All streaming, validation, and ping sessions must obtain their config here so that DNSSEC + cache hardening are applied uniformly.
-- Media hosts (`siikkari.net`) and DNS TXT hosts (`securityModelDomains`) are **independent** SSOTs — do not assume they share apexes.
-- Required security parameters — any deviation from these values is treated as a validation failure.
-
-### SecurityModelValidator
-- Actor-isolated (plain `actor` with strict Swift 6 concurrency, not `@MainActor`) responsible for DNS TXT record validation against the ordered list of security model domains (`securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk`) with smart fallback on **transient** errors only.
-- Handles caching (1-hour TTL), transient vs. permanent failures, and safe bridging for C callbacks.
-- Used by `DirectStreamingPlayer` and other components instead of scattered local security state.
-
-### Other
-- Updated `CertificateValidator`
-- `SharedPlayerManager` and related session handling
-- Initial unit tests (`SecurityModelValidatorTests`)
-
-## Design Principles
-
-- **Security First**: All security logic lives here. No other part of the app is allowed to make independent security decisions.
-- **Strict Concurrency**: Full Swift 6 isolation.
-- **Testability**: Clear inputs/outputs and minimal side effects.
-- **No Runtime Behavior Change**: Existing security guarantees (DNS validation, dual certificate pinning, hardened runtime, etc.) remain exactly the same.
-
-This module was introduced in PR #67 (`refactor/security-isolation-extraction`).
-
----
-
-For more details, see:
-- `SecurityConfiguration.swift`
-- `SecurityModelValidator.swift`
-- `README.md`
+Do not copy policy out of DocC into this file.

@@ -115,16 +115,6 @@ import WidgetSurface
 //
 // See the file header and docs/Widget-Presentation-Dataflow.md for the snapshot contract.
 
-/// Localized display name for a language code (stream catalog when available).
-private func getLanguageName(_ code: String) -> String {
-    displayLanguageName(for: code)
-}
-
-/// Flag emoji for a language code (pure WidgetSurface mapping).
-private func getStreamFlag(_ code: String) -> String {
-    displayFlag(for: code)
-}
-
 /// Alternative language codes for Live Activity quick-switch rows.
 ///
 /// Pure selection via ``alternativeStreamCodes``; catalog codes come from
@@ -374,8 +364,8 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                 .minimumScaleFactor(0.8)
 
                             LiveActivityLanguageLabel(
-                                flag: getStreamFlag(currentLanguage),
-                                name: getLanguageName(currentLanguage),
+                                flag: displayFlag(for: currentLanguage),
+                                name: displayLanguageName(for: currentLanguage),
                                 flagFont: .system(size: 10),
                                 nameFont: .system(size: 9, weight: .medium),
                                 spacing: 2
@@ -437,14 +427,14 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         ) { langCode in
                             Button(intent: LiveActivitySwitchStreamIntent(languageCode: langCode)) {
                                 LiveActivityStreamSwitchChipLabel(
-                                    flag: getStreamFlag(langCode),
-                                    name: getLanguageName(langCode),
+                                    flag: displayFlag(for: langCode),
+                                    name: displayLanguageName(for: langCode),
                                     density: .flagOnly,
                                     showsBackground: false
                                 )
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel(getLanguageName(langCode))
+                            .accessibilityLabel(displayLanguageName(for: langCode))
                         }
 
                         Spacer(minLength: 4)
@@ -630,8 +620,8 @@ struct LockScreenLiveActivityView: View {
                 Spacer(minLength: 4)
 
                 LiveActivityLanguageLabel(
-                    flag: getStreamFlag(currentLanguage),
-                    name: getLanguageName(currentLanguage),
+                    flag: displayFlag(for: currentLanguage),
+                    name: displayLanguageName(for: currentLanguage),
                     flagFont: .caption,
                     nameFont: .caption,
                     spacing: 2
@@ -659,8 +649,8 @@ struct LockScreenLiveActivityView: View {
                 ) { langCode in
                     Button(intent: LiveActivitySwitchStreamIntent(languageCode: langCode)) {
                         LiveActivityStreamSwitchChipLabel(
-                            flag: getStreamFlag(langCode),
-                            name: getLanguageName(langCode),
+                            flag: displayFlag(for: langCode),
+                            name: displayLanguageName(for: langCode),
                             nameFont: .system(size: 9, weight: .medium),
                             density: .flagAndName,
                             showsBackground: false

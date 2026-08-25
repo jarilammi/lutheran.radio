@@ -214,23 +214,15 @@ extension DirectStreamingPlayer {
         await prepareStreamChoice(stream, preparation: .modelOnly)
     }
 
-    /// Updates the selected stream model and prepares the secured player item (no audible start).
-    ///
-    /// Internal attach helper used by ``attachAndPlay(to:context:)``. Prefer the canonical
-    /// ``prepareStreamChoice`` + ``attachAndPlay`` pair at call sites.
-    @MainActor
-    func setStream(to stream: Stream) async {
-        await prepareSecuredPlayerItem(for: stream)
-    }
-
     /// Model update + optional clean stop + secured `AVPlayerItem` prepare (no audible kick).
     ///
     /// - Parameters:
     ///   - stream: Target stream model (language / URL template).
     ///   - allowSameStreamWarmReuse: Forwarded to ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``.
     ///     `true` only for ``PlaybackAttachContext/resume`` (same-stream hard-resume after user
-    ///     pause). Stream switch and ``setStream(to:)`` keep the default `false` so language
-    ///     change still pings when the 10 s throttle has expired. Does not set ``isSoftPaused``.
+    ///     pause). Stream switch and ``attachAndPlay`` (non-resume) keep the default `false` so
+    ///     language change still pings when the 10 s throttle has expired. Does not set
+    ///     ``isSoftPaused``.
     /// - SeeAlso: ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``,
     ///   ``DirectStreamingPlayer/shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``
     @MainActor
@@ -400,7 +392,7 @@ extension DirectStreamingPlayer {
         }
 
         // ──────────────────────────────────────────────────────────────
-        // Generation + intent: user pause during setStream / prior await must discard attach.
+        // Generation + intent: user pause during prepareSecuredPlayerItem / prior await must discard attach.
         // Sticky .userPaused / .securityLocked / .cleared (privacy clear) behavior preserved exactly.
         guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
             #if DEBUG
@@ -448,7 +440,7 @@ extension DirectStreamingPlayer {
                 return
             }
             
-            // Item should already exist from setStream (secured preparePlayerItem). Attach only as fallback.
+            // Item should already exist from prepareSecuredPlayerItem. Attach only as fallback.
             if player.currentItem == nil {
                 #if DEBUG
                 print("[DirectStreamingPlayer] \(debugAttachContextLabel(context)): no currentItem after AVPlayer init → attaching fresh item")
@@ -467,7 +459,7 @@ extension DirectStreamingPlayer {
                 #endif
             } else {
                 #if DEBUG
-                print("[DirectStreamingPlayer] reusing secured AVPlayerItem from setStream")
+                print("[DirectStreamingPlayer] reusing secured AVPlayerItem from prepareSecuredPlayerItem")
                 #endif
                 // preparePlayerItem already ran setupPlaybackObservers; only attach item-level observers.
                 self.addObservers()
