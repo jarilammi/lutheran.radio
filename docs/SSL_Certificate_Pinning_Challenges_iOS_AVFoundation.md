@@ -1,38 +1,83 @@
-# SSL Certificate Pinning Challenges with iOS AVFoundation
+# SSL Certificate Pinning with iOS AVFoundation
 
 ## Overview
-This document outlines the implementation of SSL certificate validation for an iOS 18 audio streaming app using AVFoundation.
 
-## Previous Approach: Constant Pinning
-- **Method**: Per-request SPKI and certificate hash pinning in `StreamingSessionDelegate`.
-- **Issues**: Overly restrictive, complex transition logic, custom URL scheme workarounds.
+Lutheran Radio streams over HTTPS using AVFoundation (`DirectStreamingPlayer`). Runtime full-certificate pinning lives in `Core/`, not in the player. App Transport Security (ATS) SPKI pinning in `Info.plist` is the TLS baseline; `CertificateValidator` adds an independent DER digest check.
 
-## Current Approach: Periodic Full Certificate Validation with Transition Period
-- **Method**: Centralized validation in `CertificateValidator` class, pinning the full certificate hash (`currentCertHash`). Used by `StreamingSessionDelegate` (per-request) and `DirectStreamingPlayer` (initial and periodic checks every 10 minutes).
-- **Transition Period**:
-  - **Dates**: 2027-01-01 00:00:00 GMT through 2027-02-10 23:59:59 GMT (end = live `*.siikkari.net` leaf `notAfter` on `livestream.siikkari.net`; start deliberately on calendar 2027-01-01). Authoritative values: `SecurityConfiguration.transitionWindowStart` / `transitionWindowEnd`. Review and update on each leaf rotation via app release.
-  - **Behavior**: If runtime pin-list validation fails during this period, log a warning but trust ATS's evaluation (when leniency is still allowed), allowing a coordinated new certificate to be accepted. Transient connection issues (e.g., server reboots) should be handled as non-security errors with fallbacks to alternate servers.
-  - **Outside Transition**: Strictly enforce `pinnedFingerprintDigests` before transition; fail after window end if the leaf is not on the pin list.
-- **Implementation**:
-  - `CertificateValidator` validates the SHA-256 hash of the certificate's DER representation, caching results for 10 minutes.
-  - `StreamingSessionDelegate` uses `CertificateValidator` for trust evaluation during streaming.
-  - `DirectStreamingPlayer` performs initial validation and schedules periodic HEAD requests.
-- **Stream Control**:
-  - Initial validation before playback.
-  - Periodic checks stop the stream on failure (outside transition period), notifying via `onStatusChange`. For improved resilience, add fallback to alternate servers on transient failures before stopping.
-- **ATS Compliance**: Enforced via `Info.plist` with no exceptions, handling SPKI and TLS requirements.
-- **Benefits**:
-  - Strong security with full certificate pinning.
-  - Smooth certificate rotation during transition period.
-  - Consistent validation across components.
-  - Reduced complexity by removing old transition logic and custom URL schemes.
-- **Considerations**:
-  - Certificate rotation requires updating `currentCertHash` post-expiry.
-  - ATS ensures baseline TLS security, complemented by pinned hash validation.
-  - Warning logs during transition aid debugging.
+Minimum deployment is iOS 26.2. Agents validate on Xcode 27 / iOS 27 simulators.
 
-## Key Considerations
-- **Validation**: Full certificate pinning ensures exact certificate match, with ATS covering SPKI and chain validation.
-- **Transition Period**: Allows coordinated new certificates during 2027-01-01 – 2027-02-10 GMT (see `SecurityConfiguration`), reducing user disruption at the next `*.siikkari.net` rotation.
-- **Performance**: Asynchronous HEAD requests and cached results minimize overhead.
-- **Maintenance**: Requires app update post-expiry with new certificate hash.
+Do not duplicate pin values outside `SecurityConfiguration`. Do not keep retired pre-cutover leaves on the acceptance list.
+
+## Two complementary layers
+
+### 1. ATS SPKI pinning (`Info.plist`)
+
+- Enforced by App Transport Security for every apex under `NSAppTransportSecurity > NSPinnedDomains` (subdomains included when `NSIncludesSubdomains` is true).
+- Sole media apex: `siikkari.net` (covers `european.siikkari.net`, `livestream.siikkari.net`, language hosts).
+- Current SPKI-SHA256-BASE64: `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`
+
+Verify (copy-paste):
+
+```bash
+openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null 2>/dev/null \
+  | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64
+```
+
+Expected: `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`
+
+### 2. Runtime full-certificate DER pinning (`CertificateValidator`)
+
+- Authoritative acceptance list: `SecurityConfiguration.pinnedFingerprintDigests` (array of 32-byte `CertificateFingerprint` values).
+- Sole production leaf: live `*.siikkari.net` via `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` (alias).
+- Colon-hex (operator / docs only; never compared at runtime):
+  `32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD`
+- Comparison: `CertificateFingerprint.constantTimeMatches` (constant-time). Colon-hex strings are never used for runtime decisions.
+- Success cache: `certificateValidationCacheDuration` (10 minutes). Independent of DNS TXT `modelCacheDuration` (1 hour).
+- Call sites: `StreamingSessionDelegate` (per-request trust) and `DirectStreamingPlayer` (initial + periodic HEAD revalidation using the same cache duration).
+
+Verify leaf DER SHA-256 (copy-paste):
+
+```bash
+openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null 2>/dev/null \
+  | openssl x509 -outform DER | openssl dgst -sha256
+```
+
+Match against `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests` in `SecurityConfiguration` (openssl prints lowercase hex without colons).
+
+## Transition window and time skew
+
+Authoritative dates: `SecurityConfiguration.transitionWindowStart` / `transitionWindowEnd`.
+
+- Window: **2027-01-01 00:00:00 GMT** through **2027-02-10 23:59:59 GMT**.
+- End aligns with live `*.siikkari.net` leaf `notAfter` on `livestream.siikkari.net`; start is a deliberate calendar lead-in.
+- During the window, if the runtime pin list rejects the leaf, the validator may still trust ATS evaluation **only when** `allowTransitionLeniency` remains true **and** device vs HTTP `Date` skew is ≤ 5 minutes (`maxAllowedTimeSkew`).
+- Any detected time manipulation or window mismatch permanently disables leniency for the remainder of the process.
+- Outside the window, fingerprint mismatches are hard failures regardless of ATS.
+
+Review and update the window on each leaf rotation via app release.
+
+## Stream control
+
+- Initial runtime validation runs before playback.
+- Periodic HEAD checks reuse `certificateValidationCacheDuration`. Outside the transition window, a pin failure stops the stream and notifies via `onStatusChange`. Transient connection issues (server reboot, DNSSEC name-resolution failure) remain classified as non-security errors with recovery / alternate-server fallback.
+- Streaming hosts use `preferredStreamingDomainSuffixes` (`siikkari.net` only). Media apex and DNS TXT hosts (`securityModelDomains`) are independent lists.
+
+## What this is not
+
+- There is no `currentCertHash` string. Runtime pins are `CertificateFingerprint` digests in `pinnedFingerprintDigests`.
+- SPKI pinning is ATS-only in `Info.plist`. Do not reimplement SPKI comparison in Swift.
+- Retired pre-cutover leaves (for example former `CC:F7:…:3D:CC`) are **not** on the acceptance list. Obsolete pins enlarge the set of certificates the runtime will accept.
+
+## Earlier approach (historical)
+
+Per-request SPKI and certificate-hash pinning inside `StreamingSessionDelegate` was overly restrictive, carried complex custom transition logic, and used custom URL-scheme workarounds. That path was replaced by centralized `CertificateValidator` plus ATS SPKI.
+
+## See also
+
+- ``<doc:Security-Invariants>`` (Invariants 2–4)
+- ``<doc:Architecture>``
+- `Core/Configuration/SecurityConfiguration.swift`
+- `Core/Security/CertificateValidator.swift`
+- `Core/Security/CertificateFingerprint.swift`
+- README.md “Current Security Snapshot”, “Certificate Pinning”, “Media Apex Cutover”
+- `CODING_AGENT.md` (never bypass full-certificate fingerprint pinning; never weaken Info.plist SPKI)
