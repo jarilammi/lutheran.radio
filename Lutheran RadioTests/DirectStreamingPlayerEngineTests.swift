@@ -7,13 +7,12 @@
 //  Real-engine integration coverage for ``DirectStreamingPlayer`` under the XCTest
 //  host: attach-generation discard, hard-teardown barriers, early-window recovery,
 //  UITestMode audio short-circuits (construction does not activate AVAudioSession;
-//  first clip / play / attach await configure), and production type / DNSSEC factory
-//  surfaces.
-//
-//  Mock doubles and pure unit scenarios live in ``DirectStreamingPlayerMockTests``.
+//  first clip / play / attach await configure), production type / DNSSEC factory
+//  surfaces, and pure ``shouldSkipForceWidgetSaveOnStableStatus`` policy.
 //
 //  - SeeAlso: ``DirectStreamingPlayer``, ``SharedPlayerManager``,
 //    ``DirectStreamingPlayer/configureAudioSessionAsync()``,
+//    ``DirectStreamingPlayer/shouldSkipForceWidgetSaveOnStableStatus(isPlaying:reasonKey:visual:)``,
 //    docs/Live-Activity-Stacking-and-Media-Surfaces.md,
 //    docs/Widget-Presentation-Dataflow.md (user-initiated main open),
 //    docs/cold-launch-streamplay-regression-checklist.md.
@@ -522,6 +521,111 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         XCTAssertTrue(
             engine.test_shouldAttemptEarlyAttachStallRecovery(item: loadingItem, rate: 0),
             "After loading grace expires, unknown + rate 0 may enter stall recovery"
+        )
+    }
+
+    // MARK: - Force widget-save skip (attach / sticky chrome)
+
+    /// Pure policy: status force-save skips sticky pause and sticky Connecting; still
+    /// forces for error keys and for audible playing when visual is already ``.playing``.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/shouldSkipForceWidgetSaveOnStableStatus(isPlaying:reasonKey:visual:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    func testShouldSkipForceWidgetSaveOnStableStatusPolicy() {
+        // Sticky pause: always skip force save.
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldSkipForceWidgetSaveOnStableStatus(
+                isPlaying: false,
+                reasonKey: "status_stopped",
+                visual: .userPaused
+            )
+        )
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldSkipForceWidgetSaveOnStableStatus(
+                isPlaying: false,
+                reasonKey: "status_stopped",
+                visual: .securityLocked
+            )
+        )
+
+        // Sticky Connecting: skip status_stopped / connecting / buffering / deferred playing.
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldSkipForceWidgetSaveOnStableStatus(
+                isPlaying: false,
+                reasonKey: "status_stopped",
+                visual: .prePlay
+            ),
+            "status_stopped during attach must not force-save while already Connecting"
+        )
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldSkipForceWidgetSaveOnStableStatus(
+                isPlaying: false,
+                reasonKey: "status_connecting",
+                visual: .prePlay
+            )
+        )
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldSkipForceWidgetSaveOnStableStatus(
+                isPlaying: false,
+                reasonKey: "status_buffering",
+                visual: .cleared
+            )
+        )
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldSkipForceWidgetSaveOnStableStatus(
+                isPlaying: true,
+                reasonKey: "status_playing",
+                visual: .prePlay
+            ),
+            "Deferred setPlaying while visual still Connecting must not force-save"
+        )
+
+        // Error / unavailability keys still force a save even on Connecting chrome.
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldSkipForceWidgetSaveOnStableStatus(
+                isPlaying: false,
+                reasonKey: "status_security_failed",
+                visual: .prePlay
+            )
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldSkipForceWidgetSaveOnStableStatus(
+                isPlaying: false,
+                reasonKey: "status_stream_unavailable",
+                visual: .prePlay
+            )
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldSkipForceWidgetSaveOnStableStatus(
+                isPlaying: false,
+                reasonKey: "status_failed",
+                visual: .prePlay
+            )
+        )
+
+        // Audible playing with visual already playing must force save (not skip).
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldSkipForceWidgetSaveOnStableStatus(
+                isPlaying: true,
+                reasonKey: "status_playing",
+                visual: .playing
+            )
+        )
+
+        // Transient connect/buffer while already playing → skip.
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldSkipForceWidgetSaveOnStableStatus(
+                isPlaying: false,
+                reasonKey: "status_connecting",
+                visual: .playing
+            )
+        )
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldSkipForceWidgetSaveOnStableStatus(
+                isPlaying: false,
+                reasonKey: "status_buffering",
+                visual: .playing
+            )
         )
     }
 }
