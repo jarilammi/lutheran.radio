@@ -681,10 +681,10 @@ This table is the source of truth for the historical record of security models (
 | `tampa`             | August 31, 2025    | April 18, 2026     | 1.2.8                  |
 | `atlanta`           | October 6, 2025    | April 18, 2026     | 26.0.1                 |
 | `birmingham`        | November 9, 2025   | April 18, 2026     | 26.0.2                 |
-| `houston`           | March 3, 2026      | (August 26, 2026)  | 26.3.0                 |
-| `starbase`          | May 18, 2026       | (August 26, 2026)  | 26.5.0                 |
-| `fredericksburg`    | June 2, 2026       | (August 26, 2026)  | 26.5.1                 |
-| `brenham`           | June 23, 2026      | (August 26, 2026)  | 26.5.2                 |
+| `houston`           | March 3, 2026      | August 26, 2026    | 26.3.0                 |
+| `starbase`          | May 18, 2026       | August 26, 2026    | 26.5.0                 |
+| `fredericksburg`    | June 2, 2026       | August 26, 2026    | 26.5.1                 |
+| `brenham`           | June 23, 2026      | August 26, 2026    | 26.5.2                 |
 | `dallas`            | August 1, 2026     | (ongoing)          | 26.6.0                 |
 
 **Notes:**
