@@ -698,6 +698,9 @@ class RadioLiveActivityManagerTests: XCTestCase {
     /// Protects lock-stretch thrash: status-driven media-surface refreshes must not re-burn
     /// the soft-retry budget without acceptance. Re-arm on destination change, eligibility,
     /// become-active (foreground clears quiet), or system contentUpdates.
+    /// Quiet still requires **committed** mismatch — three immediate post-await reads while
+    /// ``inFlightContentPushCandidate`` is unconfirmed do not exhaust the budget
+    /// (``testLanguageEnsureAttemptsConsumeOnlyOnCommittedObservation``).
     /// Does **not** end+request while ineligible.
     func testLanguageEnsureQuietPendingAfterMaxAttemptsWhileIneligible() {
         // Enter quiet only when still mismatched and request ineligible.
@@ -814,6 +817,21 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
         manager._test_setLanguageEnsureQuietPendingDestination(nil)
         manager._test_clearLastPushedContent()
+
+        // Quiet remains the post-budget cool-down; attempt consumption is a separate gate.
+        XCTAssertFalse(
+            manager._test_shouldConsumeLanguageEnsureAttempt(
+                ownedLanguageMatchesDestination: false,
+                inFlightContentPushUnconfirmed: true
+            ),
+            "Quiet-pending tests must not treat apply-in-flight mismatch as budget consumption"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSkipLanguageEnsureSoftPushWhileInFlight(
+                inFlightContentPushUnconfirmed: true
+            ),
+            "Unconfirmed apply must skip the next language-ensure Activity.update"
+        )
     }
 
     /// After soft language ensure quiet while lock/ineligible, post-hold settle re-arms soft
@@ -3380,6 +3398,135 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 isRequestEligible: true
             ),
             "Committed language stick at threshold while eligible still may recreate"
+        )
+    }
+
+    /// Language-ensure attempt slots follow the stall oracle: consume only on committed
+    /// observation, skip the next `Activity.update` while in-flight is unconfirmed.
+    ///
+    /// Three immediate post-await mismatches while the first apply is still in-flight must
+    /// not enter quiet pending. Max attempts stay 3; ineligible spacing stays 200/400/800 ms.
+    /// Does **not** invent `.playing`; does **not** end while ineligible; does **not** add
+    /// a fourth ensure rail. Does **not** claim lock-screen paint.
+    func testLanguageEnsureAttemptsConsumeOnlyOnCommittedObservation() {
+        let maxAttempts = RadioLiveActivityManager.authoritativeLanguageContentEnsureMaxAttempts
+        XCTAssertEqual(maxAttempts, 3, "Language ensure budget must stay three committed attempts")
+
+        var consumedWhileInFlight = 0
+        for _ in 1...maxAttempts {
+            XCTAssertTrue(
+                manager._test_shouldSkipLanguageEnsureSoftPushWhileInFlight(
+                    inFlightContentPushUnconfirmed: true
+                ),
+                "Unconfirmed in-flight candidate must skip the next language-ensure push"
+            )
+            if manager._test_shouldConsumeLanguageEnsureAttempt(
+                ownedLanguageMatchesDestination: false,
+                inFlightContentPushUnconfirmed: true
+            ) {
+                consumedWhileInFlight += 1
+            }
+        }
+        XCTAssertEqual(
+            consumedWhileInFlight,
+            0,
+            "Immediate post-await mismatch while apply is in-flight must not consume attempts"
+        )
+
+        XCTAssertFalse(
+            manager._test_shouldSkipLanguageEnsureSoftPushWhileInFlight(
+                inFlightContentPushUnconfirmed: false
+            ),
+            "Confirmed apply (in-flight cleared) may issue the next language-ensure push"
+        )
+        XCTAssertTrue(
+            manager._test_shouldConsumeLanguageEnsureAttempt(
+                ownedLanguageMatchesDestination: false,
+                inFlightContentPushUnconfirmed: false
+            ),
+            "Committed mismatch after delayed re-read / contentUpdates consumes one attempt"
+        )
+        XCTAssertFalse(
+            manager._test_shouldConsumeLanguageEnsureAttempt(
+                ownedLanguageMatchesDestination: true,
+                inFlightContentPushUnconfirmed: false
+            ),
+            "Owned language matching destination is success, not consumption"
+        )
+        XCTAssertFalse(
+            manager._test_shouldConsumeLanguageEnsureAttempt(
+                ownedLanguageMatchesDestination: true,
+                inFlightContentPushUnconfirmed: true
+            ),
+            "Owned match during an unconfirmed apply is still success, not consumption"
+        )
+
+        XCTAssertFalse(
+            manager._test_shouldStopLanguageEnsureUnconfirmedWait(
+                unconfirmedWaits: maxAttempts - 1,
+                maxAttempts: maxAttempts
+            ),
+            "Wait bound must allow up to maxAttempts apply-window waits"
+        )
+        XCTAssertTrue(
+            manager._test_shouldStopLanguageEnsureUnconfirmedWait(
+                unconfirmedWaits: maxAttempts,
+                maxAttempts: maxAttempts
+            ),
+            "Wait bound equals max attempts — not a fourth rail"
+        )
+        XCTAssertTrue(
+            manager._test_shouldStopLanguageEnsureUnconfirmedWait(
+                unconfirmedWaits: 1,
+                maxAttempts: 0
+            ),
+            "Zero max attempts must stop immediately"
+        )
+
+        // Ineligible spacing unchanged (200 / 400 / 800 ms).
+        XCTAssertEqual(
+            manager._test_softEnsureInterAttemptDelayMilliseconds(
+                attempt: 1,
+                maxAttempts: maxAttempts,
+                isRequestEligible: false
+            ),
+            RadioLiveActivityManager.authoritativeContentEnsureIneligibleInterAttemptDelaysMilliseconds[0]
+        )
+        XCTAssertEqual(
+            manager._test_softEnsureInterAttemptDelayMilliseconds(
+                attempt: 2,
+                maxAttempts: maxAttempts,
+                isRequestEligible: false
+            ),
+            RadioLiveActivityManager.authoritativeContentEnsureIneligibleInterAttemptDelaysMilliseconds[1]
+        )
+        XCTAssertEqual(
+            manager._test_softEnsureInterAttemptDelayMilliseconds(
+                attempt: 3,
+                maxAttempts: maxAttempts,
+                isRequestEligible: false
+            ),
+            nil,
+            "No fourth inter-attempt delay after the last committed attempt"
+        )
+
+        // Quiet still requires committed mismatch while ineligible (existing helper).
+        XCTAssertEqual(
+            manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
+                languageStillMismatches: true,
+                isRequestEligible: false,
+                destinationLanguage: "fi"
+            ),
+            "fi",
+            "Committed budget exhaustion while ineligible still records quiet"
+        )
+        XCTAssertNil(
+            manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
+                languageStillMismatches: false,
+                isRequestEligible: false,
+                destinationLanguage: "fi"
+            ),
+            "Committed match after the apply window must not enter quiet"
         )
     }
 

@@ -188,6 +188,10 @@ import WidgetSurface
 /// ``ensureAuthoritativePlayingContentIfNeeded()`` retries — not end+request — when the
 /// only lag is owned `.prePlay` vs candidate `.playing`.
 /// Language chrome prefers bounded ``ensureAuthoritativeLanguageContentIfNeeded()`` retries.
+/// Those retries consume ``authoritativeLanguageContentEnsureMaxAttempts`` only on committed
+/// observation (`contentUpdates` or delayed re-read); skip the next soft push while
+/// ``inFlightContentPushCandidate`` is unconfirmed. Immediate post-await `content.state`
+/// does not consume the budget.
 /// After the soft-retry budget is exhausted while interactive request is ineligible, language
 /// ensure enters a **quiet pending** state for that destination so status-driven media-surface
 /// refreshes do not thrash ActivityKit; re-arm on destination change, eligibility, become-active,
@@ -524,6 +528,12 @@ class RadioLiveActivityManager: ObservableObject {
     /// do not re-run the soft-retry budget until re-arm (destination change, eligibility,
     /// become-active, or system `contentUpdates` acceptance).
     ///
+    /// An iteration consumes one slot only on **committed** observation (`contentUpdates` or
+    /// delayed re-read past ``contentPushApplyConfirmationDelayMilliseconds``) while owned
+    /// language still lags. Immediate post-await `content.state` is apply-in-flight and does
+    /// not consume. The next soft push is skipped while ``inFlightContentPushCandidate`` is
+    /// unconfirmed so overlapping `Activity.update` calls cannot starve `contentUpdates`.
+    ///
     /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
     ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
     ///   ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``,
@@ -776,7 +786,9 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// Device continuous-lock freezes rarely apply within a 50 ms storm; longer spacing gives
     /// ActivityKit an apply window without raising ``authoritativePlayingContentEnsureMaxAttempts``
-    /// / language attempt count (no thrash volume increase).
+    /// / language attempt count (no thrash volume increase). Language ensure waits for a
+    /// committed observation before this cadence applies; it does not stack another
+    /// `Activity.update` during the same unconfirmed apply.
     ///
     /// - SeeAlso: ``softEnsureInterAttemptDelayMilliseconds(attempt:maxAttempts:isRequestEligible:)``,
     ///   ``authoritativeContentEnsureEligibleInterAttemptDelayMilliseconds``.
@@ -1191,6 +1203,8 @@ class RadioLiveActivityManager: ObservableObject {
     /// from that single read. Commit waits for ``handleActivityContentUpdate`` or a delayed
     /// re-read past ``contentPushApplyConfirmationDelayMilliseconds``. Handshake lag
     /// (pause↔Connecting, Connecting↔playing after hold/connect clear) is excluded.
+    /// Language-ensure attempt slots use the same committed-observation rule
+    /// (``shouldConsumeLanguageEnsureAttempt(ownedLanguageMatchesDestination:inFlightContentPushUnconfirmed:)``).
     ///
     /// **Same-stream ineligible Connecting skip:** While request is ineligible,
     /// ``shouldSuppressConnectingContentPushWhileIneligible`` skips `Activity.update`
@@ -2023,6 +2037,34 @@ class RadioLiveActivityManager: ObservableObject {
                 )
             }
         }
+    }
+
+    /// Suspends until a committed content-push observation is available.
+    ///
+    /// Prefers awaiting ``inFlightContentPushConfirmationTask`` (delayed re-read).
+    /// `contentUpdates` cancels that task after committing, so the await returns with
+    /// ``inFlightContentPushCandidate`` already cleared. When a candidate is unconfirmed
+    /// without a Task (apply await still in flight), sleeps
+    /// ``contentPushApplyConfirmationDelayMilliseconds`` once. No-op when nothing is
+    /// in-flight. Does **not** call `Activity.update`. Does **not** end while ineligible.
+    ///
+    /// - SeeAlso: ``scheduleInFlightContentPushConfirmation(candidate:)``,
+    ///   ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``handleActivityContentUpdate(_:)``.
+    @MainActor
+    private func waitForCommittedContentPushObservationIfNeeded() async {
+        if let task = inFlightContentPushConfirmationTask {
+            await task.value
+            return
+        }
+        guard inFlightContentPushCandidate != nil else { return }
+        let eligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        let delayMs = Self.contentPushApplyConfirmationDelayMilliseconds(isRequestEligible: eligible)
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(delayMs))
     }
 
     /// Observation kind for stall / quiet / recreation bookkeeping after `Activity.update`.
@@ -3164,6 +3206,73 @@ class RadioLiveActivityManager: ObservableObject {
         guard !isRequestEligible else { return nil }
         guard !destinationLanguage.isEmpty else { return nil }
         return destinationLanguage
+    }
+
+    /// Whether language-ensure should skip issuing `Activity.update` because a prior
+    /// content push is still unconfirmed.
+    ///
+    /// ``updateCurrentActivity()`` still allows language-only IPC while visual coalesce
+    /// holds a different visual. Stacking a second language-ensure update while the first
+    /// apply is in-flight burns ``authoritativeLanguageContentEnsureMaxAttempts`` on
+    /// immediate post-await reads and can starve `contentUpdates`. Skip until
+    /// ``inFlightContentPushCandidate`` clears (delayed re-read / `contentUpdates` /
+    /// immediate match).
+    ///
+    /// - Parameter inFlightContentPushUnconfirmed: ``inFlightContentPushCandidate != nil``.
+    /// - Returns: `true` when this iteration must not call ``updateCurrentActivity()``.
+    /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``shouldConsumeLanguageEnsureAttempt(ownedLanguageMatchesDestination:inFlightContentPushUnconfirmed:)``,
+    ///   ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:languageOnlyPreservingOwnedVisual:)``.
+    static func shouldSkipLanguageEnsureSoftPushWhileInFlight(
+        inFlightContentPushUnconfirmed: Bool
+    ) -> Bool {
+        inFlightContentPushUnconfirmed
+    }
+
+    /// Whether a language-ensure iteration consumes one of
+    /// ``authoritativeLanguageContentEnsureMaxAttempts``.
+    ///
+    /// Immediate post-await `content.state` is apply-in-flight — same rule as
+    /// ``shouldCommitStalledContentPushObservation``. Consume only when owned language
+    /// still lags destination **and** the in-flight candidate is confirmed (`contentUpdates`
+    /// or delayed re-read cleared ``inFlightContentPushCandidate``). Owned match is
+    /// success, not consumption.
+    ///
+    /// - Parameters:
+    ///   - ownedLanguageMatchesDestination: Owned `content.state.currentLanguage` equals destination.
+    ///   - inFlightContentPushUnconfirmed: ``inFlightContentPushCandidate != nil``.
+    /// - Returns: `true` when this iteration counts against the soft budget.
+    /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``shouldSkipLanguageEnsureSoftPushWhileInFlight(inFlightContentPushUnconfirmed:)``,
+    ///   ``shouldCommitStalledContentPushObservation(kind:isStalled:isHandshakeLag:)``.
+    static func shouldConsumeLanguageEnsureAttempt(
+        ownedLanguageMatchesDestination: Bool,
+        inFlightContentPushUnconfirmed: Bool
+    ) -> Bool {
+        guard !ownedLanguageMatchesDestination else { return false }
+        guard !inFlightContentPushUnconfirmed else { return false }
+        return true
+    }
+
+    /// Whether language-ensure should stop waiting for an unconfirmed apply and leave
+    /// the soft-push loop (quiet still eligibility-gated).
+    ///
+    /// Bounds skip-while-in-flight so a confirmation Task that never clears
+    /// ``inFlightContentPushCandidate`` cannot hang the loop. Cap equals
+    /// ``authoritativeLanguageContentEnsureMaxAttempts`` — not a fourth rail.
+    ///
+    /// - Parameters:
+    ///   - unconfirmedWaits: Apply-window waits already spent without consuming an attempt.
+    ///   - maxAttempts: ``authoritativeLanguageContentEnsureMaxAttempts``.
+    /// - Returns: `true` when the loop must stop waiting.
+    /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``contentPushApplyConfirmationDelayMilliseconds(isRequestEligible:)``.
+    static func shouldStopLanguageEnsureUnconfirmedWait(
+        unconfirmedWaits: Int,
+        maxAttempts: Int
+    ) -> Bool {
+        guard maxAttempts > 0 else { return true }
+        return unconfirmedWaits >= maxAttempts
     }
 
     /// Whether a status-driven `Activity.update` that is only repairing language stall should
@@ -6275,12 +6384,18 @@ class RadioLiveActivityManager: ObservableObject {
     ///     language long-horizon after freeze passes this so dest language does not spend
     ///     the sparse slot on `.playing`. Stream-switch hold still Connecting.
     ///
-    /// Performs up to ``authoritativeLanguageContentEnsureMaxAttempts`` soft pushes, re-reading
-    /// owned `content.state.currentLanguage` after each ``updateCurrentActivity()``. Stops early
-    /// when owned language matches destination, the ensure gate clears, or the interactive
+    /// Performs up to ``authoritativeLanguageContentEnsureMaxAttempts`` **committed** soft
+    /// pushes. After each ``updateCurrentActivity()``, wait for ``contentUpdates`` or a delayed
+    /// re-read past ``contentPushApplyConfirmationDelayMilliseconds`` before consuming an
+    /// attempt. Immediate post-await `content.state` is apply-in-flight and does **not**
+    /// consume. While ``inFlightContentPushCandidate`` is unconfirmed, skip the next
+    /// `Activity.update` (``shouldSkipLanguageEnsureSoftPushWhileInFlight(inFlightContentPushUnconfirmed:)``)
+    /// so overlapping language-only updates cannot starve `contentUpdates`. Stops early when
+    /// owned language matches destination, the ensure gate clears, or the interactive
     /// activity disappears. Does **not** end+recreate — language freezes recover via soft
     /// retries first; eligible-only recreation is owned by
     /// ``ensureAuthoritativeContentOnForegroundIfNeeded()`` / the stalled-push path.
+    /// Ineligible spacing stays 200/400/800 ms. Does **not** add a fourth ensure rail.
     ///
     /// **Quiet pending while request ineligible:** After the soft-retry budget is exhausted
     /// without owned language acceptance while ``isInteractiveLiveActivityRequestEligible``
@@ -6307,10 +6422,11 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// - Precondition: Main actor; interactive ``currentActivity`` may be nil (no-op).
     /// - Postcondition: When a push was needed and not quiet-deferred, ``updateCurrentActivity()``
-    ///   ran up to the soft-retry budget (subject to test isolation and ActivityKit acceptance).
-    ///   Cheap no-op when owned + last language already match destination, or when quiet for
-    ///   the same destination while request remains ineligible, or when a soft-push loop is
-    ///   already in flight for this axis.
+    ///   ran up to the committed soft-retry budget (subject to test isolation and ActivityKit
+    ///   acceptance). Immediate post-await mismatch does not consume a slot. Cheap no-op when
+    ///   owned + last language already match destination, or when quiet for the same destination
+    ///   while request remains ineligible, or when a soft-push loop is already in flight for
+    ///   this axis, or when a prior apply is still unconfirmed.
     /// - Note: Ineligible dest-language over a committed pause/play glyph is language-only
     ///   inside ``updateCurrentActivity()`` (``shouldPreserveOwnedVisualOnIneligibleLanguageMutation``),
     ///   so this loop's default ``preservingOwnedVisual: false`` still does not spend
@@ -6320,8 +6436,11 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ``shouldPreserveOwnedVisualOnIneligibleLanguageMutation(isRequestEligible:destinationLanguage:ownedLanguage:ownedVisual:)``,
     ///   ``shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``,
     ///   ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``,
+    ///   ``shouldSkipLanguageEnsureSoftPushWhileInFlight(inFlightContentPushUnconfirmed:)``,
+    ///   ``shouldConsumeLanguageEnsureAttempt(ownedLanguageMatchesDestination:inFlightContentPushUnconfirmed:)``,
     ///   ``shouldStartAuthoritativeContentEnsureSoftPushLoop(softPushesAlreadyInFlight:)``,
     ///   ``authoritativeLanguageContentEnsureMaxAttempts``,
+    ///   ``contentPushApplyConfirmationDelayMilliseconds(isRequestEligible:)``,
     ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
     ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
     ///   ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``,
@@ -6403,7 +6522,10 @@ class RadioLiveActivityManager: ObservableObject {
             languageEnsureQuietPendingDestination = nil
         }
 
-        for attempt in 1...Self.authoritativeLanguageContentEnsureMaxAttempts {
+        let maxAttempts = Self.authoritativeLanguageContentEnsureMaxAttempts
+        var consumedAttempts = 0
+        var unconfirmedWaits = 0
+        while consumedAttempts < maxAttempts {
             guard currentActivity != nil else { return }
 
             let loopDestination = await SharedPlayerManager.shared.liveActivityLanguageCodeForContentPush()
@@ -6417,52 +6539,94 @@ class RadioLiveActivityManager: ObservableObject {
             ) else {
                 languageEnsureQuietPendingDestination = nil
                 languageEnsureQuietSkipLogged = false
+                cancelPostQuietLongHorizonLanguageEnsure()
                 return
+            }
+
+            // Prior `Activity.update` still applying — do not stack a second language-only
+            // IPC (that burns the budget on immediate post-await reads and can starve
+            // contentUpdates). Wait for delayed re-read / contentUpdates instead.
+            if Self.shouldSkipLanguageEnsureSoftPushWhileInFlight(
+                inFlightContentPushUnconfirmed: inFlightContentPushCandidate != nil
+            ) {
+                unconfirmedWaits += 1
+                await waitForCommittedContentPushObservationIfNeeded()
+                if Self.shouldStopLanguageEnsureUnconfirmedWait(
+                    unconfirmedWaits: unconfirmedWaits,
+                    maxAttempts: maxAttempts
+                ) {
+                    break
+                }
+                continue
             }
 
             #if DEBUG
             print(
                 "🔴 Live Activity reconciling language chrome → destination=\(loopDestination) " +
                 "owned=\(loopOwned ?? "nil") lastPushed=\(loopLast ?? "nil") " +
-                "attempt=\(attempt)/\(Self.authoritativeLanguageContentEnsureMaxAttempts)"
+                "attempt=\(consumedAttempts + 1)/\(maxAttempts)"
             )
             #endif
             await updateCurrentActivity(preservingOwnedVisual: preservingOwnedVisual)
 
-            // Post-update verification: owned language is the surface honesty SSOT.
-            let acceptedLanguage = currentActivity?.content.state.currentLanguage
-            if acceptedLanguage == loopDestination {
+            let acceptedImmediately = currentActivity?.content.state.currentLanguage
+            if acceptedImmediately == loopDestination {
                 languageEnsureQuietPendingDestination = nil
                 languageEnsureQuietSkipLogged = false
                 cancelPostQuietLongHorizonLanguageEnsure()
                 return
             }
-            // Eligibility-aware inter-attempt spacing (longer under continuous lock).
-            let loopEligible = Self.isInteractiveLiveActivityRequestEligible(
-                areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
-                isApplicationActive: UIApplication.shared.applicationState == .active
-            )
-            if let delayMs = Self.softEnsureInterAttemptDelayMilliseconds(
-                attempt: attempt,
-                maxAttempts: Self.authoritativeLanguageContentEnsureMaxAttempts,
-                isRequestEligible: loopEligible
+
+            if inFlightContentPushCandidate != nil {
+                await waitForCommittedContentPushObservationIfNeeded()
+            }
+
+            let destAfterWait = await SharedPlayerManager.shared.liveActivityLanguageCodeForContentPush()
+            let acceptedAfterWait = currentActivity?.content.state.currentLanguage
+            if acceptedAfterWait == destAfterWait {
+                languageEnsureQuietPendingDestination = nil
+                languageEnsureQuietSkipLogged = false
+                cancelPostQuietLongHorizonLanguageEnsure()
+                return
+            }
+
+            // Consume only on committed mismatch (in-flight cleared). Immediate
+            // post-await already returned above if it matched.
+            if Self.shouldConsumeLanguageEnsureAttempt(
+                ownedLanguageMatchesDestination: acceptedAfterWait == destAfterWait,
+                inFlightContentPushUnconfirmed: inFlightContentPushCandidate != nil
             ) {
-                await Task.yield()
-                try? await Task.sleep(for: .milliseconds(delayMs))
+                consumedAttempts += 1
+                let eligibleForSpacing = Self.isInteractiveLiveActivityRequestEligible(
+                    areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
+                    isApplicationActive: UIApplication.shared.applicationState == .active
+                )
+                if let delayMs = Self.softEnsureInterAttemptDelayMilliseconds(
+                    attempt: consumedAttempts,
+                    maxAttempts: maxAttempts,
+                    isRequestEligible: eligibleForSpacing
+                ) {
+                    await Task.yield()
+                    try? await Task.sleep(for: .milliseconds(delayMs))
+                }
+            } else {
+                unconfirmedWaits += 1
+                if Self.shouldStopLanguageEnsureUnconfirmedWait(
+                    unconfirmedWaits: unconfirmedWaits,
+                    maxAttempts: maxAttempts
+                ) {
+                    break
+                }
             }
         }
 
-        // Soft budget exhausted without acceptance.
+        // Soft budget exhausted without committed acceptance (or unconfirmed-wait bound).
         let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
             areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
-        // Immediate post-await mismatch is not quiet truth — wait one apply window.
-        let settleMs = Self.contentPushApplyConfirmationDelayMilliseconds(
-            isRequestEligible: eligibleAfter
-        )
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(settleMs))
+        // Last push may still be applying — wait one apply window before quiet.
+        await waitForCommittedContentPushObservationIfNeeded()
         let finalDestination = await SharedPlayerManager.shared.liveActivityLanguageCodeForContentPush()
         let finalOwned = currentActivity?.content.state.currentLanguage
         let stillMismatches = Self.shouldEnsureAuthoritativeLanguageContent(
@@ -7962,6 +8126,37 @@ class RadioLiveActivityManager: ObservableObject {
             languageStillMismatches: languageStillMismatches,
             isRequestEligible: isRequestEligible,
             destinationLanguage: destinationLanguage
+        )
+    }
+
+    /// White-box seam: skip language-ensure IPC while a prior apply is unconfirmed.
+    func _test_shouldSkipLanguageEnsureSoftPushWhileInFlight(
+        inFlightContentPushUnconfirmed: Bool
+    ) -> Bool {
+        Self.shouldSkipLanguageEnsureSoftPushWhileInFlight(
+            inFlightContentPushUnconfirmed: inFlightContentPushUnconfirmed
+        )
+    }
+
+    /// White-box seam: consume a language-ensure attempt only on committed mismatch.
+    func _test_shouldConsumeLanguageEnsureAttempt(
+        ownedLanguageMatchesDestination: Bool,
+        inFlightContentPushUnconfirmed: Bool
+    ) -> Bool {
+        Self.shouldConsumeLanguageEnsureAttempt(
+            ownedLanguageMatchesDestination: ownedLanguageMatchesDestination,
+            inFlightContentPushUnconfirmed: inFlightContentPushUnconfirmed
+        )
+    }
+
+    /// White-box seam: bound unconfirmed apply-window waits (no hang, no fourth rail).
+    func _test_shouldStopLanguageEnsureUnconfirmedWait(
+        unconfirmedWaits: Int,
+        maxAttempts: Int
+    ) -> Bool {
+        Self.shouldStopLanguageEnsureUnconfirmedWait(
+            unconfirmedWaits: unconfirmedWaits,
+            maxAttempts: maxAttempts
         )
     }
 
