@@ -78,7 +78,8 @@ import WidgetSurface
 /// Sleep timer: sole presentation is a native `.confirmationDialog` (15/30/45/60 + conditional
 /// Cancel + Clear local state) in `PlaybackControlsView`. Timer choices go through
 /// `PlayerViewModel.selectSleepTimer` / `cancelSleepTimer` into coordinator handlers
-/// (`RadioPlayerCoordinator+SleepTimer`); privacy clear uses `onClearLocalStateTapped` →
+/// (`RadioPlayerCoordinator+SleepTimer`); privacy clear arms
+/// ``SleepTimerPrivacyClearPresentation`` then `onClearLocalStateTapped` →
 /// `confirmAndClearLocalState`. Countdown Task, notifications, `syncSleepTimerToViewModel`,
 /// and interaction settle windows live on that sleep-timer domain.
 ///
@@ -88,22 +89,28 @@ import WidgetSurface
 /// - SeeAlso: ``PlayerViewModel``, `PlaybackControlsView`, `LanguageSelectorView`,
 ///   `NowPlayingMetadataView`, `VolumeAndAirPlayRow`, `ViewController`,
 ///   `RadioPlayerCoordinator`, `BackgroundImageController`,
-///   `RadioPlayerCoordinator.confirmAndClearLocalState()`, CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files),
+///   `RadioPlayerCoordinator.confirmAndClearLocalState()`,
+///   ``SleepTimerPrivacyClearPresentation``,
+///   CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files),
 ///   <doc:Architecture>.
 
 struct RadioPlayerView: View {
     @Bindable var viewModel: PlayerViewModel
 
-    /// Called when the user selects the destructive "Clear local state" option inside the
-    /// sleep timer `.confirmationDialog` (`PlaybackControlsView`).
+    /// Called after the sleep-timer `.confirmationDialog` has dismissed with the
+    /// destructive "Clear local state" row pending (`PlaybackControlsView` /
+    /// ``SleepTimerPrivacyClearPresentation``).
     /// Wired from ViewController to `radioPlayerCoordinator.confirmAndClearLocalState()`.
     /// The coordinator builds a secondary confirmation `UIAlertController`; the host
-    /// presents it after this dialog’s container has disappeared, then the confirm
-    /// path calls SSOT `SharedPlayerManager.clearAllLocalState()`.
+    /// presents it after leftover `GlassPopoverContentViewRepresentable` hosts have
+    /// left the window scene, then the confirm path calls SSOT
+    /// `SharedPlayerManager.clearAllLocalState()`.
     ///
     /// - SeeAlso: `PlaybackControlsView.onClearLocalStateTapped`,
+    ///   ``SleepTimerPrivacyClearPresentation``,
     ///   `RadioPlayerCoordinator.confirmAndClearLocalState`,
     ///   ``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``,
+    ///   ``CoordinatorAlertPresentationSettle``,
     ///   CODING_AGENT.md.
     var onClearLocalStateTapped: (() -> Void)? = nil
 

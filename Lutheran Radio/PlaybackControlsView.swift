@@ -87,15 +87,24 @@ import WidgetSurface
 /// - Timer countdown and accessibility value come in pre-computed.
 /// - The moon button tap triggers a native `.confirmationDialog` offering the presets,
 ///   conditional Cancel, and the "Clear local state" privacy action.
+/// - The destructive privacy row only arms ``SleepTimerPrivacyClearPresentation``;
+///   `onClearLocalStateTapped` runs after the dialog’s `isPresented` binding is false
+///   so the secondary `UIAlertController` is not built while glass is still up.
 /// - All complex orchestration, countdown, and privacy logic remains in `RadioPlayerCoordinator`.
 ///
 /// - Precondition: The values must be driven by the coordinator (or mock for previews/tests).
 /// - Note: The privacy clear path does a secondary confirmation via UIAlert before acting.
+///   That alert is invoked only after this `.confirmationDialog` `isPresented` is false
+///   (``SleepTimerPrivacyClearPresentation``) and after leftover glass popover hosts
+///   have left the window scene
+///   (``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``).
 /// - SeeAlso: ``PlayerViewModel``, ``PlayerControlPresentation``, ``PlayerStatusPresentation``,
 ///   `StatusPill`, `NowPlayingDisplayModel`, `RadioPlayerCoordinator`, `VolumeAndAirPlayRow`,
 ///   ``HapticPlaybackPolicy``, ``HapticsController``,
 ///   ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
 ///   ``PlaybackPausePressFeedback``,
+///   ``SleepTimerPrivacyClearPresentation``,
+///   ``CoordinatorAlertPresentationSettle``,
 ///   ``PlayerVisualState/isActivelyPlaying``,
 ///   CODING_AGENT.md (narrow inputs for separate View types + cached derived values),
 ///   <doc:Architecture>.
@@ -115,15 +124,21 @@ struct PlaybackControlsView: View {
     var onCancelSleepTimer: (() -> Void)? = nil
 
     /// Optional closure for the privacy "Clear local state" destructive action.
-    /// When provided (wired from RadioPlayerView / ViewController), tapping the button
-    /// inside the dialog invokes this, which reaches `RadioPlayerCoordinator.confirmAndClearLocalState()`.
+    /// When provided (wired from RadioPlayerView / ViewController), the destructive
+    /// row arms a pending flag; this closure runs after the dialog `isPresented`
+    /// binding is false and reaches `RadioPlayerCoordinator.confirmAndClearLocalState()`.
     /// Always shown after the presets (regardless of active timer state).
     ///
-    /// - Note: The action builds a secondary confirmation `UIAlertController`. The host
-    ///   presents it only after this `.confirmationDialog` container has disappeared
+    /// - Note: The action builds a secondary confirmation `UIAlertController`. This
+    ///   view does **not** invoke the closure from the destructive-row action.
+    ///   ``SleepTimerPrivacyClearPresentation`` arms a pending flag; the closure
+    ///   runs only after this `.confirmationDialog` `isPresented` is false. The host
+    ///   then waits for leftover `GlassPopoverContentViewRepresentable` hosts to
+    ///   leave the scene
     ///   (``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``).
     ///   The clear performs `SharedPlayerManager.clearAllLocalState()` and related resets.
     /// - SeeAlso: `RadioPlayerCoordinator.confirmAndClearLocalState`, `SharedPlayerManager.clearAllLocalState`,
+    ///   ``SleepTimerPrivacyClearPresentation``,
     ///   ``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     var onClearLocalStateTapped: (() -> Void)? = nil
@@ -131,6 +146,11 @@ struct PlaybackControlsView: View {
     // Local presentation state for the SwiftUI-native sleep timer options dialog.
     // This is the primary user-facing path after the SwiftUI migration of the player UI.
     @State private var isShowingSleepTimerDialog = false
+
+    /// Armed by the destructive "Clear local state" row. Consumed when the
+    /// confirmationDialog `isPresented` binding becomes false
+    /// (``SleepTimerPrivacyClearPresentation``).
+    @State private var pendingPrivacyClearConfirm = false
 
     /// Equatable trigger for pause-only `.sensoryFeedback`. Incremented only by
     /// ``requestPauseFromControl()`` when ``PlaybackPausePressFeedback`` allows.
@@ -190,8 +210,8 @@ struct PlaybackControlsView: View {
 
             // Sleep timer: moon button opens sole presentation surface — `.confirmationDialog`
             // with 15/30/45/60 presets, conditional Cancel, and always-visible Clear local state.
-            // Preset/cancel closures reach coordinator handlers via PlayerViewModel; clear uses
-            // onClearLocalStateTapped → confirmAndClearLocalState (secondary UIAlert).
+            // Preset/cancel closures reach coordinator handlers via PlayerViewModel; clear arms
+            // SleepTimerPrivacyClearPresentation then confirmAndClearLocalState (secondary UIAlert).
             Button {
                 isShowingSleepTimerDialog = true
             } label: {
@@ -237,17 +257,22 @@ struct PlaybackControlsView: View {
                 }
 
                 // Privacy: clear recent playback/widget/Live Activity App Group state (not Core security data).
-                // Secondary UIAlert is built in confirmAndClearLocalState; the host presents
-                // it after this confirmationDialog container has disappeared.
+                // Arm only — invoke onClearLocalStateTapped after isPresented is false
+                // (SleepTimerPrivacyClearPresentation). The host then waits for leftover
+                // glass popover hosts before presenting the secondary UIAlert.
                 // - SeeAlso: SharedPlayerManager.clearAllLocalState,
+                //   SleepTimerPrivacyClearPresentation,
                 //   ViewController.presentCoordinatorAlertAfterOutgoingPresentationSettles,
                 //   <doc:Architecture>, CODING_AGENT.md.
                 Button(
                     String(localized: "clear_local_state_title", table: "Localizable"),
                     role: .destructive
                 ) {
-                    onClearLocalStateTapped?()
+                    armPrivacyClearConfirmAfterDialogDismisses()
                 }
+            }
+            .onChange(of: isShowingSleepTimerDialog) { _, isShowing in
+                presentPendingPrivacyClearConfirmIfReady(dialogIsPresented: isShowing)
             }
 
             // Status pill consumes the narrow cached presentation passed in.
@@ -255,6 +280,35 @@ struct PlaybackControlsView: View {
             StatusPill(presentation: statusPresentation)
         }
         .frame(height: 50)
+    }
+
+    /// Arms the privacy-clear confirm and invokes it immediately only if SwiftUI
+    /// has already flipped the confirmationDialog `isPresented` binding to false.
+    ///
+    /// Otherwise ``presentPendingPrivacyClearConfirmIfReady(dialogIsPresented:)``
+    /// runs from `.onChange` when the dialog finishes dismissing.
+    ///
+    /// - SeeAlso: ``SleepTimerPrivacyClearPresentation``
+    private func armPrivacyClearConfirmAfterDialogDismisses() {
+        pendingPrivacyClearConfirm = true
+        presentPendingPrivacyClearConfirmIfReady(dialogIsPresented: isShowingSleepTimerDialog)
+    }
+
+    /// Invokes `onClearLocalStateTapped` when a privacy confirm is pending and the
+    /// sleep-timer confirmationDialog is no longer presented.
+    ///
+    /// - Parameter dialogIsPresented: Current `isShowingSleepTimerDialog` value
+    ///   (from the binding or from `.onChange`).
+    /// - SeeAlso: ``SleepTimerPrivacyClearPresentation/shouldInvokePrivacyClearConfirm(dialogIsPresented:pendingPrivacyConfirm:)``
+    private func presentPendingPrivacyClearConfirmIfReady(dialogIsPresented: Bool) {
+        guard SleepTimerPrivacyClearPresentation.shouldInvokePrivacyClearConfirm(
+            dialogIsPresented: dialogIsPresented,
+            pendingPrivacyConfirm: pendingPrivacyClearConfirm
+        ) else {
+            return
+        }
+        pendingPrivacyClearConfirm = false
+        onClearLocalStateTapped?()
     }
 
     /// Shared pause request from the `Button` action and the `toggle_playback`
@@ -329,6 +383,48 @@ enum PlaybackPausePressFeedback {
         isLowPowerModeEnabled: Bool
     ) -> Bool {
         isActivelyPlaying && !isUITestMode && !isLowPowerModeEnabled
+    }
+}
+
+// MARK: - Sleep-timer privacy-clear present sequencing
+
+/// When the sleep-timer `.confirmationDialog` may invoke the privacy-clear coordinator.
+///
+/// The destructive "Clear local state" row must not call `onClearLocalStateTapped`
+/// while the dialog is still `isPresented`. That action builds a secondary
+/// `UIAlertController`; presenting it during the dialog action races iOS 26+
+/// `GlassPopoverContentViewRepresentable` (autoresizing width 320) against
+/// `_UIAlertControllerPhoneTVMacView` (~357pt). UIKit recovers by breaking the
+/// alert constraint. The row only arms a pending flag; the coordinator runs
+/// after `isPresented` is false. The host then waits for leftover glass hosts
+/// to leave the window scene before `present`.
+///
+/// This is present-timing only. Do not disable the confirmationDialog. Do not
+/// invent a second privacy surface.
+///
+/// - SeeAlso: ``PlaybackControlsView``,
+///   ``CoordinatorAlertPresentationSettle``,
+///   ``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``,
+///   ``RadioPlayerCoordinator/confirmAndClearLocalState()``,
+///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority),
+///   CODING_AGENT.md
+enum SleepTimerPrivacyClearPresentation {
+
+    /// Whether `onClearLocalStateTapped` may run now.
+    ///
+    /// - Parameters:
+    ///   - dialogIsPresented: `PlaybackControlsView` sleep-timer confirmationDialog
+    ///     `isPresented` binding.
+    ///   - pendingPrivacyConfirm: Armed by the destructive row; not yet consumed.
+    /// - Returns: `true` only when a confirm is pending **and** the dialog has
+    ///   already dismissed. Presenting while `dialogIsPresented` is true is the
+    ///   320-vs-357 glass overlap.
+    /// - SeeAlso: ``CoordinatorAlertPresentationSettle/canPresentCoordinatorAlert(outgoingPresentedViewController:sceneContainsGlassPopoverHost:)``
+    static func shouldInvokePrivacyClearConfirm(
+        dialogIsPresented: Bool,
+        pendingPrivacyConfirm: Bool
+    ) -> Bool {
+        pendingPrivacyConfirm && !dialogIsPresented
     }
 }
 

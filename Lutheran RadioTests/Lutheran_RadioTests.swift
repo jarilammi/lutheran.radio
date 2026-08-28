@@ -13,7 +13,8 @@
 //
 //  Engine attach / recovery / UITestMode audio short-circuits live in
 //  ``DirectStreamingPlayerEngineTests``. Pause-press token policy:
-//  `PlaybackPausePressFeedbackTests`.
+//  `PlaybackPausePressFeedbackTests`. Privacy-clear confirm present timing:
+//  `PrivacyClearConfirmationPresentationTests`.
 //
 //  - SeeAlso: `PlayerViewModel`, `LanguageSelectorView`, `PlaybackControlsView`,
 //    `NowPlayingMetadataView`, ``DirectStreamingPlayerEngineTests``.
@@ -39,7 +40,8 @@ final class SwiftUIComposedViewsTests: XCTestCase {
 
     @MainActor
     /// Construction / closure smoke only. Pause-press token policy:
-    /// `PlaybackPausePressFeedbackTests`.
+    /// `PlaybackPausePressFeedbackTests`. Privacy-clear present timing:
+    /// `PrivacyClearConfirmationPresentationTests`.
     func testPlaybackControlsView_BindsVisualStateAndCallsActions() {
         let vm = PlayerViewModel.makeMock(visualState: .prePlay)
         var playCalled = false

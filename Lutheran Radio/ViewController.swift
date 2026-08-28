@@ -141,7 +141,7 @@ class ViewController: UIViewController {
     // | Audio session observers | ViewController+AudioSessionObservers.swift | Interruption + route NotificationCenter install/handlers; ``reconfigureAudioSession`` → engine configure; intent-gated recovery play; tuning chrome stop on began |
     // | Darwin widget notify | ViewController+DarwinWidgetNotify.swift | CF Darwin observer install/teardown; launch 1…5 s drain burst; pause self-echo guard hop |
     // | Engine path observation | ViewController+NetworkPathObservation.swift | ``observeEngineNetworkPath`` / sample handler / cellular alert presentation / ``handleNetworkReconnection`` / path-callback clear; no host monitor |
-    // | Layout hosting | ViewController+LayoutHosting.swift | ``setupUI`` hosting controller + background insert; ``viewDidLayoutSubviews`` → coordinator ``notifyLayoutChange``; ``presentCoordinatorAlertAfterOutgoingPresentationSettles`` (confirmationDialog container gone, then layoutIfNeeded, then UIAlert) |
+    // | Layout hosting | ViewController+LayoutHosting.swift | ``setupUI`` hosting controller + background insert; ``viewDidLayoutSubviews`` → coordinator ``notifyLayoutChange``; ``presentCoordinatorAlertAfterOutgoingPresentationSettles`` (confirmationDialog presented chain empty **and** glass popover hosts gone, then layoutIfNeeded, then UIAlert) |
     // | Cold launch / lifecycle | (this file) | viewDidLoad Task (UITestMode, factory hygiene, mark presentable cold launch ready); viewDidAppear resurrection |
     // | Public shims | (this file) | SceneDelegate / URL / Siri / widget-action / keyboard-menu entry → coordinator or SPM |
     // | DEBUG test seams | (this file) | Drain bypass forwarders for WidgetIntentContractTests |
@@ -370,11 +370,13 @@ class ViewController: UIViewController {
         radioPlayerCoordinator.viewModel = playerViewModel
         radioPlayerCoordinator.viewController = self
         // Coordinator UIAlertControllers (privacy-clear confirm, security, SSL) present
-        // after the sleep-timer `.confirmationDialog` container has disappeared, then
-        // `layoutIfNeeded` on this host + hosting view. One extra run-loop hop is not
-        // enough when widget refresh + background-image CI share the main thread with
-        // glass-popover teardown (320 autoresizing vs ~357 alert width). Do not disable
-        // the confirmationDialog; do not fight UIKit's glass host constraints.
+        // after the sleep-timer `.confirmationDialog` presented chain is empty **and**
+        // leftover `GlassPopoverContentViewRepresentable` hosts have left the window
+        // scene, then `layoutIfNeeded` on this host + hosting view.
+        // `presentedViewController == nil` is not enough (320 autoresizing vs ~357
+        // alert width). PlaybackControlsView also withholds `onClearLocalStateTapped`
+        // until the dialog `isPresented` is false (`SleepTimerPrivacyClearPresentation`).
+        // Do not disable the confirmationDialog; do not fight UIKit's glass host constraints.
         radioPlayerCoordinator.presentAlert = { [weak self] alert in
             self?.presentCoordinatorAlertAfterOutgoingPresentationSettles(alert)
         }
@@ -411,7 +413,8 @@ class ViewController: UIViewController {
 
         // Sleep timer observer + preset/cancel + clear-local-state owned by RadioPlayerCoordinator
         // (wireAndInitialSetup + PlayerViewModel closures). Presentation is SwiftUI
-        // `.confirmationDialog` in PlaybackControlsView; privacy clear via onClearLocalStateTapped.
+        // `.confirmationDialog` in PlaybackControlsView; privacy clear via
+        // SleepTimerPrivacyClearPresentation then onClearLocalStateTapped.
         
         // Energy Efficiency Optimizations (iOS 26) — now owned by BackgroundImageController.
         // The controller self-registers for power state notifications and reacts using its last stream.

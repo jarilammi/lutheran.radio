@@ -15,8 +15,9 @@
 //  (SharedPlayerManager.setSleepTimer / cancelSleepTimer / applySleepTimerElapsedPause),
 //  live ICY SSOT (``SharedPlayerManager/didUpdateStreamMetadata`` via engine
 //  ``safeOnMetadataChange`` — never re-entered from this domain), dialog presentation
-//  (PlaybackControlsView `.confirmationDialog`), privacy clear
-//  (`confirmAndClearLocalState` remains on the main coordinator file), or App Group keys.
+//  (PlaybackControlsView `.confirmationDialog` + ``SleepTimerPrivacyClearPresentation``),
+//  privacy clear (`confirmAndClearLocalState` remains on the main coordinator file),
+//  or App Group keys.
 //
 //  Public/entry surfaces on the same type: wireSleepTimerUIGlue() from
 //  wireAndInitialSetup; syncSleepTimerDisplayFromActorIfNeeded from view-appear
@@ -28,6 +29,7 @@
 //    ``SharedPlayerManager/didUpdateStreamMetadata(_:)``,
 //    ``DirectStreamingPlayer/safeOnMetadataChange(metadata:)``,
 //    ``SleepTimerNotification``, ``PlayerViewModel``, `PlaybackControlsView`,
+//    ``SleepTimerPrivacyClearPresentation``,
 //    docs/Live-Activity-Stacking-and-Media-Surfaces.md,
 //    CODING_AGENT.md (Single Source of Truth Principles).
 //

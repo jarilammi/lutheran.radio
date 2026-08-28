@@ -127,7 +127,7 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     // | Stream switch / language | RadioPlayerCoordinator+StreamSwitch.swift | Flag-tap completeStreamSwitch, widget silent switch, external deep-link switch, keyboard/menu adjacent wrap (`handleAdjacentLanguageSelection`), updateUserDefaultsLanguage, language VoiceOver announce |
     // | Status / chrome distribution | RadioPlayerCoordinator+StatusDistribution.swift | updateUI, handleStatusChange, SSOT visual chrome observation, RadioPlayerChromeVisualResolver, VM metadata/switch-flag sync, no-internet chrome, NP/widget save forwarders, thermal VoiceOver |
     // | Play / pause toggle | (this file) | handlePlayAction / handlePauseAction / handleTogglePlayback / handleUserTogglePlayback / pausePlayback / stopPlayback public shims |
-    // | Privacy clear | (this file) | confirmAndClearLocalState + localStateCleared observer; UIAlert present timing is ViewController ``presentCoordinatorAlertAfterOutgoingPresentationSettles`` |
+    // | Privacy clear | (this file) | confirmAndClearLocalState + localStateCleared observer; UIAlert present timing is PlaybackControlsView ``SleepTimerPrivacyClearPresentation`` then ViewController ``presentCoordinatorAlertAfterOutgoingPresentationSettles`` (glass hosts gone) |
     // | Layout / energy hooks | (this file) | notifyLayoutChange, viewDidAppearResurrectionCheck, memory/energy forwarders |
     // | Wiring / cold launch | (this file) | wireAndInitialSetup, presentable cold launch (`markPresentableColdLaunchPlaybackReady` / `notePresentableSceneForColdLaunchPlayback`), performColdLaunchPlaybackIfAllowed, metadata registration, haptics prepare |
     //
@@ -170,12 +170,14 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     // Presenting hook (injected by VC so alerts can be shown without giving coordinator a full VC ref for layout).
     //
     // ViewController ``presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)`` waits
-    // until the sleep-timer SwiftUI `.confirmationDialog` container has finished
-    // disappearing, then `layoutIfNeeded` on the host, then `present`. Presenting a
-    // UIKit alert while the glass popover is still in the hierarchy fights 320pt
-    // autoresizing vs `_UIAlertControllerPhoneTVMacView` ~357pt width. One extra
-    // `DispatchQueue.main.async` is not enough when widget refresh + background-image
-    // CI share that teardown. All `presentAlert?` sites use this host settle.
+    // until the sleep-timer SwiftUI `.confirmationDialog` presented chain is empty
+    // **and** leftover `GlassPopoverContentViewRepresentable` hosts have left the
+    // window scene, then `layoutIfNeeded` on the host, then `present`.
+    // `presentedViewController == nil` is not enough: glass can remain at 320pt
+    // autoresizing after the presented chain clears, fighting
+    // `_UIAlertControllerPhoneTVMacView` ~357pt. PlaybackControlsView
+    // ``SleepTimerPrivacyClearPresentation`` withholds this path until the dialog
+    // `isPresented` is false. All `presentAlert?` sites use this host settle.
     // Do not disable the confirmationDialog; do not fight the glass host's
     // `translatesAutoresizingMaskIntoConstraints`.
     var presentAlert: ((UIAlertController) -> Void)?
@@ -718,12 +720,17 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     /// (`PlaybackControlsView` → `RadioPlayerView` → `ViewController`).
     ///
     /// - Note: Visibility is internal (not private) to support the SwiftUI wiring from ViewController.
-    /// - Important: The host presents this alert only after the `.confirmationDialog`
-    ///   container has disappeared (``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``).
+    /// - Important: `PlaybackControlsView` invokes this only after the
+    ///   `.confirmationDialog` `isPresented` binding is false
+    ///   (``SleepTimerPrivacyClearPresentation``). The host then presents this
+    ///   alert only after leftover glass popover hosts have left the window scene
+    ///   (``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``).
     ///   Do not present it from this method with a bare `DispatchQueue.main.async`.
     /// - SeeAlso: `PlaybackControlsView` (dialog destructive action),
+    ///   ``SleepTimerPrivacyClearPresentation``,
     ///   `SharedPlayerManager.clearAllLocalState`, `localStateCleared(_:)`,
-    ///   ``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``.
+    ///   ``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``,
+    ///   ``CoordinatorAlertPresentationSettle``.
     func confirmAndClearLocalState() {
         let alert = UIAlertController(
             title: String(localized: "clear_local_state_title", table: "Localizable"),
@@ -763,10 +770,13 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
             }
         })
         // Host ``presentCoordinatorAlertAfterOutgoingPresentationSettles`` is the
-        // present-timing SSOT: wait for the `.confirmationDialog` container to
-        // finish disappearing, one extra run-loop hop, `layoutIfNeeded`, then present.
-        // Do not add a second `DispatchQueue.main.async` here — that hop is not
-        // enough when widget refresh + background-image CI share popover teardown.
+        // UIKit present-timing SSOT: wait for the `.confirmationDialog` presented
+        // chain to be empty **and** leftover glass popover hosts to leave the scene,
+        // one extra run-loop hop, `layoutIfNeeded`, then present. The SwiftUI
+        // caller already waited for `isPresented == false`
+        // (``SleepTimerPrivacyClearPresentation``). Do not add a second
+        // `DispatchQueue.main.async` here — that hop is not enough when widget
+        // refresh + background-image CI share popover teardown.
         presentAlert?(alert)
     }
 
