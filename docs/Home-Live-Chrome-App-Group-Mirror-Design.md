@@ -422,6 +422,7 @@ Full privacy clear, factory residual, and terminate paths clear independently of
 5. No PII beyond anonymous stream language code + presentation visual enum + optional program metadata (already separate).
 6. Residual clear on ``setHasActiveLutheranWidgets`` is **edge-only** (true→false); write suppression while the gate is closed is continuous.
 7. After in-app privacy clear, leftover Home Screen widgets must **not** reopen the main-app write gate (and must **not** restamp ``homeWidgetLiveChrome``) via teardown ``performRefresh`` / opportunistic ``refreshHasActiveWidgets``. Only ``liftPrivacyClearWriteSuppressionHoldForForegroundDetect()`` on become-active / enter-foreground allows the next detect. Home paints factory / defaults from **absent** keys until that lift.
+8. After in-app privacy clear, timeline wake / WRM bookkeeping must **not** publish session Connecting ``.prePlay`` or leftover last-stream language. Snapshot-absent events while the hold is closed derive ``.cleared``; execute-time memory ``.cleared`` discards leftover Connecting; engine model reseeds to ``preferredMainAppInitialLanguageCode()`` before the teardown wake. Foreground lift may reopen the write gate; ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()``, ``saveCurrentState()``, and ``recordWidgetLiveness()`` still skip while visual/intent is ``.cleared`` so Home stays factory / passive (not yellow Connecting). Ordinary factory Connecting teardown for idle ``.prePlay`` is unchanged. Confirmation dialog for the clear action is unchanged.
 
 ---
 

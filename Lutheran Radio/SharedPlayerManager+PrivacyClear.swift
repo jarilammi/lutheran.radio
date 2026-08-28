@@ -9,6 +9,8 @@
 //
 //  Purpose: Privacy clear of local playback keys and full local-state reset orchestration.
 //  After clear, write suppression stays held closed until foreground WidgetCenter detect.
+//  Home timeline wake must paint factory from absent keys — not session Connecting
+//  (``.prePlay``) and not leftover last-stream language.
 //
 //  - SeeAlso: SharedPlayerManager.swift, CODING_AGENT.md (cross-target membership exceptions).
 //
@@ -90,7 +92,7 @@ extension SharedPlayerManager {
     /// Full clear entry point (call this). Stops playback (silent), resets actor SSOT state to
     /// .cleared visual + .cleared intent, removes persisted keys (including the snapshot), ends Live
     /// Activity, cancels sleep, notifies observers. Main UI gets blue "Cleared" pill immediately;
-    /// widgets (no snapshot + write suppression) fall back to .prePlay on next load.
+    /// widgets (no snapshot + write suppression) fall back to factory from **absent** keys.
     ///
     /// Write suppression stays **held closed** after this call: teardown
     /// ``WidgetRefreshManager/performRefresh(for:)`` and opportunistic
@@ -98,7 +100,11 @@ extension SharedPlayerManager {
     /// while widgets remain on the Home Screen. SceneDelegate lifts the hold on
     /// become-active / enter-foreground, then ``refreshHasActiveWidgets()`` may detect
     /// again. Timeline reload after clear still wakes Home so Providers paint factory
-    /// from **absent** keys — not a restamped live-chrome mirror.
+    /// from **absent** keys — not session Connecting (``.prePlay``) and not leftover
+    /// last-stream language. The engine model reseeds to
+    /// ``preferredMainAppInitialLanguageCode()`` before that wake so coordinator
+    /// ``setSelectedStreamModelOnly`` is not racing leftover attach language into
+    /// ``WidgetRefreshManager`` bookkeeping.
     ///
     /// After this call visual is `.cleared`. Resign-active consults
     /// ``resignActiveSessionTeardownDecision()`` and does not run a second
@@ -107,8 +113,12 @@ extension SharedPlayerManager {
     ///
     /// - Important: After this call `loadPersistedWidgetState()` returns nil until the next
     ///   explicit play or widget-driven write.
-    /// - Important: Does not treat `.cleared` as factory in the gate-open restamp helper;
-    ///   the hold itself is what keeps that restamp from running before foreground.
+    /// - Important: Gate-open restamp and ``saveCurrentState()`` treat in-session ``.cleared``
+    ///   as factory for home chrome (no live-chrome / last-stream projection). The hold
+    ///   additionally blocks WidgetCenter true-detect restamp until foreground.
+    /// - Important: Does **not** skip session teardown for ordinary factory Connecting
+    ///   ``.prePlay`` (cold launch / idle). Only the privacy-cleared visual/intent pair
+    ///   suppresses Connecting + last-stream home payload.
     ///
     /// Must be called from @MainActor (UI surfaces, coordinator). Internally hops for actor work.
     ///
@@ -116,6 +126,7 @@ extension SharedPlayerManager {
     ///   ``WidgetRefreshManager/holdPrivacyClearWriteSuppressionClosedUntilForeground()``,
     ///   ``WidgetRefreshManager/applyDetectedWidgetPresence(_:)``,
     ///   ``WidgetRefreshManager/liftPrivacyClearWriteSuppressionHoldForForegroundDetect()``,
+    ///   ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()``,
     ///   ``resignActiveSessionTeardownDecision()``,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7),
     ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant),
@@ -140,27 +151,35 @@ extension SharedPlayerManager {
         await Self.shared.cancelSleepTimer(restorePlaybackIntent: false, notifyStateChange: true)
         #endif
 
-        // 3. Reset in-memory SSOT (visual + intent + metadata). Use the dedicated no-persist helper
-        // (public resetToPrePlayForNewStream would re-persist a snapshot we are trying to erase).
-        await Self.shared.resetStateToClearedForPrivacy()
-
-        // 4. Wipe the UD keys (works cross-process for widgets + Live Activities)
-        Self.removeAllLocalPlaybackKeys()
-
-        // 5. Privacy: after explicit clear, force the hasActiveWidgets flag false *even if*
-        // WidgetCenter still reports configured widgets, and hold that closed against the
-        // teardown refresh that follows. `performRefresh` / opportunistic
-        // `refreshHasActiveWidgetsStatus` must not treat leftover Home Screen configs as
-        // the allowed re-detect (that restamps live chrome as visual=cleared + language).
-        // SceneDelegate lifts the hold on become-active / enter-foreground, then
-        // `refreshHasActiveWidgets` may open the gate.
+        // 3. Close the home-widget write gate and hold it before in-memory reset emits
+        // ``PlayerEvent``s. Snapshot-absent metadata/stop events otherwise derive
+        // Connecting ``.prePlay`` plus leftover attach language, and a deferred
+        // ``.prePlay`` coalesce can execute after the teardown ``.cleared`` wake.
+        // Hold also cancels in-flight Connecting reloads from the session just cleared.
         WidgetRefreshManager.setHasActiveLutheranWidgets(false)
         WidgetRefreshManager.holdPrivacyClearWriteSuppressionClosedUntilForeground()
         #if DEBUG
         print("[SharedPlayerManager] hasActiveWidgets forced false after privacy clear (hold-closed until foreground detect)")
         #endif
 
-        // 6–6b. Session + widget teardown (Now Playing, LA graceful end, immediate widget reload to .cleared).
+        // 4. Reset in-memory SSOT (visual + intent + metadata). Use the dedicated no-persist helper
+        // (public resetToPrePlayForNewStream would re-persist a snapshot we are trying to erase).
+        await Self.shared.resetStateToClearedForPrivacy()
+
+        // 5. Wipe the UD keys (works cross-process for widgets + Live Activities)
+        Self.removeAllLocalPlaybackKeys()
+
+        // 6. Reseed the engine model to the locale initial stream *before* the teardown
+        // timeline wake. Coordinator ``resetLanguageSelectorToInitialLocale`` still
+        // updates the in-app selector after this returns (idempotent model-only).
+        #if LUTHERAN_MAIN_APP
+        let reseedCode = preferredMainAppInitialLanguageCode()
+        await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(
+            to: DirectStreamingPlayer.streamForLanguageCode(reseedCode)
+        )
+        #endif
+
+        // 7–7b. Session + widget teardown (Now Playing, LA graceful end, immediate widget reload to .cleared).
         #if LUTHERAN_MAIN_APP
         await Self.shared.performSessionAndWidgetTeardown(
             includeFactoryReset: false,
@@ -171,7 +190,7 @@ extension SharedPlayerManager {
         )
         #endif
 
-        // 7. Notify (widgets, Live Activities, UI coordinator, SceneDelegate etc. can react and fall back to defaults)
+        // 8. Notify (widgets, Live Activities, UI coordinator, SceneDelegate etc. can react and fall back to defaults)
         NotificationCenter.default.post(name: .localStateCleared, object: nil)
 
         #if DEBUG

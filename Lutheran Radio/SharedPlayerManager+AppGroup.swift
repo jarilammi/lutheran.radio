@@ -258,7 +258,21 @@ extension SharedPlayerManager {
     ///
     /// Uses ``WidgetLivenessWritePolicy/immediate`` only — still privacy-gated and non-forcing
     /// with respect to `PlayerEvent` / WidgetCenter.
+    ///
+    /// Skipped while in-session privacy clear still owns visual/intent ``.cleared`` so
+    /// become-active cannot reopen the 60 s interactive window over factory-absent keys
+    /// (that would paint Connecting instead of passive / factory).
+    ///
+    /// - SeeAlso: ``bumpWidgetLivenessTimestamp(policy:minInterval:)``,
+    ///   ``clearAllLocalState()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7).
     func recordWidgetLiveness() {
+        if currentVisualState == .cleared || currentPlaybackIntent == .cleared {
+            #if DEBUG
+            print("[SharedPlayerManager] Suppressing liveness timestamp bump (in-session privacy clear — home stays factory from absent keys)")
+            #endif
+            return
+        }
         Self.bumpWidgetLivenessTimestamp(policy: .immediate)
     }
 
@@ -458,6 +472,9 @@ extension SharedPlayerManager {
     /// - Postcondition: If a write occurs, the in-process session snapshot contains the latest
     ///   (visualState, currentLanguage, hasError, metadata). Widget timeline reload is scheduled
     ///   by the Tier 2 ``PlayerEvent`` observer (``.persistedWidgetStateDidUpdate`` and related cases).
+    /// - Important: In-session privacy ``.cleared`` is a no-op — do not persist leftover
+    ///   last-stream language or Connecting chrome into session / ``homeWidgetLiveChrome``.
+    ///   Home paints factory from absent keys until explicit play.
     ///
     /// - SeeAlso: ``PersistedLanguageResolution``, ``performActualSave(_:)``,
     ///   ``preferredWidgetLanguage()``, ``streamSwitchConnectingLanguageCode``,
@@ -472,7 +489,14 @@ extension SharedPlayerManager {
     // Now async – callers must await this when they want to save
     func saveCurrentState() async {
         guard !isRunningInWidget() else { return }
-        
+
+        if currentVisualState == .cleared || currentPlaybackIntent == .cleared {
+            #if DEBUG
+            print("[SharedPlayerManager] Suppressing saveCurrentState (in-session privacy clear — home paints factory from absent keys)")
+            #endif
+            return
+        }
+
         let player = DirectStreamingPlayer.shared
 
         // Suspend before language resolve so concurrent destination snapshot writes are visible.

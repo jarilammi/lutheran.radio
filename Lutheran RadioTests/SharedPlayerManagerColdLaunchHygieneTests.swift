@@ -883,6 +883,120 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
         )
     }
 
+    /// After privacy clear, home timeline payload must stay factory from **absent** keys.
+    /// Leftover last-stream language and Connecting ``.prePlay`` must not be published via
+    /// refresh derivation, live-chrome restamp, session save, or liveness heartbeat.
+    ///
+    /// **Invariant protected:** ``clearAllLocalState()`` reseeds the engine model to
+    /// ``preferredMainAppInitialLanguageCode()``, holds write suppression closed, and
+    /// leaves visual/intent ``.cleared``. Snapshot-absent WRM derivation is ``.cleared``
+    /// (not leftover Connecting). Foreground lift may reopen the write gate; restamp /
+    /// ``saveCurrentState()`` / ``recordWidgetLiveness()`` still skip while chrome is
+    /// privacy-cleared so Home does not paint yellow Connecting in the last stream.
+    /// Does not skip factory Connecting teardown for ordinary ``.prePlay``.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/clearAllLocalState()``,
+    ///   ``SharedPlayerManager/languageForWidgetRefreshDerivation(fallbackLanguage:)``,
+    ///   ``SharedPlayerManager/restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()``,
+    ///   ``SharedPlayerManager/saveCurrentState()``,
+    ///   ``SharedPlayerManager/recordWidgetLiveness()``,
+    ///   ``WidgetRefreshManager/deriveRefreshParameters(for:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7),
+    ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant).
+    func testPrivacyClearHomeWakeDoesNotPublishConnectingOrLastStreamLanguage() async {
+        let localeLanguage = SharedPlayerManager.preferredMainAppInitialLanguageCode()
+        let leftoverLanguage = localeLanguage == "et" ? "fi" : "et"
+        await MainActor.run {
+            WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        let streams = SharedPlayerManager.shared.availableStreams
+        guard let leftover = streams.first(where: { $0.languageCode == leftoverLanguage }) else {
+            XCTFail("Expected leftover last-stream \(leftoverLanguage) in catalog")
+            return
+        }
+        await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: leftover)
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .playing,
+            language: leftoverLanguage,
+            hasError: false,
+            reason: "prePrivacyClearLastStream"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.currentLanguage,
+            leftoverLanguage
+        )
+
+        await SharedPlayerManager.clearAllLocalState()
+
+        let visualAfterClear = await manager.currentVisualState
+        let intentAfterClear = await manager.currentPlaybackIntent
+        XCTAssertEqual(visualAfterClear, .cleared)
+        XCTAssertEqual(intentAfterClear, .cleared)
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Privacy clear must remove homeWidgetLiveChrome"
+        )
+        XCTAssertTrue(WidgetRefreshManager.isPrivacyClearWriteSuppressionHeldClosed)
+
+        let derivedLanguage = SharedPlayerManager.languageForWidgetRefreshDerivation(
+            fallbackLanguage: leftoverLanguage
+        )
+        XCTAssertNotEqual(
+            derivedLanguage,
+            leftoverLanguage,
+            "WRM language must not keep leftover last-stream attach after privacy clear"
+        )
+        XCTAssertEqual(
+            derivedLanguage,
+            localeLanguage,
+            "WRM language after privacy clear is the locale reseed, not last stream"
+        )
+
+        let derived = await MainActor.run {
+            WidgetRefreshManager.shared._test_deriveRefreshParameters(for: .metadataDidUpdate(nil))
+        }
+        XCTAssertEqual(
+            derived.visualState,
+            .cleared,
+            "Snapshot-absent metadata after privacy clear must not fall back to Connecting .prePlay"
+        )
+        XCTAssertNotEqual(derived.currentLanguage, leftoverLanguage)
+
+        // Leftover attach after clear (coordinator model-only already reseeds; force et again).
+        await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: leftover)
+        let stillFactoryLanguage = SharedPlayerManager.languageForWidgetRefreshDerivation(
+            fallbackLanguage: leftoverLanguage
+        )
+        XCTAssertNotEqual(
+            stillFactoryLanguage,
+            leftoverLanguage,
+            "Hold-closed derivation must ignore leftover selectedStream"
+        )
+
+        await MainActor.run {
+            WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        await manager.restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()
+        await manager.saveCurrentState()
+        await manager.recordWidgetLiveness()
+
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Gate-open restamp / save must not plant .cleared or leftover Connecting live chrome"
+        )
+        XCTAssertNil(
+            SharedPlayerManager.loadPersistedWidgetState(),
+            "saveCurrentState while .cleared must not rebuild a last-stream session snapshot"
+        )
+        XCTAssertNil(
+            UserDefaults(suiteName: "group.radio.lutheran.shared")?.object(forKey: "lastUpdateTime"),
+            "Liveness heartbeat must stay absent so Home stays factory / passive"
+        )
+    }
+
     /// Closing the home-widget privacy gate alone must **not** clear durable LA mirrors.
     ///
     /// **Invariant protected:** Mirrors are intentionally **not** gated by `hasActiveWidgets`.

@@ -1094,6 +1094,12 @@ extension SharedPlayerManager {
             #endif
             return
         }
+        if currentVisualState == .cleared || currentPlaybackIntent == .cleared {
+            #if DEBUG
+            print("[SharedPlayerManager] Suppressing persistStreamMetadataForWidgets (in-session privacy clear)")
+            #endif
+            return
+        }
         savePersistedWidgetState(
             visualState: currentVisualState,
             language: Self.preferredWidgetLanguage(),
@@ -1125,6 +1131,12 @@ extension SharedPlayerManager {
     /// ``hasActiveWidgets`` and non-nil in-memory ICY only.
     func restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded() {
         guard Self.hasActiveWidgets else { return }
+        if currentVisualState == .cleared || currentPlaybackIntent == .cleared {
+            #if DEBUG
+            print("[SharedPlayerManager] Privacy gate open — in-session privacy clear; skipping program-metadata re-stamp")
+            #endif
+            return
+        }
         guard let metadata = currentStreamMetadata, metadata.hasDisplayableContent else {
             #if DEBUG
             print("[SharedPlayerManager] Privacy gate open — no in-memory program metadata to re-stamp")
@@ -1153,6 +1165,9 @@ extension SharedPlayerManager {
     ///   sticky ``.userPaused`` is preserved until a later ``setPlaying()`` save.
     /// - Important: Pure factory cold-launch (``.prePlay``, no session, no hold, no active/paused
     ///   intent) is a no-op so gate open does not seed residual chrome.
+    /// - Important: In-session privacy ``.cleared`` is also a no-op. Home must keep **absent**
+    ///   keys (factory / passive), not a restamped ``.cleared`` or leftover Connecting
+    ///   ``.prePlay`` + last-stream language after the user asked to clear.
     /// - SeeAlso: ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
     ///   ``restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()`` (privacy-class peer),
     ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
@@ -1181,6 +1196,13 @@ extension SharedPlayerManager {
         guard !language.isEmpty else {
             #if DEBUG
             print("[SharedPlayerManager] Privacy gate open — empty language; skipping live-chrome re-stamp")
+            #endif
+            return
+        }
+
+        if currentVisualState == .cleared || currentPlaybackIntent == .cleared {
+            #if DEBUG
+            print("[SharedPlayerManager] Privacy gate open — in-session privacy clear; skipping live-chrome re-stamp")
             #endif
             return
         }

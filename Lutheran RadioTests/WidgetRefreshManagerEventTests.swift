@@ -61,6 +61,9 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
 
         WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
         WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        // Isolation clear leaves in-session ``.cleared``. Connecting coalesce / language
+        // tests need factory memory; privacy-clear cases re-run ``clearAllLocalState()``.
+        await manager.setVisualState(.prePlay)
         WidgetRefreshManager._test_setRecordHandlePlayerEventDerivation(true)
     }
 
@@ -279,24 +282,86 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         XCTAssertFalse(derived.hasError)
     }
 
-    /// Verifies the safe default when no persisted snapshot exists.
+    /// After in-session privacy clear the snapshot is absent on purpose. Metadata/stop
+    /// events must not fall back to Connecting ``.prePlay`` (leftover last-stream chrome).
     ///
     /// Re-runs ``SharedPlayerManager/clearAllLocalState()`` locally because sibling derivation
     /// tests persist snapshots and async clear work from ``setUp`` must settle before the nil
     /// precondition is asserted.
-    func testDeriveRefreshParametersDefaultsVisualToPrePlayWhenSnapshotAbsent() async {
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/deriveRefreshParameters(for:)``,
+    ///   ``SharedPlayerManager/clearAllLocalState()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7).
+    func testDeriveRefreshParametersDefaultsVisualToClearedWhenSnapshotAbsentAfterPrivacyClear() async {
         await SharedPlayerManager.clearAllLocalState()
         await MainActor.run {
+            WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
+        }
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+        XCTAssertTrue(
+            WidgetRefreshManager.isPrivacyClearWriteSuppressionHeldClosed,
+            "Precondition: privacy-clear hold must still be closed"
+        )
+
+        let derived = refreshManager._test_deriveRefreshParameters(
+            for: .metadataDidUpdate(nil)
+        )
+
+        XCTAssertEqual(
+            derived.visualState,
+            .cleared,
+            "Snapshot-absent events during privacy-clear hold must not publish Connecting .prePlay"
+        )
+    }
+
+    /// Factory / no-snapshot (hold lifted, visual no longer privacy-cleared) still
+    /// defaults non-visual events to Connecting ``.prePlay``.
+    func testDeriveRefreshParametersDefaultsVisualToPrePlayWhenSnapshotAbsentAfterHoldLift() async {
+        await SharedPlayerManager.clearAllLocalState()
+        await manager.setVisualState(.prePlay)
+        await MainActor.run {
+            WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
             WidgetRefreshManager.setHasActiveLutheranWidgets(true)
             WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
         }
         XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+        XCTAssertFalse(WidgetRefreshManager.isPrivacyClearWriteSuppressionHeldClosed)
 
         let derived = refreshManager._test_deriveRefreshParameters(
             for: .metadataDidUpdate(nil)
         )
 
         XCTAssertEqual(derived.visualState, .prePlay)
+    }
+
+    /// Immediate Connecting wake after in-session privacy clear is discarded at execute
+    /// time (memory ``.cleared``). Does not skip factory Connecting teardown in general.
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/refreshWouldRegressMemoryAuthority(executing:memory:isImmediate:)``,
+    ///   ``SharedPlayerManager/clearAllLocalState()``.
+    func testRefreshIfNeededDiscardsConnectingWakeWhilePrivacyCleared() async {
+        await SharedPlayerManager.clearAllLocalState()
+        let visualAfterClear = await manager.currentVisualState
+        XCTAssertEqual(visualAfterClear, .cleared)
+
+        enableDebounceObservation()
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "et",
+            hasError: false,
+            immediate: true,
+            trigger: .test
+        )
+
+        let discarded = await waitForDebounceOutcome(.discardedMemoryAuthorityRegress)
+        XCTAssertTrue(
+            discarded,
+            "Connecting .prePlay after privacy clear must discard at memory authority; log: \(WidgetRefreshManager._test_debounceOutcomeLog())"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager._test_debounceOutcomeLog().contains(.refreshExecuted),
+            "Must not execute a leftover Connecting home wake after privacy clear"
+        )
     }
 
     /// Under no home widgets, ``preferredWidgetLanguage()`` / ``loadSharedState()`` hard-default
@@ -313,6 +378,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         await SharedPlayerManager.clearAllLocalState()
         SharedPlayerManager.clearLiveActivityLanguageMirror()
         await MainActor.run {
+            WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
             WidgetRefreshManager.setHasActiveLutheranWidgets(false)
             WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
         }
@@ -468,6 +534,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         await SharedPlayerManager.clearAllLocalState()
         SharedPlayerManager.clearLiveActivityLanguageMirror()
         await MainActor.run {
+            WidgetRefreshManager.liftPrivacyClearWriteSuppressionHoldForForegroundDetect()
             WidgetRefreshManager.setHasActiveLutheranWidgets(false)
             WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
         }
@@ -1301,6 +1368,21 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
                 executing: .prePlay,
                 memory: .prePlay
             )
+        )
+        // In-session privacy clear: leftover Connecting must not wake Home.
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: .prePlay,
+                memory: .cleared
+            ),
+            "Connecting must not replace in-session privacy-clear confirmation on home wake"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: .cleared,
+                memory: .cleared
+            ),
+            "Matching .cleared teardown wake must execute"
         )
         // Audible memory: non-immediate late connecting is post-audible residual.
         XCTAssertTrue(

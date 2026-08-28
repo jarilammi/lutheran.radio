@@ -1115,7 +1115,10 @@ extension SharedPlayerManager {
     /// The .cleared intent (in the current process) is the hard blocker (canProceedWithPlayback, play() top guard,
     /// recovery, startPlayback etc.). Visual .cleared gives explicit post-reset confirmation in the current session
     /// (distinct from yellow connecting). A subsequent cold launch sees .prePlay because removeAllLocalPlaybackKeys
-    /// + hasActiveWidgets=false + no snapshot. This prevents grey .userPaused mixing or "connect" after clear.
+    /// + hasActiveWidgets=false + no snapshot. Home timeline wakes must not publish leftover
+    /// Connecting ``.prePlay`` + last-stream language (snapshot-absent metadata is ``.cleared``
+    /// while the privacy-clear hold is closed). This prevents grey .userPaused mixing or
+    /// Connecting chrome after clear.
     /// On next launch the no-snapshot path in ensureVisualStateLoaded allows the normal cold-launch flow.
     /// SECURITY: This touches only in-memory actor state for the current process.
     func resetStateToClearedForPrivacy() {

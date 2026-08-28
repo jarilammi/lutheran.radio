@@ -333,10 +333,12 @@ extension SharedPlayerManager {
     ///    or live chrome `updatedAt` is strictly fresher than session) — cross-process switch
     ///    / optimistic settle SSOT for refresh labels
     /// 2. Session snapshot `currentLanguage` when non-empty
-    /// 3. Main app: ``DirectStreamingPlayer/selectedStream`` language (stream attach SSOT)
-    /// 4. Durable Live Activity language mirror (destination stamp / last content push)
-    /// 5. Non-empty `fallbackLanguage` from the refresh caller (when not privacy-default-only)
-    /// 6. Main app: ``preferredMainAppInitialLanguageCode()``; extension: ``preferredWidgetLanguage()``
+    /// 3. While privacy-clear write suppression is held closed and those sources are empty:
+    ///    ``preferredMainAppInitialLanguageCode()`` (do not label leftover attach language)
+    /// 4. Main app: ``DirectStreamingPlayer/selectedStream`` language (stream attach SSOT)
+    /// 5. Durable Live Activity language mirror (destination stamp / last content push)
+    /// 6. Non-empty `fallbackLanguage` from the refresh caller (when not privacy-default-only)
+    /// 7. Main app: ``preferredMainAppInitialLanguageCode()``; extension: ``preferredWidgetLanguage()``
     ///
     /// - Parameter fallbackLanguage: Optional language already known to the caller
     ///   (e.g. ``loadSharedState()``.currentLanguage, which may already carry instant-feedback).
@@ -378,6 +380,17 @@ extension SharedPlayerManager {
         }
 
         #if LUTHERAN_MAIN_APP
+        // After in-session privacy clear, session + live chrome are absent on purpose.
+        // Do not label the teardown / metadata wake with leftover engine attach language
+        // (last stream before clear). Locale reseed is the factory language until
+        // explicit play; coordinator ``setSelectedStreamModelOnly`` is idempotent.
+        if WidgetRefreshManager.isPrivacyClearWriteSuppressionHeldClosed {
+            let mainAppInitial = preferredMainAppInitialLanguageCode()
+            if !mainAppInitial.isEmpty {
+                return mainAppInitial
+            }
+        }
+
         let selected = DirectStreamingPlayer.shared.selectedStream.languageCode
         if !selected.isEmpty {
             return selected

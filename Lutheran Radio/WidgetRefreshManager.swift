@@ -277,14 +277,19 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///
     /// Call from ``SharedPlayerManager/clearAllLocalState()`` next to the force-false.
     /// Does not itself change ``hasActiveLutheranWidgets`` or clear App Group keys.
+    /// Cancels in-flight Connecting (``.prePlay``) coalesce / debounce so a leftover
+    /// last-stream wake cannot execute after the teardown ``.cleared`` reload.
     ///
-    /// - Postcondition: ``isPrivacyClearWriteSuppressionHeldClosed`` is `true` in this process.
+    /// - Postcondition: ``isPrivacyClearWriteSuppressionHeldClosed`` is `true` in this process;
+    ///   pending and coalesced Connecting reloads are dropped.
     /// - SeeAlso: ``liftPrivacyClearWriteSuppressionHoldForForegroundDetect()``,
     ///   ``applyDetectedWidgetPresence(_:)``,
+    ///   ``cancelPendingRefresh()``,
     ///   ``SharedPlayerManager/clearAllLocalState()``.
     @MainActor
     static func holdPrivacyClearWriteSuppressionClosedUntilForeground() {
         unsafe _privacyClearWriteSuppressionHold = true
+        shared.cancelPendingRefresh()
     }
 
     /// Lifts the privacy-clear hold so the next WidgetCenter detect may reopen the write gate.
@@ -789,7 +794,13 @@ final class WidgetRefreshManager: @unchecked Sendable {
             return prior == .prePlay || prior == .cleared || prior == .userPaused
         case .userPaused, .thermalPaused, .securityLocked:
             return true
-        case .prePlay, .cleared:
+        case .cleared:
+            // Privacy-clear confirmation must drop a leftover Connecting wake; do not
+            // let deferred ``.prePlay`` (snapshot-absent metadata after key wipe)
+            // execute after the ``.cleared`` teardown reload.
+            return prior == .prePlay || prior == .playing
+                || prior == .userPaused || prior == .thermalPaused || prior == .securityLocked
+        case .prePlay:
             return false
         }
     }
@@ -1012,7 +1023,13 @@ final class WidgetRefreshManager: @unchecked Sendable {
             return requested == .prePlay || requested == .cleared || requested == .playing
         case .securityLocked:
             return requested != .securityLocked
-        case .prePlay, .cleared:
+        case .cleared:
+            // In-session privacy clear: home must not wake Connecting (``.prePlay``) or
+            // leftover last-stream playing/pause chrome. Matching ``.cleared`` is handled
+            // by the equality short-circuit above. Explicit play advances memory off
+            // ``.cleared`` before a new Connecting wake is honest.
+            return requested != .cleared
+        case .prePlay:
             // Connecting / switch hold: do not re-schedule lagging sticky, and do not invent
             // mid-hold playing until memory advances to authoritative playing.
             return requested == .userPaused
@@ -1371,10 +1388,11 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///
     /// The call always goes through the full implementation of `refreshIfNeeded`
     /// (language-change urgency, prePlay coalescing, adaptive debounce, regress
-    /// checks, UITestMode short, privacy gate, etc.). Derived `.prePlay` and
-    /// `.cleared` visuals request `immediate: true` so factory-reset and privacy-clear
-    /// presentations are not deferred behind the coalesce window (parity with
-    /// imperative teardown callers).
+    /// checks, UITestMode short, privacy gate, etc.). Derived `.cleared` visuals
+    /// request `immediate: true` so privacy-clear presentations are not deferred
+    /// behind the coalesce window (parity with imperative teardown callers).
+    /// Connecting ``.prePlay`` stays non-immediate except when privacy-clear
+    /// hold-closed rewrites snapshot-absent fallback to ``.cleared``.
     ///
     /// - Parameter event: The domain event emitted by `SharedPlayerManager`
     ///   after a corresponding state mutation.
@@ -1414,6 +1432,9 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///   preferred even when the persisted snapshot is stale. All other cases — including
     ///   stream verbs, intent changes, metadata updates, and persist signals — fall back
     ///   to ``SharedPlayerManager/loadPersistedWidgetState()`` (or `.prePlay` when absent).
+    ///   While privacy-clear write suppression is held closed, snapshot-absent fallback is
+    ///   ``.cleared`` (not leftover Connecting) so metadata/stop events after key wipe
+    ///   cannot publish session ``.prePlay`` + last-stream language.
     /// - Important: Language uses ``SharedPlayerManager/languageForWidgetRefreshDerivation(fallbackLanguage:)``
     ///   so privacy hard-default `"en"` from ``loadSharedState()`` does not label non-English
     ///   streams in coalesce diagnostics when the session snapshot is write-suppressed.
@@ -1430,17 +1451,24 @@ final class WidgetRefreshManager: @unchecked Sendable {
         )
         let hasError = sharedState.hasError
 
+        let snapshotAbsentFallback: PlayerVisualState =
+            Self.isPrivacyClearWriteSuppressionHeldClosed ? .cleared : .prePlay
+
         let visualState: PlayerVisualState
         switch event {
         case .visualStateDidChange(let carriedVisual):
-            visualState = carriedVisual
+            if Self.isPrivacyClearWriteSuppressionHeldClosed, carriedVisual == .prePlay {
+                visualState = .cleared
+            } else {
+                visualState = carriedVisual
+            }
         case .playbackIntentChanged, .streamDidStart, .streamDidPause, .streamDidStop,
              .streamDidFail, .metadataDidUpdate, .persistedWidgetStateDidUpdate:
-            visualState = persisted?.visualState ?? .prePlay
+            visualState = persisted?.visualState ?? snapshotAbsentFallback
         @unknown default:
             // `PlayerEvent` is `@frozen public` in `WidgetSurface`; future additive cases
             // fall back to the persisted snapshot like other non-visual events.
-            visualState = persisted?.visualState ?? .prePlay
+            visualState = persisted?.visualState ?? snapshotAbsentFallback
         }
 
         return RefreshDerivation(
