@@ -7,8 +7,9 @@
 //  Real-engine integration coverage for ``DirectStreamingPlayer`` under the XCTest
 //  host: attach-generation discard, hard-teardown barriers, early-window recovery,
 //  UITestMode audio short-circuits (construction does not activate AVAudioSession;
-//  first clip / play / attach await configure), production type / DNSSEC factory
-//  surfaces, and pure ``shouldSkipForceWidgetSaveOnStableStatus`` policy.
+//  first clip / play / attach await configure, which waits for factory deactivate),
+//  production type / DNSSEC factory surfaces, and pure
+//  ``shouldSkipForceWidgetSaveOnStableStatus`` policy.
 //
 //  - SeeAlso: ``DirectStreamingPlayer``, ``SharedPlayerManager``,
 //    ``DirectStreamingPlayer/configureAudioSessionAsync()``,
@@ -38,9 +39,11 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         try await super.setUp()
         sanitizeLiveActivityLocalState()
         DirectStreamingPlayer.shared.test_clearPlaybackTeardownGuard()
+        DirectStreamingPlayer.shared.test_resetAudioSessionMutationProbe()
     }
 
     override func tearDown() async throws {
+        DirectStreamingPlayer.shared.test_resetAudioSessionMutationProbe()
         sanitizeLiveActivityLocalState()
         try await super.tearDown()
     }
@@ -88,9 +91,9 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
     }
 
     /// Construction does not activate `AVAudioSession`. Factory-reset teardown deactivates
-    /// the session on the same process start; first clip / play / attach already await
-    /// ``configureAudioSessionAsync()``. This gate asserts the UITestMode no-op seam on
-    /// that first-use path — it does not activate a real session.
+    /// the session on the same process start; first clip / play / attach await
+    /// ``configureAudioSessionAsync()``, which waits for that deactivate. This gate asserts
+    /// the UITestMode no-op seam on that first-use path — it does not activate a real session.
     ///
     /// - SeeAlso: ``DirectStreamingPlayer/configureAudioSessionAsync()``,
     ///   ``DirectStreamingPlayer/setupAudioSession()``,
@@ -106,7 +109,65 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         let configured = await DirectStreamingPlayer.shared.configureAudioSessionAsync()
         XCTAssertFalse(
             configured,
-            "configureAudioSessionAsync must no-op under UITestMode (first clip/play await this; init must not activate)"
+            "configureAudioSessionAsync must no-op under UITestMode (first clip/play await this; construction does not activate)"
+        )
+    }
+
+    /// Factory-reset Now Playing phase 2 starts ``deactivateAudioSessionAsync()`` without
+    /// waiting for SessionCore. First clip / ``play()`` configure must wait for that
+    /// deactivate: overlapping `setCategory` returns SessionCore OSStatus -50.
+    /// Construction does not activate the session.
+    ///
+    /// **Why this pattern is required:** UITestMode no-ops SessionCore, so the gate uses the
+    /// DEBUG serialized-region hold to prove order without activating `AVAudioSession`.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/configureAudioSessionAsync()``,
+    ///   ``DirectStreamingPlayer/deactivateAudioSessionAsync()``,
+    ///   ``SharedPlayerManager/teardownNowPlayingSession()``,
+    ///   docs/Widget-Presentation-Dataflow.md (user-initiated main open).
+    func testConfigureWaitsForInFlightAudioSessionDeactivate() async {
+        XCTAssertTrue(
+            SharedPlayerManager.isRunningInUITestMode,
+            "XCTest host must report UITestMode so engine audio paths stay silent"
+        )
+        let player = DirectStreamingPlayer.shared
+        player.test_resetAudioSessionMutationProbe()
+        player.test_setAudioSessionMutationSerializedHoldNanoseconds(200_000_000)
+
+        let deactivateTask = Task { @MainActor in
+            let deactivated = await player.deactivateAudioSessionAsync()
+            XCTAssertTrue(deactivated, "deactivate remains a UITestMode success no-op")
+        }
+
+        for _ in 0..<40 {
+            if player.test_audioSessionMutationLog.contains("deactivate-begin") {
+                break
+            }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(
+            player.test_audioSessionMutationLog.contains("deactivate-begin"),
+            "deactivate must begin before configure starts"
+        )
+
+        let configureTask = Task { @MainActor in
+            let configured = await player.configureAudioSessionAsync()
+            XCTAssertFalse(configured, "configure remains a UITestMode no-op")
+        }
+
+        _ = await deactivateTask.value
+        _ = await configureTask.value
+
+        XCTAssertEqual(
+            player.test_audioSessionMutationLog,
+            [
+                "deactivate-begin",
+                "deactivate-end",
+                "configure-begin",
+                "configure-end"
+            ],
+            "configure begins only after the in-flight factory deactivate finishes"
         )
     }
 

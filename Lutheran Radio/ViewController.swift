@@ -355,7 +355,8 @@ class ViewController: UIViewController {
         
         // Playback audio session: DirectStreamingPlayer is the single owner.
         // Construction does not activate; first clip / play / attach await
-        // ``configureAudioSessionAsync()``.
+        // ``configureAudioSessionAsync()``, which waits for factory-reset Now Playing
+        // phase 2 deactivate.
         
         // Haptics owned by RadioPlayerCoordinator.wireAndInitialSetup() (single owner).
         // UIImpact only — do not add a CHHapticEngine (see HapticPlaybackPolicy).

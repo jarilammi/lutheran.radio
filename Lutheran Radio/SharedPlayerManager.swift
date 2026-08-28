@@ -1128,6 +1128,10 @@ actor SharedPlayerManager {
     /// Residual pending must be discarded **before** special tuning on user-initiated main open.
     /// Residual OS Now Playing is also cleared here (phase 1) **before** special tuning; process
     /// start also wipes via ``clearSystemNowPlayingMetadataSynchronously()`` in AppDelegate.
+    /// Phase 2 audio-session deactivate stays detached so factory hygiene can return
+    /// within MediaRemoteUI’s launch time budget. First clip / ``play()`` configure waits
+    /// on ``DirectStreamingPlayer/audioSessionMutationTail``. Engine construction does
+    /// not activate the session.
     func resetToFactoryDefaultsOnLaunch() async {
         #if LUTHERAN_MAIN_APP
         await performSessionAndWidgetTeardown(
@@ -1226,6 +1230,8 @@ actor SharedPlayerManager {
     /// - Postcondition: System Now Playing cleared; optional LA ended; widgets reloaded when requested.
     ///   Factory reset also clears ``liveActivityToggleVisualStateAppGroupKey``,
     ///   ``liveActivityCurrentLanguageAppGroupKey``, and ``homeWidgetLiveChromeAppGroupKey``.
+    ///   Audio-session deactivate (phase 2) remains detached; first clip / play configure
+    ///   waits for it on ``DirectStreamingPlayer``.
     ///
     /// - SeeAlso: ``teardownNowPlayingSession()``, ``clearSystemNowPlayingMetadataSynchronously()``,
     ///   ``resetToFactoryDefaultsOnLaunch()``,

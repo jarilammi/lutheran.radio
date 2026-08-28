@@ -88,8 +88,9 @@ extension DirectStreamingPlayer {
             return nil
         }
 
-        // Explicit session SSOT first (async / off-main activate). Local clip start below
-        // must not re-enter setActive on the main actor.
+        // Explicit session SSOT first (async / off-main activate). Waits for any in-flight
+        // factory-reset deactivate before setCategory. Local clip start below does not
+        // re-enter setActive on the main actor.
         _ = await configureAudioSessionAsync()
 
         let clipURL = url
