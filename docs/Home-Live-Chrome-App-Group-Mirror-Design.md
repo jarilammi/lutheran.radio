@@ -432,7 +432,7 @@ Full privacy clear, factory residual, and terminate paths clear independently of
 
 - Keep dual-path refresh and coalesce as-is **except** where a bug blocks reloads entirely.
 - Every **authoritative mirror stamp** is followed by a refresh schedule path that can wake WidgetKit (event path and/or existing save path). Early sticky pause and ``setPlaying`` already emit / schedule as required.
-- Concurrent identical sticky-pause ``refreshIfNeeded`` calls coalesce via ``shouldCoalesceInFlightIdenticalPauseRefresh`` (visual + language + error + paint epoch) while the first wake is in flight. ``lastKnownState`` stays booked after a real wake. The first paint-epoch exception after ``liveChromeIdentitySkipWake`` still executes once. Dual-path event + teardown architecture is unchanged. Scheduler labels are not lock-screen paint.
+- Concurrent identical sticky-pause **or** ``.playing`` ``refreshIfNeeded`` calls coalesce via ``shouldCoalesceInFlightIdenticalRefresh`` (visual + language + error + paint epoch) while the first wake is in flight. ``lastKnownState`` stays booked after a real wake. LastKnown identity skip still excludes ``.playing`` so later metadata can adaptive-debounce. The first paint-epoch exception after ``liveChromeIdentitySkipWake`` still executes once. Dual-path event + teardown architecture is unchanged. Scheduler labels are not lock-screen paint and are not rendered home chrome.
 - Providers paint from session + ``homeWidgetLiveChrome`` (``resolveHomeWidgetChromeFields``).
 - `WidgetCenter.reloadTimelines` is **wake only** — it does not carry visual/language into WidgetKit.
 

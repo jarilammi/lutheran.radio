@@ -53,9 +53,13 @@ extension WidgetRefreshManager {
         ///
         /// Covers immediate event-path `.prePlay` storms and sticky pause/lock duplicates.
         case coalescedIdenticalNonPlaying
-        /// Identical sticky-pause matched ``inFlightIdenticalPauseWake`` (visual + language + epoch)
+        /// Identical sticky-pause matched ``inFlightIdenticalWake`` (visual + language + epoch)
         /// while the first wake is still awaiting execute-time discard / WidgetCenter.
         case coalescedInFlightIdenticalPause
+        /// Identical ``.playing`` matched ``inFlightIdenticalWake`` (visual + language + epoch)
+        /// while the first settle wake is still awaiting execute-time discard / WidgetCenter.
+        /// LastKnown identity skip still does not apply to playing (later metadata debounce).
+        case coalescedInFlightIdenticalPlaying
         /// Execute-time home wake discarded on the session-lag leg (soft-resume reverse race, etc.).
         case discardedStaleDebouncedRegress
         /// Execute-time home wake discarded on the memory-lag leg (residual sticky, mid-hold
@@ -304,7 +308,7 @@ extension WidgetRefreshManager {
     /// Resets debounce, coalesce, and last-known refresh state for timing-isolated unit tests.
     ///
     /// Cancels pending work items and clears ``lastRefreshTime`` / ``lastKnownState`` /
-    /// ``lastPaintEpochAtSuccessfulReload`` / ``inFlightIdenticalPauseWake`` so successive
+    /// ``lastPaintEpochAtSuccessfulReload`` / ``inFlightIdenticalWake`` so successive
     /// tests do not inherit coalesce windows or a stale paint-epoch / in-flight token
     /// from prior drives.
     ///
@@ -316,7 +320,7 @@ extension WidgetRefreshManager {
         lastRefreshTime = nil
         lastKnownState = nil
         lastPaintEpochAtSuccessfulReload = 0
-        inFlightIdenticalPauseWake = nil
+        inFlightIdenticalWake = nil
         refreshCount = 0
         adaptiveInterval = 0.5
     }

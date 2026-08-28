@@ -1096,8 +1096,14 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     /// Verifies that rapid repeat ``PlayerVisualState/playing`` refreshes schedule adaptive
     /// debouncing instead of executing back-to-back timeline reloads.
     ///
+    /// LastKnown identity skip still does **not** apply to playing after the first execute
+    /// books — later ``PlayerEvent/metadataDidUpdate`` must remain eligible for this debounce
+    /// path. Concurrent settle storms are a different gate
+    /// (``shouldCoalesceInFlightIdenticalRefresh``).
+    ///
     /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
-    ///   ``WidgetRefreshManagerEventTests``.
+    ///   ``WidgetRefreshManager/shouldCoalesceIdenticalNonPlayingRefresh(requestedVisual:lastKnownVisual:languageUnchanged:errorFlagsMatch:hasError:)``,
+    ///   ``WidgetRefreshManager/shouldCoalesceInFlightIdenticalRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``.
     func testRefreshIfNeededSchedulesAdaptiveDebounceForRapidRepeats() async {
         enableDebounceObservation()
         await manager.setVisualState(.playing)
@@ -1174,7 +1180,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
                 errorFlagsMatch: true,
                 hasError: false
             ),
-            "Playing is rate-limited by adaptive debounce, not identity skip"
+            "Playing is rate-limited by adaptive debounce / in-flight coalesce, not lastKnown identity skip"
         )
         XCTAssertFalse(
             WidgetRefreshManager.shouldCoalesceIdenticalNonPlayingRefresh(
@@ -1924,7 +1930,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     ///
     /// - SeeAlso: ``WidgetRefreshManager/shouldCoalesceInFlightIdenticalPauseRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``.
     func testShouldCoalesceInFlightIdenticalPauseRefreshPolicy() {
-        let pauseInFlight = InFlightIdenticalPauseWake(
+        let pauseInFlight = InFlightIdenticalWake(
             visualState: .userPaused,
             currentLanguage: "sv",
             hasError: false,
@@ -1946,7 +1952,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
                 requestedLanguage: "fi",
                 requestedHasError: false,
                 requestedPaintEpoch: 1,
-                inFlight: InFlightIdenticalPauseWake(
+                inFlight: InFlightIdenticalWake(
                     visualState: .thermalPaused,
                     currentLanguage: "fi",
                     hasError: false,
@@ -1961,7 +1967,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
                 requestedLanguage: "de",
                 requestedHasError: false,
                 requestedPaintEpoch: 2,
-                inFlight: InFlightIdenticalPauseWake(
+                inFlight: InFlightIdenticalWake(
                     visualState: .securityLocked,
                     currentLanguage: "de",
                     hasError: false,
@@ -2039,6 +2045,123 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         )
         XCTAssertTrue(
             WidgetRefreshManager.isStickyPauseKind(.userPaused)
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager.isInFlightIdenticalWakeKind(.playing),
+            "Playing settle storms use the in-flight token"
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager.isInFlightIdenticalWakeKind(.userPaused)
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.isInFlightIdenticalWakeKind(.prePlay),
+            "Connecting stays on deferral / lastKnown identity skip"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.isInFlightIdenticalWakeKind(.cleared),
+            "Privacy / factory cleared stays urgent"
+        )
+    }
+
+    /// Pure policy: identical in-flight ``.playing`` coalesces against the same visual +
+    /// language + epoch; language/epoch mismatch, errors, Connecting, and pause tokens do not.
+    ///
+    /// Concurrent settle-path ``refreshIfNeeded`` calls schedule before ``lastKnownState``
+    /// is booked. LastKnown identity skip still excludes playing so later metadata can
+    /// adaptive-debounce after the token clears.
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/shouldCoalesceInFlightIdenticalRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``.
+    func testShouldCoalesceInFlightIdenticalPlayingRefreshPolicy() {
+        let playingInFlight = InFlightIdenticalWake(
+            visualState: .playing,
+            currentLanguage: "fi",
+            hasError: false,
+            paintEpoch: 3
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager.shouldCoalesceInFlightIdenticalRefresh(
+                requestedVisual: .playing,
+                requestedLanguage: "fi",
+                requestedHasError: false,
+                requestedPaintEpoch: 3,
+                inFlight: playingInFlight
+            ),
+            "Identical in-flight playing + language + epoch must coalesce"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.shouldCoalesceInFlightIdenticalPauseRefresh(
+                requestedVisual: .playing,
+                requestedLanguage: "fi",
+                requestedHasError: false,
+                requestedPaintEpoch: 3,
+                inFlight: playingInFlight
+            ),
+            "Pause-scoped wrapper must not claim playing"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.shouldCoalesceInFlightIdenticalRefresh(
+                requestedVisual: .playing,
+                requestedLanguage: "fi",
+                requestedHasError: false,
+                requestedPaintEpoch: 3,
+                inFlight: nil
+            ),
+            "First playing wake must execute when no in-flight token exists"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.shouldCoalesceInFlightIdenticalRefresh(
+                requestedVisual: .playing,
+                requestedLanguage: "de",
+                requestedHasError: false,
+                requestedPaintEpoch: 3,
+                inFlight: playingInFlight
+            ),
+            "Language change must not in-flight coalesce"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.shouldCoalesceInFlightIdenticalRefresh(
+                requestedVisual: .playing,
+                requestedLanguage: "fi",
+                requestedHasError: false,
+                requestedPaintEpoch: 4,
+                inFlight: playingInFlight
+            ),
+            "Paint-epoch advance must allow the first extra identical playing wake"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.shouldCoalesceInFlightIdenticalRefresh(
+                requestedVisual: .playing,
+                requestedLanguage: "fi",
+                requestedHasError: true,
+                requestedPaintEpoch: 3,
+                inFlight: playingInFlight
+            ),
+            "Permanent-error chrome must not be in-flight coalesced away"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.shouldCoalesceInFlightIdenticalRefresh(
+                requestedVisual: .prePlay,
+                requestedLanguage: "fi",
+                requestedHasError: false,
+                requestedPaintEpoch: 3,
+                inFlight: playingInFlight
+            ),
+            "Connecting storms keep lastKnown / deferral coalesce, not this token"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.shouldCoalesceInFlightIdenticalRefresh(
+                requestedVisual: .playing,
+                requestedLanguage: "sv",
+                requestedHasError: false,
+                requestedPaintEpoch: 4,
+                inFlight: InFlightIdenticalWake(
+                    visualState: .userPaused,
+                    currentLanguage: "sv",
+                    hasError: false,
+                    paintEpoch: 4
+                )
+            ),
+            "Playing must not coalesce against an in-flight pause token"
         )
     }
 
@@ -2204,6 +2327,213 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             log.contains(.coalescedIdenticalNonPlaying),
             "The epoch-allowed extra wake must not lastKnown-identity-skip; log: \(log)"
         )
+    }
+
+    /// Playing settle dual-path burst (event + teardown) while the first wake is still in
+    /// flight must produce one execute. ``lastKnownState`` is not booked until that execute
+    /// returns.
+    ///
+    /// Dual-path architecture is unchanged; only identical in-flight playing wakes drop.
+    /// After the first execute, a later non-immediate playing uses adaptive debounce
+    /// (metadata path) — lastKnown identity skip still does not apply to playing.
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/shouldCoalesceInFlightIdenticalRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``,
+    ///   ``WidgetRefreshTrigger``.
+    func testRefreshIfNeededCoalescesInFlightIdenticalPlayingBurst() async {
+        enableDebounceObservation()
+        await manager.setVisualState(.playing)
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "sv",
+            hasError: false
+        )
+
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: true,
+            trigger: .teardown
+        )
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+
+        let playingExecuted = await waitForRefreshExecutedCount(atLeast: 1, timeout: 1.0)
+        let burstLog = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertTrue(playingExecuted, "First playing settle wake must execute; log: \(burstLog)")
+        XCTAssertEqual(
+            refreshExecutedCount(),
+            1,
+            "In-flight identical playing burst must not re-execute; log: \(burstLog)"
+        )
+        XCTAssertEqual(
+            burstLog.filter { $0 == .coalescedInFlightIdenticalPlaying }.count,
+            3,
+            "Three later playing-path calls must in-flight coalesce; log: \(burstLog)"
+        )
+        XCTAssertFalse(
+            burstLog.contains(.coalescedIdenticalNonPlaying),
+            "Playing must not lastKnown-identity-skip; log: \(burstLog)"
+        )
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+        WidgetRefreshManager._test_clearDebounceOutcomeLog()
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: false,
+            trigger: .playerEvent
+        )
+        let afterLog = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertTrue(
+            afterLog.contains(.scheduledAdaptiveDebounce),
+            "After lastKnown is booked, later non-immediate playing must adaptive-debounce (metadata); log: \(afterLog)"
+        )
+        XCTAssertFalse(
+            afterLog.contains(.coalescedIdenticalNonPlaying),
+            "LastKnown identity skip must still exclude playing; log: \(afterLog)"
+        )
+    }
+
+    /// Paint-epoch exception still allows **one** identical playing wake after
+    /// ``liveChromeIdentitySkipWake``; concurrent duplicates of that extra wake in-flight coalesce.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/bumpHomeWidgetInteractivePaintEpoch(reason:)``,
+    ///   ``WidgetRefreshManager/shouldCoalesceInFlightIdenticalRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``.
+    func testRefreshIfNeededCoalescesInFlightIdenticalPlayingAfterPaintEpochAdvance() async {
+        enableDebounceObservation()
+        await manager.setVisualState(.playing)
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "et",
+            hasError: false
+        )
+
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "et",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        let firstExecuted = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        XCTAssertTrue(firstExecuted)
+        XCTAssertEqual(refreshExecutedCount(), 1)
+
+        SharedPlayerManager.bumpHomeWidgetInteractivePaintEpoch(reason: "testPlayingPaintEpochAdvanceInFlight")
+        WidgetRefreshManager._test_clearDebounceOutcomeLog()
+
+        for trigger in [
+            WidgetRefreshTrigger.playerEvent,
+            .playerEvent,
+            .teardown,
+            .playerEvent
+        ] {
+            refreshManager.refreshIfNeeded(
+                visualState: .playing,
+                currentLanguage: "et",
+                hasError: false,
+                immediate: true,
+                trigger: trigger
+            )
+        }
+
+        let extraExecuted = await waitForRefreshExecutedCount(atLeast: 1, timeout: 1.0)
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertTrue(
+            extraExecuted,
+            "Paint-epoch advance must allow one extra identical playing wake; log: \(log)"
+        )
+        XCTAssertEqual(
+            refreshExecutedCount(),
+            1,
+            "In-flight duplicates of the epoch-allowed playing wake must not re-execute; log: \(log)"
+        )
+        XCTAssertEqual(
+            log.filter { $0 == .coalescedInFlightIdenticalPlaying }.count,
+            3,
+            "Three concurrent epoch-allowed playing calls must in-flight coalesce; log: \(log)"
+        )
+        XCTAssertFalse(
+            log.contains(.coalescedIdenticalNonPlaying),
+            "The epoch-allowed extra playing wake must not lastKnown-identity-skip; log: \(log)"
+        )
+    }
+
+    /// Language change still forces a playing reload when visual is already ``.playing``.
+    ///
+    /// In-flight language mismatch is the pure policy gate; this drive covers lastKnown
+    /// already booked (same order as Connecting language urgency).
+    func testRefreshIfNeededDoesNotCoalescePlayingWhenLanguageChanges() async {
+        enableDebounceObservation()
+        await manager.setVisualState(.playing)
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "sv",
+            hasError: false
+        )
+
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        let firstExecuted = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        XCTAssertTrue(firstExecuted)
+        XCTAssertEqual(refreshExecutedCount(), 1)
+        XCTAssertEqual(refreshManager.lastKnownState?.currentLanguage, "sv")
+
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "de",
+            hasError: false
+        )
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "de",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+
+        let bothExecuted = await waitForRefreshExecutedCount(atLeast: 2, timeout: 1.0)
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertTrue(
+            bothExecuted,
+            "Destination-language playing must force a second reload; log: \(log)"
+        )
+        XCTAssertFalse(
+            log.contains(.coalescedInFlightIdenticalPlaying),
+            "Language mismatch must not in-flight coalesce; log: \(log)"
+        )
+        XCTAssertFalse(
+            log.contains(.coalescedIdenticalNonPlaying),
+            "Language urgency must not lastKnown-identity-skip; log: \(log)"
+        )
+        XCTAssertEqual(refreshManager.lastKnownState?.currentLanguage, "de")
     }
 
     /// Verifies language change still forces a reload even when visual is identical connecting chrome.

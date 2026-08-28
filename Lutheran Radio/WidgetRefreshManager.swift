@@ -44,11 +44,13 @@
 //   (connecting `.prePlay`/`.cleared` + sticky pause/lock) so attach-path and dual-path
 //   storms do not re-issue `reloadTimelines` for unchanged language/visual. Attach-path
 //   Connecting deferral holds a single coalesce deadline (does not reset on each status
-//   callback). Concurrent identical sticky-pause wakes also coalesce against
-//   ``inFlightIdenticalPauseWake`` (visual + language + error + paint epoch) because
-//   ``lastKnownState`` is booked only after a real wake — otherwise pause-path dual-path
+//   callback). Concurrent identical sticky-pause **or** ``.playing`` wakes also coalesce
+//   against ``inFlightIdenticalWake`` (visual + language + error + paint epoch) because
+//   ``lastKnownState`` is booked only after a real wake — otherwise dual-path settle
 //   bursts all pass identity coalesce (and the first ``liveChromeIdentitySkipWake``
 //   paint-epoch exception) while the first `reloadTimelines` is still in flight.
+//   LastKnown identity skip stays non-playing so later ``.metadataDidUpdate`` can still
+//   adaptive-debounce a program-title wake after the first playing execute.
 //   Execute-time home **wake** discard (``refreshWouldDiscardHomeWake`` —
 //   memory lag then session lag) blocks residual sticky after intentional Connecting and
 //   mid-switch premature `.playing` without inventing playing during hold. Reload is
@@ -171,17 +173,20 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// any leftover suite epoch looks permanently “advanced” and identity-coalesce never fires.
     /// - SeeAlso: ``_test_resetRefreshTimingState()``, ``performRefresh(for:)``.
     var lastPaintEpochAtSuccessfulReload: Int = 0
-    /// In-flight sticky-pause wake identity (visual + language + error + paint epoch).
+    /// In-flight identical-wake identity (visual + language + error + paint epoch).
     ///
-    /// Set synchronously when a sticky-pause ``reloadTimelines`` is scheduled; cleared when
-    /// ``performRefreshIfNotStale(for:)`` returns (execute or discard). Lets later identical
-    /// pause-path ``refreshIfNeeded`` calls coalesce without booking ``lastKnownState`` before
+    /// Set synchronously when a sticky-pause or ``.playing`` ``reloadTimelines`` is scheduled;
+    /// cleared when ``performRefreshIfNotStale(for:)`` returns (execute or discard). Lets later
+    /// identical ``refreshIfNeeded`` calls coalesce without booking ``lastKnownState`` before
     /// the wake — that early bookkeeping was hostile if the first path discarded mid-await.
     /// Generation ownership so a later paint-epoch exception can schedule without the first
     /// Task clearing the newer token.
-    /// - SeeAlso: ``shouldCoalesceInFlightIdenticalPauseRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``.
-    var inFlightIdenticalPauseWake: InFlightIdenticalPauseWake?
-    private var inFlightIdenticalPauseWakeGeneration: UInt64 = 0
+    ///
+    /// Connecting stays off this token (deferral / lastKnown identity skip). LastKnown
+    /// identity skip still does not apply to ``.playing`` (later metadata wakes).
+    /// - SeeAlso: ``shouldCoalesceInFlightIdenticalRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``.
+    var inFlightIdenticalWake: InFlightIdenticalWake?
+    private var inFlightIdenticalWakeGeneration: UInt64 = 0
     /// Deferred `.prePlay` refresh; superseded by `.playing` on the same language within the coalesce window.
     private var coalescedPrePlayWorkItem: DispatchWorkItem?
     private var coalescedPrePlayState: WidgetState?
@@ -515,7 +520,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///
     /// - SeeAlso: ``handlePlayerEvent(_:)``, ``WidgetRefreshTrigger``, `SharedPlayerManager.events`,
     ///   ``SharedPlayerManager/languageForWidgetRefreshDerivation(fallbackLanguage:)``,
-    ///   ``shouldCoalesceInFlightIdenticalPauseRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``,
+    ///   ``shouldCoalesceInFlightIdenticalRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``,
     ///   docs/Event-Driven-Refactor-Roadmap.md (dual-path inventory),
     ///   docs/Widget-Functionality-Roadmap.md (refresh inventory).
     func refreshIfNeeded(
@@ -614,23 +619,28 @@ final class WidgetRefreshManager: @unchecked Sendable {
             cancelPendingRefresh()
         }
 
-        // Concurrent sticky-pause bursts (event path + teardown dual-path, often after
-        // ``liveChromeIdentitySkipWake``) schedule before ``lastKnownState`` is booked.
+        // Concurrent sticky-pause or playing bursts (event path + teardown dual-path, often
+        // after ``liveChromeIdentitySkipWake``) schedule before ``lastKnownState`` is booked.
         // Identity coalesce and the paint-epoch exception both need that bookkeeping, so
         // an in-flight token (visual + language + error + epoch) drops later identical
-        // pause-kind calls until the first wake returns. Language changes still execute
-        // (token includes language). Connecting / playing are not this token.
+        // calls until the first wake returns. Language changes still execute (token includes
+        // language). Connecting stays on deferral / lastKnown identity skip — not this token.
+        // LastKnown identity skip still excludes ``.playing`` so later metadata can debounce.
         let paintEpochNow = SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch()
-        if Self.shouldCoalesceInFlightIdenticalPauseRefresh(
+        if Self.shouldCoalesceInFlightIdenticalRefresh(
             requestedVisual: newState.visualState,
             requestedLanguage: newState.currentLanguage,
             requestedHasError: newState.hasError,
             requestedPaintEpoch: paintEpochNow,
-            inFlight: inFlightIdenticalPauseWake
+            inFlight: inFlightIdenticalWake
         ) {
             #if DEBUG
             print("[WidgetRefreshManager] Widget refresh coalesced: identical \(newState.debugVisualStateLabel) in-flight — lang: \(newState.currentLanguage)")
-            recordDebounceOutcome(.coalescedInFlightIdenticalPause)
+            recordDebounceOutcome(
+                Self.isStickyPauseKind(newState.visualState)
+                    ? .coalescedInFlightIdenticalPause
+                    : .coalescedInFlightIdenticalPlaying
+            )
             #endif
             return
         }
@@ -659,8 +669,8 @@ final class WidgetRefreshManager: @unchecked Sendable {
         // Exception: interactive paint epoch advanced since the last successful kind reload
         // (optimistic toggle / identity-skip wake / live-chrome settle) — residual LIVE still
         // needs a timeline re-delivery even when visual + language match lastKnown.
-        // The first such exception still executes once; later identical pause-kind calls
-        // while that wake is in flight coalesce via ``inFlightIdenticalPauseWake`` above.
+        // The first such exception still executes once; later identical pause-kind or
+        // playing calls while that wake is in flight coalesce via ``inFlightIdenticalWake``.
         let paintEpochAdvancedSinceReload = paintEpochNow > lastPaintEpochAtSuccessfulReload
         if let lastState = lastKnownState,
            !paintEpochAdvancedSinceReload,
@@ -824,7 +834,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///   - hasError: Permanent-error chrome for the candidate (never coalesce error repairs away).
     /// - Returns: `true` when the refresh should no-op.
     /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
-    ///   ``shouldCoalesceInFlightIdenticalPauseRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``,
+    ///   ``shouldCoalesceInFlightIdenticalRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``,
     ///   ``refreshUsesImmediateDelivery(for:hasError:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/Widget-Functionality-Roadmap.md.
@@ -841,8 +851,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
         case .prePlay, .cleared, .userPaused, .thermalPaused, .securityLocked:
             return true
         case .playing:
-            // Active playing is rate-limited by adaptive debounce, not identity skip —
-            // a second playing push may still be required after a long gap.
+            // LastKnown identity skip does not apply to playing: later
+            // ``PlayerEvent/metadataDidUpdate`` must still adaptive-debounce a program-title
+            // wake after the first playing execute books lastKnown. Concurrent settle
+            // storms coalesce against ``shouldCoalesceInFlightIdenticalRefresh`` instead.
             return false
         @unknown default:
             return false
@@ -851,13 +863,13 @@ final class WidgetRefreshManager: @unchecked Sendable {
 
     /// Whether `visual` is sticky pause/lock chrome (not Connecting, not playing).
     ///
-    /// In-flight identical-wake coalesce is scoped to this set so attach-path Connecting
-    /// storms keep their existing deferral / ``lastKnownState`` identity skip, and playing
-    /// stays on adaptive debounce.
+    /// LastKnown identity skip stays on this set plus Connecting. In-flight identical-wake
+    /// coalesce is the broader ``isInFlightIdenticalWakeKind`` (this set **plus** ``.playing``).
     ///
     /// - Parameter visual: Candidate ``PlayerVisualState``.
     /// - Returns: `true` for ``.userPaused``, ``.thermalPaused``, and ``.securityLocked``.
-    /// - SeeAlso: ``shouldCoalesceInFlightIdenticalPauseRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``.
+    /// - SeeAlso: ``isInFlightIdenticalWakeKind(_:)``,
+    ///   ``shouldCoalesceInFlightIdenticalPauseRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``.
     static func isStickyPauseKind(_ visual: PlayerVisualState) -> Bool {
         switch visual {
         case .userPaused, .thermalPaused, .securityLocked:
@@ -869,17 +881,44 @@ final class WidgetRefreshManager: @unchecked Sendable {
         }
     }
 
-    /// Pure policy: whether a sticky-pause ``refreshIfNeeded`` should no-op because an identical
-    /// wake is already in flight.
+    /// Whether `visual` participates in in-flight identical-wake coalesce.
     ///
-    /// ``lastKnownState`` is booked only after a real WidgetCenter wake. Concurrent pause-path
-    /// calls (event + teardown dual-path, including the first paint-epoch exception after
+    /// Sticky pause/lock and active ``.playing`` share one token because dual-path settle
+    /// bursts schedule before ``lastKnownState`` is booked. Connecting stays on deferral /
+    /// lastKnown identity skip. ``.cleared`` stays urgent (privacy / factory).
+    ///
+    /// LastKnown identity skip still does **not** apply to ``.playing``: later
+    /// ``PlayerEvent/metadataDidUpdate`` must remain eligible for adaptive debounce after
+    /// the first playing wake books. This helper is schedule-time in-flight only.
+    ///
+    /// - Parameter visual: Candidate ``PlayerVisualState``.
+    /// - Returns: `true` for sticky pause/lock and ``.playing``.
+    /// - SeeAlso: ``shouldCoalesceInFlightIdenticalRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``,
+    ///   ``isStickyPauseKind(_:)``.
+    static func isInFlightIdenticalWakeKind(_ visual: PlayerVisualState) -> Bool {
+        switch visual {
+        case .userPaused, .thermalPaused, .securityLocked, .playing:
+            return true
+        case .prePlay, .cleared:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    /// Pure policy: whether a sticky-pause or ``.playing`` ``refreshIfNeeded`` should no-op
+    /// because an identical wake is already in flight.
+    ///
+    /// ``lastKnownState`` is booked only after a real WidgetCenter wake. Concurrent dual-path
+    /// calls (event + teardown, including the first paint-epoch exception after
     /// ``liveChromeIdentitySkipWake``) would otherwise all schedule `reloadTimelines` for the
     /// same visual + language. This gate uses the in-flight snapshot instead of early
-    /// ``lastKnownState`` so a discarded first wake cannot strand later honest pauses.
+    /// ``lastKnownState`` so a discarded first wake cannot strand later honest pauses or
+    /// playing metadata wakes that arrive after the token clears.
     ///
     /// The **first** paint-epoch exception still executes (no in-flight token yet, or a newer
-    /// epoch). Later identical pause-kind calls with the **same** epoch coalesce here.
+    /// epoch). Later identical calls with the **same** epoch coalesce here. Language mismatch
+    /// never coalesces.
     ///
     /// - Parameters:
     ///   - requestedVisual: Candidate visual.
@@ -890,24 +929,48 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// - Returns: `true` when this call should no-op.
     /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
     ///   ``shouldCoalesceIdenticalNonPlayingRefresh(requestedVisual:lastKnownVisual:languageUnchanged:errorFlagsMatch:hasError:)``,
+    ///   ``shouldCoalesceInFlightIdenticalPauseRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``,
     ///   ``SharedPlayerManager/bumpHomeWidgetInteractivePaintEpoch(reason:)``,
     ///   docs/Widget-Functionality-Roadmap.md,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§8).
-    static func shouldCoalesceInFlightIdenticalPauseRefresh(
+    static func shouldCoalesceInFlightIdenticalRefresh(
         requestedVisual: PlayerVisualState,
         requestedLanguage: String,
         requestedHasError: Bool,
         requestedPaintEpoch: Int,
-        inFlight: InFlightIdenticalPauseWake?
+        inFlight: InFlightIdenticalWake?
     ) -> Bool {
         guard !requestedHasError else { return false }
-        guard isStickyPauseKind(requestedVisual) else { return false }
+        guard isInFlightIdenticalWakeKind(requestedVisual) else { return false }
         guard let inFlight else { return false }
         guard inFlight.visualState == requestedVisual else { return false }
         guard inFlight.currentLanguage == requestedLanguage else { return false }
         guard inFlight.hasError == requestedHasError else { return false }
         guard inFlight.paintEpoch == requestedPaintEpoch else { return false }
         return true
+    }
+
+    /// Pause-scoped wrapper over ``shouldCoalesceInFlightIdenticalRefresh``.
+    ///
+    /// Existing sticky-pause policy tests call this surface. ``.playing`` never returns
+    /// `true` here even when an in-flight playing token would match the general helper.
+    ///
+    /// - SeeAlso: ``shouldCoalesceInFlightIdenticalRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``.
+    static func shouldCoalesceInFlightIdenticalPauseRefresh(
+        requestedVisual: PlayerVisualState,
+        requestedLanguage: String,
+        requestedHasError: Bool,
+        requestedPaintEpoch: Int,
+        inFlight: InFlightIdenticalWake?
+    ) -> Bool {
+        guard isStickyPauseKind(requestedVisual) else { return false }
+        return shouldCoalesceInFlightIdenticalRefresh(
+            requestedVisual: requestedVisual,
+            requestedLanguage: requestedLanguage,
+            requestedHasError: requestedHasError,
+            requestedPaintEpoch: requestedPaintEpoch,
+            inFlight: inFlight
+        )
     }
 
     /// Pure policy: session-lag leg of execute-time home **wake** discard.
@@ -1078,8 +1141,9 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///   - session: In-process session snapshot visual when present; `nil` skips the session leg.
     ///   - isImmediate: Sticky / teardown / language-change / explicit urgency (same as helper legs).
     /// - Returns: `true` when the wake must be discarded.
-    /// - Important: Soft-resume non-immediate Connecting deferral and
-    ///   ``shouldCoalesceIdenticalNonPlayingRefresh`` are separate schedule-time policies; this
+    /// - Important: Soft-resume non-immediate Connecting deferral,
+    ///   ``shouldCoalesceIdenticalNonPlayingRefresh``, and
+    ///   ``shouldCoalesceInFlightIdenticalRefresh`` are separate schedule-time policies; this
     ///   function is execute-time only.
     /// - SeeAlso: ``refreshWouldRegressMemoryAuthority(executing:memory:isImmediate:)``,
     ///   ``refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``,
@@ -1144,9 +1208,9 @@ final class WidgetRefreshManager: @unchecked Sendable {
                 guard let self, let pendingState = self.coalescedPrePlayState else { return }
                 self.coalescedPrePlayWorkItem = nil
                 self.coalescedPrePlayState = nil
-                let generation = self.markInFlightIdenticalPauseWakeIfNeeded(for: pendingState)
+                let generation = self.markInFlightIdenticalWakeIfNeeded(for: pendingState)
                 await self.performRefreshIfNotStale(for: pendingState)
-                self.clearInFlightIdenticalPauseWake(generation: generation)
+                self.clearInFlightIdenticalWake(generation: generation)
             }
         }
 
@@ -1166,9 +1230,9 @@ final class WidgetRefreshManager: @unchecked Sendable {
                 guard let self, let pendingState = self.pendingRefreshState else { return }
                 self.pendingRefresh = nil
                 self.pendingRefreshState = nil
-                let generation = self.markInFlightIdenticalPauseWakeIfNeeded(for: pendingState)
+                let generation = self.markInFlightIdenticalWakeIfNeeded(for: pendingState)
                 await self.performRefreshIfNotStale(for: pendingState)
-                self.clearInFlightIdenticalPauseWake(generation: generation)
+                self.clearInFlightIdenticalWake(generation: generation)
                 self.adaptiveInterval = max(self.adaptiveInterval * 0.8, 0.5)
             }
         }
@@ -1211,26 +1275,26 @@ final class WidgetRefreshManager: @unchecked Sendable {
         await performRefresh(for: state)
     }
 
-    /// Records the in-flight sticky-pause token (when applicable) and schedules execute-time
+    /// Records the in-flight identical-wake token (when applicable) and schedules execute-time
     /// discard + wake. The token is set **before** the Task so later identical ``refreshIfNeeded``
     /// calls in the same turn coalesce.
     ///
     /// - Parameter state: Candidate already past schedule-time coalesce / debounce.
     private func scheduleRefreshExecution(for state: WidgetState) {
-        let generation = markInFlightIdenticalPauseWakeIfNeeded(for: state)
+        let generation = markInFlightIdenticalWakeIfNeeded(for: state)
         Task { @MainActor in
             await performRefreshIfNotStale(for: state)
-            clearInFlightIdenticalPauseWake(generation: generation)
+            clearInFlightIdenticalWake(generation: generation)
         }
     }
 
-    /// - Returns: Generation of the token when this is a sticky-pause wake; `nil` otherwise.
+    /// - Returns: Generation of the token when this is a sticky-pause or playing wake; `nil` otherwise.
     @discardableResult
-    private func markInFlightIdenticalPauseWakeIfNeeded(for state: WidgetState) -> UInt64? {
-        guard Self.isStickyPauseKind(state.visualState), !state.hasError else { return nil }
-        inFlightIdenticalPauseWakeGeneration += 1
-        let generation = inFlightIdenticalPauseWakeGeneration
-        inFlightIdenticalPauseWake = InFlightIdenticalPauseWake(
+    private func markInFlightIdenticalWakeIfNeeded(for state: WidgetState) -> UInt64? {
+        guard Self.isInFlightIdenticalWakeKind(state.visualState), !state.hasError else { return nil }
+        inFlightIdenticalWakeGeneration += 1
+        let generation = inFlightIdenticalWakeGeneration
+        inFlightIdenticalWake = InFlightIdenticalWake(
             visualState: state.visualState,
             currentLanguage: state.currentLanguage,
             hasError: state.hasError,
@@ -1241,10 +1305,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
     }
 
     /// Clears the in-flight token only when this completion still owns it.
-    private func clearInFlightIdenticalPauseWake(generation: UInt64?) {
+    private func clearInFlightIdenticalWake(generation: UInt64?) {
         guard let generation else { return }
-        guard inFlightIdenticalPauseWake?.generation == generation else { return }
-        inFlightIdenticalPauseWake = nil
+        guard inFlightIdenticalWake?.generation == generation else { return }
+        inFlightIdenticalWake = nil
     }
     
     #if DEBUG
@@ -1291,8 +1355,8 @@ final class WidgetRefreshManager: @unchecked Sendable {
         // scheduled. Setting them before `await currentConfigurations()` made concurrent dual-path
         // `refreshIfNeeded` calls coalesce as "identical" while the first wake was still in flight —
         // hostile if the first path is discarded mid-await. Concurrent identical sticky-pause
-        // bursts instead coalesce against ``inFlightIdenticalPauseWake`` (same visual + language
-        // + epoch), which is released when this method's caller finishes — including discard.
+        // or playing bursts instead coalesce against ``inFlightIdenticalWake`` (same visual +
+        // language + epoch), which is released when this method's caller finishes — including discard.
         
         do {
             let configs = try await WidgetCenter.shared.currentConfigurations()
@@ -1486,7 +1550,9 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// coalesce so same-stream soft-resume (audible within the window) schedules a single
     /// authoritative ``.playing`` home reload instead of painting Connecting after audio is live.
     /// True attach paths still show Connecting when the window elapses without a playing follow-up.
-    /// Active ``PlayerVisualState/playing`` remains eligible for adaptive coalesce/debounce.
+    /// Active ``PlayerVisualState/playing`` remains eligible for adaptive coalesce/debounce
+    /// after lastKnown is booked (metadata). Concurrent identical playing wakes coalesce
+    /// in-flight via ``shouldCoalesceInFlightIdenticalRefresh``.
     ///
     /// - Parameters:
     ///   - visualState: The visual derived from the ``PlayerEvent`` payload or SSOT readers.
@@ -1565,19 +1631,22 @@ final class WidgetRefreshManager: @unchecked Sendable {
 }
 
 
-// MARK: - In-flight sticky-pause wake identity
+// MARK: - In-flight identical wake identity
 
-/// Snapshot of a sticky-pause WidgetKit wake already scheduled but not yet booked
-/// in ``WidgetRefreshManager/lastKnownState``.
+/// Snapshot of a sticky-pause or ``.playing`` WidgetKit wake already scheduled but not yet
+/// booked in ``WidgetRefreshManager/lastKnownState``.
 ///
 /// Coalesce identity is visual + language + error + paint epoch.
 /// `generation` is ownership so a later paint-epoch exception can replace the token
 /// without the first Task clearing it on completion.
 ///
-/// - SeeAlso: ``WidgetRefreshManager/shouldCoalesceInFlightIdenticalPauseRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``,
+/// Connecting is not this token. LastKnown identity skip still excludes ``.playing`` so
+/// later ``PlayerEvent/metadataDidUpdate`` can adaptive-debounce after the first execute.
+///
+/// - SeeAlso: ``WidgetRefreshManager/shouldCoalesceInFlightIdenticalRefresh(requestedVisual:requestedLanguage:requestedHasError:requestedPaintEpoch:inFlight:)``,
 ///   ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
 ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§8).
-struct InFlightIdenticalPauseWake: Equatable, Sendable {
+struct InFlightIdenticalWake: Equatable, Sendable {
     let visualState: PlayerVisualState
     let currentLanguage: String
     let hasError: Bool
