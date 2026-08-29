@@ -189,9 +189,11 @@ import WidgetSurface
 /// only lag is owned `.prePlay` vs candidate `.playing`.
 /// Language chrome prefers bounded ``ensureAuthoritativeLanguageContentIfNeeded()`` retries.
 /// Those retries consume ``authoritativeLanguageContentEnsureMaxAttempts`` only on committed
-/// observation (`contentUpdates` or delayed re-read); skip the next soft push while
-/// ``inFlightContentPushCandidate`` is unconfirmed. Immediate post-await `content.state`
-/// does not consume the budget.
+/// observation: `contentUpdates` that still lags, or a delayed re-read whose language
+/// **moved** off the pre-push value. A delayed re-read that still shows the pre-push
+/// language is uncommitted apply — do not consume, do not quiet. Skip the next soft push
+/// while ``inFlightContentPushCandidate`` is unconfirmed. Immediate post-await
+/// `content.state` does not consume the budget.
 /// After the soft-retry budget is exhausted while interactive request is ineligible, language
 /// ensure enters a **quiet pending** state for that destination so status-driven media-surface
 /// refreshes do not thrash ActivityKit; re-arm on destination change, eligibility, become-active,
@@ -428,6 +430,15 @@ class RadioLiveActivityManager: ObservableObject {
     /// coalesces visual-differing candidates instead of issuing a second IPC.
     private var inFlightContentPushCandidate: LutheranRadioLiveActivityAttributes.ContentState?
 
+    /// Last committed content-push observation kind (`contentUpdates` or delayed re-read).
+    ///
+    /// Nil while apply is in-flight or before the first committed observation. Language-ensure
+    /// consume prefers ``.contentUpdates`` as mismatch truth; a delayed re-read that still
+    /// shows the pre-push language is uncommitted apply, not a consumed mismatch.
+    /// - SeeAlso: ``shouldConsumeLanguageEnsureAttempt(ownedLanguageMatchesDestination:inFlightContentPushUnconfirmed:observationKind:ownedLanguageStillPrePush:)``,
+    ///   ``commitContentPushObservation(candidate:observed:kind:isStreamSwitchHoldActive:isConnectingPlayback:)``.
+    private var lastContentPushObservationKind: LiveActivityContentPushObservationKind?
+
     /// Latest visual-differing candidate remembered while ``inFlightContentPushCandidate``
     /// is unconfirmed. Replace, do not queue. Flushed once after delayed re-read,
     /// `contentUpdates`, or an immediate post-await match. Language-only same-visual
@@ -528,11 +539,14 @@ class RadioLiveActivityManager: ObservableObject {
     /// do not re-run the soft-retry budget until re-arm (destination change, eligibility,
     /// become-active, or system `contentUpdates` acceptance).
     ///
-    /// An iteration consumes one slot only on **committed** observation (`contentUpdates` or
-    /// delayed re-read past ``contentPushApplyConfirmationDelayMilliseconds``) while owned
-    /// language still lags. Immediate post-await `content.state` is apply-in-flight and does
-    /// not consume. The next soft push is skipped while ``inFlightContentPushCandidate`` is
-    /// unconfirmed so overlapping `Activity.update` calls cannot starve `contentUpdates`.
+    /// An iteration consumes one slot only on **committed** observation: `contentUpdates`
+    /// that still lags destination, or a delayed re-read past
+    /// ``contentPushApplyConfirmationDelayMilliseconds`` whose owned language **moved** off
+    /// the pre-push value and still lags. A delayed re-read that still shows the pre-push
+    /// language is uncommitted apply (Apple never applied) and does not consume or quiet.
+    /// Immediate post-await `content.state` is apply-in-flight and does not consume. The
+    /// next soft push is skipped while ``inFlightContentPushCandidate`` is unconfirmed so
+    /// overlapping `Activity.update` calls cannot starve `contentUpdates`.
     ///
     /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
     ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
@@ -1203,8 +1217,9 @@ class RadioLiveActivityManager: ObservableObject {
     /// from that single read. Commit waits for ``handleActivityContentUpdate`` or a delayed
     /// re-read past ``contentPushApplyConfirmationDelayMilliseconds``. Handshake lag
     /// (pause↔Connecting, Connecting↔playing after hold/connect clear) is excluded.
-    /// Language-ensure attempt slots use the same committed-observation rule
-    /// (``shouldConsumeLanguageEnsureAttempt(ownedLanguageMatchesDestination:inFlightContentPushUnconfirmed:)``).
+    /// Language-ensure attempt slots use the same committed-observation rule, except a
+    /// delayed re-read that still shows the pre-push language is uncommitted apply
+    /// (``shouldConsumeLanguageEnsureAttempt(ownedLanguageMatchesDestination:inFlightContentPushUnconfirmed:observationKind:ownedLanguageStillPrePush:)``).
     ///
     /// **Same-stream ineligible Connecting skip:** While request is ineligible,
     /// ``shouldSuppressConnectingContentPushWhileIneligible`` skips `Activity.update`
@@ -1821,6 +1836,7 @@ class RadioLiveActivityManager: ObservableObject {
         isAwaitingLiveActivityContentPushApply = false
         if clearCoalesced {
             pendingCoalescedContentPushCandidate = nil
+            lastContentPushObservationKind = nil
         }
     }
 
@@ -1925,6 +1941,7 @@ class RadioLiveActivityManager: ObservableObject {
         isConnectingPlayback: Bool
     ) async {
         lastSystemHeldContent = observed
+        lastContentPushObservationKind = kind
         let stalled = Self.isStalledLiveActivityContentPush(
             candidate: candidate,
             accepted: observed
@@ -1989,6 +2006,7 @@ class RadioLiveActivityManager: ObservableObject {
         inFlightContentPushConfirmationTask = nil
         guard let activity = currentActivity else { return }
         inFlightContentPushCandidate = candidate
+        lastContentPushObservationKind = nil
         let eligible = Self.isInteractiveLiveActivityRequestEligible(
             areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
@@ -3190,18 +3208,30 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// Destination to store as quiet-pending after language soft-ensure budget exhaustion.
     ///
+    /// Quiet requires **committed** attempt exhaustion (``shouldConsumeLanguageEnsureAttempt``
+    /// counted ``authoritativeLanguageContentEnsureMaxAttempts`` mismatches). Unconfirmed
+    /// apply-window waits — including delayed re-reads that still show the pre-push language
+    /// with no `contentUpdates` — must not enter quiet; status-driven ensure may try again.
+    /// Unlock / become-active remains the presentable safety rail.
+    ///
     /// - Parameters:
     ///   - languageStillMismatches: Owned / last language still ≠ destination after the last attempt.
     ///   - isRequestEligible: Whether interactive `Activity.request` could succeed now.
     ///   - destinationLanguage: Destination that failed acceptance.
+    ///   - committedAttemptsExhausted: `true` when consumed committed mismatches reached
+    ///     ``authoritativeLanguageContentEnsureMaxAttempts``.
     /// - Returns: `destinationLanguage` when quiet should engage; `nil` when request is eligible
-    ///   (keep soft ensure available / let foreground recreation path own recovery) or language matched.
-    /// - SeeAlso: ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``.
+    ///   (keep soft ensure available / let foreground recreation path own recovery), language
+    ///   matched, or the loop stopped on unconfirmed wait rather than committed exhaustion.
+    /// - SeeAlso: ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``,
+    ///   ``shouldConsumeLanguageEnsureAttempt(ownedLanguageMatchesDestination:inFlightContentPushUnconfirmed:observationKind:ownedLanguageStillPrePush:)``.
     static func quietPendingDestinationAfterLanguageEnsureExhaustion(
         languageStillMismatches: Bool,
         isRequestEligible: Bool,
-        destinationLanguage: String
+        destinationLanguage: String,
+        committedAttemptsExhausted: Bool
     ) -> String? {
+        guard committedAttemptsExhausted else { return nil }
         guard languageStillMismatches else { return nil }
         guard !isRequestEligible else { return nil }
         guard !destinationLanguage.isEmpty else { return nil }
@@ -3221,7 +3251,7 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Parameter inFlightContentPushUnconfirmed: ``inFlightContentPushCandidate != nil``.
     /// - Returns: `true` when this iteration must not call ``updateCurrentActivity()``.
     /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
-    ///   ``shouldConsumeLanguageEnsureAttempt(ownedLanguageMatchesDestination:inFlightContentPushUnconfirmed:)``,
+    ///   ``shouldConsumeLanguageEnsureAttempt(ownedLanguageMatchesDestination:inFlightContentPushUnconfirmed:observationKind:ownedLanguageStillPrePush:)``,
     ///   ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:languageOnlyPreservingOwnedVisual:)``.
     static func shouldSkipLanguageEnsureSoftPushWhileInFlight(
         inFlightContentPushUnconfirmed: Bool
@@ -3229,28 +3259,66 @@ class RadioLiveActivityManager: ObservableObject {
         inFlightContentPushUnconfirmed
     }
 
+    /// Whether a language-ensure observation is uncommitted apply (must not consume).
+    ///
+    /// A delayed re-read — or a missing kind after the apply window — that still shows the
+    /// pre-push language means ActivityKit never applied. That is not a committed mismatch.
+    /// `contentUpdates` that still shows the pre-push language **is** committed: Apple
+    /// confirmed the surface still lags. Immediate post-await is already gated by
+    /// ``inFlightContentPushCandidate``.
+    ///
+    /// - Parameters:
+    ///   - observationKind: Last ``commitContentPushObservation`` kind, if any.
+    ///   - ownedLanguageStillPrePush: Owned `content.state.currentLanguage` still equals the
+    ///     language from before this `Activity.update`.
+    /// - Returns: `true` when the iteration must not consume a budget slot.
+    /// - SeeAlso: ``shouldConsumeLanguageEnsureAttempt(ownedLanguageMatchesDestination:inFlightContentPushUnconfirmed:observationKind:ownedLanguageStillPrePush:)``,
+    ///   ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldTreatLanguageEnsureObservationAsUncommittedApply(
+        observationKind: LiveActivityContentPushObservationKind?,
+        ownedLanguageStillPrePush: Bool
+    ) -> Bool {
+        guard ownedLanguageStillPrePush else { return false }
+        if observationKind == .contentUpdates { return false }
+        return true
+    }
+
     /// Whether a language-ensure iteration consumes one of
     /// ``authoritativeLanguageContentEnsureMaxAttempts``.
     ///
     /// Immediate post-await `content.state` is apply-in-flight — same rule as
     /// ``shouldCommitStalledContentPushObservation``. Consume only when owned language
-    /// still lags destination **and** the in-flight candidate is confirmed (`contentUpdates`
-    /// or delayed re-read cleared ``inFlightContentPushCandidate``). Owned match is
-    /// success, not consumption.
+    /// still lags destination, the in-flight candidate is confirmed, **and** the observation
+    /// is not an uncommitted delayed re-read still on the pre-push language.
+    /// Prefer `contentUpdates` as mismatch truth. A delayed re-read whose language **moved**
+    /// off the pre-push value and still lags is also committed. Owned match is success,
+    /// not consumption. Does **not** raise max attempts. Does **not** invent `.playing`.
     ///
     /// - Parameters:
     ///   - ownedLanguageMatchesDestination: Owned `content.state.currentLanguage` equals destination.
     ///   - inFlightContentPushUnconfirmed: ``inFlightContentPushCandidate != nil``.
+    ///   - observationKind: Last committed observation kind (`contentUpdates` / delayed re-read).
+    ///   - ownedLanguageStillPrePush: Owned language still equals the pre-push language.
     /// - Returns: `true` when this iteration counts against the soft budget.
     /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``shouldTreatLanguageEnsureObservationAsUncommittedApply(observationKind:ownedLanguageStillPrePush:)``,
     ///   ``shouldSkipLanguageEnsureSoftPushWhileInFlight(inFlightContentPushUnconfirmed:)``,
     ///   ``shouldCommitStalledContentPushObservation(kind:isStalled:isHandshakeLag:)``.
     static func shouldConsumeLanguageEnsureAttempt(
         ownedLanguageMatchesDestination: Bool,
-        inFlightContentPushUnconfirmed: Bool
+        inFlightContentPushUnconfirmed: Bool,
+        observationKind: LiveActivityContentPushObservationKind?,
+        ownedLanguageStillPrePush: Bool
     ) -> Bool {
         guard !ownedLanguageMatchesDestination else { return false }
         guard !inFlightContentPushUnconfirmed else { return false }
+        guard !shouldTreatLanguageEnsureObservationAsUncommittedApply(
+            observationKind: observationKind,
+            ownedLanguageStillPrePush: ownedLanguageStillPrePush
+        ) else {
+            return false
+        }
         return true
     }
 
@@ -6388,8 +6456,11 @@ class RadioLiveActivityManager: ObservableObject {
     /// pushes. After each ``updateCurrentActivity()``, wait for ``contentUpdates`` or a delayed
     /// re-read past ``contentPushApplyConfirmationDelayMilliseconds`` before consuming an
     /// attempt. Immediate post-await `content.state` is apply-in-flight and does **not**
-    /// consume. While ``inFlightContentPushCandidate`` is unconfirmed, skip the next
-    /// `Activity.update` (``shouldSkipLanguageEnsureSoftPushWhileInFlight(inFlightContentPushUnconfirmed:)``)
+    /// consume. A delayed re-read that still shows the pre-push language is uncommitted
+    /// apply (``shouldTreatLanguageEnsureObservationAsUncommittedApply``) — do not consume
+    /// and do not enter quiet. Prefer `contentUpdates` as mismatch truth. While
+    /// ``inFlightContentPushCandidate`` is unconfirmed, skip the next `Activity.update`
+    /// (``shouldSkipLanguageEnsureSoftPushWhileInFlight(inFlightContentPushUnconfirmed:)``)
     /// so overlapping language-only updates cannot starve `contentUpdates`. Stops early when
     /// owned language matches destination, the ensure gate clears, or the interactive
     /// activity disappears. Does **not** end+recreate — language freezes recover via soft
@@ -6437,7 +6508,8 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ``shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``,
     ///   ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``,
     ///   ``shouldSkipLanguageEnsureSoftPushWhileInFlight(inFlightContentPushUnconfirmed:)``,
-    ///   ``shouldConsumeLanguageEnsureAttempt(ownedLanguageMatchesDestination:inFlightContentPushUnconfirmed:)``,
+    ///   ``shouldTreatLanguageEnsureObservationAsUncommittedApply(observationKind:ownedLanguageStillPrePush:)``,
+    ///   ``shouldConsumeLanguageEnsureAttempt(ownedLanguageMatchesDestination:inFlightContentPushUnconfirmed:observationKind:ownedLanguageStillPrePush:)``,
     ///   ``shouldStartAuthoritativeContentEnsureSoftPushLoop(softPushesAlreadyInFlight:)``,
     ///   ``authoritativeLanguageContentEnsureMaxAttempts``,
     ///   ``contentPushApplyConfirmationDelayMilliseconds(isRequestEligible:)``,
@@ -6567,6 +6639,7 @@ class RadioLiveActivityManager: ObservableObject {
                 "attempt=\(consumedAttempts + 1)/\(maxAttempts)"
             )
             #endif
+            let prePushLanguage = loopOwned
             await updateCurrentActivity(preservingOwnedVisual: preservingOwnedVisual)
 
             let acceptedImmediately = currentActivity?.content.state.currentLanguage
@@ -6590,11 +6663,18 @@ class RadioLiveActivityManager: ObservableObject {
                 return
             }
 
-            // Consume only on committed mismatch (in-flight cleared). Immediate
-            // post-await already returned above if it matched.
+            let stillOnPrePushLanguage =
+                acceptedAfterWait != nil
+                && acceptedAfterWait == prePushLanguage
+                && acceptedAfterWait != destAfterWait
+
+            // Consume only on committed mismatch (in-flight cleared, apply actually
+            // observed). Delayed re-read still on pre-push language is uncommitted.
             if Self.shouldConsumeLanguageEnsureAttempt(
                 ownedLanguageMatchesDestination: acceptedAfterWait == destAfterWait,
-                inFlightContentPushUnconfirmed: inFlightContentPushCandidate != nil
+                inFlightContentPushUnconfirmed: inFlightContentPushCandidate != nil,
+                observationKind: lastContentPushObservationKind,
+                ownedLanguageStillPrePush: stillOnPrePushLanguage
             ) {
                 consumedAttempts += 1
                 let eligibleForSpacing = Self.isInteractiveLiveActivityRequestEligible(
@@ -6611,6 +6691,26 @@ class RadioLiveActivityManager: ObservableObject {
                 }
             } else {
                 unconfirmedWaits += 1
+                #if DEBUG
+                if Self.shouldTreatLanguageEnsureObservationAsUncommittedApply(
+                    observationKind: lastContentPushObservationKind,
+                    ownedLanguageStillPrePush: stillOnPrePushLanguage
+                ) {
+                    print(
+                        "🔴 Live Activity language ensure delayed re-read still on pre-push " +
+                        "language (owned=\(acceptedAfterWait ?? "nil") dest=\(destAfterWait)); " +
+                        "uncommitted apply — not consuming"
+                    )
+                }
+                #endif
+                if Self.shouldTreatLanguageEnsureObservationAsUncommittedApply(
+                    observationKind: lastContentPushObservationKind,
+                    ownedLanguageStillPrePush: stillOnPrePushLanguage
+                ) {
+                    // Apply never committed — leave this cycle without quiet so a later
+                    // status-driven ensure or pause-path dest-language can still push.
+                    break
+                }
                 if Self.shouldStopLanguageEnsureUnconfirmedWait(
                     unconfirmedWaits: unconfirmedWaits,
                     maxAttempts: maxAttempts
@@ -6637,7 +6737,8 @@ class RadioLiveActivityManager: ObservableObject {
         if let quietDestination = Self.quietPendingDestinationAfterLanguageEnsureExhaustion(
             languageStillMismatches: stillMismatches,
             isRequestEligible: eligibleAfter,
-            destinationLanguage: finalDestination
+            destinationLanguage: finalDestination,
+            committedAttemptsExhausted: consumedAttempts >= maxAttempts
         ) {
             languageEnsureQuietPendingDestination = quietDestination
             languageEnsureQuietSkipLogged = false
@@ -7737,6 +7838,7 @@ class RadioLiveActivityManager: ObservableObject {
         // Prior SSOT is last **system-held** chrome, never aspirational ``lastPushedContent``.
         let priorLanguage = lastSystemHeldContent?.currentLanguage
         let priorVisual = lastSystemHeldContent?.visualState
+        lastContentPushObservationKind = .contentUpdates
         lastSystemHeldContent = content.state
         lastPushedContent = content.state
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(content.state.visualState)
@@ -8120,12 +8222,14 @@ class RadioLiveActivityManager: ObservableObject {
     func _test_quietPendingDestinationAfterLanguageEnsureExhaustion(
         languageStillMismatches: Bool,
         isRequestEligible: Bool,
-        destinationLanguage: String
+        destinationLanguage: String,
+        committedAttemptsExhausted: Bool
     ) -> String? {
         Self.quietPendingDestinationAfterLanguageEnsureExhaustion(
             languageStillMismatches: languageStillMismatches,
             isRequestEligible: isRequestEligible,
-            destinationLanguage: destinationLanguage
+            destinationLanguage: destinationLanguage,
+            committedAttemptsExhausted: committedAttemptsExhausted
         )
     }
 
@@ -8141,11 +8245,26 @@ class RadioLiveActivityManager: ObservableObject {
     /// White-box seam: consume a language-ensure attempt only on committed mismatch.
     func _test_shouldConsumeLanguageEnsureAttempt(
         ownedLanguageMatchesDestination: Bool,
-        inFlightContentPushUnconfirmed: Bool
+        inFlightContentPushUnconfirmed: Bool,
+        observationKind: LiveActivityContentPushObservationKind?,
+        ownedLanguageStillPrePush: Bool
     ) -> Bool {
         Self.shouldConsumeLanguageEnsureAttempt(
             ownedLanguageMatchesDestination: ownedLanguageMatchesDestination,
-            inFlightContentPushUnconfirmed: inFlightContentPushUnconfirmed
+            inFlightContentPushUnconfirmed: inFlightContentPushUnconfirmed,
+            observationKind: observationKind,
+            ownedLanguageStillPrePush: ownedLanguageStillPrePush
+        )
+    }
+
+    /// White-box seam: delayed re-read still on pre-push language is uncommitted apply.
+    func _test_shouldTreatLanguageEnsureObservationAsUncommittedApply(
+        observationKind: LiveActivityContentPushObservationKind?,
+        ownedLanguageStillPrePush: Bool
+    ) -> Bool {
+        Self.shouldTreatLanguageEnsureObservationAsUncommittedApply(
+            observationKind: observationKind,
+            ownedLanguageStillPrePush: ownedLanguageStillPrePush
         )
     }
 

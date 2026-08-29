@@ -700,7 +700,9 @@ class RadioLiveActivityManagerTests: XCTestCase {
     /// become-active (foreground clears quiet), or system contentUpdates.
     /// Quiet still requires **committed** mismatch — three immediate post-await reads while
     /// ``inFlightContentPushCandidate`` is unconfirmed do not exhaust the budget
-    /// (``testLanguageEnsureAttemptsConsumeOnlyOnCommittedObservation``).
+    /// (``testLanguageEnsureAttemptsConsumeOnlyOnCommittedObservation``). Delayed re-reads
+    /// that still show the pre-push language also do not exhaust or quiet
+    /// (``testLanguageEnsureDelayedRereadStillOnPrePushLanguageDoesNotConsume``).
     /// Does **not** end+request while ineligible.
     func testLanguageEnsureQuietPendingAfterMaxAttemptsWhileIneligible() {
         // Enter quiet only when still mismatched and request ineligible.
@@ -708,16 +710,18 @@ class RadioLiveActivityManagerTests: XCTestCase {
             manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
                 languageStillMismatches: true,
                 isRequestEligible: false,
-                destinationLanguage: "fi"
+                destinationLanguage: "fi",
+                committedAttemptsExhausted: true
             ),
             "fi",
-            "Exhausted soft budget while ineligible must record quiet for destination"
+            "Exhausted committed soft budget while ineligible must record quiet for destination"
         )
         XCTAssertNil(
             manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
                 languageStillMismatches: true,
                 isRequestEligible: true,
-                destinationLanguage: "fi"
+                destinationLanguage: "fi",
+                committedAttemptsExhausted: true
             ),
             "Eligible request must not enter quiet (foreground soft ensure / recreation path owns recovery)"
         )
@@ -725,9 +729,19 @@ class RadioLiveActivityManagerTests: XCTestCase {
             manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
                 languageStillMismatches: false,
                 isRequestEligible: false,
-                destinationLanguage: "fi"
+                destinationLanguage: "fi",
+                committedAttemptsExhausted: true
             ),
             "Matched destination must not enter quiet"
+        )
+        XCTAssertNil(
+            manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
+                languageStillMismatches: true,
+                isRequestEligible: false,
+                destinationLanguage: "fi",
+                committedAttemptsExhausted: false
+            ),
+            "Unconfirmed apply-window waits (delayed re-read still on pre-push language) must not enter quiet"
         )
 
         // Soft pushes stay quiet for same destination while still ineligible.
@@ -794,7 +808,8 @@ class RadioLiveActivityManagerTests: XCTestCase {
             manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
                 languageStillMismatches: true,
                 isRequestEligible: false,
-                destinationLanguage: ""
+                destinationLanguage: "",
+                committedAttemptsExhausted: true
             ),
             "Empty destination must not enter language quiet"
         )
@@ -822,7 +837,9 @@ class RadioLiveActivityManagerTests: XCTestCase {
         XCTAssertFalse(
             manager._test_shouldConsumeLanguageEnsureAttempt(
                 ownedLanguageMatchesDestination: false,
-                inFlightContentPushUnconfirmed: true
+                inFlightContentPushUnconfirmed: true,
+                observationKind: .delayedReread,
+                ownedLanguageStillPrePush: true
             ),
             "Quiet-pending tests must not treat apply-in-flight mismatch as budget consumption"
         )
@@ -3422,7 +3439,9 @@ class RadioLiveActivityManagerTests: XCTestCase {
             )
             if manager._test_shouldConsumeLanguageEnsureAttempt(
                 ownedLanguageMatchesDestination: false,
-                inFlightContentPushUnconfirmed: true
+                inFlightContentPushUnconfirmed: true,
+                observationKind: .immediatePostAwait,
+                ownedLanguageStillPrePush: true
             ) {
                 consumedWhileInFlight += 1
             }
@@ -3442,21 +3461,36 @@ class RadioLiveActivityManagerTests: XCTestCase {
         XCTAssertTrue(
             manager._test_shouldConsumeLanguageEnsureAttempt(
                 ownedLanguageMatchesDestination: false,
-                inFlightContentPushUnconfirmed: false
+                inFlightContentPushUnconfirmed: false,
+                observationKind: .contentUpdates,
+                ownedLanguageStillPrePush: false
             ),
-            "Committed mismatch after delayed re-read / contentUpdates consumes one attempt"
+            "contentUpdates mismatch after the apply window consumes one attempt"
+        )
+        XCTAssertTrue(
+            manager._test_shouldConsumeLanguageEnsureAttempt(
+                ownedLanguageMatchesDestination: false,
+                inFlightContentPushUnconfirmed: false,
+                observationKind: .delayedReread,
+                ownedLanguageStillPrePush: false
+            ),
+            "Delayed re-read whose language moved off the pre-push value and still lags consumes"
         )
         XCTAssertFalse(
             manager._test_shouldConsumeLanguageEnsureAttempt(
                 ownedLanguageMatchesDestination: true,
-                inFlightContentPushUnconfirmed: false
+                inFlightContentPushUnconfirmed: false,
+                observationKind: .contentUpdates,
+                ownedLanguageStillPrePush: false
             ),
             "Owned language matching destination is success, not consumption"
         )
         XCTAssertFalse(
             manager._test_shouldConsumeLanguageEnsureAttempt(
                 ownedLanguageMatchesDestination: true,
-                inFlightContentPushUnconfirmed: true
+                inFlightContentPushUnconfirmed: true,
+                observationKind: .delayedReread,
+                ownedLanguageStillPrePush: false
             ),
             "Owned match during an unconfirmed apply is still success, not consumption"
         )
@@ -3515,7 +3549,8 @@ class RadioLiveActivityManagerTests: XCTestCase {
             manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
                 languageStillMismatches: true,
                 isRequestEligible: false,
-                destinationLanguage: "fi"
+                destinationLanguage: "fi",
+                committedAttemptsExhausted: true
             ),
             "fi",
             "Committed budget exhaustion while ineligible still records quiet"
@@ -3524,9 +3559,98 @@ class RadioLiveActivityManagerTests: XCTestCase {
             manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
                 languageStillMismatches: false,
                 isRequestEligible: false,
-                destinationLanguage: "fi"
+                destinationLanguage: "fi",
+                committedAttemptsExhausted: true
             ),
             "Committed match after the apply window must not enter quiet"
+        )
+    }
+
+    /// Delayed re-read that still shows the pre-push language is uncommitted apply.
+    ///
+    /// Language-only over owned `.playing` under lock often never produces `contentUpdates`.
+    /// Clearing ``inFlightContentPushCandidate`` after that re-read must not consume
+    /// ``authoritativeLanguageContentEnsureMaxAttempts`` or enter quiet. Prefer
+    /// `contentUpdates` as consume truth. Pause-path dest-language apply and unlock-heal
+    /// stay. Does **not** raise max attempts. Does **not** invent `.playing`. Does **not**
+    /// end while ineligible. Does **not** claim lock-screen paint.
+    func testLanguageEnsureDelayedRereadStillOnPrePushLanguageDoesNotConsume() {
+        let maxAttempts = RadioLiveActivityManager.authoritativeLanguageContentEnsureMaxAttempts
+
+        XCTAssertTrue(
+            manager._test_shouldTreatLanguageEnsureObservationAsUncommittedApply(
+                observationKind: .delayedReread,
+                ownedLanguageStillPrePush: true
+            ),
+            "Delayed re-read still on pre-push language is uncommitted apply"
+        )
+        XCTAssertTrue(
+            manager._test_shouldTreatLanguageEnsureObservationAsUncommittedApply(
+                observationKind: nil,
+                ownedLanguageStillPrePush: true
+            ),
+            "Missing observation kind with still-pre-push language is uncommitted apply"
+        )
+        XCTAssertFalse(
+            manager._test_shouldTreatLanguageEnsureObservationAsUncommittedApply(
+                observationKind: .contentUpdates,
+                ownedLanguageStillPrePush: true
+            ),
+            "contentUpdates still on pre-push language is committed mismatch truth"
+        )
+        XCTAssertFalse(
+            manager._test_shouldTreatLanguageEnsureObservationAsUncommittedApply(
+                observationKind: .delayedReread,
+                ownedLanguageStillPrePush: false
+            ),
+            "Delayed re-read whose language moved off pre-push is not uncommitted apply"
+        )
+
+        var consumedFromDelayedRereadStillPrePush = 0
+        for _ in 1...maxAttempts {
+            if manager._test_shouldConsumeLanguageEnsureAttempt(
+                ownedLanguageMatchesDestination: false,
+                inFlightContentPushUnconfirmed: false,
+                observationKind: .delayedReread,
+                ownedLanguageStillPrePush: true
+            ) {
+                consumedFromDelayedRereadStillPrePush += 1
+            }
+        }
+        XCTAssertEqual(
+            consumedFromDelayedRereadStillPrePush,
+            0,
+            "Three delayed re-reads still on pre-push language must not consume the budget"
+        )
+
+        XCTAssertTrue(
+            manager._test_shouldConsumeLanguageEnsureAttempt(
+                ownedLanguageMatchesDestination: false,
+                inFlightContentPushUnconfirmed: false,
+                observationKind: .contentUpdates,
+                ownedLanguageStillPrePush: true
+            ),
+            "contentUpdates that still shows pre-push language consumes one attempt"
+        )
+
+        XCTAssertNil(
+            manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
+                languageStillMismatches: true,
+                isRequestEligible: false,
+                destinationLanguage: "en",
+                committedAttemptsExhausted: false
+            ),
+            "Unconfirmed delayed re-reads still on prior language must not enter quiet"
+        )
+        XCTAssertEqual(
+            manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
+                languageStillMismatches: true,
+                isRequestEligible: false,
+                destinationLanguage: "en",
+                committedAttemptsExhausted: true
+            ),
+            "en",
+            "Committed contentUpdates mismatch exhaustion while ineligible still quiets"
         )
     }
 
