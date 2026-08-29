@@ -18,9 +18,14 @@
 //    host ``reconfigureAudioSession()`` await configure on first use.
 //  - Factory-reset ``deactivateAudioSessionAsync()`` (Now Playing phase 2) is detached so
 //    factory hygiene can return within MediaRemoteUI’s launch time budget. Configure and
-//    deactivate share ``audioSessionMutationTail`` so deactivate finishes before first
-//    clip / play configure. Overlapping `setCategory` with an in-flight deactivate
-//    returns SessionCore OSStatus -50.
+//    deactivate share ``audioSessionMutationTail`` so an in-flight SessionCore deactivate
+//    finishes before first clip / play configure. Overlapping `setCategory` with that
+//    deactivate returns SessionCore OSStatus -50.
+//  - SessionCore deactivate of a session this process never configured (category not
+//    `.playback`) still returns success, then the next `setCategory(.playback)` fails with
+//    OSStatus -50. ``shouldSkipSessionCoreDeactivate`` no-ops that SessionCore call; the
+//    mutation still runs on the tail. Privacy / stop / sleep-timer still deactivate after
+//    this process has applied `.playback`. Engine construction does not activate.
 //  - Interruption / route *observers* live in `+AudioSessionInterruption.swift` (separate domain).
 //  - Local file-clip construction lives in `+LocalClipPlayer.swift`; it calls
 //    ``configureAudioSessionAsync()`` and never `setActive` on MainActor.
@@ -74,9 +79,13 @@ extension DirectStreamingPlayer {
     /// clips via ``startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``, interruption
     /// recovery, route changes, category changes) must flow through this method, the thin
     /// `setupAudioSession()` wrapper, or (from ViewController) via `reconfigureAudioSession()`.
-    /// Engine construction does **not** activate. Factory-reset teardown deactivates on
-    /// the same process start (detached Now Playing phase 2). This helper waits for that
-    /// deactivate via ``audioSessionMutationTail`` before `setCategory` / `setActive`.
+    /// Engine construction does **not** activate. Factory-reset teardown still *enqueues*
+    /// deactivate on the same process start (detached Now Playing phase 2). This helper
+    /// waits for that mutation via ``audioSessionMutationTail`` before `setCategory` /
+    /// `setActive`. SessionCore deactivate itself is skipped when this process has not
+    /// applied a playback session (``shouldSkipSessionCoreDeactivate``): a completed
+    /// SessionCore deactivate of that never-configured session still leaves the next
+    /// `setCategory(.playback)` returning OSStatus -50.
     ///
     /// Call sites are already structured as `Task { @MainActor in await ... }` or direct
     /// `await` from @MainActor contexts. The main thread remains responsive during activation.
@@ -107,6 +116,7 @@ extension DirectStreamingPlayer {
     /// - Note: Respects `isTesting` (SSOT via `SharedPlayerManager.isRunningInUITestMode`) exactly.
     ///   Under test mode this is a no-op (returns `false`).
     /// - SeeAlso: ``setupAudioSession()``, ``deactivateAudioSessionAsync()``,
+    ///   ``shouldSkipSessionCoreDeactivate(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``,
     ///   ``startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
     ///   `ViewController.reconfigureAudioSession()`,
     ///   `ViewController.handleInterruption(_:)`, `ViewController.handleRouteChange(_:)`,
@@ -133,7 +143,8 @@ extension DirectStreamingPlayer {
     /// ``audioSessionMutationTail`` has finished.
     ///
     /// - Returns: `true` on successful category + activate; `false` on error or under `isTesting`.
-    /// - SeeAlso: ``configureAudioSessionAsync()``, ``withSerializedAudioSessionMutation(kind:_:)``.
+    /// - SeeAlso: ``configureAudioSessionAsync()``, ``withSerializedAudioSessionMutation(kind:_:)``,
+    ///   ``shouldSkipSessionCoreDeactivate(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``.
     @MainActor
     private func performAudioSessionConfigureUnserialized() async -> Bool {
         guard !isTesting else {
@@ -147,11 +158,7 @@ extension DirectStreamingPlayer {
         let wasAlreadyPlayback = session.category == .playback
 
         do {
-            if !wasAlreadyPlayback {
-                // Conditional to avoid SessionCore "while audio session is active" warnings
-                // when reconfiguring an already-active playback session.
-                try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
-            }
+            try await applyPlaybackCategoryIfNeeded(session: session)
 
             let activated: Bool
             if #available(iOS 27.0, *) {
@@ -168,6 +175,9 @@ extension DirectStreamingPlayer {
                 // directly from a main-thread / @MainActor context.
                 activated = await Self.activateSynchronouslyOffMainThread(session: session)
             }
+            if activated || session.category == .playback {
+                hasAppliedPlaybackAudioSessionThisProcess = true
+            }
             return activated
         } catch {
             #if DEBUG
@@ -175,6 +185,53 @@ extension DirectStreamingPlayer {
             #endif
             return false
         }
+    }
+
+    /// Sets `.playback` when the session is not already in that category.
+    ///
+    /// Skips `setCategory` when category is already `.playback` so SessionCore does not
+    /// warn about mutating an active playback session. After a completed SessionCore
+    /// deactivate of a never-configured session, the first `setCategory(.playback)` can
+    /// still throw OSStatus -50 (paramErr) even though that deactivate’s completion
+    /// already fired — ``shouldSkipSessionCoreDeactivate`` avoids that SessionCore call.
+    /// A single yield + short sleep retry remains for the case where SessionCore did
+    /// deactivate (privacy / stop) and category is no longer `.playback`.
+    ///
+    /// - Parameter session: The shared playback session.
+    /// - Throws: The `setCategory` error when retry still fails (or a non-paramErr failure).
+    /// - SeeAlso: ``isAudioSessionParamError(_:)``, ``shouldSkipSessionCoreDeactivate(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``.
+    @MainActor
+    private func applyPlaybackCategoryIfNeeded(session: AVAudioSession) async throws {
+        if session.category == .playback {
+            return
+        }
+
+        let options: AVAudioSession.CategoryOptions = [.allowAirPlay, .allowBluetoothA2DP]
+        do {
+            try session.setCategory(.playback, mode: .default, options: options)
+            return
+        } catch {
+            guard Self.isAudioSessionParamError(error) else { throw error }
+            #if DEBUG
+            print("[DirectStreamingPlayer] setCategory(.playback) paramErr — retrying after SessionCore settle")
+            #endif
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+
+        if session.category == .playback {
+            return
+        }
+        try session.setCategory(.playback, mode: .default, options: options)
+    }
+
+    /// Whether an `AVAudioSession` `setCategory` failure is SessionCore paramErr (OSStatus -50).
+    ///
+    /// - Parameter error: The thrown session error.
+    /// - Returns: `true` when the code is ``AVAudioSession/ErrorCode/badParam``.
+    /// - SeeAlso: ``applyPlaybackCategoryIfNeeded(session:)``.
+    static func isAudioSessionParamError(_ error: Error) -> Bool {
+        (error as NSError).code == Int(AVAudioSession.ErrorCode.badParam.rawValue)
     }
 
     /// Dynamic dispatch for `activateWithOptions:completionHandler:` using the raw IMP.
@@ -287,10 +344,12 @@ extension DirectStreamingPlayer {
     /// All explicit deactivation (full stop, factory-reset Now Playing phase 2, privacy
     /// teardown, sleep-timer elapsed pause) must go through this method.
     ///
-    /// Factory-reset teardown may deactivate a session that construction never activated.
-    /// That is expected: engine init does not call ``setupAudioSession()``. First clip /
-    /// ``play()`` configure waits on ``audioSessionMutationTail``, so presentable cold play
-    /// does not call `setCategory` while this deactivate is still in SessionCore.
+    /// Factory-reset teardown still enqueues this method so first clip / ``play()`` wait
+    /// on ``audioSessionMutationTail``. SessionCore deactivate of a session this process
+    /// never configured is skipped (``shouldSkipSessionCoreDeactivate``): that completed
+    /// SessionCore call still leaves the next `setCategory(.playback)` returning OSStatus
+    /// -50. Engine init does not call ``setupAudioSession()``. Privacy / stop /
+    /// sleep-timer still deactivate after this process has applied `.playback`.
     ///
     /// - Returns: `true` on success (or no-op success under test/widget conditions).
     /// - SeeAlso: ``configureAudioSessionAsync()``, ``setupAudioSession()``,
@@ -310,8 +369,9 @@ extension DirectStreamingPlayer {
     /// SessionCore deactivate after any prior configure or deactivate on
     /// ``audioSessionMutationTail`` has finished.
     ///
-    /// - Returns: `true` on success (or no-op success under `isTesting`).
-    /// - SeeAlso: ``deactivateAudioSessionAsync()``, ``withSerializedAudioSessionMutation(kind:_:)``.
+    /// - Returns: `true` on success (or no-op success under `isTesting` / skip).
+    /// - SeeAlso: ``deactivateAudioSessionAsync()``, ``withSerializedAudioSessionMutation(kind:_:)``,
+    ///   ``shouldSkipSessionCoreDeactivate(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``.
     @MainActor
     private func performAudioSessionDeactivateUnserialized() async -> Bool {
         guard !isTesting else {
@@ -322,11 +382,51 @@ extension DirectStreamingPlayer {
         }
 
         let session = audioSession
-        if #available(iOS 27.0, *) {
-            return await Self.deactivateAsyncDynamic(session: session)
-        } else {
-            return await Self.deactivateSynchronouslyOffMainThread(session: session)
+        if Self.shouldSkipSessionCoreDeactivate(
+            hasAppliedPlaybackSessionThisProcess: hasAppliedPlaybackAudioSessionThisProcess,
+            categoryIsPlayback: session.category == .playback
+        ) {
+            #if DEBUG
+            print("[DirectStreamingPlayer] Skipping SessionCore deactivate — playback session not applied this process")
+            #endif
+            return true
         }
+
+        let deactivated: Bool
+        if #available(iOS 27.0, *) {
+            deactivated = await Self.deactivateAsyncDynamic(session: session)
+        } else {
+            deactivated = await Self.deactivateSynchronouslyOffMainThread(session: session)
+        }
+        if deactivated {
+            hasAppliedPlaybackAudioSessionThisProcess = false
+        }
+        return deactivated
+    }
+
+    /// Whether SessionCore `deactivate` should be skipped for this mutation.
+    ///
+    /// Factory-reset Now Playing phase 2 always enqueues ``deactivateAudioSessionAsync()``
+    /// so first clip / play still wait on ``audioSessionMutationTail``. SessionCore
+    /// deactivate of a session this process never configured (category not `.playback`)
+    /// returns success, then the next `setCategory(.playback)` fails with OSStatus -50
+    /// (paramErr) even after that completion. Skip the SessionCore call in that case.
+    /// Privacy / stop / sleep-timer still deactivate after this process has applied
+    /// `.playback`, or when category is already `.playback` (for example after an
+    /// implicit `AVAudioPlayer` category apply).
+    ///
+    /// - Parameters:
+    ///   - hasAppliedPlaybackSessionThisProcess: True after a successful configure in this process.
+    ///   - categoryIsPlayback: `session.category == .playback`.
+    /// - Returns: `true` when calling SessionCore deactivate would poison the next `setCategory`.
+    /// - SeeAlso: ``deactivateAudioSessionAsync()``, ``configureAudioSessionAsync()``,
+    ///   ``SharedPlayerManager/teardownNowPlayingSession()``,
+    ///   docs/Widget-Presentation-Dataflow.md (user-initiated main open).
+    static func shouldSkipSessionCoreDeactivate(
+        hasAppliedPlaybackSessionThisProcess: Bool,
+        categoryIsPlayback: Bool
+    ) -> Bool {
+        !hasAppliedPlaybackSessionThisProcess && !categoryIsPlayback
     }
 
     /// Kind of serialized `AVAudioSession` mutation. Used for DEBUG order logs.
@@ -341,9 +441,11 @@ extension DirectStreamingPlayer {
     /// waiting for SessionCore, so factory hygiene can return within MediaRemoteUI’s
     /// launch time budget. Presentable cold launch still starts special tuning / ``play()``
     /// as soon as that hygiene returns. The work Task keeps running if the detached
-    /// caller’s 500 ms wait ends, so first clip / play configure waits for the real
-    /// SessionCore deactivate. Overlapping `setCategory` with that deactivate returns
-    /// OSStatus -50.
+    /// caller’s 500 ms wait ends, so first clip / play configure waits for that
+    /// mutation. Overlapping `setCategory` with an in-flight SessionCore deactivate
+    /// returns OSStatus -50. SessionCore deactivate of a never-configured session is
+    /// skipped (``shouldSkipSessionCoreDeactivate``) so the completed-deactivate -50
+    /// hole does not remain after the tail wait.
     ///
     /// Engine construction does not activate the session.
     ///
@@ -395,6 +497,7 @@ extension DirectStreamingPlayer {
     func test_resetAudioSessionMutationProbe() {
         test_audioSessionMutationSerializedHoldNanoseconds = 0
         test_audioSessionMutationLog = []
+        hasAppliedPlaybackAudioSessionThisProcess = false
     }
 
     /// Injects a serialized-region hold so XCTest can start configure while deactivate
@@ -466,10 +569,11 @@ extension DirectStreamingPlayer {
     /// Thin async wrapper around ``configureAudioSessionAsync()``.
     ///
     /// First local clip, ``play()``, and attach await configure on first use. Engine
-    /// construction does not call this helper: factory-reset teardown deactivates the
-    /// session on the same process start, and overlapping `setCategory` with that
-    /// deactivate returns SessionCore OSStatus -50. Configure already waits for any
-    /// in-flight deactivate via ``audioSessionMutationTail``.
+    /// construction does not call this helper. Factory-reset teardown still enqueues
+    /// deactivate on the same process start; overlapping `setCategory` with an in-flight
+    /// SessionCore deactivate returns OSStatus -50. Configure waits for that mutation
+    /// via ``audioSessionMutationTail``. SessionCore deactivate of a never-configured
+    /// session is skipped (``shouldSkipSessionCoreDeactivate``).
     ///
     /// Under `isTesting` (SSOT `SharedPlayerManager.isRunningInUITestMode`) this is a no-op.
     /// Prevents background audio side effects during tests / launch performance tests.

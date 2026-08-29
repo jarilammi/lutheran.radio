@@ -89,8 +89,10 @@ extension DirectStreamingPlayer {
         }
 
         // Explicit session SSOT first (async / off-main activate). Waits for any in-flight
-        // factory-reset deactivate before setCategory. Local clip start below does not
-        // re-enter setActive on the main actor.
+        // factory-reset deactivate mutation before setCategory. SessionCore deactivate of
+        // a never-configured session is skipped so the first presentable setCategory is
+        // not poisoned with OSStatus -50. Local clip start below does not re-enter
+        // setActive on the main actor.
         _ = await configureAudioSessionAsync()
 
         let clipURL = url

@@ -27,6 +27,7 @@
 //  - Audio session activate/deactivate remains in `+AudioSession.swift` — call
 //    ``configureAudioSessionAsync()`` only; never `setCategory` / `setActive` here.
 //    Configure waits for any in-flight factory-reset deactivate via ``audioSessionMutationTail``.
+//    SessionCore deactivate of a never-configured session is skipped.
 //  - Visual/intent SSOT remains ``SharedPlayerManager`` (sticky pause, canProceedWithPlayback,
 //    saveCurrentState). Engine silence completes before optional visual lock / surface refresh.
 //  - System media session hard detach for privacy/factory reset lives in
@@ -203,7 +204,8 @@ extension DirectStreamingPlayer {
         }
         // Activate the audio session before playback (async, main-thread safe).
         // ``audioSessionMutationTail`` waits for any in-flight factory-reset deactivate
-        // before setCategory.
+        // mutation before setCategory. SessionCore deactivate of a never-configured
+        // session is skipped (``shouldSkipSessionCoreDeactivate``).
         let audioSessionOK = await configureAudioSessionAsync()
         #if DEBUG
         if audioSessionOK {

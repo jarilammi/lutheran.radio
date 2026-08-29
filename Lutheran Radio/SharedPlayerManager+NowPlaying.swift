@@ -720,7 +720,10 @@ extension SharedPlayerManager {
     /// factory hygiene stays within MediaRemoteUI’s launch time budget instead of
     /// running synchronous main-thread AVFoundation work during factory reset. First
     /// clip / ``play()`` configure waits on ``DirectStreamingPlayer/audioSessionMutationTail``
-    /// for that deactivate. Engine construction does not activate the session.
+    /// for that mutation. SessionCore deactivate of a never-configured session is skipped
+    /// (``DirectStreamingPlayer/shouldSkipSessionCoreDeactivate``) so the next
+    /// `setCategory(.playback)` is not poisoned with OSStatus -50. Engine construction
+    /// does not activate the session.
     ///
     /// - Precondition: Main-app target only. Call during cold-launch factory reset, privacy
     ///   clear, or process termination — **not** while intentionally backgrounding live playback.
@@ -815,6 +818,8 @@ extension SharedPlayerManager {
         // ``teardownNowPlayingSession()`` where `deactivateAudioSession` is already `false`.
         // The 500 ms wait may return before SessionCore finishes. Configure still waits
         // on ``audioSessionMutationTail``; the deactivate Task continues after this wait.
+        // SessionCore deactivate of a never-configured session is skipped inside
+        // ``deactivateAudioSessionAsync()``.
         #if !targetEnvironment(simulator)
         let timeoutNanoseconds: UInt64 = 500_000_000
         await withTaskGroup(of: Void.self) { group in

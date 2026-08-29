@@ -221,7 +221,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // | Stream catalog | DirectStreamingPlayer+StreamCatalog.swift | Stream list, language helpers, URL builder inputs |
     // | Server selection | DirectStreamingPlayer+ServerSelection.swift | Server / PingResult, latency, urlWithOptimalServer |
     // | Network path | DirectStreamingPlayer+NetworkPath.swift | Path status types, NWPathMonitorAdapter, setupNetworkMonitoring |
-    // | Audio session | DirectStreamingPlayer+AudioSession.swift | Category + async activate/deactivate (configure / setup / deactivate); ``audioSessionMutationTail`` orders factory deactivate before first clip / play configure |
+    // | Audio session | DirectStreamingPlayer+AudioSession.swift | Category + async activate/deactivate (configure / setup / deactivate); ``audioSessionMutationTail`` orders factory deactivate before first clip / play configure; ``shouldSkipSessionCoreDeactivate`` skips SessionCore deactivate of a never-configured session |
     // | Local clip player | DirectStreamingPlayer+LocalClipPlayer.swift | Tuning/special bundled clip start (`startLocalClipPlayer`); coordinator callers live in `RadioPlayerCoordinator+Tuning` |
     // | Thermal protection | DirectStreamingPlayer+ThermalProtection.swift | Thermal pause/resume + Low Power Mode observation (`setupThermalProtection` / energy) |
     // | Playback control | DirectStreamingPlayer+PlaybackControl.swift | Public play/stop entry (`play`, `createAndStartPlayer`, soft/hard stop paths) |
@@ -266,8 +266,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     //
     // Audio session ownership (configure / activate — domain file + façade injection):
     // - Category + activate/deactivate live in `+AudioSession.swift`; injected `audioSession`,
-    //   interruption observer flags, and ``audioSessionMutationTail`` remain on this class
-    //   (stored state).
+    //   interruption observer flags, ``audioSessionMutationTail``, and
+    //   ``hasAppliedPlaybackAudioSessionThisProcess`` remain on this class (stored state).
     // - Interruption/route observers: `+AudioSessionInterruption.swift` (not configure).
     // - Never call `setCategory` / `setActive` outside `+AudioSession`. Local clips call
     //   ``configureAudioSessionAsync()`` from `+LocalClipPlayer` only (no direct setActive).
@@ -275,9 +275,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     //   host ``reconfigureAudioSession()`` await ``configureAudioSessionAsync()`` on first use.
     //   Factory-reset ``deactivateAudioSessionAsync()`` (Now Playing phase 2) is detached
     //   so factory hygiene can return within MediaRemoteUI’s launch time budget;
-    //   configure and deactivate share ``audioSessionMutationTail`` so deactivate
-    //   finishes before first clip / play configure. Overlapping `setCategory` with
-    //   an in-flight deactivate returns SessionCore OSStatus -50.
+    //   configure and deactivate share ``audioSessionMutationTail`` so an in-flight
+    //   SessionCore deactivate finishes before first clip / play configure. Overlapping
+    //   `setCategory` with that deactivate returns SessionCore OSStatus -50. SessionCore
+    //   deactivate of a never-configured session is skipped
+    //   (``shouldSkipSessionCoreDeactivate``).
     //
     // Thermal / energy ownership (domain file + façade stored token + computed flag):
     // - Observers + teardown live in `+ThermalProtection.swift`; `thermalObserver` and
@@ -349,12 +351,23 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///
     /// Accessed only from `@MainActor` audio-session methods. Work Tasks keep running if
     /// the caller is cancelled (phase 2’s 500 ms wait), so the next configure still waits
-    /// for the real SessionCore deactivate.
+    /// for that mutation. SessionCore deactivate of a never-configured session is skipped
+    /// (``shouldSkipSessionCoreDeactivate``); overlapping `setCategory` with an in-flight
+    /// SessionCore deactivate still returns OSStatus -50.
     ///
     /// - SeeAlso: DirectStreamingPlayer+AudioSession.swift,
     ///   ``SharedPlayerManager/teardownNowPlayingSession()``,
     ///   docs/Widget-Presentation-Dataflow.md (user-initiated main open).
     var audioSessionMutationTail: Task<Void, Never>?
+    /// True after this process successfully applied `.playback` (category and/or activate).
+    ///
+    /// Factory-reset Now Playing phase 2 still enqueues deactivate. SessionCore deactivate
+    /// of a never-configured session (this flag false and category not `.playback`) is
+    /// skipped so the next `setCategory(.playback)` is not poisoned with OSStatus -50.
+    /// Accessed only from `@MainActor` audio-session methods.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/shouldSkipSessionCoreDeactivate(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``.
+    var hasAppliedPlaybackAudioSessionThisProcess = false
     #if DEBUG
     /// Extra serialized-region hold for XCTest (nanoseconds). Production leaves this 0.
     /// Mutations still no-op under UITestMode — this does not activate `AVAudioSession`.
@@ -764,11 +777,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         // Construction does not activate AVAudioSession. Factory-reset teardown
         // (``resetToFactoryDefaultsOnLaunch`` → ``teardownNowPlayingSession`` →
-        // ``deactivateAudioSessionAsync``) runs on the same process start. First local
-        // clip, ``play()``, ``attachAndPlay``, and host ``reconfigureAudioSession()``
-        // await ``configureAudioSessionAsync()``, which waits for any in-flight factory
-        // deactivate. Overlapping construction-time configure with that deactivate
-        // returns SessionCore OSStatus -50.
+        // ``deactivateAudioSessionAsync``) still enqueues deactivate on the same process
+        // start. First local clip, ``play()``, ``attachAndPlay``, and host
+        // ``reconfigureAudioSession()`` await ``configureAudioSessionAsync()``, which
+        // waits for that mutation. Overlapping construction-time configure with an
+        // in-flight SessionCore deactivate returns OSStatus -50. SessionCore deactivate
+        // of a never-configured session is skipped (``shouldSkipSessionCoreDeactivate``).
         setupNetworkMonitoring()
         
         #if DEBUG
@@ -848,9 +862,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         super.init()
         
         // Construction does not activate AVAudioSession. Same contract as the designated
-        // init: factory-reset teardown deactivates on this process start; first clip /
-        // play / attach / host reconfigure await ``configureAudioSessionAsync()``, which
-        // waits for that deactivate.
+        // init: factory-reset teardown enqueues deactivate on this process start; first
+        // clip / play / attach / host reconfigure await ``configureAudioSessionAsync()``,
+        // which waits for that mutation. SessionCore deactivate of a never-configured
+        // session is skipped (``shouldSkipSessionCoreDeactivate``).
         setupNetworkMonitoring()
         
         // Low Power Mode observation: +ThermalProtection.swift (no immediate playback action)

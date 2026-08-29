@@ -53,7 +53,9 @@ extension RadioPlayerCoordinator {
     /// AGENT NOTE: Single production owner for the special cold-launch clip. Presentable
     /// cold launch invokes this after factory hygiene + first become-active; the host does not
     /// retain clip state or conform to `AVAudioPlayerDelegate`. Session configure inside
-    /// ``startLocalClipPlayer`` waits for factory-reset Now Playing phase 2 deactivate.
+    /// ``startLocalClipPlayer`` waits for factory-reset Now Playing phase 2 deactivate on
+    /// ``audioSessionMutationTail``. SessionCore deactivate of a never-configured session
+    /// is skipped so the first presentable `setCategory` is not poisoned with OSStatus -50.
     ///
     /// - Parameter completion: Optional early-exit hook; successful start finishes via
     ///   `AVAudioPlayerDelegate` → ``TuningSoundCoordinator/notifyPlaybackFinished(source:)``.

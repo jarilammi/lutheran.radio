@@ -1130,8 +1130,9 @@ actor SharedPlayerManager {
     /// start also wipes via ``clearSystemNowPlayingMetadataSynchronously()`` in AppDelegate.
     /// Phase 2 audio-session deactivate stays detached so factory hygiene can return
     /// within MediaRemoteUI’s launch time budget. First clip / ``play()`` configure waits
-    /// on ``DirectStreamingPlayer/audioSessionMutationTail``. Engine construction does
-    /// not activate the session.
+    /// on ``DirectStreamingPlayer/audioSessionMutationTail``. SessionCore deactivate of a
+    /// never-configured session is skipped (``DirectStreamingPlayer/shouldSkipSessionCoreDeactivate``).
+    /// Engine construction does not activate the session.
     func resetToFactoryDefaultsOnLaunch() async {
         #if LUTHERAN_MAIN_APP
         await performSessionAndWidgetTeardown(
