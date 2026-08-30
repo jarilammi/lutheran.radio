@@ -153,6 +153,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -190,6 +196,12 @@
           }
         },
         "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
+        "uk" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ %2$@"
@@ -698,6 +710,24 @@
             }
           }
         },
+        "pt-BR" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld idioma"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld idiomas"
+                }
+              }
+            }
+          }
+        },
         "ro" : {
           "variations" : {
             "plural" : {
@@ -871,6 +901,36 @@
               }
             }
           }
+        },
+        "uk" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld мови"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld мов"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld мова"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld мови"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -1026,6 +1086,12 @@
             "value" : "Toque duas vezes para selecionar o dispositivo de saída de áudio"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toque duas vezes para escolher o dispositivo de saída de áudio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1066,6 +1132,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dubbeltryck för att välja ljudutgångsenhet"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Двічі торкніться, щоб вибрати пристрій виведення звуку"
           }
         }
       }
@@ -1222,6 +1294,12 @@
             "value" : "Mostra informações sobre o programa de rádio atual"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exibe informações sobre o programa de rádio atual"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1262,6 +1340,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Visar information om det aktuella radioprogrammet"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показує інформацію про поточну радіопрограму"
           }
         }
       }
@@ -1418,6 +1502,12 @@
             "value" : "Ativa ou desativa a reprodução do fluxo de rádio"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liga ou pausa a reprodução da rádio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1458,6 +1548,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växlar mellan uppspelning och paus av radioströmmen"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемикає відтворення радіопотоку"
           }
         }
       }
@@ -1614,6 +1710,12 @@
             "value" : "Escolha quanto tempo até a reprodução parar"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escolha quanto tempo até a reprodução ser interrompida"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1654,6 +1756,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Välj hur länge tills uppspelningen stoppas"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Виберіть, через скільки зупиниться відтворення"
           }
         }
       }
@@ -1810,6 +1918,12 @@
             "value" : "Ajusta o volume de reprodução"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajusta o volume da reprodução"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1850,6 +1964,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Justerar uppspelningsvolymen"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Регулює гучність відтворення"
           }
         }
       }
@@ -2006,6 +2126,12 @@
             "value" : "AirPlay"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2043,6 +2169,12 @@
           }
         },
         "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "uk" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -2203,6 +2335,12 @@
             "value" : "Logótipo Lutheran Radio"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logotipo da Lutheran Radio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2243,6 +2381,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio-logotyp"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Логотип Lutheran Radio"
           }
         }
       }
@@ -2399,6 +2543,12 @@
             "value" : "Pausar"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausar"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2439,6 +2589,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausa"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пауза"
           }
         }
       }
@@ -2596,6 +2752,12 @@
             "value" : "Foto de %@"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto de %@"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2636,6 +2798,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Foto av %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фото %@"
           }
         }
       }
@@ -2792,6 +2960,12 @@
             "value" : "Reproduzir"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2832,6 +3006,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відтворити"
           }
         }
       }
@@ -2988,6 +3168,12 @@
             "value" : "Temporizador de desligamento"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timer para dormir"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3028,6 +3214,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Insomningstimer"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Таймер сну"
           }
         }
       }
@@ -3184,6 +3376,12 @@
             "value" : "Volume"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3224,6 +3422,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volym"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Гучність"
           }
         }
       }
@@ -3729,6 +3933,24 @@
             }
           }
         },
+        "pt-BR" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld por cento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld por cento"
+                }
+              }
+            }
+          }
+        },
         "ro" : {
           "variations" : {
             "plural" : {
@@ -3902,6 +4124,36 @@
               }
             }
           }
+        },
+        "uk" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld відсотки"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld відсотків"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld відсоток"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld відсотка"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -4057,6 +4309,12 @@
             "value" : "Continuar"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuar"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4097,6 +4355,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fortsätt"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Продовжити"
           }
         }
       }
@@ -4253,6 +4517,12 @@
             "value" : "Tentar novamente"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tentar de novo"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4293,6 +4563,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Igen"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повторити"
           }
         }
       }
@@ -4449,6 +4725,12 @@
             "value" : "Permitir nesta sessão"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permitir nesta sessão"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4489,6 +4771,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tillåt för den här sessionen"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Дозволити для цього сеансу"
           }
         }
       }
@@ -4645,6 +4933,12 @@
             "value" : "Permitir sempre"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permitir sempre"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4685,6 +4979,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tillåt alltid"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Завжди дозволяти"
           }
         }
       }
@@ -4841,6 +5141,12 @@
             "value" : "Agora não"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agora não"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4881,6 +5187,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Inte nu"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не зараз"
           }
         }
       }
@@ -5037,6 +5349,12 @@
             "value" : "Limpar"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpar"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5077,6 +5395,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rensa"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очистити"
           }
         }
       }
@@ -5233,6 +5557,12 @@
             "value" : "Limpo"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpo"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5273,6 +5603,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rensad"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очищено"
           }
         }
       }
@@ -5429,6 +5765,12 @@
             "value" : "Isto irá parar a reprodução, remover os dados do widget e da Live Activity e apagar o estado de audição recente deste dispositivo. A ação não pode ser anulada."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isso vai parar a reprodução, remover os dados do widget e da Live Activity e apagar o estado recente de escuta deste dispositivo. Esta ação não pode ser desfeita."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5469,6 +5811,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Detta stoppar uppspelningen, tar bort widget- och Live Activity-data och rensar den senaste lyssningsstatusen från den här enheten. Åtgärden kan inte ångras."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Це зупинить відтворення, видалить дані віджета та Live Activity і очистить недавній стан прослуховування з цього пристрою. Дію не можна скасувати."
           }
         }
       }
@@ -5625,6 +5973,12 @@
             "value" : "Limpar estado de reprodução local"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limpar estado local de reprodução"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5665,6 +6019,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rensa lokal uppspelningsstatus"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очистити локальний стан відтворення"
           }
         }
       }
@@ -5821,6 +6181,12 @@
             "value" : "Configuração do widget da Lutheran Radio."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuração do widget Lutheran Radio."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5861,6 +6227,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Konfiguration för Lutheran Radio widget."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Конфігурація віджета Lutheran Radio."
           }
         }
       }
@@ -6018,6 +6390,12 @@
             "value" : "Erro de ligação"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erro de conexão"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6058,6 +6436,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Anslutningsfel"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Помилка з’єднання"
           }
         }
       },
@@ -6215,6 +6599,12 @@
             "value" : "Controle a reprodução da Lutheran Radio e veja a estação atual."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controle a reprodução da Lutheran Radio e veja a rádio atual."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6255,6 +6645,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kontrollera Lutheran Radio uppspelning och se aktuell station."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Керуйте відтворенням Lutheran Radio і переглядайте поточну станцію."
           }
         }
       }
@@ -6411,6 +6807,12 @@
             "value" : "Controle a reprodução e mude entre fluxos de idioma."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controle a reprodução e alterne entre as transmissões de idioma."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6451,6 +6853,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kontrollera uppspelning och växla mellan språkströmmar."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Керуйте відтворенням і перемикайтеся між мовними потоками."
           }
         }
       }
@@ -6608,6 +7016,12 @@
             "value" : "Diminuir volume"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diminuir volume"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6648,6 +7062,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Minska volymen"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зменшити гучність"
           }
         }
       }
@@ -6805,6 +7225,12 @@
             "value" : "Aumentar volume"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aumentar volume"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6845,6 +7271,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Öka volymen"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Збільшити гучність"
           }
         }
       }
@@ -7001,6 +7433,12 @@
             "value" : "A reproduzir"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tocando"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7041,6 +7479,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spelar"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Грає"
           }
         }
       }
@@ -7198,6 +7642,12 @@
             "value" : "Idioma"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7238,6 +7688,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Språk"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Мова"
           }
         }
       }
@@ -7394,6 +7850,12 @@
             "value" : "Código de idioma"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código do idioma"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7434,6 +7896,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Språkkod"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Код мови"
           }
         }
       }
@@ -7591,6 +8059,12 @@
             "value" : "Inglês"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inglês"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7631,6 +8105,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Engelska"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Англійська"
           }
         }
       }
@@ -7788,6 +8268,12 @@
             "value" : "Estónio"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estoniano"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7828,6 +8314,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estniska"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Естонська"
           }
         }
       }
@@ -7985,6 +8477,12 @@
             "value" : "Finlandês"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finlandês"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8025,6 +8523,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Finska"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фінська"
           }
         }
       }
@@ -8182,6 +8686,12 @@
             "value" : "Alemão"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alemão"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8222,6 +8732,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tyska"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Німецька"
           }
         }
       }
@@ -8379,6 +8895,12 @@
             "value" : "Sueco"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sueco"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8419,6 +8941,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Svenska"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Шведська"
           }
         }
       }
@@ -8576,6 +9104,12 @@
             "value" : "%@ · Transmissão em direto"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Transmissão ao vivo"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8616,6 +9150,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Livestream"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Прямий ефір"
           }
         }
       },
@@ -8773,6 +9313,12 @@
             "value" : "Apenas local"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Somente local"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8813,6 +9359,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lokal läge"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Лише локально"
           }
         }
       }
@@ -8970,6 +9522,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9007,6 +9565,12 @@
           }
         },
         "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "uk" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -9167,6 +9731,12 @@
             "value" : "Idioma seguinte"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Próximo idioma"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9207,6 +9777,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nästa språk"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Наступна мова"
           }
         }
       }
@@ -9364,6 +9940,12 @@
             "value" : "Reproduzir/Pausar"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir/Pausar"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9404,6 +9986,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela/Pausa"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відтворення/Пауза"
           }
         }
       }
@@ -9561,6 +10149,12 @@
             "value" : "Reprodução"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reprodução"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9601,6 +10195,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uppspelning"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відтворення"
           }
         }
       }
@@ -9758,6 +10358,12 @@
             "value" : "Idioma anterior"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma anterior"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9798,6 +10404,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Föregående språk"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Попередня мова"
           }
         }
       }
@@ -9954,6 +10566,12 @@
             "value" : "A app está a usar dados móveis, o que pode gerar custos consoante o seu plano de dados."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O app está usando dados móveis, o que pode gerar custos conforme o seu plano de dados."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9994,6 +10612,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Appen använder mobildata, vilket kan medföra kostnader beroende på din dataplan."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Програма використовує мобільні дані, що може призвести до додаткових витрат залежно від вашого тарифного плану."
           }
         }
       }
@@ -10150,6 +10774,12 @@
             "value" : "Utilização de dados móveis"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uso de dados móveis"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10190,6 +10820,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobil dataanvändning"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Використання мобільних даних"
           }
         }
       }
@@ -10346,6 +10982,12 @@
             "value" : "Sem informação da faixa"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhuma informação da faixa"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10386,6 +11028,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ingen spårinformation"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Немає інформації про трек"
           }
         }
       }
@@ -10542,6 +11190,12 @@
             "value" : "A reproduzir agora"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tocando agora"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10582,6 +11236,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spelas nu"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зараз грає"
           }
         }
       }
@@ -10738,6 +11398,12 @@
             "value" : "OK"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10775,6 +11441,12 @@
           }
         },
         "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "uk" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -10935,6 +11607,12 @@
             "value" : "Abra primeiro a app"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra o app primeiro"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10975,6 +11653,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Öppna appen först"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спочатку відкрийте програму"
           }
         }
       },
@@ -11133,6 +11817,12 @@
             "value" : "Pausar Lutheran Radio"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausar Lutheran Radio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11173,6 +11863,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausa Lutheran Radio"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Призупинити Lutheran Radio"
           }
         }
       }
@@ -11330,6 +12026,12 @@
             "value" : "Pausar a reprodução da Lutheran Radio."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausar a reprodução da Lutheran Radio."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11370,6 +12072,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausa Lutheran Radio-uppspelning."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Призупинити відтворення Lutheran Radio."
           }
         }
       }
@@ -11526,6 +12234,12 @@
             "value" : "Reproduzir"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11566,6 +12280,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відтворити"
           }
         }
       }
@@ -11723,6 +12443,12 @@
             "value" : "Reproduzir Lutheran Radio"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir Lutheran Radio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11763,6 +12489,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela Lutheran Radio"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відтворити Lutheran Radio"
           }
         }
       }
@@ -11919,6 +12651,12 @@
             "value" : "Reproduzir ou pausar Lutheran Radio."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir ou pausar Lutheran Radio."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11959,6 +12697,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela eller pausa Lutheran Radio."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відтворити або призупинити Lutheran Radio."
           }
         }
       }
@@ -12116,6 +12860,12 @@
             "value" : "Reproduzir ou retomar Lutheran Radio."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir ou retomar Lutheran Radio."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12156,6 +12906,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela eller återuppta Lutheran Radio."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відтворити або відновити Lutheran Radio."
           }
         }
       }
@@ -12312,6 +13068,12 @@
             "value" : "Não foi possível iniciar a reprodução devido a uma falha na validação de segurança. Verifique a sua ligação à Internet e certifique-se de que a app está atualizada. Se o problema continuar, reinicie a app e tente novamente."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível iniciar a reprodução devido a uma falha na validação de segurança. Verifique sua conexão com a Internet e certifique-se de que o app está atualizado. Se o problema continuar, reinicie o app e tente de novo."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12352,6 +13114,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kan inte starta uppspelning på grund av ett fel i säkerhetsvalideringen. Vänligen kontrollera din internetanslutning och se till att appen är uppdaterad. Om problemet kvarstår, starta om appen och försök igen."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдається почати відтворення через збій перевірки безпеки. Будь ласка, перевірте підключення до інтернету та переконайтеся, що програму оновлено. Якщо проблема не зникає, перезапустіть програму й спробуйте знову."
           }
         }
       }
@@ -12508,6 +13276,12 @@
             "value" : "Falha na validação de segurança"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falha na validação de segurança"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12548,6 +13322,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Säkerhetsvalidering misslyckades"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перевірка безпеки не вдалася"
           }
         }
       }
@@ -12705,6 +13485,12 @@
             "value" : "Selecionar %@"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selecionar %@"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12745,6 +13531,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Välj %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вибрати %@"
           }
         }
       }
@@ -13250,6 +14042,24 @@
             }
           }
         },
+        "pt-BR" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Falta %lld minuto"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Faltam %lld minutos"
+                }
+              }
+            }
+          }
+        },
         "ro" : {
           "variations" : {
             "plural" : {
@@ -13423,6 +14233,36 @@
               }
             }
           }
+        },
+        "uk" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Залишилося %lld хвилини"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Залишилося %lld хвилин"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Залишилася %lld хвилина"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Залишилося %lld хвилини"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -13578,6 +14418,12 @@
             "value" : "Cancelar temporizador"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelar timer"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13618,6 +14464,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Avbryt timer"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Скасувати таймер"
           }
         }
       }
@@ -13774,6 +14626,12 @@
             "value" : "15 minutos"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minutos"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13814,6 +14672,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minuter"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 хвилин"
           }
         }
       }
@@ -13970,6 +14834,12 @@
             "value" : "30 minutos"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 minutos"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14010,6 +14880,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "30 minuter"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 хвилин"
           }
         }
       }
@@ -14166,6 +15042,12 @@
             "value" : "45 minutos"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 minutos"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14206,6 +15088,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 minuter"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 хвилин"
           }
         }
       }
@@ -14362,6 +15250,12 @@
             "value" : "60 minutos"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 minutos"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14402,6 +15296,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "60 minuter"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 хвилин"
           }
         }
       }
@@ -14558,6 +15458,12 @@
             "value" : "Temporizador de desligamento"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timer para dormir"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14598,6 +15504,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Insomningstimer"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Таймер сну"
           }
         }
       }
@@ -14754,6 +15666,12 @@
             "value" : "Os servidores de transmissão renovaram os certificados SSL. A app está a funcionar em modo de compatibilidade. Atualize para a versão mais recente quando estiver disponível para uma segurança ótima."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os servidores de transmissão renovaram os certificados SSL. O app está funcionando em modo de compatibilidade. Atualize para a versão mais recente quando estiver disponível para uma segurança ideal."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14794,6 +15712,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Streamingservrarna har förnyat sina SSL-certifikat. Appen körs i kompatibilitetsläge. Vänligen uppdatera till senaste versionen när tillgänglig för optimal säkerhet."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Потокові сервери оновили свої SSL-сертифікати. Програма працює в режимі сумісності. Будь ласка, оновіть до останньої версії, коли вона буде доступна, для оптимальної безпеки."
           }
         }
       }
@@ -14950,6 +15874,12 @@
             "value" : "Certificado atualizado"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certificado atualizado"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14990,6 +15920,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Certifikat uppdaterat"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сертифікат оновлено"
           }
         }
       }
@@ -15147,6 +16083,12 @@
             "value" : "Iniciar ou retomar a reprodução da Lutheran Radio."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar ou retomar a reprodução da Lutheran Radio."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15187,6 +16129,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Starta eller återuppta Lutheran Radio uppspelning."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запустіть або відновіть відтворення Lutheran Radio."
           }
         }
       }
@@ -15343,6 +16291,12 @@
             "value" : "Iniciar ou parar a reprodução da Lutheran Radio."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar ou parar a reprodução da Lutheran Radio."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15383,6 +16337,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Starta eller stoppa Lutheran Radio uppspelning."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запустіть або зупиніть відтворення Lutheran Radio."
           }
         }
       }
@@ -15539,6 +16499,12 @@
             "value" : "Buffer"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buffer"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15579,6 +16545,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buffra"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Буфер"
           }
         }
       }
@@ -15735,6 +16707,12 @@
             "value" : "Ligar"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectar"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15775,6 +16753,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ansluter"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Підключає"
           }
         }
       }
@@ -15931,6 +16915,12 @@
             "value" : "Erro"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erro"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15971,6 +16961,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Misslyckades"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Помилка"
           }
         }
       }
@@ -16127,6 +17123,12 @@
             "value" : "Sem ligação"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sem conexão"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16167,6 +17169,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Offline"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Офлайн"
           }
         }
       }
@@ -16323,6 +17331,12 @@
             "value" : "Pausa"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausa"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16363,6 +17377,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Paus"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пауза"
           }
         }
       }
@@ -16520,6 +17540,12 @@
             "value" : "Em pausa – Chamada ativa"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausado – Chamada ativa"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16560,6 +17586,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausad – Samtal pågår"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Призупинено — Триває виклик"
           }
         }
       },
@@ -16717,6 +17749,12 @@
             "value" : "Falha na reprodução: %@"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falha na reprodução: %@"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16757,6 +17795,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uppspelning misslyckades: %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Помилка відтворення: %@"
           }
         }
       },
@@ -16914,6 +17958,12 @@
             "value" : "Reproduzir"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduzir"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16954,6 +18004,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spelar"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Грає"
           }
         }
       }
@@ -17110,6 +18166,12 @@
             "value" : "Segurança"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Segurança"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17150,6 +18212,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Säkerhet"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Безпека"
           }
         }
       }
@@ -17306,6 +18374,12 @@
             "value" : "Certificado SSL renovado – atualize a app em breve"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certificado SSL renovado – atualize o app em breve"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17346,6 +18420,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SSL-certifikat förnyat - uppdatera app snart"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-сертифікат оновлено - незабаром оновіть програму"
           }
         }
       }
@@ -17502,6 +18582,12 @@
             "value" : "Parado"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parado"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17542,6 +18628,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stoppad"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зупинено"
           }
         }
       }
@@ -17698,6 +18790,12 @@
             "value" : "Desligado"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desligado"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17738,6 +18836,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Av"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вимк"
           }
         }
       }
@@ -17894,6 +18998,12 @@
             "value" : "Dispositivo quente"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aparelho quente"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17934,6 +19044,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enheten het"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Гаряче"
           }
         }
       }
@@ -18090,6 +19206,12 @@
             "value" : "A emissão não está temporariamente disponível. Tente novamente mais tarde."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A transmissão está temporariamente indisponível. Tente de novo mais tarde."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18130,6 +19252,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sändningen är tillfälligt inte tillgänglig. Försök igen senare."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Трансляція тимчасово недоступна. Спробуйте знову пізніше."
           }
         }
       }
@@ -18286,6 +19414,12 @@
             "value" : "Emissão indisponível"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transmissão indisponível"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18326,6 +19460,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sändningen inte tillgänglig"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Трансляція недоступна"
           }
         }
       }
@@ -18483,6 +19623,12 @@
             "value" : "Mudar o fluxo de idioma da Lutheran Radio."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trocar o stream de idioma da Lutheran Radio."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18523,6 +19669,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt Lutheran Radio språkström."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути мовний потік Lutheran Radio."
           }
         }
       }
@@ -18679,6 +19831,12 @@
             "value" : "Mudar fluxo"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trocar stream"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18719,6 +19877,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt ström"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути потік"
           }
         }
       }
@@ -18876,6 +20040,12 @@
             "value" : "Mudar para %@"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trocar para %@"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18916,6 +20086,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla till %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнутися на %@"
           }
         }
       }
@@ -19072,6 +20248,12 @@
             "value" : "Mudar para outro fluxo de idioma a partir da Live Activity."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trocar para outro stream de idioma pela Live Activity."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19112,6 +20294,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla till en annan språkström från Live-aktivitet."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнутися на інший мовний потік із Live Activity."
           }
         }
       }
@@ -19268,6 +20456,12 @@
             "value" : "Mudar para outro fluxo de idioma."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trocar para outro stream de idioma."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19308,6 +20502,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla till en annan språkström."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнутися на інший мовний потік."
           }
         }
       }
@@ -19465,6 +20665,12 @@
             "value" : "Mudado para %@"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trocado para %@"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19505,6 +20711,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bytt till %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнено на %@"
           }
         }
       },
@@ -19663,6 +20875,12 @@
             "value" : "Toque para abrir"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toque para abrir"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19703,6 +20921,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tryck för att öppna"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Натисніть, щоб відкрити"
           }
         }
       },
@@ -19860,6 +21084,12 @@
             "value" : "Ativar/desativar Lutheran Radio"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alternar Lutheran Radio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19900,6 +21130,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla Lutheran Radio"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути Lutheran Radio"
           }
         }
       }
@@ -20056,6 +21292,12 @@
             "value" : "Ativar/desativar a reprodução da Lutheran Radio"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alternar reprodução da Lutheran Radio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20096,6 +21338,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla Lutheran Radio kanal"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути відтворення Lutheran Radio"
           }
         }
       }
@@ -20252,6 +21500,12 @@
             "value" : "Ativar/desativar reprodução/pausa a partir da Live Activity."
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alternar reproduzir/pausar na Live Activity."
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20292,6 +21546,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla spela/paus från Live-aktivitet."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути відтворення/паузу з Live Activity."
           }
         }
       }
@@ -20449,6 +21709,12 @@
             "value" : "Ativar/desativar reprodução"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alternar reprodução"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20489,6 +21755,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla uppspelning"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути відтворення"
           }
         }
       }
@@ -20994,6 +22266,24 @@
             }
           }
         },
+        "pt-BR" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume ajustado para %lld por cento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume ajustado para %lld por cento"
+                }
+              }
+            }
+          }
+        },
         "ro" : {
           "variations" : {
             "plural" : {
@@ -21167,6 +22457,36 @@
               }
             }
           }
+        },
+        "uk" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Гучність встановлено на %lld відсотки"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Гучність встановлено на %lld відсотків"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Гучність встановлено на %lld відсоток"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Гучність встановлено на %lld відсотка"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -21322,6 +22642,12 @@
             "value" : "Configuração do widget"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuração do widget"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21362,6 +22688,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget-konfiguration"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Конфігурація віджета"
           }
         }
       }

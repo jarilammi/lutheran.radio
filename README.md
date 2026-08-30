@@ -6,7 +6,7 @@
 
 Listen to Lutheran Radio on iOS.
 
-Siri Shortcuts and voice control are supported out of the box ("Hey Siri, play Lutheran Radio", "Play Lutheran Radio in Finnish", "Pause Lutheran Radio", etc.). Invocation phrases are localized for every UI language in `AppShortcuts.xcstrings` (Apple-required table; not `Localizable.xcstrings`) so a Finnish, German, French, Italian, or Portuguese Siri user can speak a native phrase. The shortcuts appear automatically in the Shortcuts app and Spotlight with zero configuration.
+Siri Shortcuts and voice control are supported out of the box ("Hey Siri, play Lutheran Radio", "Play Lutheran Radio in Finnish", "Pause Lutheran Radio", etc.). Invocation phrases are localized for every UI language in `AppShortcuts.xcstrings` (Apple-required table; not `Localizable.xcstrings`) so a Finnish, German, French, Italian, Portuguese, Brazilian Portuguese, or Ukrainian Siri user can speak a native phrase. The shortcuts appear automatically in the Shortcuts app and Spotlight with zero configuration.
 
 ## Contents
 
@@ -55,6 +55,7 @@ The app is fully localized in the following languages:
 - Norwegian Nynorsk (nn)
 - Polish (pl)
 - Portuguese (pt)
+- Portuguese (Brazil) (pt-BR)
 - Romanian (ro)
 - Russian (ru)
 - Slovak (sk)
@@ -62,6 +63,7 @@ The app is fully localized in the following languages:
 - Spanish (es)
 - Swedish (sv)
 - Tornedalen Finnish (fit)
+- Ukrainian (uk)
 
 </td>
 <td width="60%" style="border: none;">
@@ -72,7 +74,7 @@ The app is fully localized in the following languages:
 </tr>
 </table>
 
-Count strings (`%lld languages`, `sleep_timer_accessibility_remaining`, `accessibility_value_volume`, `volume_set_to`) use String Catalog `variations.plural` with the CLDR categories required by each locale (for example Polish/Russian `one`/`few`/`many`/`other`, Croatian `one`/`few`/`other`, Lithuanian `one`/`few`/`many`/`other`, Northern Sami `one`/`two`/`other`, Latvian `zero`/`one`/`other`, Slovak `one`/`few`/`many`/`other`). `CatalogPluralizationTests` gates **every** README Localizations language: source-catalog category sets plus compiled stringsdict formatting of integer probes (a wrong Slovak `few` fails CI). Call sites must pass the number through `String(localized:defaultValue:)` interpolation or `LocalizedStringResource` interpolation. `String(format: String(localized:), n)` resolves the catalog to `other` before the number is known and cannot inflect (“1 minutes remaining”).
+Count strings (`%lld languages`, `sleep_timer_accessibility_remaining`, `accessibility_value_volume`, `volume_set_to`) use String Catalog `variations.plural` with the CLDR categories required by each locale (for example Polish/Russian/Ukrainian `one`/`few`/`many`/`other`, Croatian `one`/`few`/`other`, Lithuanian `one`/`few`/`many`/`other`, Northern Sami `one`/`two`/`other`, Latvian `zero`/`one`/`other`, Slovak `one`/`few`/`many`/`other`). `CatalogPluralizationTests` gates **every** README Localizations language: source-catalog category sets plus compiled stringsdict formatting of integer probes (a wrong Slovak `few` fails CI). Call sites must pass the number through `String(localized:defaultValue:)` interpolation or `LocalizedStringResource` interpolation. `String(format: String(localized:), n)` resolves the catalog to `other` before the number is known and cannot inflect (“1 minutes remaining”).
 
 Siri App Shortcut utterances (`Play / Start / Pause / Stop ${applicationName}`, `Play ${applicationName} in ${language}`, `Switch ${applicationName} to ${language}`) live in [`Lutheran Radio/AppShortcuts.xcstrings`](Lutheran%20Radio/AppShortcuts.xcstrings). Apple trains recognition from that dedicated table only — do not add those phrases to `Localizable.xcstrings`. Every utterance must keep `${applicationName}` (and `${language}` on parameterized phrases). Intent titles and descriptions stay in `Localizable.xcstrings`.
 

@@ -80,6 +80,12 @@
   <text x="650" y="240" font-family="Arial" font-size="10">Russian</text>
   <text x="650" y="250" font-family="Arial" font-size="10" fill="#555">русский</text>
 
+  <!-- Ukrainian - East Slavic, near Russian / Polish (same blob path as Russian) -->
+  <path d="M690 310 Q730 290 750 330 T770 390 T730 410 T690 390 T690 310" 
+        fill="#0e6655" opacity="0.8"/>
+  <text x="700" y="350" font-family="Arial" font-size="10" fill="#fff">Ukrainian</text>
+  <text x="700" y="360" font-family="Arial" font-size="10" fill="#d5f5e3">українська</text>
+
   <!-- Eskimo-Aleut Languages (Purple) -->
   <path d="M60 40 Q100 20 120 40 T140 80 T100 100 T60 80 T60 40" 
         fill="#9b59b6" opacity="0.8"/>
@@ -129,6 +135,12 @@
   <text x="580" y="510" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Hungarian</text>
   <text x="580" y="522" font-family="Arial" font-size="9" text-anchor="middle" fill="#fdebd0">magyar</text>
 
+  <!-- Romanian - Romance, east of Hungarian / north of Bulgarian -->
+  <path d="M635 450 Q675 422 715 445 T745 490 T690 512 T640 492 T635 450" 
+        fill="#7d3c98" opacity="0.8"/>
+  <text x="655" y="472" font-family="Arial" font-size="10" fill="#fff">Romanian</text>
+  <text x="655" y="484" font-family="Arial" font-size="10" fill="#f5eef8">română</text>
+
   <!-- Portuguese - Romance, Iberian west of French -->
   <ellipse cx="145" cy="520" rx="42" ry="22" fill="#a569bd" opacity="0.8"/>
   <text x="145" y="515" font-family="Arial" font-size="10" text-anchor="middle">Portuguese</text>
@@ -168,6 +180,10 @@
     <path d="M455 500 L510 465" fill="none"/>
     <!-- Hungarian connecting to Slovak -->
     <path d="M580 515 L510 465" fill="none"/>
+    <!-- Romanian connecting to Hungarian -->
+    <path d="M680 475 L580 515" fill="none"/>
+    <!-- Romanian connecting toward Italian (Romance) -->
+    <path d="M680 475 L375 530" fill="none"/>
     <!-- Portuguese / Spanish connecting toward French -->
     <path d="M145 520 L200 560 L260 480" fill="none"/>
     <!-- Italian connecting toward French -->
@@ -176,5 +192,9 @@
     <path d="M670 540 L580 515" fill="none"/>
     <!-- Greek connecting to Bulgarian -->
     <path d="M640 575 L670 540" fill="none"/>
+    <!-- Ukrainian connecting to Russian -->
+    <path d="M720 350 L650 250" fill="none"/>
+    <!-- Ukrainian connecting toward Polish -->
+    <path d="M720 350 L490 420" fill="none"/>
   </g>
 </svg>
