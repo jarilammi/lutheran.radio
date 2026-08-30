@@ -722,8 +722,10 @@ extension SharedPlayerManager {
     /// clip / ``play()`` configure waits on ``DirectStreamingPlayer/audioSessionMutationTail``
     /// for that mutation. SessionCore deactivate of a never-configured session is skipped
     /// (``DirectStreamingPlayer/shouldSkipSessionCoreDeactivate``) so the next
-    /// `setCategory(.playback)` is not poisoned with OSStatus -50. Engine construction
-    /// does not activate the session.
+    /// `setCategory(.playback)` is not poisoned with OSStatus -50. First presentable
+    /// configure still settles SessionCore before that `setCategory`
+    /// (``DirectStreamingPlayer/shouldSettleSessionCoreBeforeFirstPlaybackCategory``).
+    /// Engine construction does not activate the session.
     ///
     /// - Precondition: Main-app target only. Call during cold-launch factory reset, privacy
     ///   clear, or process termination — **not** while intentionally backgrounding live playback.

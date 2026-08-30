@@ -357,7 +357,8 @@ class ViewController: UIViewController {
         // Construction does not activate; first clip / play / attach await
         // ``configureAudioSessionAsync()``, which waits for factory-reset Now Playing
         // phase 2 deactivate on ``audioSessionMutationTail``. SessionCore deactivate of
-        // a never-configured session is skipped.
+        // a never-configured session is skipped. First presentable configure settles
+        // SessionCore before `setCategory`.
         
         // Haptics owned by RadioPlayerCoordinator.wireAndInitialSetup() (single owner).
         // UIImpact only — do not add a CHHapticEngine (see HapticPlaybackPolicy).

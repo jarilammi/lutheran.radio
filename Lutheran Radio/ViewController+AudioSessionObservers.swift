@@ -165,7 +165,8 @@ extension ViewController {
     /// thin `setupAudioSession()` wrapper) directly. Engine construction does **not**
     /// activate — first clip / play / attach await configure, which waits for
     /// factory-reset Now Playing phase 2 deactivate on ``audioSessionMutationTail``.
-    /// SessionCore deactivate of a never-configured session is skipped.
+    /// SessionCore deactivate of a never-configured session is skipped. First
+    /// presentable configure settles SessionCore before `setCategory`.
     ///
     /// - SeeAlso: ``DirectStreamingPlayer/configureAudioSessionAsync()``,
     ///   ``DirectStreamingPlayer/deactivateAudioSessionAsync()``,

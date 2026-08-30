@@ -56,6 +56,7 @@ extension RadioPlayerCoordinator {
     /// ``startLocalClipPlayer`` waits for factory-reset Now Playing phase 2 deactivate on
     /// ``audioSessionMutationTail``. SessionCore deactivate of a never-configured session
     /// is skipped so the first presentable `setCategory` is not poisoned with OSStatus -50.
+    /// First presentable configure still settles SessionCore before that `setCategory`.
     ///
     /// - Parameter completion: Optional early-exit hook; successful start finishes via
     ///   `AVAudioPlayerDelegate` → ``TuningSoundCoordinator/notifyPlaybackFinished(source:)``.

@@ -1132,6 +1132,8 @@ actor SharedPlayerManager {
     /// within MediaRemoteUI’s launch time budget. First clip / ``play()`` configure waits
     /// on ``DirectStreamingPlayer/audioSessionMutationTail``. SessionCore deactivate of a
     /// never-configured session is skipped (``DirectStreamingPlayer/shouldSkipSessionCoreDeactivate``).
+    /// First presentable configure settles SessionCore before `setCategory`
+    /// (``DirectStreamingPlayer/shouldSettleSessionCoreBeforeFirstPlaybackCategory``).
     /// Engine construction does not activate the session.
     func resetToFactoryDefaultsOnLaunch() async {
         #if LUTHERAN_MAIN_APP

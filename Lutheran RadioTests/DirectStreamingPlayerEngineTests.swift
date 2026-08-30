@@ -8,7 +8,8 @@
 //  host: attach-generation discard, hard-teardown barriers, early-window recovery,
 //  UITestMode audio short-circuits (construction does not activate AVAudioSession;
 //  first clip / play / attach await configure, which waits for factory deactivate;
-//  SessionCore deactivate of a never-configured session is skipped),
+//  SessionCore deactivate of a never-configured session is skipped;
+//  first presentable setCategory settles SessionCore before the call),
 //  production type / DNSSEC factory surfaces, and pure
 //  ``shouldSkipForceWidgetSaveOnStableStatus`` /
 //  ``shouldSkipSessionCoreDeactivate`` policy.
@@ -16,6 +17,7 @@
 //  - SeeAlso: ``DirectStreamingPlayer``, ``SharedPlayerManager``,
 //    ``DirectStreamingPlayer/configureAudioSessionAsync()``,
 //    ``DirectStreamingPlayer/shouldSkipSessionCoreDeactivate(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``,
+//    ``DirectStreamingPlayer/shouldSettleSessionCoreBeforeFirstPlaybackCategory(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``,
 //    ``DirectStreamingPlayer/shouldSkipForceWidgetSaveOnStableStatus(isPlaying:reasonKey:visual:)``,
 //    docs/Live-Activity-Stacking-and-Media-Surfaces.md,
 //    docs/Widget-Presentation-Dataflow.md (user-initiated main open),
@@ -219,9 +221,11 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
     }
 
     /// SessionCore `setCategory` paramErr is OSStatus -50 (``AVAudioSession.ErrorCode.badParam``).
-    /// Configure retries that code once after a short settle; other errors must not retry.
+    /// Configure settles before first-process `setCategory` and retries that code once
+    /// if SessionCore still returns paramErr; other errors must not retry.
     ///
     /// - SeeAlso: ``DirectStreamingPlayer/isAudioSessionParamError(_:)``,
+    ///   ``DirectStreamingPlayer/shouldSettleSessionCoreBeforeFirstPlaybackCategory(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``,
     ///   ``DirectStreamingPlayer/shouldSkipSessionCoreDeactivate(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``.
     func testIsAudioSessionParamErrorMatchesBadParamOnly() {
         let paramErr = NSError(
@@ -232,10 +236,63 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
             DirectStreamingPlayer.isAudioSessionParamError(paramErr),
             "OSStatus -50 / badParam is the completed-deactivate setCategory hole"
         )
-        let other = NSError(domain: NSOSStatusErrorDomain, code: -666)
+        let other = NSError(
+            domain: NSOSStatusErrorDomain,
+            code: Int(AVAudioSession.ErrorCode.cannotStartPlaying.rawValue)
+        )
         XCTAssertFalse(
             DirectStreamingPlayer.isAudioSessionParamError(other),
             "non-paramErr session failures must not take the settle retry"
+        )
+    }
+
+    /// First presentable `setCategory(.playback)` after never-configured skip still
+    /// raced SessionCore (OSStatus -50) even though that deactivate never ran. Settle
+    /// before that first call when this process has not applied playback and category
+    /// is not `.playback`. Construction does not activate. Does not restore init-time
+    /// ``setupAudioSession()``.
+    ///
+    /// **Why this pattern is required:** UITestMode no-ops SessionCore, so this gate is
+    /// the pure settle policy. It does not claim the wait-order test or the skip test
+    /// covers the first-configure -50 leftover, and it does not activate `AVAudioSession`.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/shouldSettleSessionCoreBeforeFirstPlaybackCategory(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``,
+    ///   ``DirectStreamingPlayer/shouldSkipSessionCoreDeactivate(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``,
+    ///   `testShouldSkipSessionCoreDeactivateWhenNeverAppliedAndCategoryNotPlayback`,
+    ///   `testIsAudioSessionParamErrorMatchesBadParamOnly`,
+    ///   docs/Widget-Presentation-Dataflow.md (user-initiated main open).
+    func testShouldSettleSessionCoreBeforeFirstPlaybackCategoryWhenNeverAppliedAndCategoryNotPlayback() {
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldSettleSessionCoreBeforeFirstPlaybackCategory(
+                hasAppliedPlaybackSessionThisProcess: false,
+                categoryIsPlayback: false
+            ),
+            "first presentable setCategory must settle SessionCore after never-configured skip"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldSettleSessionCoreBeforeFirstPlaybackCategory(
+                hasAppliedPlaybackSessionThisProcess: true,
+                categoryIsPlayback: false
+            ),
+            "after this process applied playback, do not add first-configure settle on later setCategory"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldSettleSessionCoreBeforeFirstPlaybackCategory(
+                hasAppliedPlaybackSessionThisProcess: false,
+                categoryIsPlayback: true
+            ),
+            "already-.playback skips setCategory, so first-configure settle is not needed"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldSettleSessionCoreBeforeFirstPlaybackCategory(
+                hasAppliedPlaybackSessionThisProcess: true,
+                categoryIsPlayback: true
+            )
+        )
+        XCTAssertEqual(
+            DirectStreamingPlayer.sessionCorePlaybackCategorySettleDuration,
+            Duration.milliseconds(50),
+            "first-configure settle matches the paramErr retry that recovered on device"
         )
     }
 
