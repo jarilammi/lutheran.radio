@@ -2360,6 +2360,20 @@ class RadioLiveActivityManagerTests: XCTestCase {
             ),
             "Matched owned language must not defer under language quiet"
         )
+        // Freeze-held pause is language-only: owned visual already `.userPaused` so
+        // status-driven dest-language still defers. Explicit pause clears quiet first
+        // (``testExplicitPauseClearsLanguageEnsureQuietWhenDestinationLagsOwned``).
+        XCTAssertTrue(
+            manager._test_shouldDeferRedundantLanguagePushWhileQuiet(
+                candidateLanguage: "et",
+                ownedContentLanguage: "en",
+                ownedContentVisual: .userPaused,
+                candidateVisual: .userPaused,
+                quietPendingDestination: "et",
+                isRequestEligible: false
+            ),
+            "Freeze-held pause (owned visual already .userPaused) is language-only — status path still defers while quiet"
+        )
 
         // Clear quiet when owned / system language matches destination, or destination moves.
         XCTAssertTrue(
@@ -2412,6 +2426,110 @@ class RadioLiveActivityManagerTests: XCTestCase {
             ),
             "Destination change must clear prior quiet even without owned language"
         )
+    }
+
+    /// Explicit pause (Live Activity App Intent Darwin `.pause` and Now Playing `.stop`,
+    /// both ``SharedPlayerManager/stop()`` → ``recordOptimisticToggleContent(.userPaused)``)
+    /// clears language-ensure quiet when dest language still lags owned.
+    ///
+    /// Protects dest-language `Activity.update` after freeze: owned visual is already
+    /// `.userPaused`, so ``shouldDeferRedundantLanguagePushWhileQuiet`` would treat
+    /// dest-language as a redundant stall and lastPushed alignment would land without IPC.
+    /// Status-driven freeze-held pause still defers (quiet stays until this mutation).
+    /// Playing toggle does **not** clear language quiet (freeze playing-visual skip stays).
+    /// Dest already matching owned is visual-only pause — quiet stays. Does **not** invent
+    /// `.playing`. Does **not** raise max attempts. Does **not** `Activity.request` / end
+    /// while ineligible.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/shouldClearLanguageEnsureQuietPendingOnExplicitPause(visualState:quietPendingDestination:destinationLanguage:ownedContentLanguage:)``,
+    ///   ``RadioLiveActivityManager/shouldDeferRedundantLanguagePushWhileQuiet(candidateLanguage:ownedContentLanguage:ownedContentVisual:candidateVisual:quietPendingDestination:isRequestEligible:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testExplicitPauseClearsLanguageEnsureQuietWhenDestinationLagsOwned() {
+        XCTAssertTrue(
+            manager._test_shouldClearLanguageEnsureQuietPendingOnExplicitPause(
+                visualState: .userPaused,
+                quietPendingDestination: "et",
+                destinationLanguage: "et",
+                ownedContentLanguage: "en"
+            ),
+            "Explicit pause while dest lags owned must clear language quiet so dest-language IPC can proceed"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearLanguageEnsureQuietPendingOnExplicitPause(
+                visualState: .playing,
+                quietPendingDestination: "et",
+                destinationLanguage: "et",
+                ownedContentLanguage: "en"
+            ),
+            "Playing toggle must not clear language quiet (freeze playing-visual skip stays)"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearLanguageEnsureQuietPendingOnExplicitPause(
+                visualState: .userPaused,
+                quietPendingDestination: "et",
+                destinationLanguage: "et",
+                ownedContentLanguage: "et"
+            ),
+            "Dest already on owned is visual-only pause — language quiet stays"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearLanguageEnsureQuietPendingOnExplicitPause(
+                visualState: .userPaused,
+                quietPendingDestination: nil,
+                destinationLanguage: "et",
+                ownedContentLanguage: "en"
+            ),
+            "No quiet pending is a no-op clear"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearLanguageEnsureQuietPendingOnExplicitPause(
+                visualState: .userPaused,
+                quietPendingDestination: "et",
+                destinationLanguage: "",
+                ownedContentLanguage: "en"
+            ),
+            "Empty destination must not clear language quiet"
+        )
+        XCTAssertTrue(
+            manager._test_shouldClearLanguageEnsureQuietPendingOnExplicitPause(
+                visualState: .userPaused,
+                quietPendingDestination: "et",
+                destinationLanguage: "et",
+                ownedContentLanguage: nil
+            ),
+            "Missing owned language while dest is known still needs dest-language IPC on pause"
+        )
+
+        // After explicit pause clears quiet, freeze-held dest-language is no longer deferred.
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantLanguagePushWhileQuiet(
+                candidateLanguage: "et",
+                ownedContentLanguage: "en",
+                ownedContentVisual: .userPaused,
+                candidateVisual: .userPaused,
+                quietPendingDestination: nil,
+                isRequestEligible: false
+            ),
+            "Quiet cleared by explicit pause must not defer dest-language over freeze-held .userPaused"
+        )
+
+        // Instance seam: optimistic pause (widget Darwin / Now Playing stop) clears quiet
+        // when dest lags; optimistic play does not.
+        manager._test_setLanguageEnsureQuietPendingDestination("et")
+        XCTAssertEqual(manager._test_languageEnsureQuietPendingDestinationValue(), "et")
+        manager.recordOptimisticToggleContent(visualState: .playing)
+        XCTAssertEqual(
+            manager._test_languageEnsureQuietPendingDestinationValue(),
+            "et",
+            "Optimistic play must not clear language quiet (freeze playing-visual skip stays)"
+        )
+        manager.recordOptimisticToggleContent(visualState: .userPaused)
+        XCTAssertNil(
+            manager._test_languageEnsureQuietPendingDestinationValue(),
+            "Optimistic pause (Darwin .pause and Now Playing .stop) must clear language quiet when dest lags owned"
+        )
+        manager._test_setLanguageEnsureQuietPendingDestination(nil)
+        manager._test_clearLastPushedContent()
     }
 
     /// Soft-ensure thrash protection: concurrent re-entry, deferred recreation announce-once,
