@@ -195,6 +195,12 @@
             "state" : "translated",
             "value" : "Lutheran Radio"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
         }
       },
       "extractionState" : "manual"

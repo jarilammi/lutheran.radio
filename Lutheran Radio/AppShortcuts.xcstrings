@@ -195,6 +195,12 @@
             "state" : "translated",
             "value" : "Pausa ${applicationName}"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Призупини ${applicationName}"
+          }
         }
       }
     },
@@ -391,6 +397,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela ${applicationName}"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Увімкни ${applicationName}"
           }
         }
       }
@@ -589,6 +601,12 @@
             "state" : "translated",
             "value" : "Spela ${applicationName} på ${language}"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Увімкни ${applicationName} мовою ${language}"
+          }
         }
       }
     },
@@ -785,6 +803,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Starta ${applicationName}"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запусти ${applicationName}"
           }
         }
       }
@@ -983,6 +1007,12 @@
             "state" : "translated",
             "value" : "Stoppa ${applicationName}"
           }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зупини ${applicationName}"
+          }
         }
       }
     },
@@ -1179,6 +1209,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla ${applicationName} till ${language}"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкни ${applicationName} на ${language}"
           }
         }
       }

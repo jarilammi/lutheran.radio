@@ -9,10 +9,10 @@
 //  interpolation so Foundation can select the CLDR category.
 //
 //  Coverage is both catalog structure and compiled runtime for every README
-//  Localizations language (32 codes), not a 10-locale subset. A missing or
+//  Localizations language (33 codes), not a 10-locale subset. A missing or
 //  wrong Slovak `few` string, a dropped Northern Sami `two`, or a missing
 //  Latvian `zero` must fail CI. Integer-unreachable `many` (cs, sk, lt) and
-//  decimal-only `other` (pl, ru) are catalog-gated; integer probes skip them.
+//  decimal-only `other` (pl, ru, uk) are catalog-gated; integer probes skip them.
 //
 //  - SeeAlso: `Localizable.xcstrings` (`%lld languages`,
 //    `sleep_timer_accessibility_remaining`, `accessibility_value_volume`,
@@ -36,12 +36,12 @@ final class CatalogPluralizationTests: XCTestCase {
     /// a Polish `.lproj` without `locale: "pl"` still applies Finnish one/other rules.
     private let appBundle = Bundle(for: PlayerViewModel.self)
 
-    /// UI catalog languages: README Localizations / Localizable coverage (the 32
+    /// UI catalog languages: README Localizations / Localizable coverage (the 33
     /// language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "hr", "hu", "is", "it", "kl", "lt", "lv", "nb", "nl",
-        "nn", "pl", "pt", "ro", "ru", "se", "sk", "sl", "sq", "sv",
+        "nn", "pl", "pt", "ro", "ru", "se", "sk", "sl", "sq", "sv", "uk",
     ]
 
     private let pluralKeys: [String] = [
@@ -56,7 +56,7 @@ final class CatalogPluralizationTests: XCTestCase {
     /// AGENT NOTE: Single source of truth for which slots CI requires — do not
     /// derive this from the current catalog, or a deleted Slovak `few` would
     /// still pass. Integer-unreachable `many` (cs, sk, lt) and decimal-only
-    /// `other` (pl, ru) stay in this map because Xcode still compiles them.
+    /// `other` (pl, ru, uk) stay in this map because Xcode still compiles them.
     /// - SeeAlso: README.md Localizations, `Localizable.xcstrings` variations.plural.
     private let requiredCatalogCategories: [String: Set<String>] = [
         "bg": ["one", "other"],
@@ -91,13 +91,14 @@ final class CatalogPluralizationTests: XCTestCase {
         "sl": ["one", "two", "few", "other"],
         "sq": ["one", "other"],
         "sv": ["one", "other"],
+        "uk": ["one", "few", "many", "other"],
     ]
 
     /// Locales whose CLDR `many` is decimals only — runtime `%lld` probes cannot hit it.
     private let decimalOnlyManyLocales: Set<String> = ["cs", "lt", "sk"]
 
     /// Locales whose CLDR `other` is decimals only — integer `5` is `many`.
-    private let decimalOnlyOtherLocales: Set<String> = ["pl", "ru"]
+    private let decimalOnlyOtherLocales: Set<String> = ["pl", "ru", "uk"]
 
     // MARK: - Source catalog (authoritative for translator completeness)
 
@@ -110,7 +111,7 @@ final class CatalogPluralizationTests: XCTestCase {
         XCTAssertEqual(
             Set(requiredCatalogCategories.keys),
             Set(supportedLanguages),
-            "requiredCatalogCategories must list exactly the 32 UI catalog languages"
+            "requiredCatalogCategories must list exactly the 33 UI catalog languages"
         )
 
         let catalog = try loadLocalizableCatalog()
@@ -456,6 +457,10 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("sq", 2, "other", "2 minuta të mbetura"),
         .init("sv", 1, "one", "1 minut kvar"),
         .init("sv", 2, "other", "2 minuter kvar"),
+        .init("uk", 1, "one", "Залишилася 1 хвилина"),
+        .init("uk", 2, "few", "Залишилося 2 хвилини"),
+        .init("uk", 5, "many", "Залишилося 5 хвилин"),
+        .init("uk", 21, "one", "Залишилася 21 хвилина"),
     ]
 
     private let languageCountCases: [PluralCase] = [
@@ -543,6 +548,10 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("sq", 2, "other", "2 gjuhë"),
         .init("sv", 1, "one", "1 språk"),
         .init("sv", 2, "other", "2 språk"),
+        .init("uk", 1, "one", "1 мова"),
+        .init("uk", 2, "few", "2 мови"),
+        .init("uk", 5, "many", "5 мов"),
+        .init("uk", 21, "one", "21 мова"),
     ]
 
     private let volumePercentCases: [PluralCase] = [
@@ -630,6 +639,10 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("sq", 2, "other", "2 për qind"),
         .init("sv", 1, "one", "1 procent"),
         .init("sv", 2, "other", "2 procent"),
+        .init("uk", 1, "one", "1 відсоток"),
+        .init("uk", 2, "few", "2 відсотки"),
+        .init("uk", 5, "many", "5 відсотків"),
+        .init("uk", 21, "one", "21 відсоток"),
     ]
 
     private let volumeSetToCases: [PluralCase] = [
@@ -717,5 +730,9 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("sq", 2, "other", "Volumi u vendos në 2 për qind"),
         .init("sv", 1, "one", "Volym inställd på 1 procent"),
         .init("sv", 2, "other", "Volym inställd på 2 procent"),
+        .init("uk", 1, "one", "Гучність встановлено на 1 відсоток"),
+        .init("uk", 2, "few", "Гучність встановлено на 2 відсотки"),
+        .init("uk", 5, "many", "Гучність встановлено на 5 відсотків"),
+        .init("uk", 21, "one", "Гучність встановлено на 21 відсоток"),
     ]
 }
