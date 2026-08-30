@@ -154,6 +154,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",

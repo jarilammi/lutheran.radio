@@ -9,7 +9,7 @@
 //  interpolation so Foundation can select the CLDR category.
 //
 //  Coverage is both catalog structure and compiled runtime for every README
-//  Localizations language (33 codes), not a 10-locale subset. A missing or
+//  Localizations language (34 codes), not a 10-locale subset. A missing or
 //  wrong Slovak `few` string, a dropped Northern Sami `two`, or a missing
 //  Latvian `zero` must fail CI. Integer-unreachable `many` (cs, sk, lt) and
 //  decimal-only `other` (pl, ru, uk) are catalog-gated; integer probes skip them.
@@ -36,12 +36,12 @@ final class CatalogPluralizationTests: XCTestCase {
     /// a Polish `.lproj` without `locale: "pl"` still applies Finnish one/other rules.
     private let appBundle = Bundle(for: PlayerViewModel.self)
 
-    /// UI catalog languages: README Localizations / Localizable coverage (the 33
+    /// UI catalog languages: README Localizations / Localizable coverage (the 34
     /// language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "hr", "hu", "is", "it", "kl", "lt", "lv", "nb", "nl",
-        "nn", "pl", "pt", "ro", "ru", "se", "sk", "sl", "sq", "sv", "uk",
+        "nn", "pl", "pt", "pt-BR", "ro", "ru", "se", "sk", "sl", "sq", "sv", "uk",
     ]
 
     private let pluralKeys: [String] = [
@@ -84,6 +84,7 @@ final class CatalogPluralizationTests: XCTestCase {
         "nn": ["one", "other"],
         "pl": ["one", "few", "many", "other"],
         "pt": ["one", "other"],
+        "pt-BR": ["one", "other"],
         "ro": ["one", "few", "other"],
         "ru": ["one", "few", "many", "other"],
         "se": ["one", "two", "other"],
@@ -111,7 +112,7 @@ final class CatalogPluralizationTests: XCTestCase {
         XCTAssertEqual(
             Set(requiredCatalogCategories.keys),
             Set(supportedLanguages),
-            "requiredCatalogCategories must list exactly the 33 UI catalog languages"
+            "requiredCatalogCategories must list exactly the 34 UI catalog languages"
         )
 
         let catalog = try loadLocalizableCatalog()
@@ -436,6 +437,9 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("pt", 1, "one", "1 minuto restante"),
         .init("pt", 2, "other", "2 minutos restantes"),
         .init("pt", 12, "other", "12 minutos restantes"),
+        .init("pt-BR", 1, "one", "Falta 1 minuto"),
+        .init("pt-BR", 2, "other", "Faltam 2 minutos"),
+        .init("pt-BR", 12, "other", "Faltam 12 minutos"),
         .init("ro", 1, "one", "1 minut rămas"),
         .init("ro", 2, "few", "2 minute rămase"),
         .init("ro", 20, "other", "20 de minute rămase"),
@@ -527,6 +531,9 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("pt", 1, "one", "1 língua"),
         .init("pt", 2, "other", "2 línguas"),
         .init("pt", 12, "other", "12 línguas"),
+        .init("pt-BR", 1, "one", "1 idioma"),
+        .init("pt-BR", 2, "other", "2 idiomas"),
+        .init("pt-BR", 12, "other", "12 idiomas"),
         .init("ro", 1, "one", "1 limbă"),
         .init("ro", 2, "few", "2 limbi"),
         .init("ro", 20, "other", "20 de limbi"),
@@ -618,6 +625,9 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("pt", 1, "one", "1 por cento"),
         .init("pt", 2, "other", "2 por cento"),
         .init("pt", 12, "other", "12 por cento"),
+        .init("pt-BR", 1, "one", "1 por cento"),
+        .init("pt-BR", 2, "other", "2 por cento"),
+        .init("pt-BR", 12, "other", "12 por cento"),
         .init("ro", 1, "one", "1 la sută"),
         .init("ro", 2, "few", "2 la sută"),
         .init("ro", 20, "other", "20 la sută"),
@@ -709,6 +719,9 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("pt", 1, "one", "Volume definido para 1 por cento"),
         .init("pt", 2, "other", "Volume definido para 2 por cento"),
         .init("pt", 12, "other", "Volume definido para 12 por cento"),
+        .init("pt-BR", 1, "one", "Volume ajustado para 1 por cento"),
+        .init("pt-BR", 2, "other", "Volume ajustado para 2 por cento"),
+        .init("pt-BR", 12, "other", "Volume ajustado para 12 por cento"),
         .init("ro", 1, "one", "Volum setat la 1 la sută"),
         .init("ro", 2, "few", "Volum setat la 2 la sută"),
         .init("ro", 20, "other", "Volum setat la 20 la sută"),

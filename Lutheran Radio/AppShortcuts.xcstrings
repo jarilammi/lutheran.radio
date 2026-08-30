@@ -154,6 +154,12 @@
             "value" : "Pausar ${applicationName}"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausar ${applicationName}"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -355,6 +361,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reproduzir ${applicationName}"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tocar ${applicationName}"
           }
         },
         "ro" : {
@@ -560,6 +572,12 @@
             "value" : "Reproduzir ${applicationName} em ${language}"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tocar ${applicationName} em ${language}"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -763,6 +781,12 @@
             "value" : "Iniciar ${applicationName}"
           }
         },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Começar ${applicationName}"
+          }
+        },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
@@ -961,6 +985,12 @@
           }
         },
         "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parar ${applicationName}"
+          }
+        },
+        "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Parar ${applicationName}"
@@ -1167,6 +1197,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mudar ${applicationName} para ${language}"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trocar ${applicationName} para ${language}"
           }
         },
         "ro" : {

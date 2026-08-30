@@ -24,7 +24,7 @@ import SwiftUI
 ///
 /// Renders the available streams as emoji flags using `DirectStreamingPlayer.availableStreams`
 /// (the single source of truth for the five playable streams — en, de, fi, sv, et — and
-/// their visual order). UI localization is the 32-language README Localizations table
+/// their visual order). UI localization is the 34-language README Localizations table
 /// and is not this row.
 ///
 /// Receives only the current selected index (as a plain `let`) and a selection closure.

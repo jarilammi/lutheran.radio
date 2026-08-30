@@ -504,7 +504,7 @@ extension PlayerViewModel {
     ///
     /// - No actor access or side effects occur.
     /// - Action closures are wired to simple prints so you can exercise buttons in the canvas.
-    /// - All 32 languages and all visual states are valid; the mock does not enforce stream count.
+    /// - All 34 languages and all visual states are valid; the mock does not enforce stream count.
     ///
     /// - Parameters:
     ///   - visualState: Initial `PlayerVisualState` for the mock.
