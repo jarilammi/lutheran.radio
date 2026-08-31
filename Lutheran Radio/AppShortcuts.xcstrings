@@ -136,6 +136,12 @@
             "value" : "Pauzēt ${applicationName}"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajanony ${applicationName}"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -367,6 +373,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņot ${applicationName}"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso ${applicationName}"
           }
         },
         "nb" : {
@@ -602,6 +614,12 @@
             "value" : "Atskaņot ${applicationName} valodā ${language}"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso ${applicationName} amin'ny ${language}"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -833,6 +851,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sākt ${applicationName}"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atombohy ${applicationName}"
           }
         },
         "nb" : {
@@ -1068,6 +1092,12 @@
             "value" : "Apturēt ${applicationName}"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atsaharo ${applicationName}"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1299,6 +1329,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgt ${applicationName} uz ${language}"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovay ${applicationName} ho ${language}"
           }
         },
         "nb" : {

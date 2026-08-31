@@ -135,6 +135,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -662,6 +668,24 @@
             }
           }
         },
+        "mg" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld fiteny"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld fiteny"
+                }
+              }
+            }
+          }
+        },
         "nb" : {
           "variations" : {
             "plural" : {
@@ -1158,6 +1182,12 @@
             "value" : "Dubultpieskāriens, lai izvēlētos audio izvades ierīci"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsindrio indroa hisafidy fitaovana fivoahan'ny feo"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1388,6 +1418,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Parāda informāciju par pašreizējo radio programmu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mampiseho fampahalalana momba ny fandaharana radio ankehitriny"
           }
         },
         "nb" : {
@@ -1622,6 +1658,12 @@
             "value" : "Pārslēdz radio straumes atskaņošanu"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mamadika ny fampandehan'ny siaram-peo radio"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1852,6 +1894,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Izvēlieties, cik ilgi līdz atskaņošanas apturēšanai"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safidio hoe hatramin'oviana no hajanona ny fampandehana"
           }
         },
         "nb" : {
@@ -2086,6 +2134,12 @@
             "value" : "Regulē atskaņošanas skaļumu"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manova ny volume-n'ny fampandehana"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2313,6 +2367,12 @@
           }
         },
         "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "mg" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -2551,6 +2611,12 @@
             "value" : "Lutheran Radio logo"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logo Lutheran Radio"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2781,6 +2847,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauze"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajanony"
           }
         },
         "nb" : {
@@ -3016,6 +3088,12 @@
             "value" : "Foto no %@"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sarin'i %@"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3246,6 +3324,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņot"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso"
           }
         },
         "nb" : {
@@ -3480,6 +3564,12 @@
             "value" : "Miega taimeris"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fanisam-potoana torimaso"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3710,6 +3800,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skaļums"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume"
           }
         },
         "nb" : {
@@ -4239,6 +4335,24 @@
             }
           }
         },
+        "mg" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld isan-jato"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld isan-jato"
+                }
+              }
+            }
+          }
+        },
         "nb" : {
           "variations" : {
             "plural" : {
@@ -4735,6 +4849,12 @@
             "value" : "Turpināt"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tohizo"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4965,6 +5085,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vēlreiz"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Andramo indray"
           }
         },
         "nb" : {
@@ -5199,6 +5325,12 @@
             "value" : "Ļaut šai sesijai"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avelao amin'ity fotoana ity"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5429,6 +5561,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ļaut vienmēr"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avelao foana"
           }
         },
         "nb" : {
@@ -5663,6 +5801,12 @@
             "value" : "Ne tagad"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy izao"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5893,6 +6037,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notīrīt"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fafao"
           }
         },
         "nb" : {
@@ -6127,6 +6277,12 @@
             "value" : "Notīrīts"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voafafa"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6357,6 +6513,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tas apturēs atskaņošanu, noņems logrīka un Live Activity datus un notīrīs neseno klausīšanās stāvokli no šīs ierīces. Darbību nevar atsaukt."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hajanona ny fampandehana, hofafana ny angon'ny widget sy ny Live Activity, ary hofafana ny toetry ny fandrenesana vao haingana amin'ity fitaovana ity. Tsy azo averina io asa io."
           }
         },
         "nb" : {
@@ -6591,6 +6753,12 @@
             "value" : "Notīrīt lokālo atskaņošanas stāvokli"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fafao ny toetry ny fampandehana an-toerana"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6821,6 +6989,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio logrīka konfigurācija."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fanamboarana ny widget Lutheran Radio."
           }
         },
         "nb" : {
@@ -7056,6 +7230,12 @@
             "value" : "Savienojuma kļūda"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hadisoan'ny fifandraisana"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7289,6 +7469,12 @@
             "value" : "Pārvaldiet Lutheran Radio atskaņošanu un skatiet pašreizējo staciju."
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fehezo ny fampandehan'ny Lutheran Radio ary jereo ny toby ankehitriny."
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7519,6 +7705,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārvaldiet atskaņošanu un pārslēdzieties starp valodu straumēm."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fehezo ny fampandehana ary ovay ny siaram-peon'ny fiteny."
           }
         },
         "nb" : {
@@ -7754,6 +7946,12 @@
             "value" : "Samazināt skaļumu"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ahenao ny volume"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7987,6 +8185,12 @@
             "value" : "Palielināt skaļumu"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akaro ny volume"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8217,6 +8421,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņo"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mandeha"
           }
         },
         "nb" : {
@@ -8452,6 +8662,12 @@
             "value" : "Valoda"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fiteny"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8682,6 +8898,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Valodas kods"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kaody fiteny"
           }
         },
         "nb" : {
@@ -8917,6 +9139,12 @@
             "value" : "Angļu"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anglisy"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9148,6 +9376,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Igauņu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estonianina"
           }
         },
         "nb" : {
@@ -9383,6 +9617,12 @@
             "value" : "Somu"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finlandey"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9614,6 +9854,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vācu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alemanina"
           }
         },
         "nb" : {
@@ -9849,6 +10095,12 @@
             "value" : "Zviedru"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soedoà"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10080,6 +10332,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Tiešraide"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Siaram-peo mivantana"
           }
         },
         "nb" : {
@@ -10315,6 +10573,12 @@
             "value" : "Tikai lokāli"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An-toerana ihany"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10543,6 +10807,12 @@
           }
         },
         "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "mg" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -10781,6 +11051,12 @@
             "value" : "Nākamā valoda"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fiteny manaraka"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11012,6 +11288,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņot/Pauze"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso/Ajanony"
           }
         },
         "nb" : {
@@ -11247,6 +11529,12 @@
             "value" : "Atskaņošana"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fampandehana"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11478,6 +11766,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Iepriekšējā valoda"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fiteny teo aloha"
           }
         },
         "nb" : {
@@ -11712,6 +12006,12 @@
             "value" : "Lietotne izmanto mobilos datus, kas var radīt izmaksas atkarībā no jūsu datu plāna."
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mampiasa data finday ny app, izay mety hiteraka vidiny araka ny drafitrao data."
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11942,6 +12242,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobilā datu lietošana"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fampiasana data finday"
           }
         },
         "nb" : {
@@ -12176,6 +12482,12 @@
             "value" : "Nav informācijas par dziesmu"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy misy fampahalalana momba ny hira"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12406,6 +12718,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tagad atskaņo"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mandeha izao"
           }
         },
         "nb" : {
@@ -12640,6 +12958,12 @@
             "value" : "Labi"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12871,6 +13195,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vispirms atveriet lietotni"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sokafy aloha ny app"
           }
         },
         "nb" : {
@@ -13107,6 +13437,12 @@
             "value" : "Pauzēt Lutheran Radio"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajanony Lutheran Radio"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13340,6 +13676,12 @@
             "value" : "Pauzēt Lutheran Radio atskaņošanu."
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajanony ny fampandehan'ny Lutheran Radio."
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13570,6 +13912,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņot"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso"
           }
         },
         "nb" : {
@@ -13805,6 +14153,12 @@
             "value" : "Atskaņot Lutheran Radio"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso Lutheran Radio"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14035,6 +14389,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņojiet vai apturiet Lutheran Radio."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso na ajanony ny Lutheran Radio."
           }
         },
         "nb" : {
@@ -14270,6 +14630,12 @@
             "value" : "Atskaņot vai turpināt Lutheran Radio."
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso na tohizo ny Lutheran Radio."
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14500,6 +14866,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nevar sākt atskaņošanu drošības validācijas kļūmes dēļ. Lūdzu, pārbaudiet interneta savienojumu un pārliecinieties, ka lietotne ir atjaunināta. Ja problēma turpinās, restartējiet lietotni un mēģiniet vēlreiz."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy afaka manomboka ny fampandehana noho ny tsy fahombiazan'ny fanamarinana fiarovana. Jereo ny fifandraisanao Internet ary azo antoka fa vaovao ny app. Raha mbola mitohy ny olana, avereno alefa ny app ary andramo indray."
           }
         },
         "nb" : {
@@ -14734,6 +15106,12 @@
             "value" : "Drošības validācija neizdevās"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy nahomby ny fanamarinana fiarovana"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14965,6 +15343,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Izvēlēties %@"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safidio ny %@"
           }
         },
         "nb" : {
@@ -15494,6 +15878,24 @@
             }
           }
         },
+        "mg" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minitra sisa"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minitra sisa"
+                }
+              }
+            }
+          }
+        },
         "nb" : {
           "variations" : {
             "plural" : {
@@ -15990,6 +16392,12 @@
             "value" : "Atcelt taimeri"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foano ny fanisam-potoana"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16220,6 +16628,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minūtes"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minitra"
           }
         },
         "nb" : {
@@ -16454,6 +16868,12 @@
             "value" : "30 minūtes"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 minitra"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16684,6 +17104,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 minūtes"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 minitra"
           }
         },
         "nb" : {
@@ -16918,6 +17344,12 @@
             "value" : "60 minūtes"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 minitra"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17148,6 +17580,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Miega taimeris"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fanisam-potoana torimaso"
           }
         },
         "nb" : {
@@ -17382,6 +17820,12 @@
             "value" : "Straumēšanas serveri ir atjaunojuši savus SSL sertifikātus. Lietotne darbojas saderības režīmā. Lūdzu, atjauniniet uz jaunāko versiju, kad tā būs pieejama, lai nodrošinātu optimālu drošību."
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nanavao ny taratasy fanamarinana SSL ny mpizara siaram-peo. Mandeha amin'ny fomba fampifanarahana ny app. Havaozy amin'ny kinova farany rehefa misy izy io mba hahazoana fiarovana tsara indrindra."
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17612,6 +18056,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sertifikāts atjaunots"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nohavaozina ny taratasy fanamarinana"
           }
         },
         "nb" : {
@@ -17847,6 +18297,12 @@
             "value" : "Sāciet vai atsāciet Lutheran Radio atskaņošanu."
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atombohy na tohizo ny fampandehan'ny Lutheran Radio."
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18077,6 +18533,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sāciet vai apturiet Lutheran Radio atskaņošanu."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atombohy na atsaharo ny fampandehan'ny Lutheran Radio."
           }
         },
         "nb" : {
@@ -18311,6 +18773,12 @@
             "value" : "Buferis"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Famenoana"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18541,6 +19009,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Savienojas"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mifandray"
           }
         },
         "nb" : {
@@ -18775,6 +19249,12 @@
             "value" : "Neizdevās"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy nahomby"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19007,6 +19487,12 @@
             "value" : "Bez tīkla"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy an-tserasera"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19237,6 +19723,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauze"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajanony"
           }
         },
         "nb" : {
@@ -19472,6 +19964,12 @@
             "value" : "Pauzēts – Zvans aktīvs"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Najanona – misy antso"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19703,6 +20201,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atkūrimas nepavyko: %@"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy nahomby ny fampandehana: %@"
           }
         },
         "nb" : {
@@ -19938,6 +20442,12 @@
             "value" : "Atskaņo"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20168,6 +20678,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Drošība"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fiarovana"
           }
         },
         "nb" : {
@@ -20402,6 +20918,12 @@
             "value" : "SSL sertifikāts atjaunots - drīz atjauniniet lietotni"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nohavaozina ny taratasy fanamarinana SSL - havaozy tsy ho ela ny app"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20632,6 +21154,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apturēts"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Najanona"
           }
         },
         "nb" : {
@@ -20866,6 +21394,12 @@
             "value" : "Izslēgts"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maty"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21096,6 +21630,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Karsts"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fitaovana mafana"
           }
         },
         "nb" : {
@@ -21330,6 +21870,12 @@
             "value" : "Raidījums uz laiku nav pieejams. Mēģiniet vēlreiz vēlāk."
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy azo aloha ny fampielezam-peo. Andramo indray any aoriana."
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21560,6 +22106,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Raidījums nav pieejams"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy azo ny fampielezam-peo"
           }
         },
         "nb" : {
@@ -21795,6 +22347,12 @@
             "value" : "Pārslēgt Lutheran Radio valodas straumi."
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovay ny siaram-peon'ny fiteny Lutheran Radio."
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22025,6 +22583,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgt straumi"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovay ny siaram-peo"
           }
         },
         "nb" : {
@@ -22260,6 +22824,12 @@
             "value" : "Pārslēgties uz %@"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovay ho %@"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22490,6 +23060,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgties uz citu valodas straumi no Live aktivitātes."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovay ho siaram-peon'ny fiteny hafa avy amin'ny Live Activity."
           }
         },
         "nb" : {
@@ -22724,6 +23300,12 @@
             "value" : "Pārslēgties uz citu valodas straumi."
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovay ho siaram-peon'ny fiteny hafa."
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22955,6 +23537,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgts uz %@"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Novaina ho %@"
           }
         },
         "nb" : {
@@ -23191,6 +23779,12 @@
             "value" : "Pieskarieties, lai atvērtu"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsindrio hisokatra"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23422,6 +24016,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgt Lutheran Radio"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mamadika ny Lutheran Radio"
           }
         },
         "nb" : {
@@ -23656,6 +24256,12 @@
             "value" : "Pārslēgt Lutheran Radio atskaņošanu"
           }
         },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mamadika ny fampandehan'ny Lutheran Radio"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23886,6 +24492,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgt atskaņošanu/pauzi no Live aktivitātes."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mamadika alefaso/ajanony avy amin'ny Live Activity."
           }
         },
         "nb" : {
@@ -24119,6 +24731,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgt atskaņošanu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mamadika ny fampandehana"
           }
         },
         "nb" : {
@@ -24648,6 +25266,24 @@
             }
           }
         },
+        "mg" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Napetraka amin'ny %lld isan-jato ny volume"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Napetraka amin'ny %lld isan-jato ny volume"
+                }
+              }
+            }
+          }
+        },
         "nb" : {
           "variations" : {
             "plural" : {
@@ -25142,6 +25778,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Logrīka konfigurācija"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fanamboarana widget"
           }
         },
         "nb" : {
