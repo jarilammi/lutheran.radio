@@ -3,6 +3,12 @@
   "strings" : {
     "%@ %@" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -218,6 +224,24 @@
     "%lld languages" : {
       "comment" : "Numeric format for the count of language choices in Siri / Shortcuts pickers (RadioLanguageEntity TypeDisplayRepresentation). String Catalog variations.plural — one/few/many/two/zero as required by each locale. Call site is LocalizedStringResource interpolation; do not flatten back to a single stringUnit.",
       "localizations" : {
+        "am" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ቋንቋ"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ቋንቋዎች"
+                }
+              }
+            }
+          }
+        },
         "bg" : {
           "variations" : {
             "plural" : {
@@ -960,6 +984,12 @@
     },
     "accessibility_hint_airplay" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የድምጽ መውጫ መሣሪያ ለመምረጥ ሁለት ጊዜ መታ ያድርጉ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1174,6 +1204,12 @@
     },
     "accessibility_hint_metadata" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ስለ አሁኑ የሬዲዮ ፕሮግራም መረጃ ያሳያል"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1388,6 +1424,12 @@
     },
     "accessibility_hint_play_pause" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የሬዲዮ ስርጭት መጫወትን ይቀያይራል"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1602,6 +1644,12 @@
     },
     "accessibility_hint_sleep_timer" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "መጫወት እስከሚቆም ድረስ ምን ያህል ጊዜ እንደሚቆይ ይምረጡ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1816,6 +1864,12 @@
     },
     "accessibility_hint_volume" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የመጫወት ድምጽን ያስተካክላል"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2030,6 +2084,12 @@
     },
     "accessibility_label_airplay" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2245,6 +2305,12 @@
     "accessibility_label_lutheran_radio_logo" : {
       "comment" : "Accessibility label for the placeholder logo image. Keep the brand name Lutheran Radio; localize the word for logo.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio አርማ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2459,6 +2525,12 @@
     },
     "accessibility_label_pause" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ለአፍታ አቁም"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2674,6 +2746,12 @@
     "accessibility_label_photo_of_format" : {
       "comment" : "Accessibility label for speaker photo. %@ is the speaker or program name.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የ%@ ፎቶ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2888,6 +2966,12 @@
     },
     "accessibility_label_play" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "አጫውት"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3102,6 +3186,12 @@
     },
     "accessibility_label_sleep_timer" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የእንቅልፍ ሰዓት ቆጣሪ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3316,6 +3406,12 @@
     },
     "accessibility_label_volume" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ድምጽ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3531,6 +3627,24 @@
     "accessibility_value_volume" : {
       "comment" : "VoiceOver value for the system volume control (0–100). String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the percent via String(localized:defaultValue:).",
       "localizations" : {
+        "am" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld በመቶ"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld በመቶ"
+                }
+              }
+            }
+          }
+        },
         "bg" : {
           "variations" : {
             "plural" : {
@@ -4273,6 +4387,12 @@
     },
     "alert_continue" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ቀጥል"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4487,6 +4607,12 @@
     },
     "alert_retry" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "እንደገና ሞክር"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4701,6 +4827,12 @@
     },
     "cellular_allow_this_session" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ለዚህ ክፍለ ጊዜ ፍቀድ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4915,6 +5047,12 @@
     },
     "cellular_always_allow" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ሁልጊዜ ፍቀድ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5129,6 +5267,12 @@
     },
     "cellular_not_now" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "አሁን አይደለም"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5343,6 +5487,12 @@
     },
     "clear_local_state_confirm" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "አጽዳ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5557,6 +5707,12 @@
     },
     "clear_local_state_done" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ጸድቷል"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5771,6 +5927,12 @@
     },
     "clear_local_state_message" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ይህ መጫወትን ያቆማል፣ የዊጄት እና የ Live Activity ውሂብን ያስወግዳል፣ እንዲሁም ከዚህ መሣሪያ የቅርብ ጊዜ ማዳመጥ ሁኔታን ያጸዳል። ይህን እርምጃ መቀልበስ አይቻልም።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5985,6 +6147,12 @@
     },
     "clear_local_state_title" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የአካባቢ መጫወት ሁኔታን አጽዳ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6199,6 +6367,12 @@
     },
     "Configuration for Lutheran Radio widget." : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የ Lutheran Radio ዊጄት ውቅር።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6414,6 +6588,12 @@
     "Connection error" : {
       "comment" : "Home/Control widget status message when the provider snapshot reports hasError. Used from WidgetSurface `WidgetProviderPresentationAssembly.assemblePresentationSlices` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in WidgetSurface and is not seen by Xcode auto-extraction.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የግንኙነት ስህተት"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6629,6 +6809,12 @@
     },
     "Control Lutheran Radio playback and see current station." : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የ Lutheran Radio መጫወትን ይቆጣጠሩ እና አሁኑን ጣቢያ ይመልከቱ።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6843,6 +7029,12 @@
     },
     "Control playback and switch between language streams." : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "መጫወትን ይቆጣጠሩ እና በቋንቋ ስርጭቶች መካከል ይቀያይሩ።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7058,6 +7250,12 @@
     "decrease_volume" : {
       "comment" : "Accessibility action to decrease volume",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ድምጽን ቀንስ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7273,6 +7471,12 @@
     "increase_volume" : {
       "comment" : "Accessibility action to increase volume",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ድምጽን ጨምር"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7487,6 +7691,12 @@
     },
     "Is Playing" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "እየተጫወተ ነው"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7702,6 +7912,12 @@
     "Language" : {
       "comment" : "Parameter title for the language/stream choice in Siri shortcuts and App Intents.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ቋንቋ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7916,6 +8132,12 @@
     },
     "Language Code" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የቋንቋ ኮድ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8131,6 +8353,12 @@
     "language_english" : {
       "comment" : "English language option",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "እንግሊዝኛ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8346,6 +8574,12 @@
     "language_estonian" : {
       "comment" : "Estonian language option",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ኢስቶንኛ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8561,6 +8795,12 @@
     "language_finnish" : {
       "comment" : "Finnish language option",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ፊንላንድኛ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8776,6 +9016,12 @@
     "language_german" : {
       "comment" : "German language option",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ጀርመንኛ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8991,6 +9237,12 @@
     "language_swedish" : {
       "comment" : "Swedish language option",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ስዊድንኛ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9206,6 +9458,12 @@
     "live_activity_program_fallback" : {
       "comment" : "Live Activity / widget metadata fallback when no ICY program title is present (format: language name + live stream). Used from WidgetSurface `widgetLiveStreamFallback(languageName:)` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in the WidgetSurface framework and is not seen by Xcode auto-extraction.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · ቀጥታ ስርጭት"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9421,6 +9679,12 @@
     },
     "Local Only" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የአካባቢ ብቻ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9636,6 +9900,12 @@
     "lutheran_radio_title" : {
       "comment" : "Title for Lutheran Radio",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9851,6 +10121,12 @@
     "menu_next_language" : {
       "comment" : "Menu and keyboard shortcut that selects the next radio language stream",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ቀጣይ ቋንቋ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10066,6 +10342,12 @@
     "menu_play_pause" : {
       "comment" : "Menu and keyboard shortcut that toggles play or pause",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "አጫውት/ለአፍታ አቁም"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10281,6 +10563,12 @@
     "menu_playback" : {
       "comment" : "Main menu title for play/pause and previous/next language keyboard verbs",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "መጫወት"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10496,6 +10784,12 @@
     "menu_previous_language" : {
       "comment" : "Menu and keyboard shortcut that selects the previous radio language stream",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ቀዳሚ ቋንቋ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10710,6 +11004,12 @@
     },
     "mobile_data_usage_message" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "መተግበሪያው የሞባይል ውሂብ እየተጠቀመ ነው፣ ይህም በውሂብ እቅድዎ መሠረት ክፍያ ሊያስከትል ይችላል።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10924,6 +11224,12 @@
     },
     "mobile_data_usage_title" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የሞባይል ውሂብ አጠቃቀም"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11138,6 +11444,12 @@
     },
     "no_track_info" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምንም የትራክ መረጃ የለም"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11352,6 +11664,12 @@
     },
     "Now Playing" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "አሁን እየተጫወተ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11566,6 +11884,12 @@
     },
     "ok" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11781,6 +12105,12 @@
     "open_app_first" : {
       "comment" : "Home-widget passive chrome secondary caption (medium/large) when the main app process is not recently active. Used from WidgetSurface `WidgetPassiveTapToOpenChrome` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in WidgetSurface and is not seen by Xcode auto-extraction.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "መጀመሪያ መተግበሪያውን ይክፈቱ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11997,6 +12327,12 @@
     "Pause Lutheran Radio" : {
       "comment" : "Title for the Pause/Stop Lutheran Radio Siri shortcut / App Shortcut. Keep the brand name Lutheran Radio; localize the pause verb.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioን ለአፍታ አቁም"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12212,6 +12548,12 @@
     "Pause Lutheran Radio playback." : {
       "comment" : "Description for PauseRadioIntent (Siri / Shortcuts).",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የ Lutheran Radio መጫወትን ለአፍታ ያቁሙ።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12426,6 +12768,12 @@
     },
     "Play" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "አጫውት"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12641,6 +12989,12 @@
     "Play Lutheran Radio" : {
       "comment" : "Title for the Play Lutheran Radio Siri shortcut / App Shortcut (generic play or resume).",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioን አጫውት"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12855,6 +13209,12 @@
     },
     "Play or pause Lutheran Radio." : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioን ያጫውቱ ወይም ለአፍታ ያቁሙ።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13070,6 +13430,12 @@
     "Play or resume Lutheran Radio." : {
       "comment" : "Description for PlayRadioIntent (Siri / Shortcuts).",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioን ያጫውቱ ወይም ይቀጥሉ።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13284,6 +13650,12 @@
     },
     "security_model_error_message" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "በደህንነት ማረጋገጫ ውድቀት ምክንያት መጫወት መጀመር አልተቻለም። እባክዎ የበይነመረብ ግንኙነትዎን ይፈትሹ እና መተግበሪያው ወቅታዊ መሆኑን ያረጋግጡ። ችግሩ ከቀጠለ መተግበሪያውን እንደገና ያስጀምሩና እንደገና ይሞክሩ።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13498,6 +13870,12 @@
     },
     "security_model_error_title" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የደህንነት ማረጋገጫ አልተሳካም"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13713,6 +14091,12 @@
     "select_language_accessibility" : {
       "comment" : "Accessibility label for language flag button. %@ is the language name.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ን ይምረጡ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13928,6 +14312,24 @@
     "sleep_timer_accessibility_remaining" : {
       "comment" : "VoiceOver value for an active sleep timer. String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the minute count via String(localized:defaultValue:); String(format: String(localized:), n) cannot select a plural category.",
       "localizations" : {
+        "am" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ደቂቃ ቀርቷል"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ደቂቃዎች ቀርተዋል"
+                }
+              }
+            }
+          }
+        },
         "bg" : {
           "variations" : {
             "plural" : {
@@ -14670,6 +15072,12 @@
     },
     "sleep_timer_cancel_timer" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ሰዓት ቆጣሪውን ሰርዝ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14884,6 +15292,12 @@
     },
     "sleep_timer_preset_15_min" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 ደቂቃዎች"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15098,6 +15512,12 @@
     },
     "sleep_timer_preset_30_min" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 ደቂቃዎች"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15312,6 +15732,12 @@
     },
     "sleep_timer_preset_45_min" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 ደቂቃዎች"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15526,6 +15952,12 @@
     },
     "sleep_timer_preset_60_min" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 ደቂቃዎች"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15740,6 +16172,12 @@
     },
     "sleep_timer_sheet_title" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የእንቅልፍ ሰዓት ቆጣሪ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15954,6 +16392,12 @@
     },
     "ssl_transition_message" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የስትሪሚንግ አገልጋዮች የ SSL የምስክር ወረቀቶቻቸውን አድሰዋል። መተግበሪያው በተኳኋኝነት ሁነታ እየሰራ ነው። ለምርጥ ደህንነት ሲገኝ ወደ የቅርብ ጊዜው ስሪት ያዘምኑ።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16168,6 +16612,12 @@
     },
     "ssl_transition_title" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የምስክር ወረቀት ተዘምኗል"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16383,6 +16833,12 @@
     "Start or resume Lutheran Radio playback." : {
       "comment" : "Description for WidgetPlayRadioIntent (home widget play control / Shortcuts).",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የ Lutheran Radio መጫወትን ይጀምሩ ወይም ይቀጥሉ።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16597,6 +17053,12 @@
     },
     "Start or stop Lutheran Radio playback." : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የ Lutheran Radio መጫወትን ይጀምሩ ወይም ያቁሙ።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16811,6 +17273,12 @@
     },
     "status_buffering" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ቋት"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17025,6 +17493,12 @@
     },
     "status_connecting" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "አገናኝ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17239,6 +17713,12 @@
     },
     "status_failed" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "አልተሳካም"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17453,6 +17933,12 @@
     },
     "status_no_internet" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ከመስመር ውጪ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17667,6 +18153,12 @@
     },
     "status_paused" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ለአፍታ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17882,6 +18374,12 @@
     "status_paused_call" : {
       "comment" : "Text for the \"paused on call\" status, indicating that playback is paused while the device is in a call.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ለአፍታ ቆሟል – ጥሪ በሂደት ላይ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18097,6 +18595,12 @@
     },
     "status_playback_failed_format" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "መጫወት አልተሳካም: %@"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18312,6 +18816,12 @@
     },
     "status_playing" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "አጫውት"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18526,6 +19036,12 @@
     },
     "status_security_failed" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ደህንነት"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18740,6 +19256,12 @@
     },
     "status_ssl_transition" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የ SSL የምስክር ወረቀት ታድሷል - መተግበሪያውን በቅርቡ ያዘምኑ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18954,6 +19476,12 @@
     },
     "status_stopped" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ቆሟል"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19168,6 +19696,12 @@
     },
     "status_stream_unavailable" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ጠፍቷል"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19382,6 +19916,12 @@
     },
     "status_thermal_paused" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "መሣሪያው ሞቋል"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19596,6 +20136,12 @@
     },
     "stream_unavailable_message" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ስርጭቱ ለጊዜው አይገኝም። እባክዎ በኋላ እንደገና ይሞክሩ።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19810,6 +20356,12 @@
     },
     "stream_unavailable_title" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ስርጭት አይገኝም"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20025,6 +20577,12 @@
     "Switch Lutheran Radio language stream." : {
       "comment" : "Description for SwitchLanguageIntent (Siri / Shortcuts).",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የ Lutheran Radio የቋንቋ ስርጭትን ይቀይሩ።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20239,6 +20797,12 @@
     },
     "Switch Stream" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ስርጭትን ቀይር"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20454,6 +21018,12 @@
     "Switch to %@" : {
       "comment" : "Title for switching the stream to a specific language via Siri / App Shortcut.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ወደ %@ ቀይር"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20668,6 +21238,12 @@
     },
     "Switch to a different language stream from Live Activity." : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ከ Live Activity ወደ ሌላ የቋንቋ ስርጭት ይቀይሩ።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20882,6 +21458,12 @@
     },
     "Switch to a different language stream." : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ወደ ሌላ የቋንቋ ስርጭት ይቀይሩ።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21097,6 +21679,12 @@
     "switched_to_language %@" : {
       "comment" : "Voiceover announcement announcing the language switch. The placeholder value is replaced with the actual language name.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ወደ %@ ተቀይሯል"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21313,6 +21901,12 @@
     "tap_to_open" : {
       "comment" : "Home-widget passive chrome primary caption when the main app process is not recently active. Used from WidgetSurface `WidgetPassiveTapToOpenChrome` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in WidgetSurface and is not seen by Xcode auto-extraction.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ለመክፈት መታ ያድርጉ"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21528,6 +22122,12 @@
     },
     "Toggle Lutheran Radio" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioን ቀያይር"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21742,6 +22342,12 @@
     },
     "Toggle Lutheran Radio Playback" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የ Lutheran Radio መጫወትን ቀያይር"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21956,6 +22562,12 @@
     },
     "Toggle play/pause from Live Activity." : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ከ Live Activity አጫውት/ለአፍታ አቁምን ቀያይር።"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22171,6 +22783,12 @@
     "toggle_playback" : {
       "comment" : "Accessibility action to toggle playback",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "መጫወትን ቀያይር"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22386,6 +23004,24 @@
     "volume_set_to" : {
       "comment" : "VoiceOver announcement after a volume step. String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the percent via String(localized:defaultValue:). A literal percent sign in a translation must be written %% (stringsdict is a format string; %-mut / %-ii would be consumed as a specifier).",
       "localizations" : {
+        "am" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ድምጽ ወደ %lld በመቶ ተቀናብሯል"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ድምጽ ወደ %lld በመቶ ተቀናብሯል"
+                }
+              }
+            }
+          }
+        },
         "bg" : {
           "variations" : {
             "plural" : {
@@ -23128,6 +23764,12 @@
     },
     "Widget Configuration" : {
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የዊጄት ውቅር"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",

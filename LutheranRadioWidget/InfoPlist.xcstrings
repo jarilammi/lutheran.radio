@@ -4,6 +4,12 @@
     "CFBundleDisplayName" : {
       "comment" : "Widget gallery section name. The OS reads InfoPlist.strings compiled from this catalog — not Localizable. Keep every language in lockstep with lutheran_radio_title. INFOPLIST_KEY_CFBundleDisplayName is the development-language fallback (Lutheran Radio, never the target identifier LutheranRadioWidget).",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
