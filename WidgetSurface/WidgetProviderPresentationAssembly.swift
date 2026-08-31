@@ -53,7 +53,7 @@ public enum WidgetProviderPresentationAssembly {
     ) -> WidgetProviderPresentationSlices {
         let baseStatus = fields.visualState.makeStatusPresentation()
         // Fold `hasError` into the narrow status surface so family views never need a
-        // parallel `statusMessage` string. `Connection error` is Localizable (all 37)
+        // parallel `statusMessage` string. `Connection error` is Localizable (all 40)
         // languages); marked extractionState: manual in the app catalog because this
         // call site is in WidgetSurface (catalog-owning targets would otherwise mark
         // it stale).

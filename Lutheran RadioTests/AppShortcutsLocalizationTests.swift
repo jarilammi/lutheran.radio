@@ -8,7 +8,7 @@
 //
 //  Invariant: every phrase in `LutheranRadioShortcuts` is extracted as
 //  `Play ${applicationName}` (etc.) and `AppShortcuts.xcstrings` ships a
-//  translated value for every UI language in README Localizations (the 37
+//  translated value for every UI language in README Localizations (the 40
 //  language codes). Every value keeps
 //  `${applicationName}`; parameterized phrases also keep `${language}`.
 //  Xcode binds only the first phrase of each `AppShortcut` initializer, so
@@ -28,12 +28,12 @@ import XCTest
 final class AppShortcutsLocalizationTests: XCTestCase {
 
     /// UI catalog languages: README Localizations / Localizable + AppShortcuts coverage
-    /// (the 37 language codes). Playback catalog remains the five radio streams.
+    /// (the 40 language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
-        "am", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
-        "fo", "fr", "gag", "hr", "hu", "is", "it", "kl", "lt", "lv", "nb", "nl",
-        "nn", "pl", "pt", "pt-BR", "ro", "ru", "se", "sk", "sl", "sq", "sv", "sw",
-        "te", "uk",
+        "af", "am", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
+        "fo", "fr", "gag", "hr", "hu", "id", "is", "it", "kl", "lt", "lv", "mg",
+        "nb", "nl", "nn", "pl", "pt", "pt-BR", "ro", "ru", "se", "sk", "sl", "sq",
+        "sv", "sw", "te", "uk",
     ]
 
     private let requiredPhraseKeys: [String] = [
@@ -301,6 +301,63 @@ final class AppShortcutsLocalizationTests: XCTestCase {
         XCTAssertEqual(
             compiledPhrase("Switch ${applicationName} to ${language}", language: "sw"),
             "Badilisha ${applicationName} kuwa ${language}"
+        )
+    }
+
+    func testCompiledIndonesianPlayAndPausePhrasesAreNative() {
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName}", language: "id"),
+            "Putar ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Pause ${applicationName}", language: "id"),
+            "Jeda ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName} in ${language}", language: "id"),
+            "Putar ${applicationName} dalam bahasa ${language}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Switch ${applicationName} to ${language}", language: "id"),
+            "Alihkan ${applicationName} ke bahasa ${language}"
+        )
+    }
+
+    func testCompiledMalagasyPlayAndPausePhrasesAreNative() {
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName}", language: "mg"),
+            "Alefaso ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Pause ${applicationName}", language: "mg"),
+            "Ajanony ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName} in ${language}", language: "mg"),
+            "Alefaso ${applicationName} amin'ny ${language}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Switch ${applicationName} to ${language}", language: "mg"),
+            "Ovay ${applicationName} ho ${language}"
+        )
+    }
+
+    func testCompiledAfrikaansPlayAndPausePhrasesAreNative() {
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName}", language: "af"),
+            "Speel ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Pause ${applicationName}", language: "af"),
+            "Pouseer ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName} in ${language}", language: "af"),
+            "Speel ${applicationName} in ${language}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Switch ${applicationName} to ${language}", language: "af"),
+            "Skakel ${applicationName} oor na ${language}"
         )
     }
 
