@@ -100,6 +100,12 @@
             "value" : "Szüneteltesd ${applicationName}"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeda ${applicationName}"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -325,6 +331,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Játszd le ${applicationName}"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Putar ${applicationName}"
           }
         },
         "is" : {
@@ -554,6 +566,12 @@
             "value" : "Játszd le ${applicationName} ${language} nyelven"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Putar ${applicationName} dalam bahasa ${language}"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -779,6 +797,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Indítsd ${applicationName}"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mulai ${applicationName}"
           }
         },
         "is" : {
@@ -1008,6 +1032,12 @@
             "value" : "Állítsd le ${applicationName}"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hentikan ${applicationName}"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1233,6 +1263,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Válts ${applicationName} erre: ${language}"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alihkan ${applicationName} ke bahasa ${language}"
           }
         },
         "is" : {
