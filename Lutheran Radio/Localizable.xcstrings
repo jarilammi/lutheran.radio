@@ -3,6 +3,12 @@
   "strings" : {
     "%@ %@" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -99,6 +105,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -124,6 +136,12 @@
           }
         },
         "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
+        "mg" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ %2$@"
@@ -230,6 +248,24 @@
     "%lld languages" : {
       "comment" : "Numeric format for the count of language choices in Siri / Shortcuts pickers (RadioLanguageEntity TypeDisplayRepresentation). String Catalog variations.plural — one/few/many/two/zero as required by each locale. Call site is LocalizedStringResource interpolation; do not flatten back to a single stringUnit.",
       "localizations" : {
+        "af" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld taal"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld tale"
+                }
+              }
+            }
+          }
+        },
         "am" : {
           "variations" : {
             "plural" : {
@@ -536,6 +572,18 @@
             }
           }
         },
+        "id" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld bahasa"
+                }
+              }
+            }
+          }
+        },
         "is" : {
           "variations" : {
             "plural" : {
@@ -639,6 +687,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld valodu"
+                }
+              }
+            }
+          }
+        },
+        "mg" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld fiteny"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld fiteny"
                 }
               }
             }
@@ -1008,6 +1074,12 @@
     },
     "accessibility_hint_airplay" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tik twee keer om die oudio-uitsettoestel te kies"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1104,6 +1176,12 @@
             "value" : "Koppintson duplán a hangkimeneti eszköz kiválasztásához"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ketuk dua kali untuk memilih perangkat keluaran audio"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1132,6 +1210,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dubultpieskāriens, lai izvēlētos audio izvades ierīci"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsindrio indroa hisafidy fitaovana fivoahan'ny feo"
           }
         },
         "nb" : {
@@ -1234,6 +1318,12 @@
     },
     "accessibility_hint_metadata" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wys inligting oor die huidige radioprogram"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1330,6 +1420,12 @@
             "value" : "A jelenlegi rádióműsor információit jeleníti meg"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Menampilkan informasi tentang program radio saat ini"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1358,6 +1454,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Parāda informāciju par pašreizējo radio programmu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mampiseho fampahalalana momba ny fandaharana radio ankehitriny"
           }
         },
         "nb" : {
@@ -1460,6 +1562,12 @@
     },
     "accessibility_hint_play_pause" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel die radiostroom se afspeel aan of af"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1556,6 +1664,12 @@
             "value" : "Ki- és bekapcsolja a rádióadás lejátszását"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mengganti pemutaran siaran radio"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1584,6 +1698,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēdz radio straumes atskaņošanu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mamadika ny fampandehan'ny siaram-peo radio"
           }
         },
         "nb" : {
@@ -1686,6 +1806,12 @@
     },
     "accessibility_hint_sleep_timer" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies hoe lank tot afspeel stop"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1782,6 +1908,12 @@
             "value" : "Válassza ki, mennyi idő múlva álljon le a lejátszás"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pilih berapa lama hingga pemutaran berhenti"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1810,6 +1942,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Izvēlieties, cik ilgi līdz atskaņošanas apturēšanai"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safidio hoe hatramin'oviana no hajanona ny fampandehana"
           }
         },
         "nb" : {
@@ -1912,6 +2050,12 @@
     },
     "accessibility_hint_volume" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas die afspeelvolume aan"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2008,6 +2152,12 @@
             "value" : "A lejátszás hangerőjét állítja"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Menyesuaikan volume pemutaran"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2036,6 +2186,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Regulē atskaņošanas skaļumu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manova ny volume-n'ny fampandehana"
           }
         },
         "nb" : {
@@ -2138,6 +2294,12 @@
     },
     "accessibility_label_airplay" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2234,6 +2396,12 @@
             "value" : "AirPlay"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2259,6 +2427,12 @@
           }
         },
         "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "mg" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -2365,6 +2539,12 @@
     "accessibility_label_lutheran_radio_logo" : {
       "comment" : "Accessibility label for the placeholder logo image. Keep the brand name Lutheran Radio; localize the word for logo.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio-logo"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2461,6 +2641,12 @@
             "value" : "Lutheran Radio logó"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logo Lutheran Radio"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2489,6 +2675,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio logo"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logo Lutheran Radio"
           }
         },
         "nb" : {
@@ -2591,6 +2783,12 @@
     },
     "accessibility_label_pause" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pouseer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2687,6 +2885,12 @@
             "value" : "Szünet"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeda"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2715,6 +2919,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauze"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajanony"
           }
         },
         "nb" : {
@@ -2818,6 +3028,12 @@
     "accessibility_label_photo_of_format" : {
       "comment" : "Accessibility label for speaker photo. %@ is the speaker or program name.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto van %@"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2914,6 +3130,12 @@
             "value" : "%@ fényképe"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto %@"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2942,6 +3164,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Foto no %@"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sarin'i %@"
           }
         },
         "nb" : {
@@ -3044,6 +3272,12 @@
     },
     "accessibility_label_play" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3140,6 +3374,12 @@
             "value" : "Lejátszás"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Putar"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3168,6 +3408,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņot"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso"
           }
         },
         "nb" : {
@@ -3270,6 +3516,12 @@
     },
     "accessibility_label_sleep_timer" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slaaptimer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3366,6 +3618,12 @@
             "value" : "Elalvási időzítő"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pengatur waktu tidur"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3394,6 +3652,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Miega taimeris"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fanisam-potoana torimaso"
           }
         },
         "nb" : {
@@ -3496,6 +3760,12 @@
     },
     "accessibility_label_volume" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3592,6 +3862,12 @@
             "value" : "Hangerő"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3620,6 +3896,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skaļums"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume"
           }
         },
         "nb" : {
@@ -3723,6 +4005,24 @@
     "accessibility_value_volume" : {
       "comment" : "VoiceOver value for the system volume control (0–100). String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the percent via String(localized:defaultValue:).",
       "localizations" : {
+        "af" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld persent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld persent"
+                }
+              }
+            }
+          }
+        },
         "am" : {
           "variations" : {
             "plural" : {
@@ -4029,6 +4329,18 @@
             }
           }
         },
+        "id" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld persen"
+                }
+              }
+            }
+          }
+        },
         "is" : {
           "variations" : {
             "plural" : {
@@ -4132,6 +4444,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld procentu"
+                }
+              }
+            }
+          }
+        },
+        "mg" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld isan-jato"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld isan-jato"
                 }
               }
             }
@@ -4501,6 +4831,12 @@
     },
     "alert_continue" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gaan voort"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4597,6 +4933,12 @@
             "value" : "Folytatás"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lanjutkan"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4625,6 +4967,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Turpināt"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tohizo"
           }
         },
         "nb" : {
@@ -4727,6 +5075,12 @@
     },
     "alert_retry" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Probeer weer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4823,6 +5177,12 @@
             "value" : "Újra"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coba Lagi"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4851,6 +5211,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vēlreiz"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Andramo indray"
           }
         },
         "nb" : {
@@ -4953,6 +5319,12 @@
     },
     "cellular_allow_this_session" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laat toe vir hierdie sessie"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5049,6 +5421,12 @@
             "value" : "Engedélyezés erre a munkamenetre"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Izinkan untuk Sesi Ini"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5077,6 +5455,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ļaut šai sesijai"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avelao amin'ity fotoana ity"
           }
         },
         "nb" : {
@@ -5179,6 +5563,12 @@
     },
     "cellular_always_allow" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laat altyd toe"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5275,6 +5665,12 @@
             "value" : "Mindig engedélyezés"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selalu Izinkan"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5303,6 +5699,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ļaut vienmēr"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avelao foana"
           }
         },
         "nb" : {
@@ -5405,6 +5807,12 @@
     },
     "cellular_not_now" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nie nou nie"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5501,6 +5909,12 @@
             "value" : "Most nem"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nanti"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5529,6 +5943,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ne tagad"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy izao"
           }
         },
         "nb" : {
@@ -5631,6 +6051,12 @@
     },
     "clear_local_state_confirm" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vee uit"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5727,6 +6153,12 @@
             "value" : "Törlés"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hapus"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5755,6 +6187,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notīrīt"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fafao"
           }
         },
         "nb" : {
@@ -5857,6 +6295,12 @@
     },
     "clear_local_state_done" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uitgevee"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5953,6 +6397,12 @@
             "value" : "Törölve"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dihapus"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5981,6 +6431,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notīrīts"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voafafa"
           }
         },
         "nb" : {
@@ -6083,6 +6539,12 @@
     },
     "clear_local_state_message" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit sal afspeel stop, widget- en Live Activity-data verwyder, en onlangse luisterstatus van hierdie toestel uitvee. Die handeling kan nie ontdoen word nie."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6179,6 +6641,12 @@
             "value" : "Ez leállítja a lejátszást, eltávolítja a widget és az élő tevékenység adatait, és törli a közelmúltbeli hallgatási állapotot erről az eszközről. A művelet nem vonható vissza."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ini akan menghentikan pemutaran, menghapus data widget dan Live Activity, serta menghapus status mendengarkan terbaru dari perangkat ini. Tindakan ini tidak dapat dibatalkan."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6207,6 +6675,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tas apturēs atskaņošanu, noņems logrīka un Live Activity datus un notīrīs neseno klausīšanās stāvokli no šīs ierīces. Darbību nevar atsaukt."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hajanona ny fampandehana, hofafana ny angon'ny widget sy ny Live Activity, ary hofafana ny toetry ny fandrenesana vao haingana amin'ity fitaovana ity. Tsy azo averina io asa io."
           }
         },
         "nb" : {
@@ -6309,6 +6783,12 @@
     },
     "clear_local_state_title" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vee plaaslike afspeelstatus uit"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6405,6 +6885,12 @@
             "value" : "Helyi lejátszási állapot törlése"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hapus status pemutaran lokal"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6433,6 +6919,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notīrīt lokālo atskaņošanas stāvokli"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fafao ny toetry ny fampandehana an-toerana"
           }
         },
         "nb" : {
@@ -6535,6 +7027,12 @@
     },
     "Configuration for Lutheran Radio widget." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfigurasie vir Lutheran Radio-widget."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6631,6 +7129,12 @@
             "value" : "A Lutheran Radio widget beállításai."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfigurasi untuk widget Lutheran Radio."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6659,6 +7163,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio logrīka konfigurācija."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fanamboarana ny widget Lutheran Radio."
           }
         },
         "nb" : {
@@ -6762,6 +7272,12 @@
     "Connection error" : {
       "comment" : "Home/Control widget status message when the provider snapshot reports hasError. Used from WidgetSurface `WidgetProviderPresentationAssembly.assemblePresentationSlices` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in WidgetSurface and is not seen by Xcode auto-extraction.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbindingsfout"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6858,6 +7374,12 @@
             "value" : "Kapcsolati hiba"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kesalahan koneksi"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6886,6 +7408,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Savienojuma kļūda"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hadisoan'ny fifandraisana"
           }
         },
         "nb" : {
@@ -6989,6 +7517,12 @@
     },
     "Control Lutheran Radio playback and see current station." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beheer Lutheran Radio-afspeel en sien die huidige stasie."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7085,6 +7619,12 @@
             "value" : "Irányítsa a Lutheran Radio lejátszását, és tekintse meg az aktuális adást."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kendalikan pemutaran Lutheran Radio dan lihat stasiun saat ini."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7113,6 +7653,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārvaldiet Lutheran Radio atskaņošanu un skatiet pašreizējo staciju."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fehezo ny fampandehan'ny Lutheran Radio ary jereo ny toby ankehitriny."
           }
         },
         "nb" : {
@@ -7215,6 +7761,12 @@
     },
     "Control playback and switch between language streams." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beheer afspeel en wissel tussen taalstrome."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7311,6 +7863,12 @@
             "value" : "Irányítsa a lejátszást, és váltson a nyelvi adások között."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kendalikan pemutaran dan beralih antar siaran bahasa."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7339,6 +7897,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārvaldiet atskaņošanu un pārslēdzieties starp valodu straumēm."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fehezo ny fampandehana ary ovay ny siaram-peon'ny fiteny."
           }
         },
         "nb" : {
@@ -7442,6 +8006,12 @@
     "decrease_volume" : {
       "comment" : "Accessibility action to decrease volume",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verlaag volume"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7538,6 +8108,12 @@
             "value" : "Hangerő csökkentése"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turunkan Volume"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7566,6 +8142,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Samazināt skaļumu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ahenao ny volume"
           }
         },
         "nb" : {
@@ -7669,6 +8251,12 @@
     "increase_volume" : {
       "comment" : "Accessibility action to increase volume",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verhoog volume"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7765,6 +8353,12 @@
             "value" : "Hangerő növelése"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Naikkan Volume"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7793,6 +8387,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Palielināt skaļumu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akaro ny volume"
           }
         },
         "nb" : {
@@ -7895,6 +8495,12 @@
     },
     "Is Playing" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel tans"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7991,6 +8597,12 @@
             "value" : "Lejátszás alatt"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sedang Diputar"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8019,6 +8631,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņo"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mandeha"
           }
         },
         "nb" : {
@@ -8122,6 +8740,12 @@
     "Language" : {
       "comment" : "Parameter title for the language/stream choice in Siri shortcuts and App Intents.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taal"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8218,6 +8842,12 @@
             "value" : "Nyelv"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bahasa"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8246,6 +8876,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Valoda"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fiteny"
           }
         },
         "nb" : {
@@ -8348,6 +8984,12 @@
     },
     "Language Code" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taalkode"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8444,6 +9086,12 @@
             "value" : "Nyelvkód"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kode Bahasa"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8472,6 +9120,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Valodas kods"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kaody fiteny"
           }
         },
         "nb" : {
@@ -8575,6 +9229,12 @@
     "language_english" : {
       "comment" : "English language option",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Engels"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8671,6 +9331,12 @@
             "value" : "Angol"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inggris"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8699,6 +9365,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Angļu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anglisy"
           }
         },
         "nb" : {
@@ -8802,6 +9474,12 @@
     "language_estonian" : {
       "comment" : "Estonian language option",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estnies"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8898,6 +9576,12 @@
             "value" : "Észt"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estonia"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8926,6 +9610,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Igauņu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estonianina"
           }
         },
         "nb" : {
@@ -9029,6 +9719,12 @@
     "language_finnish" : {
       "comment" : "Finnish language option",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fins"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9125,6 +9821,12 @@
             "value" : "Finn"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finlandia"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9153,6 +9855,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Somu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finlandey"
           }
         },
         "nb" : {
@@ -9256,6 +9964,12 @@
     "language_german" : {
       "comment" : "German language option",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duits"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9352,6 +10066,12 @@
             "value" : "Német"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jerman"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9380,6 +10100,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vācu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alemanina"
           }
         },
         "nb" : {
@@ -9483,6 +10209,12 @@
     "language_swedish" : {
       "comment" : "Swedish language option",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sweeds"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9579,6 +10311,12 @@
             "value" : "Svéd"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swedia"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9607,6 +10345,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zviedru"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soedoà"
           }
         },
         "nb" : {
@@ -9710,6 +10454,12 @@
     "live_activity_program_fallback" : {
       "comment" : "Live Activity / widget metadata fallback when no ICY program title is present (format: language name + live stream). Used from WidgetSurface `widgetLiveStreamFallback(languageName:)` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in the WidgetSurface framework and is not seen by Xcode auto-extraction.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Regstreekse stroom"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9806,6 +10556,12 @@
             "value" : "%@ · Élő adás"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Siaran Langsung"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9834,6 +10590,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Tiešraide"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Siaram-peo mivantana"
           }
         },
         "nb" : {
@@ -9937,6 +10699,12 @@
     },
     "Local Only" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slegs plaaslik"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10033,6 +10801,12 @@
             "value" : "Csak helyi"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hanya Lokal"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10061,6 +10835,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tikai lokāli"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An-toerana ihany"
           }
         },
         "nb" : {
@@ -10164,6 +10944,12 @@
     "lutheran_radio_title" : {
       "comment" : "Title for Lutheran Radio",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10260,6 +11046,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10285,6 +11077,12 @@
           }
         },
         "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "mg" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -10391,6 +11189,12 @@
     "menu_next_language" : {
       "comment" : "Menu and keyboard shortcut that selects the next radio language stream",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volgende taal"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10487,6 +11291,12 @@
             "value" : "Következő nyelv"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bahasa Berikutnya"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10515,6 +11325,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nākamā valoda"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fiteny manaraka"
           }
         },
         "nb" : {
@@ -10618,6 +11434,12 @@
     "menu_play_pause" : {
       "comment" : "Menu and keyboard shortcut that toggles play or pause",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel/Pouseer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10714,6 +11536,12 @@
             "value" : "Lejátszás/Szünet"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Putar/Jeda"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10742,6 +11570,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņot/Pauze"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso/Ajanony"
           }
         },
         "nb" : {
@@ -10845,6 +11679,12 @@
     "menu_playback" : {
       "comment" : "Main menu title for play/pause and previous/next language keyboard verbs",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspeel"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10941,6 +11781,12 @@
             "value" : "Lejátszás"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pemutaran"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10969,6 +11815,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņošana"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fampandehana"
           }
         },
         "nb" : {
@@ -11072,6 +11924,12 @@
     "menu_previous_language" : {
       "comment" : "Menu and keyboard shortcut that selects the previous radio language stream",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorige taal"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11168,6 +12026,12 @@
             "value" : "Előző nyelv"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bahasa Sebelumnya"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11196,6 +12060,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Iepriekšējā valoda"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fiteny teo aloha"
           }
         },
         "nb" : {
@@ -11298,6 +12168,12 @@
     },
     "mobile_data_usage_message" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die app gebruik mobiele data, wat koste kan meebring na gelang van jou databundel."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11394,6 +12270,12 @@
             "value" : "Az app mobiladatot használ, ami a díjcsomagjától függően költségekkel járhat."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App sedang menggunakan data seluler, yang dapat menimbulkan biaya tergantung paket data Anda."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11422,6 +12304,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lietotne izmanto mobilos datus, kas var radīt izmaksas atkarībā no jūsu datu plāna."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mampiasa data finday ny app, izay mety hiteraka vidiny araka ny drafitrao data."
           }
         },
         "nb" : {
@@ -11524,6 +12412,12 @@
     },
     "mobile_data_usage_title" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mobiele datagebruik"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11620,6 +12514,12 @@
             "value" : "Mobiladat-használat"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Penggunaan data seluler"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11648,6 +12548,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobilā datu lietošana"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fampiasana data finday"
           }
         },
         "nb" : {
@@ -11750,6 +12656,12 @@
     },
     "no_track_info" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen snitinligting"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11846,6 +12758,12 @@
             "value" : "Nincs számadat"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tidak ada informasi lagu"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11874,6 +12792,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nav informācijas par dziesmu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy misy fampahalalana momba ny hira"
           }
         },
         "nb" : {
@@ -11976,6 +12900,12 @@
     },
     "Now Playing" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel nou"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12072,6 +13002,12 @@
             "value" : "Most szól"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sedang Diputar"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12100,6 +13036,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tagad atskaņo"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mandeha izao"
           }
         },
         "nb" : {
@@ -12202,6 +13144,12 @@
     },
     "ok" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12298,6 +13246,12 @@
             "value" : "OK"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12326,6 +13280,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Labi"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
           }
         },
         "nb" : {
@@ -12429,6 +13389,12 @@
     "open_app_first" : {
       "comment" : "Home-widget passive chrome secondary caption (medium/large) when the main app process is not recently active. Used from WidgetSurface `WidgetPassiveTapToOpenChrome` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in WidgetSurface and is not seen by Xcode auto-extraction.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maak eers die app oop"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12525,6 +13491,12 @@
             "value" : "Először nyissa meg az appot"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buka app terlebih dahulu"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12553,6 +13525,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vispirms atveriet lietotni"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sokafy aloha ny app"
           }
         },
         "nb" : {
@@ -12657,6 +13635,12 @@
     "Pause Lutheran Radio" : {
       "comment" : "Title for the Pause/Stop Lutheran Radio Siri shortcut / App Shortcut. Keep the brand name Lutheran Radio; localize the pause verb.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pouseer Lutheran Radio"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12753,6 +13737,12 @@
             "value" : "Lutheran Radio szüneteltetése"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeda Lutheran Radio"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12781,6 +13771,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauzēt Lutheran Radio"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajanony Lutheran Radio"
           }
         },
         "nb" : {
@@ -12884,6 +13880,12 @@
     "Pause Lutheran Radio playback." : {
       "comment" : "Description for PauseRadioIntent (Siri / Shortcuts).",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pouseer Lutheran Radio-afspeel."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12980,6 +13982,12 @@
             "value" : "A Lutheran Radio lejátszásának szüneteltetése."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeda pemutaran Lutheran Radio."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13008,6 +14016,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauzēt Lutheran Radio atskaņošanu."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajanony ny fampandehan'ny Lutheran Radio."
           }
         },
         "nb" : {
@@ -13110,6 +14124,12 @@
     },
     "Play" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13206,6 +14226,12 @@
             "value" : "Lejátszás"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Putar"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13234,6 +14260,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņot"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso"
           }
         },
         "nb" : {
@@ -13337,6 +14369,12 @@
     "Play Lutheran Radio" : {
       "comment" : "Title for the Play Lutheran Radio Siri shortcut / App Shortcut (generic play or resume).",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel Lutheran Radio"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13433,6 +14471,12 @@
             "value" : "Lutheran Radio lejátszása"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Putar Lutheran Radio"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13461,6 +14505,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņot Lutheran Radio"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso Lutheran Radio"
           }
         },
         "nb" : {
@@ -13563,6 +14613,12 @@
     },
     "Play or pause Lutheran Radio." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel of pouseer Lutheran Radio."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13659,6 +14715,12 @@
             "value" : "Lutheran Radio lejátszása vagy szüneteltetése."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Putar atau jeda Lutheran Radio."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13687,6 +14749,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņojiet vai apturiet Lutheran Radio."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso na ajanony ny Lutheran Radio."
           }
         },
         "nb" : {
@@ -13790,6 +14858,12 @@
     "Play or resume Lutheran Radio." : {
       "comment" : "Description for PlayRadioIntent (Siri / Shortcuts).",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel of hervat Lutheran Radio."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13886,6 +14960,12 @@
             "value" : "Lutheran Radio lejátszása vagy folytatása."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Putar atau lanjutkan Lutheran Radio."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13914,6 +14994,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņot vai turpināt Lutheran Radio."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso na tohizo ny Lutheran Radio."
           }
         },
         "nb" : {
@@ -14016,6 +15102,12 @@
     },
     "security_model_error_message" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan nie afspeel begin nie weens ’n sekuriteitsvalideringsfout. Kontroleer jou internetverbinding en maak seker die app is op datum. As die probleem voortduur, herbegin die app en probeer weer."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14112,6 +15204,12 @@
             "value" : "A lejátszás nem indítható biztonsági ellenőrzési hiba miatt. Ellenőrizze az internetkapcsolatot, és győződjön meg arról, hogy az app naprakész. Ha a probléma továbbra is fennáll, indítsa újra az appot, és próbálja meg újra."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tidak dapat memulai pemutaran karena validasi keamanan gagal. Periksa koneksi internet Anda dan pastikan app sudah versi terbaru. Jika masalah berlanjut, mulai ulang app dan coba lagi."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14140,6 +15238,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nevar sākt atskaņošanu drošības validācijas kļūmes dēļ. Lūdzu, pārbaudiet interneta savienojumu un pārliecinieties, ka lietotne ir atjaunināta. Ja problēma turpinās, restartējiet lietotni un mēģiniet vēlreiz."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy afaka manomboka ny fampandehana noho ny tsy fahombiazan'ny fanamarinana fiarovana. Jereo ny fifandraisanao Internet ary azo antoka fa vaovao ny app. Raha mbola mitohy ny olana, avereno alefa ny app ary andramo indray."
           }
         },
         "nb" : {
@@ -14242,6 +15346,12 @@
     },
     "security_model_error_title" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sekuriteitsvalidering het misluk"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14338,6 +15448,12 @@
             "value" : "A biztonsági ellenőrzés sikertelen"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Validasi Keamanan Gagal"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14366,6 +15482,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Drošības validācija neizdevās"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy nahomby ny fanamarinana fiarovana"
           }
         },
         "nb" : {
@@ -14469,6 +15591,12 @@
     "select_language_accessibility" : {
       "comment" : "Accessibility label for language flag button. %@ is the language name.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies %@"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14565,6 +15693,12 @@
             "value" : "%@ kiválasztása"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pilih %@"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14593,6 +15727,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Izvēlēties %@"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safidio ny %@"
           }
         },
         "nb" : {
@@ -14696,6 +15836,24 @@
     "sleep_timer_accessibility_remaining" : {
       "comment" : "VoiceOver value for an active sleep timer. String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the minute count via String(localized:defaultValue:); String(format: String(localized:), n) cannot select a plural category.",
       "localizations" : {
+        "af" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Nog %lld minuut"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Nog %lld minute"
+                }
+              }
+            }
+          }
+        },
         "am" : {
           "variations" : {
             "plural" : {
@@ -15002,6 +16160,18 @@
             }
           }
         },
+        "id" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld menit tersisa"
+                }
+              }
+            }
+          }
+        },
         "is" : {
           "variations" : {
             "plural" : {
@@ -15105,6 +16275,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "Atlicis %lld minūšu"
+                }
+              }
+            }
+          }
+        },
+        "mg" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minitra sisa"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minitra sisa"
                 }
               }
             }
@@ -15474,6 +16662,12 @@
     },
     "sleep_timer_cancel_timer" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kanselleer timer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15570,6 +16764,12 @@
             "value" : "Időzítő törlése"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Batalkan pengatur waktu"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15598,6 +16798,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atcelt taimeri"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foano ny fanisam-potoana"
           }
         },
         "nb" : {
@@ -15700,6 +16906,12 @@
     },
     "sleep_timer_preset_15_min" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minute"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15796,6 +17008,12 @@
             "value" : "15 perc"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 menit"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15824,6 +17042,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minūtes"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minitra"
           }
         },
         "nb" : {
@@ -15926,6 +17150,12 @@
     },
     "sleep_timer_preset_30_min" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 minute"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16022,6 +17252,12 @@
             "value" : "30 perc"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 menit"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16050,6 +17286,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "30 minūtes"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 minitra"
           }
         },
         "nb" : {
@@ -16152,6 +17394,12 @@
     },
     "sleep_timer_preset_45_min" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 minute"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16248,6 +17496,12 @@
             "value" : "45 perc"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 menit"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16276,6 +17530,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 minūtes"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 minitra"
           }
         },
         "nb" : {
@@ -16378,6 +17638,12 @@
     },
     "sleep_timer_preset_60_min" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 minute"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16474,6 +17740,12 @@
             "value" : "60 perc"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 menit"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16502,6 +17774,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "60 minūtes"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 minitra"
           }
         },
         "nb" : {
@@ -16604,6 +17882,12 @@
     },
     "sleep_timer_sheet_title" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slaaptimer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16700,6 +17984,12 @@
             "value" : "Elalvási időzítő"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pengatur waktu tidur"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16728,6 +18018,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Miega taimeris"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fanisam-potoana torimaso"
           }
         },
         "nb" : {
@@ -16830,6 +18126,12 @@
     },
     "ssl_transition_message" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die stroombedieners het hul SSL-sertifikate hernu. Die app werk in verenigbaarheidsmodus. Dateer asseblief op na die nuutste weergawe wanneer beskikbaar vir optimale sekuriteit."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16926,6 +18228,12 @@
             "value" : "A streamingszerverek megújították az SSL-tanúsítványaikat. Az app kompatibilitási módban működik. A lehető legjobb biztonság érdekében frissítsen a legújabb verzióra, amint elérhető."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server streaming telah memperbarui sertifikat SSL mereka. App sedang berjalan dalam mode kompatibilitas. Perbarui ke versi terbaru saat tersedia untuk keamanan yang optimal."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16954,6 +18262,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Straumēšanas serveri ir atjaunojuši savus SSL sertifikātus. Lietotne darbojas saderības režīmā. Lūdzu, atjauniniet uz jaunāko versiju, kad tā būs pieejama, lai nodrošinātu optimālu drošību."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nanavao ny taratasy fanamarinana SSL ny mpizara siaram-peo. Mandeha amin'ny fomba fampifanarahana ny app. Havaozy amin'ny kinova farany rehefa misy izy io mba hahazoana fiarovana tsara indrindra."
           }
         },
         "nb" : {
@@ -17056,6 +18370,12 @@
     },
     "ssl_transition_title" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sertifikaat bygewerk"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17152,6 +18472,12 @@
             "value" : "Tanúsítvány frissítve"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sertifikat Diperbarui"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17180,6 +18506,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sertifikāts atjaunots"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nohavaozina ny taratasy fanamarinana"
           }
         },
         "nb" : {
@@ -17283,6 +18615,12 @@
     "Start or resume Lutheran Radio playback." : {
       "comment" : "Description for WidgetPlayRadioIntent (home widget play control / Shortcuts).",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Begin of hervat Lutheran Radio-afspeel."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17379,6 +18717,12 @@
             "value" : "A Lutheran Radio lejátszásának indítása vagy folytatása."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mulai atau lanjutkan pemutaran Lutheran Radio."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17407,6 +18751,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sāciet vai atsāciet Lutheran Radio atskaņošanu."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atombohy na tohizo ny fampandehan'ny Lutheran Radio."
           }
         },
         "nb" : {
@@ -17509,6 +18859,12 @@
     },
     "Start or stop Lutheran Radio playback." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Begin of stop Lutheran Radio-afspeel."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17605,6 +18961,12 @@
             "value" : "A Lutheran Radio lejátszásának indítása vagy leállítása."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mulai atau hentikan pemutaran Lutheran Radio."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17633,6 +18995,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sāciet vai apturiet Lutheran Radio atskaņošanu."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atombohy na atsaharo ny fampandehan'ny Lutheran Radio."
           }
         },
         "nb" : {
@@ -17735,6 +19103,12 @@
     },
     "status_buffering" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buffer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17831,6 +19205,12 @@
             "value" : "Puffer"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buffer"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17859,6 +19239,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buferis"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Famenoana"
           }
         },
         "nb" : {
@@ -17961,6 +19347,12 @@
     },
     "status_connecting" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koppel"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18057,6 +19449,12 @@
             "value" : "Csatlakozás"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sambung"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18085,6 +19483,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Savienojas"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mifandray"
           }
         },
         "nb" : {
@@ -18187,6 +19591,12 @@
     },
     "status_failed" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Misluk"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18283,6 +19693,12 @@
             "value" : "Hiba"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gagal"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18311,6 +19727,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Neizdevās"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy nahomby"
           }
         },
         "nb" : {
@@ -18413,6 +19835,12 @@
     },
     "status_no_internet" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vanlyn"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18509,6 +19937,12 @@
             "value" : "Offline"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18537,6 +19971,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bez tīkla"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy an-tserasera"
           }
         },
         "nb" : {
@@ -18639,6 +20079,12 @@
     },
     "status_paused" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pouse"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18735,6 +20181,12 @@
             "value" : "Szünet"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeda"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18763,6 +20215,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauze"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajanony"
           }
         },
         "nb" : {
@@ -18866,6 +20324,12 @@
     "status_paused_call" : {
       "comment" : "Text for the \"paused on call\" status, indicating that playback is paused while the device is in a call.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gepouseer – Oproep aktief"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18962,6 +20426,12 @@
             "value" : "Szünet – Hívás folyamatban"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dijeda – Panggilan Aktif"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18990,6 +20460,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauzēts – Zvans aktīvs"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Najanona – misy antso"
           }
         },
         "nb" : {
@@ -19093,6 +20569,12 @@
     },
     "status_playback_failed_format" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspeel het misluk: %@"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19189,6 +20671,12 @@
             "value" : "Lejátszás sikertelen: %@"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pemutaran gagal: %@"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19217,6 +20705,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atkūrimas nepavyko: %@"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy nahomby ny fampandehana: %@"
           }
         },
         "nb" : {
@@ -19320,6 +20814,12 @@
     },
     "status_playing" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19416,6 +20916,12 @@
             "value" : "Lejátszás"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Putar"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19444,6 +20950,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņo"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alefaso"
           }
         },
         "nb" : {
@@ -19546,6 +21058,12 @@
     },
     "status_security_failed" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sekuriteit"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19642,6 +21160,12 @@
             "value" : "Biztonság"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keamanan"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19670,6 +21194,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Drošība"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fiarovana"
           }
         },
         "nb" : {
@@ -19772,6 +21302,12 @@
     },
     "status_ssl_transition" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-sertifikaat hernu - dateer app binnekort op"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19868,6 +21404,12 @@
             "value" : "SSL-tanúsítvány megújítva – frissítse hamarosan az appot"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sertifikat SSL diperbarui - segera perbarui app"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19896,6 +21438,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SSL sertifikāts atjaunots - drīz atjauniniet lietotni"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nohavaozina ny taratasy fanamarinana SSL - havaozy tsy ho ela ny app"
           }
         },
         "nb" : {
@@ -19998,6 +21546,12 @@
     },
     "status_stopped" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestop"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20094,6 +21648,12 @@
             "value" : "Leállítva"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Berhenti"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20122,6 +21682,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apturēts"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Najanona"
           }
         },
         "nb" : {
@@ -20224,6 +21790,12 @@
     },
     "status_stream_unavailable" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Af"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20320,6 +21892,12 @@
             "value" : "Ki"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mati"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20348,6 +21926,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Izslēgts"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maty"
           }
         },
         "nb" : {
@@ -20450,6 +22034,12 @@
     },
     "status_thermal_paused" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toestel warm"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20546,6 +22136,12 @@
             "value" : "Forró eszköz"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perangkat panas"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20574,6 +22170,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Karsts"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fitaovana mafana"
           }
         },
         "nb" : {
@@ -20676,6 +22278,12 @@
     },
     "stream_unavailable_message" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die uitsending is tydelik nie beskikbaar nie. Probeer later weer."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20772,6 +22380,12 @@
             "value" : "Az adás átmenetileg nem érhető el. Próbálja meg később újra."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Siaran untuk sementara tidak tersedia. Silakan coba lagi nanti."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20800,6 +22414,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Raidījums uz laiku nav pieejams. Mēģiniet vēlreiz vēlāk."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy azo aloha ny fampielezam-peo. Andramo indray any aoriana."
           }
         },
         "nb" : {
@@ -20902,6 +22522,12 @@
     },
     "stream_unavailable_title" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uitsending nie beskikbaar nie"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20998,6 +22624,12 @@
             "value" : "Az adás nem érhető el"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Siaran tidak tersedia"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21026,6 +22658,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Raidījums nav pieejams"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy azo ny fampielezam-peo"
           }
         },
         "nb" : {
@@ -21129,6 +22767,12 @@
     "Switch Lutheran Radio language stream." : {
       "comment" : "Description for SwitchLanguageIntent (Siri / Shortcuts).",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wissel Lutheran Radio-taalstroom."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21225,6 +22869,12 @@
             "value" : "A Lutheran Radio nyelvi adásának váltása."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alihkan siaran bahasa Lutheran Radio."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21253,6 +22903,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgt Lutheran Radio valodas straumi."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovay ny siaram-peon'ny fiteny Lutheran Radio."
           }
         },
         "nb" : {
@@ -21355,6 +23011,12 @@
     },
     "Switch Stream" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wissel stroom"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21451,6 +23113,12 @@
             "value" : "Adás váltása"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alihkan Siaran"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21479,6 +23147,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgt straumi"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovay ny siaram-peo"
           }
         },
         "nb" : {
@@ -21582,6 +23256,12 @@
     "Switch to %@" : {
       "comment" : "Title for switching the stream to a specific language via Siri / App Shortcut.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel oor na %@"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21678,6 +23358,12 @@
             "value" : "Váltás erre: %@"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alihkan ke %@"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21706,6 +23392,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgties uz %@"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovay ho %@"
           }
         },
         "nb" : {
@@ -21808,6 +23500,12 @@
     },
     "Switch to a different language stream from Live Activity." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel oor na ’n ander taalstroom vanuit Live Activity."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21904,6 +23602,12 @@
             "value" : "Váltás másik nyelvi adásra az élő tevékenységből."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alihkan ke siaran bahasa lain dari Live Activity."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21932,6 +23636,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgties uz citu valodas straumi no Live aktivitātes."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovay ho siaram-peon'ny fiteny hafa avy amin'ny Live Activity."
           }
         },
         "nb" : {
@@ -22034,6 +23744,12 @@
     },
     "Switch to a different language stream." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel oor na ’n ander taalstroom."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22130,6 +23846,12 @@
             "value" : "Váltás másik nyelvi adásra."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alihkan ke siaran bahasa lain."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22158,6 +23880,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgties uz citu valodas straumi."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovay ho siaram-peon'ny fiteny hafa."
           }
         },
         "nb" : {
@@ -22261,6 +23989,12 @@
     "switched_to_language %@" : {
       "comment" : "Voiceover announcement announcing the language switch. The placeholder value is replaced with the actual language name.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oorgeskakel na %@"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22357,6 +24091,12 @@
             "value" : "Átváltva: %@"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dialihkan ke %@"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22385,6 +24125,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgts uz %@"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Novaina ho %@"
           }
         },
         "nb" : {
@@ -22489,6 +24235,12 @@
     "tap_to_open" : {
       "comment" : "Home-widget passive chrome primary caption when the main app process is not recently active. Used from WidgetSurface `WidgetPassiveTapToOpenChrome` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in WidgetSurface and is not seen by Xcode auto-extraction.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tik om oop te maak"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22585,6 +24337,12 @@
             "value" : "Koppintson a megnyitáshoz"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ketuk untuk membuka"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22613,6 +24371,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pieskarieties, lai atvērtu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsindrio hisokatra"
           }
         },
         "nb" : {
@@ -22716,6 +24480,12 @@
     },
     "Toggle Lutheran Radio" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel Lutheran Radio om"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22812,6 +24582,12 @@
             "value" : "Lutheran Radio átkapcsolása"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alihkan Lutheran Radio"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22840,6 +24616,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgt Lutheran Radio"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mamadika ny Lutheran Radio"
           }
         },
         "nb" : {
@@ -22942,6 +24724,12 @@
     },
     "Toggle Lutheran Radio Playback" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel Lutheran Radio-afspeel om"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23038,6 +24826,12 @@
             "value" : "Lutheran Radio lejátszás átkapcsolása"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alihkan Pemutaran Lutheran Radio"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23066,6 +24860,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgt Lutheran Radio atskaņošanu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mamadika ny fampandehan'ny Lutheran Radio"
           }
         },
         "nb" : {
@@ -23168,6 +24968,12 @@
     },
     "Toggle play/pause from Live Activity." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel speel/pouseer om vanuit Live Activity."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23264,6 +25070,12 @@
             "value" : "Lejátszás/szünet átkapcsolása az élő tevékenységből."
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alihkan putar/jeda dari Live Activity."
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23292,6 +25104,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgt atskaņošanu/pauzi no Live aktivitātes."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mamadika alefaso/ajanony avy amin'ny Live Activity."
           }
         },
         "nb" : {
@@ -23395,6 +25213,12 @@
     "toggle_playback" : {
       "comment" : "Accessibility action to toggle playback",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel afspeel om"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23491,6 +25315,12 @@
             "value" : "Lejátszás átkapcsolása"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alihkan Pemutaran"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23519,6 +25349,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pārslēgt atskaņošanu"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mamadika ny fampandehana"
           }
         },
         "nb" : {
@@ -23622,6 +25458,24 @@
     "volume_set_to" : {
       "comment" : "VoiceOver announcement after a volume step. String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the percent via String(localized:defaultValue:). A literal percent sign in a translation must be written %% (stringsdict is a format string; %-mut / %-ii would be consumed as a specifier).",
       "localizations" : {
+        "af" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume ingestel op %lld persent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume ingestel op %lld persent"
+                }
+              }
+            }
+          }
+        },
         "am" : {
           "variations" : {
             "plural" : {
@@ -23928,6 +25782,18 @@
             }
           }
         },
+        "id" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume diatur ke %lld persen"
+                }
+              }
+            }
+          }
+        },
         "is" : {
           "variations" : {
             "plural" : {
@@ -24031,6 +25897,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "Skaļums iestatīts uz %lld procentiem"
+                }
+              }
+            }
+          }
+        },
+        "mg" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Napetraka amin'ny %lld isan-jato ny volume"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Napetraka amin'ny %lld isan-jato ny volume"
                 }
               }
             }
@@ -24400,6 +26284,12 @@
     },
     "Widget Configuration" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Widget-konfigurasie"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24496,6 +26386,12 @@
             "value" : "Widgetbeállítások"
           }
         },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfigurasi Widget"
+          }
+        },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24524,6 +26420,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Logrīka konfigurācija"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fanamboarana widget"
           }
         },
         "nb" : {

@@ -783,7 +783,7 @@ extension RadioPlayerCoordinator {
     /// target stream has been applied and the selection UI updated.
     ///
     /// Uses the exact registered key with %@ placeholder + `String(format:)` so the
-    /// extractor keeps the entry fresh and all 37 localizations remain active.
+    /// extractor keeps the entry fresh and all 40 localizations remain active.
     ///
     /// - Parameter stream: The stream that was switched to. Its `.language` property
     ///   already holds the localized human-readable name (e.g. "English", "Suomi").
