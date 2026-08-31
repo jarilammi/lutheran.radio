@@ -12,9 +12,13 @@
 //  passive `tap_to_open` stacks and stream-flag selection chrome. Size-specific
 //  layout tokens live here; family views only compose intent wrappers around chips.
 //
+//  Stream-chip fill/stroke uses ``WidgetStreamChipLabel``: `clipShape` +
+//  `overlay(alignment:content:)` so the 6 pt circular clip and 1 pt ring share one
+//  path. No security, playback, or Live Activity logic belongs here.
+//
 //  - SeeAlso: ``WidgetLivenessPresentation``, ``displayFlag(for:)``,
-//    docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md,
-//    CODING_AGENT.md (WidgetSurface surface area).
+//    ``WidgetStreamChipLabel``, docs/Widget-Presentation-Dataflow.md,
+//    docs/Widget-Functionality-Roadmap.md, CODING_AGENT.md (WidgetSurface surface area).
 //
 
 import SwiftUI
@@ -198,14 +202,29 @@ public enum WidgetStreamChipStyle: Sendable, Equatable {
 
 /// Selected / unselected stream chip chrome shared by small, medium, and large home widgets.
 ///
-/// Content is flag-only or flag+label; selection styling (blue fill + stroke) is unified.
+/// Content is flag-only or flag+label; selection styling (blue fill + 1 pt stroke) is unified.
 /// Extension views wrap this in `Button(intent: SwitchStreamIntent(...))`.
+///
+/// Fill clip and stroke share ``chipCornerRadius`` so the ring sits on the same
+/// circular path as the clipped fill. `clipShape` replaces `.cornerRadius`;
+/// `overlay(alignment:content:)` replaces the view-taking `.overlay` form.
+/// Both remain on the iOS 26.2 deployment floor — no iOS 27-only API.
+///
+/// - Important: Keep ``RoundedRectangle`` at the default circular style. A
+///   `.continuous` squircle would change small / medium / large home chips.
+/// - SeeAlso: ``WidgetStreamChipStyle``, ``WidgetPassiveTapToOpenChrome``,
+///   docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md,
+///   CODING_AGENT.md (WidgetSurface presentation-only surface area).
 public struct WidgetStreamChipLabel: View {
     public let flag: String
     public let languageName: String?
     public let isSelected: Bool
     public let style: WidgetStreamChipStyle
     public let expandsToFill: Bool
+
+    /// Circular corner radius for the selected fill clip and the 1 pt selection stroke.
+    /// Shared so the ring cannot drift off the fill path.
+    private static let chipCornerRadius: CGFloat = 6
 
     public init(
         flag: String,
@@ -244,10 +263,10 @@ public struct WidgetStreamChipLabel: View {
         .padding(.horizontal, style.horizontalPadding)
         .padding(.vertical, style.verticalPadding)
         .background(isSelected ? Color.blue.opacity(0.2) : Color.gray.opacity(style.unselectedBackgroundOpacity))
-        .cornerRadius(6)
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
+        .clipShape(RoundedRectangle(cornerRadius: Self.chipCornerRadius))
+        .overlay(alignment: .center) {
+            RoundedRectangle(cornerRadius: Self.chipCornerRadius)
                 .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1)
-        )
+        }
     }
 }
