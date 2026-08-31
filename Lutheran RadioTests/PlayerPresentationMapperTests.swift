@@ -7,14 +7,27 @@
 //  Matrix contract tests for ``PlayerVisualState/makeStatusPresentation()`` and
 //  ``PlayerVisualState/makeControlPresentation()`` — the status and control presentation SSOTs.
 //
+//  Main-app test host (`LUTHERAN_MAIN_APP`). Swift Testing: pure mappers, no shared
+//  mutable state, no ``@Suite(.serialized)``, no `confirmation()`. Event / Live Activity /
+//  AsyncStream suites stay XCTest. Pure-framework safety net:
+//  `WidgetSurfaceTests.statusPresentationMatrixMapsEveryVisualState`.
+//
 
+import Foundation
 import SwiftUI
-import XCTest
+import Testing
+import UIKit
 import WidgetSurface
 @testable import Lutheran_Radio
 
+/// Exhaustive visual-state list for mapper matrices. Keep in lockstep with
+/// ``PlayerVisualState`` cases — the enum is not `CaseIterable`.
+private let playerPresentationMapperVisualStates: [PlayerVisualState] = [
+    .prePlay, .cleared, .playing, .userPaused, .thermalPaused, .securityLocked
+]
+
 /// Protects the canonical status-pill and play/pause control mappings for every
-/// ``PlayerVisualState`` case.
+/// ``PlayerVisualState`` case under the main-app test host.
 ///
 /// **Invariant:** These mappers are pure functions with no WidgetCenter IPC, ActivityKit,
 /// or actor hops. They run in the main-app test host and mirror the derivation performed
@@ -29,16 +42,13 @@ import WidgetSurface
 ///   ``PlayerVisualChromePalette``, ``PlayerVisualState``,
 ///   docs/Widget-Presentation-Dataflow.md,
 ///   docs/Widget-Functionality-Roadmap.md (Tier 5 presentation mapper coverage).
-final class PlayerPresentationMapperTests: XCTestCase {
-
-    private let allVisualStates: [PlayerVisualState] = [
-        .prePlay, .cleared, .playing, .userPaused, .thermalPaused, .securityLocked
-    ]
+@Suite("PlayerPresentationMapper Tests")
+struct PlayerPresentationMapperTests {
 
     // MARK: - Status presentation matrix
 
     /// Verifies ``makeStatusPresentation()`` for every visual state against the documented mapping.
-    func testMakeStatusPresentationMatrixMapsEveryVisualState() {
+    @Test func `Status presentation matrix maps every visual state`() {
         let expectations: [PlayerVisualState: PlayerStatusPresentation] = [
             .playing: PlayerStatusPresentation(
                 background: PlayerVisualChromePalette.backgroundColor(for: .playing),
@@ -78,27 +88,26 @@ final class PlayerPresentationMapperTests: XCTestCase {
             ),
         ]
 
-        XCTAssertEqual(
-            expectations.count,
-            allVisualStates.count,
+        #expect(
+            expectations.count == playerPresentationMapperVisualStates.count,
             "Status matrix must include every PlayerVisualState case"
         )
 
-        for state in allVisualStates {
-            guard let expected = expectations[state] else {
-                XCTFail("Missing status expectation for \(state)")
-                continue
+        for state in playerPresentationMapperVisualStates {
+            let expected = expectations[state]
+            #expect(expected != nil, "Missing status expectation for \(state)")
+            if let expected {
+                #expect(
+                    state.makeStatusPresentation() == expected,
+                    "Status presentation must match SSOT for \(state)"
+                )
             }
-            XCTAssertEqual(
-                state.makeStatusPresentation(),
-                expected,
-                "Status presentation must match SSOT for \(state)"
-            )
         }
     }
 
     /// Verifies the optional status glyph policy: only ``PlayerVisualState/cleared`` omits `systemImage`.
-    func testMakeStatusPresentationSystemImagePolicyPerVisualState() {
+    @Test(arguments: playerPresentationMapperVisualStates)
+    func `Status systemImage matches SSOT`(state: PlayerVisualState) {
         let expectedGlyphs: [PlayerVisualState: String?] = [
             .playing: "play.fill",
             .prePlay: "play.circle",
@@ -107,35 +116,29 @@ final class PlayerPresentationMapperTests: XCTestCase {
             .thermalPaused: "pause.fill",
             .securityLocked: "lock.fill",
         ]
-
-        for state in allVisualStates {
-            XCTAssertEqual(
-                state.makeStatusPresentation().systemImage,
-                expectedGlyphs[state] ?? nil,
-                "Status systemImage must match SSOT for \(state)"
-            )
-        }
+        #expect(
+            state.makeStatusPresentation().systemImage == expectedGlyphs[state] ?? nil,
+            "Status systemImage must match SSOT for \(state)"
+        )
     }
 
     /// Every visual state must surface non-empty localized status copy for widget and Live Activity chrome.
-    func testMakeStatusPresentationProducesNonEmptyLocalizedTextForAllStates() {
-        for state in allVisualStates {
-            let presentation = state.makeStatusPresentation()
-            XCTAssertFalse(
-                presentation.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                "Status text must be non-empty for \(state)"
-            )
-        }
+    @Test(arguments: playerPresentationMapperVisualStates)
+    func `Status text is non-empty localized copy`(state: PlayerVisualState) {
+        let presentation = state.makeStatusPresentation()
+        #expect(
+            !presentation.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            "Status text must be non-empty for \(state)"
+        )
     }
 
     /// Regression guard: no two visual states may collapse to identical status presentations.
-    func testMakeStatusPresentationIsDistinctAcrossAllVisualStates() {
-        let pairs = allVisualStates.map { ($0, $0.makeStatusPresentation()) }
+    @Test func `Status presentation is distinct across all visual states`() {
+        let pairs = playerPresentationMapperVisualStates.map { ($0, $0.makeStatusPresentation()) }
         for i in pairs.indices {
             for j in pairs.indices where j > i {
-                XCTAssertNotEqual(
-                    pairs[i].1,
-                    pairs[j].1,
+                #expect(
+                    pairs[i].1 != pairs[j].1,
                     "Status presentation must differ for \(pairs[i].0) vs \(pairs[j].0)"
                 )
             }
@@ -145,34 +148,32 @@ final class PlayerPresentationMapperTests: XCTestCase {
     // MARK: - Control presentation matrix
 
     /// Verifies ``makeControlPresentation()`` for every visual state against glyph + tint policy.
-    func testMakeControlPresentationMatrixMapsEveryVisualState() {
-        for state in allVisualStates {
-            let expected = PlayerControlPresentation(
-                systemImage: state.isActivelyPlaying ? "pause.fill" : "play.fill",
-                tint: PlayerVisualChromePalette.buttonTintColor(for: state)
-            )
-            XCTAssertEqual(
-                state.makeControlPresentation(),
-                expected,
-                "Control presentation must match SSOT for \(state)"
-            )
-        }
+    @Test(arguments: playerPresentationMapperVisualStates)
+    func `Control presentation matches SSOT`(state: PlayerVisualState) {
+        let expected = PlayerControlPresentation(
+            systemImage: state.isActivelyPlaying ? "pause.fill" : "play.fill",
+            tint: PlayerVisualChromePalette.buttonTintColor(for: state)
+        )
+        #expect(
+            state.makeControlPresentation() == expected,
+            "Control presentation must match SSOT for \(state)"
+        )
     }
 
     /// Only ``PlayerVisualState/playing`` exposes the pause affordance; all other cases show play.
-    func testMakeControlPresentationUsesPauseGlyphOnlyWhenActivelyPlaying() {
-        for state in allVisualStates {
-            let glyph = state.makeControlPresentation().systemImage
-            if state == .playing {
-                XCTAssertEqual(glyph, "pause.fill", "Playing must surface pause control")
-            } else {
-                XCTAssertEqual(glyph, "play.fill", "Non-playing \(state) must surface play control")
-            }
+    @Test(arguments: playerPresentationMapperVisualStates)
+    func `Control pause glyph is used only when playing`(state: PlayerVisualState) {
+        let glyph = state.makeControlPresentation().systemImage
+        if state == .playing {
+            #expect(glyph == "pause.fill", "Playing must surface pause control")
+        } else {
+            #expect(glyph == "play.fill", "Non-playing \(state) must surface play control")
         }
     }
 
     /// Control tint and UIKit ``buttonTintColor`` both delegate to ``PlayerVisualChromePalette``.
-    func testMakeControlPresentationTintMatchesButtonTintColorPolicy() {
+    @Test(arguments: playerPresentationMapperVisualStates)
+    func `Control tint matches button tint policy`(state: PlayerVisualState) {
         let expectedUIColors: [PlayerVisualState: UIColor] = [
             .prePlay: .systemYellow,
             .cleared: .systemBlue,
@@ -182,78 +183,66 @@ final class PlayerPresentationMapperTests: XCTestCase {
             .securityLocked: .systemRed,
         ]
 
-        for state in allVisualStates {
-            let presentation = state.makeControlPresentation()
-            let policyColor = expectedUIColors[state] ?? state.buttonTintColor
-            XCTAssertEqual(
-                PlayerVisualChromePalette.buttonTintUIColor(for: state),
-                policyColor,
-                "Chrome palette button tint must remain stable for \(state)"
-            )
-            XCTAssertEqual(
-                state.buttonTintColor,
-                policyColor,
-                "buttonTintColor must delegate to chrome palette for \(state)"
-            )
-            XCTAssertEqual(
-                presentation.tint,
-                PlayerVisualChromePalette.buttonTintColor(for: state),
-                "Control tint must mirror chrome palette for \(state)"
-            )
-        }
+        let presentation = state.makeControlPresentation()
+        let policyColor = expectedUIColors[state] ?? state.buttonTintColor
+        #expect(
+            PlayerVisualChromePalette.buttonTintUIColor(for: state) == policyColor,
+            "Chrome palette button tint must remain stable for \(state)"
+        )
+        #expect(
+            state.buttonTintColor == policyColor,
+            "buttonTintColor must delegate to chrome palette for \(state)"
+        )
+        #expect(
+            presentation.tint == PlayerVisualChromePalette.buttonTintColor(for: state),
+            "Control tint must mirror chrome palette for \(state)"
+        )
     }
 
     /// Status presentation colors match the same palette as UIKit chrome properties.
-    func testMakeStatusPresentationColorsMatchChromePalette() {
-        for state in allVisualStates {
-            let presentation = state.makeStatusPresentation()
-            XCTAssertEqual(
-                presentation.background,
-                PlayerVisualChromePalette.backgroundColor(for: state),
-                "Status background must match chrome palette for \(state)"
-            )
-            XCTAssertEqual(
-                presentation.foreground,
-                PlayerVisualChromePalette.textColor(for: state),
-                "Status foreground must match chrome palette for \(state)"
-            )
-            XCTAssertEqual(
-                state.backgroundColor,
-                PlayerVisualChromePalette.backgroundUIColor(for: state),
-                "UIKit backgroundColor must match chrome palette for \(state)"
-            )
-            XCTAssertEqual(
-                state.textColor,
-                PlayerVisualChromePalette.textUIColor(for: state),
-                "UIKit textColor must match chrome palette for \(state)"
-            )
-        }
+    @Test(arguments: playerPresentationMapperVisualStates)
+    func `Status colors match chrome palette`(state: PlayerVisualState) {
+        let presentation = state.makeStatusPresentation()
+        #expect(
+            presentation.background == PlayerVisualChromePalette.backgroundColor(for: state),
+            "Status background must match chrome palette for \(state)"
+        )
+        #expect(
+            presentation.foreground == PlayerVisualChromePalette.textColor(for: state),
+            "Status foreground must match chrome palette for \(state)"
+        )
+        #expect(
+            state.backgroundColor == PlayerVisualChromePalette.backgroundUIColor(for: state),
+            "UIKit backgroundColor must match chrome palette for \(state)"
+        )
+        #expect(
+            state.textColor == PlayerVisualChromePalette.textUIColor(for: state),
+            "UIKit textColor must match chrome palette for \(state)"
+        )
     }
 
     /// Regression guard: control presentations differ across playing vs every non-playing state.
-    func testMakeControlPresentationPlayingDiffersFromAllNonPlayingStates() {
+    @Test func `Playing control differs from all non-playing states`() {
         let playing = PlayerVisualState.playing.makeControlPresentation()
-        let nonPlaying = allVisualStates.filter { $0 != .playing }
+        let nonPlaying = playerPresentationMapperVisualStates.filter { $0 != .playing }
 
         for state in nonPlaying {
-            XCTAssertNotEqual(
-                playing,
-                state.makeControlPresentation(),
+            #expect(
+                playing != state.makeControlPresentation(),
                 "Playing control must differ from \(state)"
             )
         }
     }
 
     /// Non-playing states that share the play glyph must still differ by tint policy.
-    func testMakeControlPresentationNonPlayingStatesRemainDistinctByTint() {
-        let nonPlaying = allVisualStates.filter { !$0.isActivelyPlaying }
+    @Test func `Non-playing control presentations remain distinct by tint`() {
+        let nonPlaying = playerPresentationMapperVisualStates.filter { !$0.isActivelyPlaying }
         let presentations = nonPlaying.map { ($0, $0.makeControlPresentation()) }
 
         for i in presentations.indices {
             for j in presentations.indices where j > i {
-                XCTAssertNotEqual(
-                    presentations[i].1,
-                    presentations[j].1,
+                #expect(
+                    presentations[i].1 != presentations[j].1,
                     "Control presentation must differ for \(presentations[i].0) vs \(presentations[j].0)"
                 )
             }
