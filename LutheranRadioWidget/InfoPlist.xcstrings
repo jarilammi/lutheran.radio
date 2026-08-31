@@ -208,6 +208,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",

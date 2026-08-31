@@ -208,6 +208,12 @@
             "value" : "Pausa ${applicationName}"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitisha ${applicationName}"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -427,6 +433,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela ${applicationName}"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheza ${applicationName}"
           }
         },
         "te" : {
@@ -650,6 +662,12 @@
             "value" : "Spela ${applicationName} på ${language}"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheza ${applicationName} kwa ${language}"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -869,6 +887,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Starta ${applicationName}"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anzisha ${applicationName}"
           }
         },
         "te" : {
@@ -1092,6 +1116,12 @@
             "value" : "Stoppa ${applicationName}"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Simamisha ${applicationName}"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1311,6 +1341,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla ${applicationName} till ${language}"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Badilisha ${applicationName} kuwa ${language}"
           }
         },
         "te" : {

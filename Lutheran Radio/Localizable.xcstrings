@@ -207,6 +207,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -932,6 +938,24 @@
             }
           }
         },
+        "sw" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld lugha"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld lugha"
+                }
+              }
+            }
+          }
+        },
         "te" : {
           "variations" : {
             "plural" : {
@@ -1188,6 +1212,12 @@
             "value" : "Dubbeltryck för att välja ljudutgångsenhet"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gusa mara mbili ili kuchagua kifaa cha kutoa sauti"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1406,6 +1436,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Visar information om det aktuella radioprogrammet"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inaonyesha maelezo kuhusu programu ya redio inayocheza sasa"
           }
         },
         "te" : {
@@ -1628,6 +1664,12 @@
             "value" : "Växlar mellan uppspelning och paus av radioströmmen"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inageuza uchezaji wa mtiririko wa redio"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1846,6 +1888,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Välj hur länge tills uppspelningen stoppas"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chagua muda hadi uchezaji utakaposimama"
           }
         },
         "te" : {
@@ -2068,6 +2116,12 @@
             "value" : "Justerar uppspelningsvolymen"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inarekebisha sauti ya uchezaji"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2283,6 +2337,12 @@
           }
         },
         "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "sw" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -2509,6 +2569,12 @@
             "value" : "Lutheran Radio-logotyp"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nembo ya Lutheran Radio"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2727,6 +2793,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausa"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitisha"
           }
         },
         "te" : {
@@ -2950,6 +3022,12 @@
             "value" : "Foto av %@"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Picha ya %@"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3168,6 +3246,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheza"
           }
         },
         "te" : {
@@ -3390,6 +3474,12 @@
             "value" : "Insomningstimer"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kipima saa cha kulala"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3608,6 +3698,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volym"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sauti"
           }
         },
         "te" : {
@@ -4335,6 +4431,24 @@
             }
           }
         },
+        "sw" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "asilimia %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "asilimia %lld"
+                }
+              }
+            }
+          }
+        },
         "te" : {
           "variations" : {
             "plural" : {
@@ -4591,6 +4705,12 @@
             "value" : "Fortsätt"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Endelea"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4809,6 +4929,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Igen"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jaribu tena"
           }
         },
         "te" : {
@@ -5031,6 +5157,12 @@
             "value" : "Tillåt för den här sessionen"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruhusu kwa kipindi hiki"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5249,6 +5381,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tillåt alltid"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruhusu kila wakati"
           }
         },
         "te" : {
@@ -5471,6 +5609,12 @@
             "value" : "Inte nu"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si sasa"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5689,6 +5833,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rensa"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Futa"
           }
         },
         "te" : {
@@ -5911,6 +6061,12 @@
             "value" : "Rensad"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imefutwa"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6129,6 +6285,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Detta stoppar uppspelningen, tar bort widget- och Live Activity-data och rensar den senaste lyssningsstatusen från den här enheten. Åtgärden kan inte ångras."
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hii itasimamisha uchezaji, kuondoa data ya wijeti na Live Activity, na kufuta hali ya hivi karibuni ya kusikiliza kutoka kwenye kifaa hiki. Kitendo hiki hakiwezi kubatilishwa."
           }
         },
         "te" : {
@@ -6351,6 +6513,12 @@
             "value" : "Rensa lokal uppspelningsstatus"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Futa hali ya uchezaji wa ndani"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6569,6 +6737,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Konfiguration för Lutheran Radio widget."
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mipangilio ya wijeti ya Lutheran Radio."
           }
         },
         "te" : {
@@ -6792,6 +6966,12 @@
             "value" : "Anslutningsfel"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hitilafu ya muunganisho"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7013,6 +7193,12 @@
             "value" : "Kontrollera Lutheran Radio uppspelning och se aktuell station."
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhibiti uchezaji wa Lutheran Radio na uone kituo cha sasa."
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7231,6 +7417,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kontrollera uppspelning och växla mellan språkströmmar."
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhibiti uchezaji na ubadilishe kati ya mitiririko ya lugha."
           }
         },
         "te" : {
@@ -7454,6 +7646,12 @@
             "value" : "Minska volymen"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Punguza sauti"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7675,6 +7873,12 @@
             "value" : "Öka volymen"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ongeza sauti"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7893,6 +8097,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spelar"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inacheza"
           }
         },
         "te" : {
@@ -8116,6 +8326,12 @@
             "value" : "Språk"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lugha"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8334,6 +8550,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Språkkod"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Msimbo wa lugha"
           }
         },
         "te" : {
@@ -8557,6 +8779,12 @@
             "value" : "Engelska"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiingereza"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8776,6 +9004,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estniska"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiestonia"
           }
         },
         "te" : {
@@ -8999,6 +9233,12 @@
             "value" : "Finska"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kifinlandi"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9218,6 +9458,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tyska"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kijerumani"
           }
         },
         "te" : {
@@ -9441,6 +9687,12 @@
             "value" : "Svenska"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiswidi"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9660,6 +9912,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Livestream"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Mtiririko hai"
           }
         },
         "te" : {
@@ -9883,6 +10141,12 @@
             "value" : "Lokal läge"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ndani pekee"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10099,6 +10363,12 @@
           }
         },
         "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "sw" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -10325,6 +10595,12 @@
             "value" : "Nästa språk"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lugha inayofuata"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10544,6 +10820,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela/Pausa"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheza/Sitisha"
           }
         },
         "te" : {
@@ -10767,6 +11049,12 @@
             "value" : "Uppspelning"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uchezaji"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10986,6 +11274,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Föregående språk"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lugha iliyotangulia"
           }
         },
         "te" : {
@@ -11208,6 +11502,12 @@
             "value" : "Appen använder mobildata, vilket kan medföra kostnader beroende på din dataplan."
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Programu inatumia data ya simu, ambayo inaweza kuleta gharama kulingana na mpango wako wa data."
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11426,6 +11726,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobil dataanvändning"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Matumizi ya data ya simu"
           }
         },
         "te" : {
@@ -11648,6 +11954,12 @@
             "value" : "Ingen spårinformation"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hakuna maelezo ya wimbo"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11868,6 +12180,12 @@
             "value" : "Spelas nu"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inacheza sasa"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12083,6 +12401,12 @@
           }
         },
         "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "sw" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -12309,6 +12633,12 @@
             "value" : "Öppna appen först"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fungua programu kwanza"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12529,6 +12859,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausa Lutheran Radio"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitisha Lutheran Radio"
           }
         },
         "te" : {
@@ -12752,6 +13088,12 @@
             "value" : "Pausa Lutheran Radio-uppspelning."
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitisha uchezaji wa Lutheran Radio."
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12970,6 +13312,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheza"
           }
         },
         "te" : {
@@ -13193,6 +13541,12 @@
             "value" : "Spela Lutheran Radio"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheza Lutheran Radio"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13411,6 +13765,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela eller pausa Lutheran Radio."
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheza au sitisha Lutheran Radio."
           }
         },
         "te" : {
@@ -13634,6 +13994,12 @@
             "value" : "Spela eller återuppta Lutheran Radio."
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheza au endeleza Lutheran Radio."
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13852,6 +14218,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kan inte starta uppspelning på grund av ett fel i säkerhetsvalideringen. Vänligen kontrollera din internetanslutning och se till att appen är uppdaterad. Om problemet kvarstår, starta om appen och försök igen."
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imeshindwa kuanza uchezaji kwa sababu ya kushindwa kwa uthibitishaji wa usalama. Tafadhali angalia muunganisho wako wa intaneti na uhakikishe programu imesasishwa. Ikiwa tatizo litaendelea, anzisha tena programu na ujaribu tena."
           }
         },
         "te" : {
@@ -14074,6 +14446,12 @@
             "value" : "Säkerhetsvalidering misslyckades"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uthibitishaji wa usalama umeshindwa"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14293,6 +14671,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Välj %@"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chagua %@"
           }
         },
         "te" : {
@@ -15020,6 +15404,24 @@
             }
           }
         },
+        "sw" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Dakika %lld imesalia"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Dakika %lld zimesalia"
+                }
+              }
+            }
+          }
+        },
         "te" : {
           "variations" : {
             "plural" : {
@@ -15276,6 +15678,12 @@
             "value" : "Avbryt timer"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ghairi kipima saa"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15494,6 +15902,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minuter"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dakika 15"
           }
         },
         "te" : {
@@ -15716,6 +16130,12 @@
             "value" : "30 minuter"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dakika 30"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15934,6 +16354,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 minuter"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dakika 45"
           }
         },
         "te" : {
@@ -16156,6 +16582,12 @@
             "value" : "60 minuter"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dakika 60"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16374,6 +16806,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Insomningstimer"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kipima saa cha kulala"
           }
         },
         "te" : {
@@ -16596,6 +17034,12 @@
             "value" : "Streamingservrarna har förnyat sina SSL-certifikat. Appen körs i kompatibilitetsläge. Vänligen uppdatera till senaste versionen när tillgänglig för optimal säkerhet."
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seva za utiririshaji zimesasisha vyeti vyao vya SSL. Programu inafanya kazi katika hali ya uoanifu. Tafadhali sasisha hadi toleo jipya zaidi linapopatikana kwa usalama bora."
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16814,6 +17258,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Certifikat uppdaterat"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheti kimesasishwa"
           }
         },
         "te" : {
@@ -17037,6 +17487,12 @@
             "value" : "Starta eller återuppta Lutheran Radio uppspelning."
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anzisha au endeleza uchezaji wa Lutheran Radio."
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17255,6 +17711,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Starta eller stoppa Lutheran Radio uppspelning."
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anzisha au simamisha uchezaji wa Lutheran Radio."
           }
         },
         "te" : {
@@ -17477,6 +17939,12 @@
             "value" : "Buffra"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inajaza"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17695,6 +18163,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ansluter"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unganisha"
           }
         },
         "te" : {
@@ -17917,6 +18391,12 @@
             "value" : "Misslyckades"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imeshindwa"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18137,6 +18617,12 @@
             "value" : "Offline"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haina mtandao"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18355,6 +18841,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Paus"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitisha"
           }
         },
         "te" : {
@@ -18578,6 +19070,12 @@
             "value" : "Pausad – Samtal pågår"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imesitishwa – Simu inaendelea"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18797,6 +19295,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uppspelning misslyckades: %@"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uchezaji umeshindwa: %@"
           }
         },
         "te" : {
@@ -19020,6 +19524,12 @@
             "value" : "Spelar"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheza"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19238,6 +19748,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Säkerhet"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usalama"
           }
         },
         "te" : {
@@ -19460,6 +19976,12 @@
             "value" : "SSL-certifikat förnyat - uppdatera app snart"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheti cha SSL kimesasishwa - sasisha programu hivi karibuni"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19678,6 +20200,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stoppad"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imesimamishwa"
           }
         },
         "te" : {
@@ -19900,6 +20428,12 @@
             "value" : "Av"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imezimwa"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20118,6 +20652,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enheten het"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kifaa moto"
           }
         },
         "te" : {
@@ -20340,6 +20880,12 @@
             "value" : "Sändningen är tillfälligt inte tillgänglig. Försök igen senare."
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Matangazo hayapatikani kwa sasa. Tafadhali jaribu tena baadaye."
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20558,6 +21104,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sändningen inte tillgänglig"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Matangazo hayapatikani"
           }
         },
         "te" : {
@@ -20781,6 +21333,12 @@
             "value" : "Byt Lutheran Radio språkström."
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Badilisha mtiririko wa lugha wa Lutheran Radio."
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20999,6 +21557,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt ström"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Badilisha mtiririko"
           }
         },
         "te" : {
@@ -21222,6 +21786,12 @@
             "value" : "Växla till %@"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Badilisha kuwa %@"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21440,6 +22010,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla till en annan språkström från Live-aktivitet."
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Badilisha kwenda mtiririko mwingine wa lugha kutoka Live Activity."
           }
         },
         "te" : {
@@ -21662,6 +22238,12 @@
             "value" : "Växla till en annan språkström."
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Badilisha kwenda mtiririko mwingine wa lugha."
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21881,6 +22463,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bytt till %@"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imebadilishwa kuwa %@"
           }
         },
         "te" : {
@@ -22105,6 +22693,12 @@
             "value" : "Tryck för att öppna"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gusa ili kufungua"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22324,6 +22918,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla Lutheran Radio"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geuza Lutheran Radio"
           }
         },
         "te" : {
@@ -22546,6 +23146,12 @@
             "value" : "Växla Lutheran Radio kanal"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geuza uchezaji wa Lutheran Radio"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22764,6 +23370,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla spela/paus från Live-aktivitet."
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geuza cheza/sitisha kutoka Live Activity."
           }
         },
         "te" : {
@@ -22985,6 +23597,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla uppspelning"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geuza uchezaji"
           }
         },
         "te" : {
@@ -23712,6 +24330,24 @@
             }
           }
         },
+        "sw" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sauti imewekwa asilimia %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sauti imewekwa asilimia %lld"
+                }
+              }
+            }
+          }
+        },
         "te" : {
           "variations" : {
             "plural" : {
@@ -23966,6 +24602,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget-konfiguration"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mipangilio ya wijeti"
           }
         },
         "te" : {
