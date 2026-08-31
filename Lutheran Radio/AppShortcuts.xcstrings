@@ -4,6 +4,12 @@
     "Pause ${applicationName}" : {
       "comment" : "Siri utterance for pause. Keep ${applicationName}. PauseRadioIntent still stops the stream (same SSOT as in-app pause).",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pouseer ${applicationName}"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -243,6 +249,12 @@
     "Play ${applicationName}" : {
       "comment" : "Siri utterance for generic play / resume. Keep ${applicationName}. Spoken imperative, not a UI title.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel ${applicationName}"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -482,6 +494,12 @@
     "Play ${applicationName} in ${language}" : {
       "comment" : "Siri utterance for play a specific language stream. Keep ${applicationName} and ${language}.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel ${applicationName} in ${language}"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -721,6 +739,12 @@
     "Start ${applicationName}" : {
       "comment" : "Siri utterance for start / begin playback. Keep ${applicationName}. Distinct verb from Play where the language has one.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Begin ${applicationName}"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -960,6 +984,12 @@
     "Stop ${applicationName}" : {
       "comment" : "Siri utterance for stop. Keep ${applicationName}. Maps to PauseRadioIntent (authoritative stop / userPaused lock).",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop ${applicationName}"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1199,6 +1229,12 @@
     "Switch ${applicationName} to ${language}" : {
       "comment" : "Siri utterance for switch stream + play. Keep ${applicationName} and ${language}.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel ${applicationName} oor na ${language}"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",

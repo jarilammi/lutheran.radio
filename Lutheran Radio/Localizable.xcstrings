@@ -3,6 +3,12 @@
   "strings" : {
     "%@ %@" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -242,6 +248,24 @@
     "%lld languages" : {
       "comment" : "Numeric format for the count of language choices in Siri / Shortcuts pickers (RadioLanguageEntity TypeDisplayRepresentation). String Catalog variations.plural — one/few/many/two/zero as required by each locale. Call site is LocalizedStringResource interpolation; do not flatten back to a single stringUnit.",
       "localizations" : {
+        "af" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld taal"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld tale"
+                }
+              }
+            }
+          }
+        },
         "am" : {
           "variations" : {
             "plural" : {
@@ -1050,6 +1074,12 @@
     },
     "accessibility_hint_airplay" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tik twee keer om die oudio-uitsettoestel te kies"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1288,6 +1318,12 @@
     },
     "accessibility_hint_metadata" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wys inligting oor die huidige radioprogram"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1526,6 +1562,12 @@
     },
     "accessibility_hint_play_pause" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel die radiostroom se afspeel aan of af"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1764,6 +1806,12 @@
     },
     "accessibility_hint_sleep_timer" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies hoe lank tot afspeel stop"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2002,6 +2050,12 @@
     },
     "accessibility_hint_volume" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas die afspeelvolume aan"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2240,6 +2294,12 @@
     },
     "accessibility_label_airplay" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2479,6 +2539,12 @@
     "accessibility_label_lutheran_radio_logo" : {
       "comment" : "Accessibility label for the placeholder logo image. Keep the brand name Lutheran Radio; localize the word for logo.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio-logo"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2717,6 +2783,12 @@
     },
     "accessibility_label_pause" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pouseer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2956,6 +3028,12 @@
     "accessibility_label_photo_of_format" : {
       "comment" : "Accessibility label for speaker photo. %@ is the speaker or program name.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto van %@"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3194,6 +3272,12 @@
     },
     "accessibility_label_play" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3432,6 +3516,12 @@
     },
     "accessibility_label_sleep_timer" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slaaptimer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3670,6 +3760,12 @@
     },
     "accessibility_label_volume" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3909,6 +4005,24 @@
     "accessibility_value_volume" : {
       "comment" : "VoiceOver value for the system volume control (0–100). String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the percent via String(localized:defaultValue:).",
       "localizations" : {
+        "af" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld persent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld persent"
+                }
+              }
+            }
+          }
+        },
         "am" : {
           "variations" : {
             "plural" : {
@@ -4717,6 +4831,12 @@
     },
     "alert_continue" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gaan voort"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4955,6 +5075,12 @@
     },
     "alert_retry" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Probeer weer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5193,6 +5319,12 @@
     },
     "cellular_allow_this_session" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laat toe vir hierdie sessie"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5431,6 +5563,12 @@
     },
     "cellular_always_allow" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laat altyd toe"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5669,6 +5807,12 @@
     },
     "cellular_not_now" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nie nou nie"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5907,6 +6051,12 @@
     },
     "clear_local_state_confirm" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vee uit"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6145,6 +6295,12 @@
     },
     "clear_local_state_done" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uitgevee"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6383,6 +6539,12 @@
     },
     "clear_local_state_message" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit sal afspeel stop, widget- en Live Activity-data verwyder, en onlangse luisterstatus van hierdie toestel uitvee. Die handeling kan nie ontdoen word nie."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6621,6 +6783,12 @@
     },
     "clear_local_state_title" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vee plaaslike afspeelstatus uit"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6859,6 +7027,12 @@
     },
     "Configuration for Lutheran Radio widget." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfigurasie vir Lutheran Radio-widget."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7098,6 +7272,12 @@
     "Connection error" : {
       "comment" : "Home/Control widget status message when the provider snapshot reports hasError. Used from WidgetSurface `WidgetProviderPresentationAssembly.assemblePresentationSlices` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in WidgetSurface and is not seen by Xcode auto-extraction.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbindingsfout"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7337,6 +7517,12 @@
     },
     "Control Lutheran Radio playback and see current station." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beheer Lutheran Radio-afspeel en sien die huidige stasie."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7575,6 +7761,12 @@
     },
     "Control playback and switch between language streams." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beheer afspeel en wissel tussen taalstrome."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7814,6 +8006,12 @@
     "decrease_volume" : {
       "comment" : "Accessibility action to decrease volume",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verlaag volume"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8053,6 +8251,12 @@
     "increase_volume" : {
       "comment" : "Accessibility action to increase volume",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verhoog volume"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8291,6 +8495,12 @@
     },
     "Is Playing" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel tans"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8530,6 +8740,12 @@
     "Language" : {
       "comment" : "Parameter title for the language/stream choice in Siri shortcuts and App Intents.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taal"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8768,6 +8984,12 @@
     },
     "Language Code" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taalkode"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9007,6 +9229,12 @@
     "language_english" : {
       "comment" : "English language option",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Engels"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9246,6 +9474,12 @@
     "language_estonian" : {
       "comment" : "Estonian language option",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estnies"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9485,6 +9719,12 @@
     "language_finnish" : {
       "comment" : "Finnish language option",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fins"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9724,6 +9964,12 @@
     "language_german" : {
       "comment" : "German language option",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duits"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9963,6 +10209,12 @@
     "language_swedish" : {
       "comment" : "Swedish language option",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sweeds"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10202,6 +10454,12 @@
     "live_activity_program_fallback" : {
       "comment" : "Live Activity / widget metadata fallback when no ICY program title is present (format: language name + live stream). Used from WidgetSurface `widgetLiveStreamFallback(languageName:)` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in the WidgetSurface framework and is not seen by Xcode auto-extraction.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Regstreekse stroom"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10441,6 +10699,12 @@
     },
     "Local Only" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slegs plaaslik"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10680,6 +10944,12 @@
     "lutheran_radio_title" : {
       "comment" : "Title for Lutheran Radio",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10919,6 +11189,12 @@
     "menu_next_language" : {
       "comment" : "Menu and keyboard shortcut that selects the next radio language stream",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volgende taal"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11158,6 +11434,12 @@
     "menu_play_pause" : {
       "comment" : "Menu and keyboard shortcut that toggles play or pause",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel/Pouseer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11397,6 +11679,12 @@
     "menu_playback" : {
       "comment" : "Main menu title for play/pause and previous/next language keyboard verbs",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspeel"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11636,6 +11924,12 @@
     "menu_previous_language" : {
       "comment" : "Menu and keyboard shortcut that selects the previous radio language stream",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorige taal"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11874,6 +12168,12 @@
     },
     "mobile_data_usage_message" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die app gebruik mobiele data, wat koste kan meebring na gelang van jou databundel."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12112,6 +12412,12 @@
     },
     "mobile_data_usage_title" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mobiele datagebruik"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12350,6 +12656,12 @@
     },
     "no_track_info" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen snitinligting"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12588,6 +12900,12 @@
     },
     "Now Playing" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel nou"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12826,6 +13144,12 @@
     },
     "ok" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13065,6 +13389,12 @@
     "open_app_first" : {
       "comment" : "Home-widget passive chrome secondary caption (medium/large) when the main app process is not recently active. Used from WidgetSurface `WidgetPassiveTapToOpenChrome` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in WidgetSurface and is not seen by Xcode auto-extraction.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maak eers die app oop"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13305,6 +13635,12 @@
     "Pause Lutheran Radio" : {
       "comment" : "Title for the Pause/Stop Lutheran Radio Siri shortcut / App Shortcut. Keep the brand name Lutheran Radio; localize the pause verb.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pouseer Lutheran Radio"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13544,6 +13880,12 @@
     "Pause Lutheran Radio playback." : {
       "comment" : "Description for PauseRadioIntent (Siri / Shortcuts).",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pouseer Lutheran Radio-afspeel."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13782,6 +14124,12 @@
     },
     "Play" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14021,6 +14369,12 @@
     "Play Lutheran Radio" : {
       "comment" : "Title for the Play Lutheran Radio Siri shortcut / App Shortcut (generic play or resume).",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel Lutheran Radio"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14259,6 +14613,12 @@
     },
     "Play or pause Lutheran Radio." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel of pouseer Lutheran Radio."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14498,6 +14858,12 @@
     "Play or resume Lutheran Radio." : {
       "comment" : "Description for PlayRadioIntent (Siri / Shortcuts).",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel of hervat Lutheran Radio."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14736,6 +15102,12 @@
     },
     "security_model_error_message" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan nie afspeel begin nie weens ’n sekuriteitsvalideringsfout. Kontroleer jou internetverbinding en maak seker die app is op datum. As die probleem voortduur, herbegin die app en probeer weer."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14974,6 +15346,12 @@
     },
     "security_model_error_title" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sekuriteitsvalidering het misluk"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15213,6 +15591,12 @@
     "select_language_accessibility" : {
       "comment" : "Accessibility label for language flag button. %@ is the language name.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies %@"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15452,6 +15836,24 @@
     "sleep_timer_accessibility_remaining" : {
       "comment" : "VoiceOver value for an active sleep timer. String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the minute count via String(localized:defaultValue:); String(format: String(localized:), n) cannot select a plural category.",
       "localizations" : {
+        "af" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Nog %lld minuut"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Nog %lld minute"
+                }
+              }
+            }
+          }
+        },
         "am" : {
           "variations" : {
             "plural" : {
@@ -16260,6 +16662,12 @@
     },
     "sleep_timer_cancel_timer" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kanselleer timer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16498,6 +16906,12 @@
     },
     "sleep_timer_preset_15_min" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minute"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16736,6 +17150,12 @@
     },
     "sleep_timer_preset_30_min" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 minute"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16974,6 +17394,12 @@
     },
     "sleep_timer_preset_45_min" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 minute"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17212,6 +17638,12 @@
     },
     "sleep_timer_preset_60_min" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 minute"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17450,6 +17882,12 @@
     },
     "sleep_timer_sheet_title" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slaaptimer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17688,6 +18126,12 @@
     },
     "ssl_transition_message" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die stroombedieners het hul SSL-sertifikate hernu. Die app werk in verenigbaarheidsmodus. Dateer asseblief op na die nuutste weergawe wanneer beskikbaar vir optimale sekuriteit."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17926,6 +18370,12 @@
     },
     "ssl_transition_title" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sertifikaat bygewerk"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18165,6 +18615,12 @@
     "Start or resume Lutheran Radio playback." : {
       "comment" : "Description for WidgetPlayRadioIntent (home widget play control / Shortcuts).",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Begin of hervat Lutheran Radio-afspeel."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18403,6 +18859,12 @@
     },
     "Start or stop Lutheran Radio playback." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Begin of stop Lutheran Radio-afspeel."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18641,6 +19103,12 @@
     },
     "status_buffering" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buffer"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18879,6 +19347,12 @@
     },
     "status_connecting" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koppel"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19117,6 +19591,12 @@
     },
     "status_failed" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Misluk"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19355,6 +19835,12 @@
     },
     "status_no_internet" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vanlyn"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19593,6 +20079,12 @@
     },
     "status_paused" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pouse"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19832,6 +20324,12 @@
     "status_paused_call" : {
       "comment" : "Text for the \"paused on call\" status, indicating that playback is paused while the device is in a call.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gepouseer – Oproep aktief"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20071,6 +20569,12 @@
     },
     "status_playback_failed_format" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspeel het misluk: %@"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20310,6 +20814,12 @@
     },
     "status_playing" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speel"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20548,6 +21058,12 @@
     },
     "status_security_failed" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sekuriteit"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20786,6 +21302,12 @@
     },
     "status_ssl_transition" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-sertifikaat hernu - dateer app binnekort op"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21024,6 +21546,12 @@
     },
     "status_stopped" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestop"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21262,6 +21790,12 @@
     },
     "status_stream_unavailable" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Af"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21500,6 +22034,12 @@
     },
     "status_thermal_paused" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toestel warm"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21738,6 +22278,12 @@
     },
     "stream_unavailable_message" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die uitsending is tydelik nie beskikbaar nie. Probeer later weer."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21976,6 +22522,12 @@
     },
     "stream_unavailable_title" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uitsending nie beskikbaar nie"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22215,6 +22767,12 @@
     "Switch Lutheran Radio language stream." : {
       "comment" : "Description for SwitchLanguageIntent (Siri / Shortcuts).",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wissel Lutheran Radio-taalstroom."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22453,6 +23011,12 @@
     },
     "Switch Stream" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wissel stroom"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22692,6 +23256,12 @@
     "Switch to %@" : {
       "comment" : "Title for switching the stream to a specific language via Siri / App Shortcut.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel oor na %@"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22930,6 +23500,12 @@
     },
     "Switch to a different language stream from Live Activity." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel oor na ’n ander taalstroom vanuit Live Activity."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23168,6 +23744,12 @@
     },
     "Switch to a different language stream." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel oor na ’n ander taalstroom."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23407,6 +23989,12 @@
     "switched_to_language %@" : {
       "comment" : "Voiceover announcement announcing the language switch. The placeholder value is replaced with the actual language name.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oorgeskakel na %@"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23647,6 +24235,12 @@
     "tap_to_open" : {
       "comment" : "Home-widget passive chrome primary caption when the main app process is not recently active. Used from WidgetSurface `WidgetPassiveTapToOpenChrome` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in WidgetSurface and is not seen by Xcode auto-extraction.",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tik om oop te maak"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23886,6 +24480,12 @@
     },
     "Toggle Lutheran Radio" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel Lutheran Radio om"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24124,6 +24724,12 @@
     },
     "Toggle Lutheran Radio Playback" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel Lutheran Radio-afspeel om"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24362,6 +24968,12 @@
     },
     "Toggle play/pause from Live Activity." : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel speel/pouseer om vanuit Live Activity."
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24601,6 +25213,12 @@
     "toggle_playback" : {
       "comment" : "Accessibility action to toggle playback",
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skakel afspeel om"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24840,6 +25458,24 @@
     "volume_set_to" : {
       "comment" : "VoiceOver announcement after a volume step. String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the percent via String(localized:defaultValue:). A literal percent sign in a translation must be written %% (stringsdict is a format string; %-mut / %-ii would be consumed as a specifier).",
       "localizations" : {
+        "af" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume ingestel op %lld persent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume ingestel op %lld persent"
+                }
+              }
+            }
+          }
+        },
         "am" : {
           "variations" : {
             "plural" : {
@@ -25648,6 +26284,12 @@
     },
     "Widget Configuration" : {
       "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Widget-konfigurasie"
+          }
+        },
         "am" : {
           "stringUnit" : {
             "state" : "translated",
