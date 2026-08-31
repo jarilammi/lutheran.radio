@@ -201,6 +201,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -902,6 +908,24 @@
             }
           }
         },
+        "te" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld భాష"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld భాషలు"
+                }
+              }
+            }
+          }
+        },
         "uk" : {
           "variations" : {
             "plural" : {
@@ -1134,6 +1158,12 @@
             "value" : "Dubbeltryck för att välja ljudutgångsenhet"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఆడియో అవుట్‌పుట్ పరికరాన్ని ఎంచుకోవడానికి రెండుసార్లు నొక్కండి"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1340,6 +1370,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Visar information om det aktuella radioprogrammet"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్రస్తుత రేడియో కార్యక్రమం గురించిన సమాచారాన్ని చూపిస్తుంది"
           }
         },
         "uk" : {
@@ -1550,6 +1586,12 @@
             "value" : "Växlar mellan uppspelning och paus av radioströmmen"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "రేడియో స్ట్రీమ్ ప్లేబ్యాక్‌ని టోగుల్ చేస్తుంది"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1756,6 +1798,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Välj hur länge tills uppspelningen stoppas"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్లేబ్యాక్ ఎంతసేపటి తర్వాత ఆగాలో ఎంచుకోండి"
           }
         },
         "uk" : {
@@ -1966,6 +2014,12 @@
             "value" : "Justerar uppspelningsvolymen"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్లేబ్యాక్ వాల్యూమ్‌ని సర్దుబాటు చేస్తుంది"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2169,6 +2223,12 @@
           }
         },
         "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "te" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -2383,6 +2443,12 @@
             "value" : "Lutheran Radio-logotyp"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio లోగో"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2589,6 +2655,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausa"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "పాజ్"
           }
         },
         "uk" : {
@@ -2800,6 +2872,12 @@
             "value" : "Foto av %@"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ఫోటో"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3006,6 +3084,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్లే"
           }
         },
         "uk" : {
@@ -3216,6 +3300,12 @@
             "value" : "Insomningstimer"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "స్లీప్ టైమర్"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3422,6 +3512,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volym"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "వాల్యూమ్"
           }
         },
         "uk" : {
@@ -4125,6 +4221,24 @@
             }
           }
         },
+        "te" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld శాతం"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld శాతం"
+                }
+              }
+            }
+          }
+        },
         "uk" : {
           "variations" : {
             "plural" : {
@@ -4357,6 +4471,12 @@
             "value" : "Fortsätt"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "కొనసాగించు"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4563,6 +4683,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Igen"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "మళ్లీ ప్రయత్నించు"
           }
         },
         "uk" : {
@@ -4773,6 +4899,12 @@
             "value" : "Tillåt för den här sessionen"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ సెషన్‌కి అనుమతించు"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4979,6 +5111,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tillåt alltid"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఎల్లప్పుడూ అనుమతించు"
           }
         },
         "uk" : {
@@ -5189,6 +5327,12 @@
             "value" : "Inte nu"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఇప్పుడు కాదు"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5395,6 +5539,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rensa"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "క్లియర్ చేయి"
           }
         },
         "uk" : {
@@ -5605,6 +5755,12 @@
             "value" : "Rensad"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "క్లియర్ చేయబడింది"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5811,6 +5967,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Detta stoppar uppspelningen, tar bort widget- och Live Activity-data och rensar den senaste lyssningsstatusen från den här enheten. Åtgärden kan inte ångras."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఇది ప్లేబ్యాక్‌ని ఆపి, విడ్జెట్ మరియు Live Activity డేటాను తొలగించి, ఈ పరికరం నుండి ఇటీవలి వినికిడి స్థితిని క్లియర్ చేస్తుంది. ఈ చర్యను రద్దు చేయలేరు."
           }
         },
         "uk" : {
@@ -6021,6 +6183,12 @@
             "value" : "Rensa lokal uppspelningsstatus"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "స్థానిక ప్లేబ్యాక్ స్థితిని క్లియర్ చేయి"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6227,6 +6395,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Konfiguration för Lutheran Radio widget."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio విడ్జెట్ కాన్ఫిగరేషన్."
           }
         },
         "uk" : {
@@ -6438,6 +6612,12 @@
             "value" : "Anslutningsfel"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "కనెక్షన్ లోపం"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6647,6 +6827,12 @@
             "value" : "Kontrollera Lutheran Radio uppspelning och se aktuell station."
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio ప్లేబ్యాక్‌ని నియంత్రించి ప్రస్తుత స్టేషన్‌ని చూడండి."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6853,6 +7039,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kontrollera uppspelning och växla mellan språkströmmar."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్లేబ్యాక్‌ని నియంత్రించి భాషా స్ట్రీమ్‌ల మధ్య మారండి."
           }
         },
         "uk" : {
@@ -7064,6 +7256,12 @@
             "value" : "Minska volymen"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "వాల్యూమ్ తగ్గించు"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7273,6 +7471,12 @@
             "value" : "Öka volymen"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "వాల్యూమ్ పెంచు"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7479,6 +7683,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spelar"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్లే అవుతోంది"
           }
         },
         "uk" : {
@@ -7690,6 +7900,12 @@
             "value" : "Språk"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "భాష"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7896,6 +8112,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Språkkod"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "భాషా కోడ్"
           }
         },
         "uk" : {
@@ -8107,6 +8329,12 @@
             "value" : "Engelska"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఆంగ్లం"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8314,6 +8542,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estniska"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఎస్టోనియన్"
           }
         },
         "uk" : {
@@ -8525,6 +8759,12 @@
             "value" : "Finska"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఫిన్నిష్"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8732,6 +8972,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tyska"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "జర్మన్"
           }
         },
         "uk" : {
@@ -8943,6 +9189,12 @@
             "value" : "Svenska"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "స్వీడిష్"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9150,6 +9402,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Livestream"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · లైవ్ స్ట్రీమ్"
           }
         },
         "uk" : {
@@ -9361,6 +9619,12 @@
             "value" : "Lokal läge"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "స్థానికం మాత్రమే"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9565,6 +9829,12 @@
           }
         },
         "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "te" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -9779,6 +10049,12 @@
             "value" : "Nästa språk"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "తదుపరి భాష"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9986,6 +10262,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela/Pausa"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్లే/పాజ్"
           }
         },
         "uk" : {
@@ -10197,6 +10479,12 @@
             "value" : "Uppspelning"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్లేబ్యాక్"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10404,6 +10692,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Föregående språk"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "మునుపటి భాష"
           }
         },
         "uk" : {
@@ -10614,6 +10908,12 @@
             "value" : "Appen använder mobildata, vilket kan medföra kostnader beroende på din dataplan."
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "యాప్ మొబైల్ డేటాను ఉపయోగిస్తోంది, మీ డేటా ప్లాన్‌ను బట్టి ఛార్జీలు రావచ్చు."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10820,6 +11120,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobil dataanvändning"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "మొబైల్ డేటా వినియోగం"
           }
         },
         "uk" : {
@@ -11030,6 +11336,12 @@
             "value" : "Ingen spårinformation"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ట్రాక్ సమాచారం లేదు"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11238,6 +11550,12 @@
             "value" : "Spelas nu"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఇప్పుడు ప్లే అవుతోంది"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11441,6 +11759,12 @@
           }
         },
         "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "te" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -11655,6 +11979,12 @@
             "value" : "Öppna appen först"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ముందుగా యాప్ తెరవండి"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11863,6 +12193,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausa Lutheran Radio"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio పాజ్ చేయి"
           }
         },
         "uk" : {
@@ -12074,6 +12410,12 @@
             "value" : "Pausa Lutheran Radio-uppspelning."
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio ప్లేబ్యాక్‌ని పాజ్ చేయండి."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12280,6 +12622,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్లే"
           }
         },
         "uk" : {
@@ -12491,6 +12839,12 @@
             "value" : "Spela Lutheran Radio"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio ప్లే చేయి"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12697,6 +13051,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela eller pausa Lutheran Radio."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio ప్లే చేయండి లేదా పాజ్ చేయండి."
           }
         },
         "uk" : {
@@ -12908,6 +13268,12 @@
             "value" : "Spela eller återuppta Lutheran Radio."
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio ప్లే చేయండి లేదా కొనసాగించండి."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13114,6 +13480,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kan inte starta uppspelning på grund av ett fel i säkerhetsvalideringen. Vänligen kontrollera din internetanslutning och se till att appen är uppdaterad. Om problemet kvarstår, starta om appen och försök igen."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "భద్రతా ధృవీకరణ వైఫల్యం కారణంగా ప్లేబ్యాక్ ప్రారంభించలేకపోయాం. దయచేసి మీ ఇంటర్నెట్ కనెక్షన్‌ని తనిఖీ చేసి, యాప్ తాజాగా ఉందని నిర్ధారించుకోండి. సమస్య కొనసాగితే, యాప్‌ని పునఃప్రారంభించి మళ్లీ ప్రయత్నించండి."
           }
         },
         "uk" : {
@@ -13324,6 +13696,12 @@
             "value" : "Säkerhetsvalidering misslyckades"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "భద్రతా ధృవీకరణ విఫలమైంది"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13531,6 +13909,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Välj %@"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ని ఎంచుకోండి"
           }
         },
         "uk" : {
@@ -14234,6 +14618,24 @@
             }
           }
         },
+        "te" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld నిమిషం మిగిలింది"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld నిమిషాలు మిగిలాయి"
+                }
+              }
+            }
+          }
+        },
         "uk" : {
           "variations" : {
             "plural" : {
@@ -14466,6 +14868,12 @@
             "value" : "Avbryt timer"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "టైమర్ రద్దు చేయి"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14672,6 +15080,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minuter"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 నిమిషాలు"
           }
         },
         "uk" : {
@@ -14882,6 +15296,12 @@
             "value" : "30 minuter"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 నిమిషాలు"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15088,6 +15508,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 minuter"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 నిమిషాలు"
           }
         },
         "uk" : {
@@ -15298,6 +15724,12 @@
             "value" : "60 minuter"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 నిమిషాలు"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15504,6 +15936,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Insomningstimer"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "స్లీప్ టైమర్"
           }
         },
         "uk" : {
@@ -15714,6 +16152,12 @@
             "value" : "Streamingservrarna har förnyat sina SSL-certifikat. Appen körs i kompatibilitetsläge. Vänligen uppdatera till senaste versionen när tillgänglig för optimal säkerhet."
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "స్ట్రీమింగ్ సర్వర్‌లు తమ SSL సర్టిఫికేట్‌లను పునరుద్ధరించాయి. యాప్ అనుకూలత మోడ్‌లో పనిచేస్తోంది. ఉత్తమ భద్రత కోసం అందుబాటులోకి వచ్చినప్పుడు తాజా వెర్షన్‌కి అప్‌డేట్ చేయండి."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15920,6 +16364,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Certifikat uppdaterat"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "సర్టిఫికేట్ అప్‌డేట్ అయింది"
           }
         },
         "uk" : {
@@ -16131,6 +16581,12 @@
             "value" : "Starta eller återuppta Lutheran Radio uppspelning."
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio ప్లేబ్యాక్‌ని ప్రారంభించండి లేదా కొనసాగించండి."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16337,6 +16793,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Starta eller stoppa Lutheran Radio uppspelning."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio ప్లేబ్యాక్‌ని ప్రారంభించండి లేదా ఆపండి."
           }
         },
         "uk" : {
@@ -16547,6 +17009,12 @@
             "value" : "Buffra"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "బఫర్"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16753,6 +17221,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ansluter"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "కనెక్ట్"
           }
         },
         "uk" : {
@@ -16963,6 +17437,12 @@
             "value" : "Misslyckades"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "విఫలం"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17171,6 +17651,12 @@
             "value" : "Offline"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఆఫ్‌లైన్"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17377,6 +17863,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Paus"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "పాజ్"
           }
         },
         "uk" : {
@@ -17588,6 +18080,12 @@
             "value" : "Pausad – Samtal pågår"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "పాజ్ – కాల్ జరుగుతోంది"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17795,6 +18293,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uppspelning misslyckades: %@"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్లేబ్యాక్ విఫలమైంది: %@"
           }
         },
         "uk" : {
@@ -18006,6 +18510,12 @@
             "value" : "Spelar"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్లే"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18212,6 +18722,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Säkerhet"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "భద్రత"
           }
         },
         "uk" : {
@@ -18422,6 +18938,12 @@
             "value" : "SSL-certifikat förnyat - uppdatera app snart"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL సర్టిఫికేట్ పునరుద్ధరించబడింది - త్వరలో యాప్ అప్‌డేట్ చేయండి"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18628,6 +19150,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stoppad"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఆపబడింది"
           }
         },
         "uk" : {
@@ -18838,6 +19366,12 @@
             "value" : "Av"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఆఫ్"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19044,6 +19578,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enheten het"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "పరికరం వేడి"
           }
         },
         "uk" : {
@@ -19254,6 +19794,12 @@
             "value" : "Sändningen är tillfälligt inte tillgänglig. Försök igen senare."
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్రసారం తాత్కాలికంగా అందుబాటులో లేదు. దయచేసి తర్వాత మళ్లీ ప్రయత్నించండి."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19460,6 +20006,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sändningen inte tillgänglig"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్రసారం అందుబాటులో లేదు"
           }
         },
         "uk" : {
@@ -19671,6 +20223,12 @@
             "value" : "Byt Lutheran Radio språkström."
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio భాషా స్ట్రీమ్‌ని మార్చండి."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19877,6 +20435,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt ström"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "స్ట్రీమ్ మార్చు"
           }
         },
         "uk" : {
@@ -20088,6 +20652,12 @@
             "value" : "Växla till %@"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@కి మార్చు"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20294,6 +20864,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla till en annan språkström från Live-aktivitet."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity నుండి వేరే భాషా స్ట్రీమ్‌కి మారండి."
           }
         },
         "uk" : {
@@ -20504,6 +21080,12 @@
             "value" : "Växla till en annan språkström."
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "వేరే భాషా స్ట్రీమ్‌కి మారండి."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20711,6 +21293,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bytt till %@"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@కి మార్చబడింది"
           }
         },
         "uk" : {
@@ -20923,6 +21511,12 @@
             "value" : "Tryck för att öppna"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "తెరవడానికి నొక్కండి"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21130,6 +21724,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla Lutheran Radio"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio టోగుల్ చేయి"
           }
         },
         "uk" : {
@@ -21340,6 +21940,12 @@
             "value" : "Växla Lutheran Radio kanal"
           }
         },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio ప్లేబ్యాక్ టోగుల్ చేయి"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21546,6 +22152,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla spela/paus från Live-aktivitet."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity నుండి ప్లే/పాజ్ టోగుల్ చేయండి."
           }
         },
         "uk" : {
@@ -21755,6 +22367,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla uppspelning"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్లేబ్యాక్ టోగుల్ చేయి"
           }
         },
         "uk" : {
@@ -22458,6 +23076,24 @@
             }
           }
         },
+        "te" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "వాల్యూమ్ %lld శాతానికి సెట్ చేయబడింది"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "వాల్యూమ్ %lld శాతానికి సెట్ చేయబడింది"
+                }
+              }
+            }
+          }
+        },
         "uk" : {
           "variations" : {
             "plural" : {
@@ -22688,6 +23324,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget-konfiguration"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "విడ్జెట్ కాన్ఫిగరేషన్"
           }
         },
         "uk" : {
