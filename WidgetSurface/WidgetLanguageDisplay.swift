@@ -38,7 +38,7 @@ public func displayFlag(for code: String) -> String {
 ///
 /// Prefer the stream catalog name when the caller supplies ``preferredStreamLanguage``
 /// (locale-correct labels from the five playable streams). Otherwise uses curated
-/// `Localizable` keys for en/de/fi/sv/et (translated in all 34 UI languages), then
+/// `Localizable` keys for en/de/fi/sv/et (translated in all 37 UI languages), then
 /// `code.capitalized`.
 ///
 /// - Parameters:
@@ -47,7 +47,7 @@ public func displayFlag(for code: String) -> String {
 ///     when available; pass `nil` for pure curated/capitalized resolution only.
 /// - Returns: Non-empty display name suitable for UI.
 /// - Important: Playback catalog membership is five streams; UI localization is the
-///   34-language README Localizations table. Do not treat this helper as a 34-stream list.
+///   37-language README Localizations table. Do not treat this helper as a 37-stream list.
 /// - SeeAlso: ``displayFlag(for:)``, README.md Localizations, CODING_AGENT.md (Localization),
 ///   docs/Widget-Functionality-Roadmap.md.
 public func displayLanguageName(
