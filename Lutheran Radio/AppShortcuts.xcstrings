@@ -4,6 +4,12 @@
     "Pause ${applicationName}" : {
       "comment" : "Siri utterance for pause. Keep ${applicationName}. PauseRadioIntent still stops the stream (same SSOT as in-app pause).",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}ን ለአፍታ አቁም"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -202,6 +208,18 @@
             "value" : "Pausa ${applicationName}"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitisha ${applicationName}"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} పాజ్ చేయి"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -213,6 +231,12 @@
     "Play ${applicationName}" : {
       "comment" : "Siri utterance for generic play / resume. Keep ${applicationName}. Spoken imperative, not a UI title.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}ን አጫውት"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -411,6 +435,18 @@
             "value" : "Spela ${applicationName}"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheza ${applicationName}"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ప్లే చేయి"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -422,6 +458,12 @@
     "Play ${applicationName} in ${language}" : {
       "comment" : "Siri utterance for play a specific language stream. Keep ${applicationName} and ${language}.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}ን በ${language} አጫውት"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -620,6 +662,18 @@
             "value" : "Spela ${applicationName} på ${language}"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheza ${applicationName} kwa ${language}"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}ని ${language}లో ప్లే చేయి"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -631,6 +685,12 @@
     "Start ${applicationName}" : {
       "comment" : "Siri utterance for start / begin playback. Keep ${applicationName}. Distinct verb from Play where the language has one.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}ን ጀምር"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -829,6 +889,18 @@
             "value" : "Starta ${applicationName}"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anzisha ${applicationName}"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ప్రారంభించు"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -840,6 +912,12 @@
     "Stop ${applicationName}" : {
       "comment" : "Siri utterance for stop. Keep ${applicationName}. Maps to PauseRadioIntent (authoritative stop / userPaused lock).",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}ን አቁም"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1038,6 +1116,18 @@
             "value" : "Stoppa ${applicationName}"
           }
         },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Simamisha ${applicationName}"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ఆపు"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1049,6 +1139,12 @@
     "Switch ${applicationName} to ${language}" : {
       "comment" : "Siri utterance for switch stream + play. Keep ${applicationName} and ${language}.",
       "localizations" : {
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}ን ወደ ${language} ቀይር"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1245,6 +1341,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla ${applicationName} till ${language}"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Badilisha ${applicationName} kuwa ${language}"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}ని ${language}కి మార్చు"
           }
         },
         "uk" : {

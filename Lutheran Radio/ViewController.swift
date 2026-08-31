@@ -40,7 +40,7 @@
 /// - Secure streaming engine → ``DirectStreamingPlayer``
 /// - Visual/intent SSOT, events, App Group session writes → ``SharedPlayerManager``
 /// - Playback catalog is the five radio streams (`en`, `de`, `fi`, `sv`, `et`) on
-///   ``DirectStreamingPlayer/availableStreams``; UI localization is the 34-language
+///   ``DirectStreamingPlayer/availableStreams``; UI localization is the 37-language
 ///   README Localizations table (not a stream count)
 ///
 /// **Still on the host today (domain files where peeled):**

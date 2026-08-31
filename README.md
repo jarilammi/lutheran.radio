@@ -32,6 +32,7 @@ Siri Shortcuts and voice control are supported out of the box ("Hey Siri, play L
 The app is fully localized in the following languages:
 - English (en)
 - Albanian (sq)
+- Amharic (am)
 - Bulgarian (bg)
 - Croatian (hr)
 - Czech (cs)
@@ -61,7 +62,9 @@ The app is fully localized in the following languages:
 - Slovak (sk)
 - Slovenian (sl)
 - Spanish (es)
+- Swahili (sw)
 - Swedish (sv)
+- Telugu (te)
 - Tornedalen Finnish (fit)
 - Ukrainian (uk)
 
