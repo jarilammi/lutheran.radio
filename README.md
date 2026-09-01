@@ -20,6 +20,7 @@ Siri Shortcuts and voice control are supported out of the box ("Hey Siri, play L
 - [Security Implementation](#security-implementation)
   - [Certificate Pinning](#certificate-pinning)
   - [Memory Safety (Compile-Time and Runtime)](#memory-safety-compile-time-and-runtime)
+  - [Xcode Security Settings](docs/xcode-security-settings.md)
   - [Security Model Validation](#security-model-validation)
   - [Single Sources of Truth — Key Files Agents Must Know Intimately](#single-sources-of-truth--key-files-agents-must-know-intimately)
   - [Security Model History](#security-model-history)
@@ -228,6 +229,8 @@ All targets (main app, widget extension, `Core` framework, `WidgetSurface` frame
 | `SWIFT_STRICT_MEMORY_SAFETY`                      | `YES`      | SE-0458 strict memory-safety checking (compile-time) |
 | `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY` | `YES`      | Explicit import visibility                           |
 
+Compile-time Clang analyzer / warning catalog and Enhanced Security entitlement decisions live in [`docs/xcode-security-settings.md`](docs/xcode-security-settings.md). That file does not replace `Core/` DNS, certificate, or security-model policy.
+
 Legacy Apple framework imports that still rely on `@preconcurrency` must be written as `@unsafe @preconcurrency import …` (currently `Security` in `Core` and streaming code, `AVFoundation` in the main app). This documents an existing concurrency boundary; it does not weaken runtime security.
 
 Clean builds should produce **zero Swift compiler warnings**. If enabling a new checker surfaces warnings, fix or explicitly annotate them in the same PR — do not leave new warnings behind.
@@ -431,7 +434,7 @@ The app enables additional MIE options for stricter memory protections:
 - `com.apple.security.hardened-process.checked-allocations.enable-pure-data = true`: Enforces pure data allocations to prevent executable code in data regions.
 - `com.apple.security.hardened-process.checked-allocations.no-tagged-receive = true`: Disallows receipt of tagged pointers from untrusted sources, preserving tag integrity.
 
-See also: [`CODING_AGENT.md`](CODING_AGENT.md) (Strict Memory Safety (SE-0458) + "Defensive Swift Practices" + force-unwrap rules), `docs/SAFETY_PATTERNS.tex` (authoritative safe Swift idioms and preferred alternatives to `!` / `as!`), and the "Single Sources of Truth" table (zero-copy patterns in `SecurityModelValidator` and `CertificateFingerprint`).
+See also: [`CODING_AGENT.md`](CODING_AGENT.md) (Strict Memory Safety (SE-0458) + "Defensive Swift Practices" + force-unwrap rules), `docs/SAFETY_PATTERNS.tex` (authoritative safe Swift idioms and preferred alternatives to `!` / `as!`), [`docs/xcode-security-settings.md`](docs/xcode-security-settings.md) (Enhanced Security / PAC / Clang catalog decisions), and the "Single Sources of Truth" table (zero-copy patterns in `SecurityModelValidator` and `CertificateFingerprint`).
 
 ## Security Model Validation
 
