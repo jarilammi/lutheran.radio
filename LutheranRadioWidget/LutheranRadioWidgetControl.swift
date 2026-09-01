@@ -77,7 +77,7 @@ struct LutheranRadioWidgetControl: ControlWidget {
                             .font(.caption2)
                         Text(value.currentStation)
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 } icon: {
                     // Pre-derived in Provider (parallel to SimpleEntry.controlPresentation).

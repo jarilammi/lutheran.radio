@@ -125,7 +125,13 @@ private func shouldShowPassiveTapToOpen() -> Bool {
 // MARK: - UIKit → SwiftUI Bridge
 
 extension UIColor {
-    var swiftUIColor: Color { Color(self) }
+    /// Widget-shell `UIColor` → SwiftUI `Color` using the labeled `Color(uiColor:)` initializer.
+    ///
+    /// Live Activity compact chrome reads ``PlayerVisualState/buttonTintColor`` through this
+    /// property. Palette mapping itself lives in ``PlayerPresentation`` (`Color(uiColor:)` there).
+    ///
+    /// - SeeAlso: ``PlayerVisualState/buttonTintColor``, `PlayerPresentation.swift`
+    var swiftUIColor: Color { Color(uiColor: self) }
 }
 
 // MARK: - Cross-Process State Model (the core of this widget extension)
@@ -418,7 +424,7 @@ struct LutheranRadioWidgetEntryView: View {
         //
         // Single application point here ensures all three families (small/medium/large) and both
         // the "tap to open" (!isAppRunning) and active playback states receive a proper container fill.
-        // We use Color(.systemBackground) to match the previous explicit intent while satisfying the API.
+        // We use Color(uiColor: .systemBackground) to match the previous explicit intent while satisfying the API.
         //
         // See also: LutheranRadioWidget.swift (the three size views no longer apply root .background),
         // WidgetKit documentation on container backgrounds, and CODING_AGENT.md "Single Source of Truth".
@@ -493,7 +499,7 @@ struct LutheranRadioWidgetEntryView: View {
             paintWakeGeneration &+= 1
         }
         .containerBackground(for: .widget) {
-            Color(.systemBackground)
+            Color(uiColor: .systemBackground)
         }
     }
 
@@ -633,7 +639,7 @@ struct MediumWidgetView: View {
                     Text(String(localized: "lutheran_radio_title", table: "Localizable"))
                         .font(.caption)
                         .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer()
                     // Direction-bound control (pause glyph → pause intent; play glyph → play intent).
@@ -644,7 +650,7 @@ struct MediumWidgetView: View {
                     Text(currentStation)
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 0)
@@ -722,7 +728,7 @@ struct LargeWidgetView: View {
                     Text(currentStation)
                         .font(.title2)
                         .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
 
                     Text(statusPresentation.text)
                         .font(.subheadline)
@@ -802,7 +808,7 @@ private func homeWidgetPlayPauseButton(
     let isPause = controlPresentation.systemImage == "pause.fill"
     let label = Image(systemName: controlPresentation.systemImage)
         .font(font)
-        .foregroundColor(controlPresentation.tint)
+        .foregroundStyle(controlPresentation.tint)
         .frame(minWidth: 44, minHeight: 44)
         .contentShape(Rectangle())
         .contentTransition(.opacity)

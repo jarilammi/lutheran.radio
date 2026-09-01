@@ -468,7 +468,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
 
                         Image(systemName: "radio")
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(radioIconTint)
+                            .foregroundStyle(radioIconTint)
                     }
 
                     // Compact animation bars + program title appear only while playing.
@@ -480,7 +480,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         // compactLeading only needs programTitle while actively playing.
                         Text(metadataModel.programTitle)
                             .font(.system(size: 8, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                 }
@@ -496,7 +496,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         
                         Image(systemName: controlPres.systemImage)
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(controlPres.tint)
+                            .foregroundStyle(controlPres.tint)
                     }
                 }
                 .buttonStyle(.plain)
@@ -511,11 +511,11 @@ struct LutheranRadioLiveActivityWidget: Widget {
                     if isPlaying {
                         Image(systemName: "play.fill")
                             .font(.system(size: 8, weight: .bold))
-                            .foregroundColor(.green)
+                            .foregroundStyle(.green)
                     } else {
                         Image(systemName: "radio")
                             .font(.system(size: 8, weight: .medium))
-                            .foregroundColor(.gray)
+                            .foregroundStyle(.gray)
                     }
                 }
             }
