@@ -10,6 +10,18 @@
 //  This replaced the prior hybrid UIKit layout. All vertical rhythm is now expressed
 //  declaratively with VStack + explicit paddings so that future layout experiments are cheap.
 //
+//  Layout honesty (volume row vs flags vs home indicator):
+//  - ``RadioPlayerView/volumeRowToFlagsSpacing`` (34) is a design gap BETWEEN
+//    `VolumeAndAirPlayRow` and `LanguageSelectorView`. It is not home-indicator
+//    clearance and not the red-needle registration.
+//  - The home indicator / window bottom safe area sits in the trailing
+//    `Spacer(minLength: 80)` (map bleed). UIKit hosting pins the SwiftUI host
+//    top to `safeAreaLayoutGuide.topAnchor` and bottom to the full view; SwiftUI
+//    still receives window bottom safe area — do not also pin the host bottom to
+//    the safe-area guide or replace 34 with `safeAreaInsets.bottom`.
+//  - Needle math (6 pt clear + overlay 4×38 + `.offset(y: -11)`) is owned by
+//    `LanguageSelectorView` only.
+//
 //  Role in event-driven architecture:
 //  - Hosts the primary SwiftUI player surface (via UIHostingController in ViewController).
 //  - Chrome is driven exclusively by `PlayerViewModel` + coordinator (status, control,
@@ -28,6 +40,8 @@
 //  - SeeAlso: `PlayerViewModel`, `ViewController`, `RadioPlayerCoordinator`,
 //    `SharedPlayerManager` (``events``, ``PlayerEvent``),
 //    `PlaybackControlsView`, `LanguageSelectorView`, `NowPlayingMetadataView`,
+//    ``RadioPlayerView/volumeRowToFlagsSpacing``,
+//    ``ViewController/setupUI()``, `ViewController+LayoutHosting.swift`,
 //    CODING_AGENT.md (Documentation & Comment Standards, Single Source of Truth Principles,
 //    Defensive Swift Practices, event-driven direction),
 //    docs/Event-Driven-Refactor-Roadmap.md,
@@ -63,12 +77,16 @@ import WidgetSurface
 /// Current visual order (top to bottom):
 /// 1. Localized app title (establishes identity immediately under the status bar).
 /// 2. Primary playback controls (play/pause, sleep timer, status pill) — placed high for reachability.
-/// 3. Now-playing metadata + conditional speaker photo.
-/// 4. Language/flag "tuner" row with animated red needle (`LanguageSelectorView`).
-/// 5. Large spacer that leaves the central screen area visually open.
-/// 6. Native system volume control (`SystemVolumeSlider` / `MPVolumeView`) + separate AirPlay row
-///    anchored near the bottom safe area. The volume control directly manipulates system output
-///    volume (AVAudioSession route volume) rather than AVPlayer internal gain.
+/// 3. Native system volume control (`SystemVolumeSlider` / `MPVolumeView`) + separate AirPlay row.
+///    ``volumeRowToFlagsSpacing`` (34 pt) is the design gap *between* this row and the flag
+///    tuner — not home-indicator / bottom-safe-area clearance. The volume control
+///    manipulates system output volume (AVAudioSession route volume) rather than
+///    AVPlayer internal gain.
+/// 4. Language/flag "tuner" row with animated red needle (`LanguageSelectorView` owns
+///    needle registration: 6 pt clear + overlay 4×38 + `.offset(y: -11)`).
+/// 5. Now-playing metadata + conditional speaker photo (directly below the tuner).
+/// 6. Large spacer (`minLength: 80`) that leaves the lower screen visually open for the
+///    full-bleed map. The home indicator sits in this spacer.
 ///
 /// The decorative map / logo background is deliberately kept in UIKit ownership
 /// (`BackgroundImageController`) behind this transparent hosting controller. This preserves
@@ -88,6 +106,7 @@ import WidgetSurface
 ///
 /// - SeeAlso: ``PlayerViewModel``, `PlaybackControlsView`, `LanguageSelectorView`,
 ///   `NowPlayingMetadataView`, `VolumeAndAirPlayRow`, `ViewController`,
+///   ``ViewController/setupUI()``, `ViewController+LayoutHosting.swift`,
 ///   `RadioPlayerCoordinator`, `BackgroundImageController`,
 ///   `RadioPlayerCoordinator.confirmAndClearLocalState()`,
 ///   ``SleepTimerPrivacyClearPresentation``,
@@ -118,6 +137,24 @@ struct RadioPlayerView: View {
     /// catalog. The value is evaluated once per instance (harmless cost). It is used directly
     /// as the title for the native `.confirmationDialog` sleep timer options (see PlaybackControlsView).
     private let sleepTimerSheetTitle = String(localized: "sleep_timer_sheet_title", table: "Localizable")
+
+    /// Design spacer between ``VolumeAndAirPlayRow`` and ``LanguageSelectorView``.
+    ///
+    /// Layout-rhythm gap only. Not home-indicator / bottom-safe-area clearance (that
+    /// lives in the trailing `Spacer(minLength: 80)`). Not the red-needle registration
+    /// (6 pt reserved clear + overlay 4×38 + `.offset(y: -11)` inside
+    /// ``LanguageSelectorView``).
+    ///
+    /// UIKit hosting already pins the SwiftUI host top to `safeAreaLayoutGuide.topAnchor`
+    /// and bottom to the full view (map bleed); SwiftUI still receives window bottom
+    /// safe area. Do not replace this value with `safeAreaInsets.bottom`,
+    /// `safeAreaPadding`, or `ignoresSafeArea`, and do not pin the host bottom to
+    /// `safeAreaLayoutGuide` — those would move AirPlay/volume vs flags (0 or other
+    /// values on iPad / landscape / iOS-on-Mac).
+    ///
+    /// - SeeAlso: ``LanguageSelectorView``, ``ViewController/setupUI()``,
+    ///   `ViewController+LayoutHosting.swift`
+    fileprivate static let volumeRowToFlagsSpacing: CGFloat = 34
 
     var body: some View {
         ZStack {
@@ -158,15 +195,18 @@ struct RadioPlayerView: View {
                 .padding(.bottom, 12)
                 
                 // Volume + AirPlay row (native system volume via MPVolumeView + dedicated AirPlayButton).
-                // Padding values chosen to feel anchored without colliding with the home indicator.
+                // Bottom padding is ``volumeRowToFlagsSpacing`` — design spacer between this row
+                // and the flag tuner. Not safe-area / home-indicator clearance. Not the needle.
                 VolumeAndAirPlayRow()
                     .padding(.horizontal, 32)
                     .padding(.top, 6)
-                    .padding(.bottom, 34)
+                    .padding(.bottom, Self.volumeRowToFlagsSpacing)
                 
                 // Flags row with red needle indicator.
-                // The needle's vertical registration is handled inside LanguageSelectorView
-                // via reserved clear space + .offset(y: -11).
+                // Needle vertical registration is owned inside LanguageSelectorView
+                // (6 pt reserved clear + overlay 4×38 + `.offset(y: -11)`). This
+                // composition root does not inset the needle; do not treat
+                // ``volumeRowToFlagsSpacing`` as needle math.
                 //
                 // Narrow input: only the selected index value and the selection closure.
                 LanguageSelectorView(
@@ -177,7 +217,7 @@ struct RadioPlayerView: View {
                     .padding(.bottom, 6)
 
                 // Song / program metadata + optional speaker photo.
-                // Placed directly above the language selector so current-stream context sits
+                // Placed directly below the language selector so current-stream context sits
                 // adjacent to the tuner controls.
                 //
                 // Narrow input: the cached NowPlayingDisplayModel + the showPhoto layout flag.
@@ -189,6 +229,8 @@ struct RadioPlayerView: View {
                 // This keeps the full-bleed decorative background (map / logo images owned by
                 // BackgroundImageController) visible behind the transparent host. The minLength
                 // is chosen so the artwork remains prominent even as the top chrome grows.
+                // The home indicator / window bottom safe area sits here — not in
+                // ``volumeRowToFlagsSpacing`` above the flags.
                 Spacer(minLength: 80)
             }
         }
@@ -204,7 +246,11 @@ struct RadioPlayerView: View {
 
 // MARK: - Volume + AirPlay Row
 
-/// Bottom control row containing speaker icon, native system volume slider, and AirPlay picker.
+/// Volume + AirPlay row (speaker icon, native system volume slider, AirPlay picker).
+///
+/// In ``RadioPlayerView`` this sits *above* ``LanguageSelectorView``. The 34 pt
+/// ``RadioPlayerView/volumeRowToFlagsSpacing`` below this row is a design gap to
+/// the flag tuner — not home-indicator / bottom-safe-area clearance.
 ///
 /// Architecture decision (post UIKit → SwiftUI foundation migration):
 /// We use a `MPVolumeView` wrapper (`SystemVolumeSlider`) rather than a SwiftUI `Slider` or

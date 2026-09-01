@@ -15,6 +15,17 @@
 //  form is idiomatic for a fixed-order static collection and keeps the matched-
 //  geometry needle animation contract identical.
 //
+//  Needle vertical registration is owned entirely in this file (6 pt reserved
+//  `Color.clear` + overlay `Rectangle` 4×38 + `.offset(y: -11)`). Do not move
+//  that math to `RadioPlayerView`. The 34 pt ``RadioPlayerView/volumeRowToFlagsSpacing``
+//  above this row is a design gap between `VolumeAndAirPlayRow` and the tuner —
+//  not safe-area, not this needle. Changing 6 / 38 / -11 requires visual
+//  verification; do not "fix" it as home-indicator clearance.
+//
+//  - SeeAlso: ``RadioPlayerView``, ``RadioPlayerView/volumeRowToFlagsSpacing``,
+//    `ViewController+LayoutHosting.swift` (host top = safe-area, bottom = full view),
+//    CODING_AGENT.md (Documentation & Comment Standards).
+//
 //  Created by Jari Lammi on 12.6.2026.
 //
 
@@ -38,14 +49,20 @@ import SwiftUI
 /// a fixed, non-scrollable, perfectly centered set of five flags.
 ///
 /// The animated red "tuning needle" uses `matchedGeometryEffect` + explicit spring animation
-/// on the container, keyed by the selected index value.
+/// on the container, keyed by the selected index value. Vertical registration is local
+/// (6 pt reserved clear + overlay 4×38 + `.offset(y: -11)`). The 34 pt gap *above* this
+/// row is ``RadioPlayerView/volumeRowToFlagsSpacing`` (design spacer to
+/// `VolumeAndAirPlayRow`); it is not this needle and not bottom safe-area.
 ///
 /// This view receives only the minimal slice (`selectedStreamIndex` + closure) consistent
 /// with the narrow-input contract now used for all main-player leaf views and the widget
 /// / Live Activity surfaces.
 ///
+/// - Important: Do not change 6 / 38 / -11, `matchedGeometryEffect`, or
+///   `ForEach(streams.indices)` as a safe-area or home-indicator "fix".
 /// - SeeAlso: ``PlayerViewModel``, `RadioPlayerCoordinator.handleLanguageSelection(at:)`,
-///   `DirectStreamingPlayer.availableStreams`, `RadioPlayerView`, README.md Localizations,
+///   `DirectStreamingPlayer.availableStreams`, `RadioPlayerView`,
+///   ``RadioPlayerView/volumeRowToFlagsSpacing``, README.md Localizations,
 ///   CODING_AGENT.md (Localization; narrow inputs for separate View types),
 ///   PlayerViewModel.swift (Main Player Presentation Dataflow).
 struct LanguageSelectorView: View {
@@ -104,6 +121,7 @@ struct LanguageSelectorView: View {
             // Reserve vertical space for the needle indicator (does not affect flag layout).
             // The 6 pt clear area + the overlay + the negative offset together place the needle
             // so it sits just below the flag glyphs, exactly as the original UIKit design required.
+            // This trio is the needle — RadioPlayerView's 34 pt volume-to-flags gap is not.
             Color.clear
                 .frame(height: 6)
         }
@@ -121,6 +139,7 @@ struct LanguageSelectorView: View {
                     // Empirically tuned vertical registration. -11 pt pulls the needle up from the
                     // overlay attachment point so its top aligns with the visual baseline of the
                     // flag emoji row. Changing this value requires visual verification on device/sim.
+                    // Do not fold this into RadioPlayerView's 34 pt volume-to-flags design spacer.
                     .offset(y: -11)
                     .matchedGeometryEffect(id: "needle", in: needleNamespace)
             }
