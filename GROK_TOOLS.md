@@ -147,7 +147,7 @@ Grok has access to **skills** (bundled capabilities). To use one:
 
 **Often relevant on this project** (when installed): `check-work`, `review`, `device-interaction`, `modernize-tests`, `audit-xcode-security-settings`, `swiftui-specialist`, `swiftui-whats-new-27`. Physical-iPhone SpringBoard / Live Activity eyes-on: follow **Device eyes-on (physical iPhone)** in `CODING_AGENT.md`. That section is vendor-path-free; this file is the Grok-side pointer to load the session’s `device-interaction` skill when present.
 
-`review` is for a local, branch, or PR **diff**. Proof-reading already-shipped mainline is `read_file` / `grep` / a read-only explore pass — do not run `/review` against a clean tree to re-audit commits already on `main`.
+`review` is for a local, branch, or PR **diff**. Proof-reading already-shipped mainline is `read_file` / `grep` / a read-only explore pass — do not run `/review` against a clean tree to re-audit commits already on `master`.
 
 For day-to-day Lutheran Radio coding the default remains disciplined use of `run_terminal_command` + `read_file` / `search_replace` / `grep`.
 

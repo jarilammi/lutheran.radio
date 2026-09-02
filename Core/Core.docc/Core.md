@@ -51,6 +51,6 @@ For a detailed explanation of the three-layer design (Configuration / Actors / S
 
 ## See Also
 
-- [Security Model Validation](https://github.com/jarilammi/lutheran.radio/blob/main/README.md#security-model-validation) in the project README
-- [Certificate Pinning](https://github.com/jarilammi/lutheran.radio/blob/main/README.md#certificate-pinning) in the project README
+- [Security Model Validation](https://github.com/jarilammi/lutheran.radio/blob/HEAD/README.md#security-model-validation) in the project README
+- [Certificate Pinning](https://github.com/jarilammi/lutheran.radio/blob/HEAD/README.md#certificate-pinning) in the project README
 - CODING_AGENT.md — Permanent rules for all contributors and AI agents working on this codebase
