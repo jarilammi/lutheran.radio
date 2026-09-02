@@ -224,13 +224,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // | Audio session | DirectStreamingPlayer+AudioSession.swift | Category + async activate/deactivate (configure / setup / deactivate); ``audioSessionMutationTail`` orders factory deactivate before first clip / play configure; ``shouldSkipSessionCoreDeactivate`` skips SessionCore deactivate of a never-configured session; ``shouldSettleSessionCoreBeforeFirstPlaybackCategory`` settles SessionCore before first-process `setCategory` |
     // | Local clip player | DirectStreamingPlayer+LocalClipPlayer.swift | Tuning/special bundled clip start (`startLocalClipPlayer`); coordinator callers live in `RadioPlayerCoordinator+Tuning` |
     // | Thermal protection | DirectStreamingPlayer+ThermalProtection.swift | Thermal pause/resume + Low Power Mode observation (`setupThermalProtection` / energy) |
-    // | Playback control | DirectStreamingPlayer+PlaybackControl.swift | Public play/stop entry (`play`, `createAndStartPlayer`, soft/hard stop paths) |
+    // | Playback control | DirectStreamingPlayer+PlaybackControl.swift | Public play/stop entry (`play`, `createAndStartPlayer`, soft/hard stop paths); stream-switch `replaceCurrentItem(nil)` |
     // | Secured player item | DirectStreamingPlayer+SecuredPlayerItem.swift | makeSecuredPlayerItem + preparePlayerItem (Core-backed resource loader path) |
     // | System media session | DirectStreamingPlayer+SystemMediaSession.swift | Privacy/factory-reset hard detach (`teardownSystemMediaSessionSynchronously`) |
     // | Deinit hygiene | DirectStreamingPlayer+DeinitHygiene.swift | `clearCallbacks` + ordered `performDeinitCleanup` (façade `deinit` stays on primary type) |
     // | Status callback delivery | DirectStreamingPlayer+StatusCallbackDelivery.swift | `safeOnStatusChange` / deliver / invoke + transient KVO suppress + metadata hop |
     // | Periodic certificate validation | DirectStreamingPlayer+PeriodicCertificateValidation.swift | `startPeriodicValidation` / `stopPeriodicCertificateValidation` (Core pin HEAD cadence) |
-    // | Playback attach | DirectStreamingPlayer+PlaybackAttach.swift | Generation, soft-pause, silence, prepareStreamChoice / attachAndPlay / startPlayback |
+    // | Playback attach | DirectStreamingPlayer+PlaybackAttach.swift | Generation, soft-pause, silence, prepareStreamChoice / attachAndPlay / startPlayback, Icecast audible-kick policy |
     // | Item recovery | DirectStreamingPlayer+PlayerItemRecovery.swift | Startup safety net, early ICY recreate, secured recreate |
     // | Observers | DirectStreamingPlayer+Observers.swift | Player/item KVO, buffer timers |
     // | Metadata | DirectStreamingPlayer+Metadata.swift | ICY StreamTitle push delegate |
@@ -336,7 +336,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Periodic Core pin revalidation timer storage (lifecycle: `+PeriodicCertificateValidation.swift`).
     var certificateValidationTimer: Timer?
     var hasStartedPlaying = false
-    /// True while cold launch / stream-switch attach waits for `.readyToPlay` before the first audible kick.
+    /// True while cold launch / stream-switch attach waits for a healthy live buffer
+    /// (`.readyToPlay` and `isPlaybackLikelyToKeepUp`) before the chrome-publishing audible kick.
     var isDeferringFirstPlayKick = false
     /// True after the first non-empty ICY StreamTitle on the current attach (cold launch / stream switch).
     // Writable from Metadata / attach recovery domain files (same module).
@@ -425,7 +426,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// True while ``play()`` or ``attachAndPlay(to:context:)`` is crossing async attach boundaries
     /// (security validation, server selection, audio-session activation, secured item attach).
     ///
-    /// - Important: User pause during this window must **not** leave a late `playImmediately` audible.
+    /// - Important: User pause during this window must **not** leave a late `play()` / `playImmediately` audible.
     ///   ``stop(reason:completion:silent:applyUserPauseVisualLock:)`` always advances
     ///   ``playbackAttachGeneration`` and soft-silences the engine; in-flight work re-checks generation
     ///   + ``SharedPlayerManager/canProceedWithPlayback()`` after every significant `await` and discards
@@ -558,6 +559,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Cancellable startup safety-net work (cold launch / stream-switch first attach only).
     var startupSafetyNetWorkItem: DispatchWorkItem?
     /// Preferred forward buffer for secured live items (cold attach, switch, and recreate).
+    /// This is AVPlayer's buffer *preference*, not a first-play kick delay. Audible start
+    /// waits for `isPlaybackLikelyToKeepUp`, not this full duration.
     let preferredLiveForwardBufferDuration: TimeInterval = 15.0
     
     var isPlaying: Bool {

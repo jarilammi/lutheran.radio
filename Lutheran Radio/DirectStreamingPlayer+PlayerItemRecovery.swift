@@ -261,10 +261,12 @@ extension DirectStreamingPlayer {
     /// entry and aborts if a concurrent ``stop(reason:completion:silent:)`` advanced it
     /// (stream-switch teardown or user pause supersedes the in-flight recreate).
     /// Rebinds player-level and item-level observers, then restarts only when
-    /// ``SharedPlayerManager/canProceedWithPlayback()`` still allows audio.
+    /// ``shouldAllowAudiblePlaybackKick()`` still allows audio. Recreate uses the same
+    /// keep-up kick policy as cold launch / stream switch (not `playImmediately` at `.readyToPlay`).
     ///
     /// - SeeAlso: `attemptEarlyWindowTransientRecovery(reason:allowWhileDeferringFirstPlayKick:)`,
     ///   `makeSecuredPlayerItem(for:)`, `setupPlaybackObservers()`,
+    ///   ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:)``,
     ///   docs/cold-launch-streamplay-regression-checklist.md (§8).
     func recreatePlayerItem() {
         Task { @MainActor [weak self] in
@@ -352,13 +354,12 @@ extension DirectStreamingPlayer {
                 return
             }
             
-            // Restart only when still allowed — defer audible kick until item is ready.
-            if newItem.status == .readyToPlay {
-                self.isDeferringFirstPlayKick = false
-                self.player?.playImmediately(atRate: 1.0)
-            } else {
-                self.isDeferringFirstPlayKick = true
-            }
+            // Restart only when still allowed — Icecast `.readyToPlay` is not a healthy
+            // live buffer; chrome-publishing kick waits for `isPlaybackLikelyToKeepUp`.
+            await self.applyLiveAttachAudibleKickIfReady(
+                itemIsReadyToPlay: newItem.status == .readyToPlay,
+                isPlaybackLikelyToKeepUp: newItem.isPlaybackLikelyToKeepUp
+            )
             
             #if DEBUG
             print("[DirectStreamingPlayer] Secured player item recreated (item.status: \(newItem.status.rawValue))")

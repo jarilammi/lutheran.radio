@@ -8,7 +8,9 @@
 //  Owns cold-start `play()`, attach-aware `createAndStartPlayer`, and hard-teardown
 //  stop paths (`stop` / `stopAndWait` / `performActualStop` / synchronous cleanup helpers).
 //  User pause cancels the Icecast URLSession and nils the item — not a retained
-//  live connection. Soft-pause (item at rate 0) is only ``enforceSilenceAfterDiscardedAttach``.
+//  live connection. Stream-switch hard stop also `replaceCurrentItem(with: nil)` after
+//  loader cancel so the next language does not attach onto a dirty `AVPlayer` graph.
+//  Soft-pause (item at rate 0) is only ``enforceSilenceAfterDiscardedAttach``.
 //
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
 //  DirectStreamingPlayer remains the public engine façade; this file owns one domain.
@@ -223,6 +225,7 @@ extension DirectStreamingPlayer {
         }
         // ========================================================
         
+        self.player?.automaticallyWaitsToMinimizeStalling = true
         self.player?.play()
 
         #if DEBUG
@@ -317,6 +320,9 @@ extension DirectStreamingPlayer {
                     delegate.cancel()
                 }
                 self.activeResourceLoaders.removeAll()
+                if Self.shouldReplaceCurrentItemWithNilOnStop(reason: reason) {
+                    self.player?.replaceCurrentItem(with: nil)
+                }
                 self.playerItem = nil
                 self.clearAttachedItemBinding()
                 if applyUserPauseVisualLock && reason == .userAction && !silent {
@@ -402,21 +408,48 @@ extension DirectStreamingPlayer {
         #endif
     }
 
+    /// Whether a hard stop should `replaceCurrentItem(with: nil)` after pause and loader cancel.
+    ///
+    /// Icecast language switch reuses the same `AVPlayer`. Niling `playerItem` without detaching
+    /// `AVPlayer.currentItem` leaves a dirty graph; the next secured item then attaches onto it.
+    /// Soft-pause same-stream resume must not use this path — it retains the item
+    /// (``enforceSilenceAfterDiscardedAttach``). User pause is already hard teardown of the
+    /// Icecast session; it does not need this HAL detach because the next play is a full
+    /// ``attachAndPlay`` of the same language.
+    ///
+    /// - Parameter reason: Engine stop reason.
+    /// - Returns: `true` for ``StopReason/streamSwitch`` (next attach is a different language).
+    /// - SeeAlso: ``performActualStop(reason:silent:)``, ``teardownSystemMediaSessionSynchronously()``,
+    ///   ``clearAttachedItemBinding()``, ``makeSecuredPlayerItem(for:)``.
+    static func shouldReplaceCurrentItemWithNilOnStop(reason: StopReason) -> Bool {
+        reason == .streamSwitch
+    }
+
     /// Performs the actual stop operation (MainActor entry from ``stop``’s isolation task).
     ///
-    /// Always hard-tears down: cancel resource loaders (Icecast `URLSession`), nil the item,
-    /// clear ``isSoftPaused``. User pause must not retain a live HTTP body while chrome
-    /// shows paused. In-flight attach discard still uses
-    /// ``enforceSilenceAfterDiscardedAttach`` (short-lived, not unattended pause).
+    /// Always hard-tears down: cancel resource loaders (Icecast `URLSession`), nil `playerItem`,
+    /// clear ``isSoftPaused``. On ``StopReason/streamSwitch``, also `replaceCurrentItem(with: nil)`
+    /// after pause + loader cancel so the next language does not attach onto a dirty `AVPlayer`
+    /// graph (same item-nil postcondition as ``teardownSystemMediaSessionSynchronously()``,
+    /// without deactivating `AVAudioSession`). User pause must not retain a live HTTP body
+    /// while chrome shows paused. In-flight attach discard still uses
+    /// ``enforceSilenceAfterDiscardedAttach`` (short-lived, not unattended pause) and must
+    /// **not** nil-replace — that path retains the item for same-stream resume.
     ///
     /// Schedules cleanup on `audioQueue` and resumes only after rate is zeroed / status
-    /// emitted on the MainActor.
+    /// emitted on the MainActor. ``stopAndWait`` callers (including
+    /// ``prepareStreamChoice(_:preparation:)`` `.switchPrep`) resume only after this
+    /// continuation, so the next secured item attaches on a niled current item.
     ///
     /// - Parameters:
+    ///   - reason: Why we are stopping (drives silent + stream-switch item-nil).
     ///   - silent: If `true`, skips all status updates to avoid UI flicker.
     /// - Note: Combines `silent` and non-user reasons into `effectiveSilent`.
-    /// - SeeAlso: ``StreamingSessionDelegate/cancel()``, ``SharedPlayerManager/stop()``,
-    ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant).
+    /// - SeeAlso: ``shouldReplaceCurrentItemWithNilOnStop(reason:)``,
+    ///   ``teardownSystemMediaSessionSynchronously()``, ``clearAttachedItemBinding()``,
+    ///   ``makeSecuredPlayerItem(for:)``, ``StreamingSessionDelegate/cancel()``,
+    ///   ``SharedPlayerManager/stop()``, docs/Widget-Presentation-Dataflow.md (Cleanup Invariant),
+    ///   CODING_AGENT.md.
     @MainActor
     func performActualStop(
         reason: StopReason,
@@ -509,6 +542,9 @@ extension DirectStreamingPlayer {
                 self.playerItem = nil
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
+                        if Self.shouldReplaceCurrentItemWithNilOnStop(reason: reason) {
+                            self.player?.replaceCurrentItem(with: nil)
+                        }
                         self.clearAttachedItemBinding()
                     }
                 }

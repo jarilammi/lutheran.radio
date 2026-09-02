@@ -12,13 +12,17 @@
 //  first presentable setCategory settles SessionCore before the call),
 //  production type / DNSSEC factory surfaces, and pure
 //  ``shouldSkipForceWidgetSaveOnStableStatus`` /
-//  ``shouldSkipSessionCoreDeactivate`` policy.
+//  ``shouldSkipSessionCoreDeactivate`` /
+//  ``audiblePlaybackKickTiming`` /
+//  ``shouldReplaceCurrentItemWithNilOnStop`` policy.
 //
 //  - SeeAlso: ``DirectStreamingPlayer``, ``SharedPlayerManager``,
 //    ``DirectStreamingPlayer/configureAudioSessionAsync()``,
 //    ``DirectStreamingPlayer/shouldSkipSessionCoreDeactivate(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``,
 //    ``DirectStreamingPlayer/shouldSettleSessionCoreBeforeFirstPlaybackCategory(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``,
 //    ``DirectStreamingPlayer/shouldSkipForceWidgetSaveOnStableStatus(isPlaying:reasonKey:visual:)``,
+//    ``DirectStreamingPlayer/audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``,
+//    ``DirectStreamingPlayer/shouldReplaceCurrentItemWithNilOnStop(reason:)``,
 //    docs/Live-Activity-Stacking-and-Media-Surfaces.md,
 //    docs/Widget-Presentation-Dataflow.md (user-initiated main open),
 //    docs/cold-launch-streamplay-regression-checklist.md.
@@ -572,6 +576,117 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         XCTAssertFalse(
             canKick,
             "Audible kick must remain blocked after hard teardown"
+        )
+    }
+
+    /// Pure Icecast kick policy: live attach waits for keep-up; soft-pause resume may kick immediately.
+    ///
+    /// Protects: `.readyToPlay` is not a healthy live MP3 buffer. `playImmediately` is reserved
+    /// for already-buffered same-stream soft-resume. ``preferredLiveForwardBufferDuration`` is
+    /// not a kick delay.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``,
+    ///   ``DirectStreamingPlayer/shouldAllowAudiblePlaybackKick()``.
+    func testAudiblePlaybackKickTimingPolicy() {
+        XCTAssertEqual(
+            DirectStreamingPlayer.audiblePlaybackKickTiming(
+                itemIsReadyToPlay: false,
+                isPlaybackLikelyToKeepUp: false,
+                isSoftPauseSameStreamResume: false
+            ),
+            .waitForReadyToPlay,
+            "Live attach must not play() / playImmediately before readyToPlay"
+        )
+        XCTAssertEqual(
+            DirectStreamingPlayer.audiblePlaybackKickTiming(
+                itemIsReadyToPlay: true,
+                isPlaybackLikelyToKeepUp: false,
+                isSoftPauseSameStreamResume: false
+            ),
+            .waitForLikelyToKeepUp,
+            "Icecast readyToPlay without keep-up must stall-wait, not playImmediately"
+        )
+        XCTAssertEqual(
+            DirectStreamingPlayer.audiblePlaybackKickTiming(
+                itemIsReadyToPlay: true,
+                isPlaybackLikelyToKeepUp: true,
+                isSoftPauseSameStreamResume: false
+            ),
+            .kickNow(usePlayImmediately: false),
+            "Live attach at keep-up uses play() (stall-wait remains on)"
+        )
+        XCTAssertEqual(
+            DirectStreamingPlayer.audiblePlaybackKickTiming(
+                itemIsReadyToPlay: true,
+                isPlaybackLikelyToKeepUp: false,
+                isSoftPauseSameStreamResume: true
+            ),
+            .kickNow(usePlayImmediately: true),
+            "Soft-pause same-stream resume may playImmediately on an already-buffered item"
+        )
+        XCTAssertEqual(
+            DirectStreamingPlayer.audiblePlaybackKickTiming(
+                itemIsReadyToPlay: false,
+                isPlaybackLikelyToKeepUp: false,
+                isSoftPauseSameStreamResume: true
+            ),
+            .kickNow(usePlayImmediately: true),
+            "Soft-pause resume must not wait for a cold live keep-up window"
+        )
+    }
+
+    /// Stream-switch hard stop nils `AVPlayer.currentItem`; other hard-stop reasons do not
+    /// use that HAL detach. Soft-pause resume is not this path.
+    ///
+    /// Protects: language switch must not attach the next secured item onto a dirty player graph.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/shouldReplaceCurrentItemWithNilOnStop(reason:)``,
+    ///   ``DirectStreamingPlayer/performActualStop(reason:silent:)``,
+    ///   ``DirectStreamingPlayer/teardownSystemMediaSessionSynchronously()``.
+    func testShouldReplaceCurrentItemWithNilOnStreamSwitchStop() {
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldReplaceCurrentItemWithNilOnStop(reason: .streamSwitch),
+            "streamSwitch stop must replaceCurrentItem(nil) after pause + loader cancel"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldReplaceCurrentItemWithNilOnStop(reason: .userAction),
+            "user pause is Icecast hard teardown of the same language — not the stream-switch HAL detach"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldReplaceCurrentItemWithNilOnStop(reason: .interruption)
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldReplaceCurrentItemWithNilOnStop(reason: .error)
+        )
+    }
+
+    /// Stream-switch `stopAndWait` leaves the same item-nil postcondition as system-media
+    /// teardown for `playerItem` / current item, without requiring a live AVPlayer in XCTest.
+    ///
+    /// Protects: ``prepareStreamChoice(_:preparation:)`` `.switchPrep` finishes teardown
+    /// before the next secured item attaches.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/stopAndWait(reason:silent:applyUserPauseVisualLock:)``,
+    ///   ``DirectStreamingPlayer/shouldReplaceCurrentItemWithNilOnStop(reason:)``.
+    func testStreamSwitchStopAndWaitNilsCurrentItem() async {
+        let engine = DirectStreamingPlayer.shared
+        await engine.test_stopAndWait(
+            reason: .streamSwitch,
+            silent: true,
+            applyUserPauseVisualLock: false
+        )
+        XCTAssertFalse(
+            engine.test_hasAttachedPlayerItem,
+            "streamSwitch stop must nil playerItem"
+        )
+        XCTAssertFalse(
+            engine.test_playerHasCurrentItem,
+            "streamSwitch stop must leave AVPlayer.currentItem nil"
+        )
+        XCTAssertFalse(engine.test_isSoftPaused)
+        XCTAssertTrue(
+            engine.test_isPlaybackTeardownActive,
+            "streamSwitch hard teardown must still arm the playback teardown guard"
         )
     }
 

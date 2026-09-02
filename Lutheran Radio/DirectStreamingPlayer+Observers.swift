@@ -5,6 +5,7 @@
 //  Created by Jari Lammi on 24.7.2026.
 //
 //  AVPlayer / AVPlayerItem KVO observers, buffer timers, and observer teardown for the streaming engine façade.
+//  First-play kick is ``applyLiveAttachAudibleKickIfReady`` (Icecast `.readyToPlay` waits for keep-up).
 //
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
 //  DirectStreamingPlayer remains the public façade; this file owns one domain.
@@ -74,11 +75,12 @@ extension DirectStreamingPlayer {
                         #endif
                         return
                     }
+                    self.isDeferringFirstPlayKick = false
                     self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")
                     self.hasStartedPlaying = true
                     self.stopBufferingTimer()
-                    // Defense-in-depth: if readyToPlay kick already published chrome, this no-ops;
-                    // if KVO observed audible play first, surfaces catch up here.
+                    // Defense-in-depth: if keep-up kick already published chrome, this no-ops;
+                    // if KVO observed audible play first (stall-wait completed), surfaces catch up here.
                     await self.publishAuthoritativePlayingIfNeeded()
                     
                 case .paused:
@@ -127,7 +129,7 @@ extension DirectStreamingPlayer {
                 switch newItemStatus {
                 case .readyToPlay:
                     // First-play kick and status_playing emission are handled by addObservers'
-                    // readyToPlay branch (single canonical path after startPlayback deferral).
+                    // readyToPlay / likelyToKeepUp branch (canonical path after startPlayback deferral).
                     break
 
                 case .failed:
@@ -208,41 +210,21 @@ extension DirectStreamingPlayer {
                     switch item.status {
                     case .readyToPlay:
                         // Canonical first-play kick: cold launch and stream-switch attach defer
-                        // playImmediately from startPlayback until the secured item is ready.
+                        // chrome until a healthy live buffer. `.readyToPlay` is not enough for
+                        // Icecast MP3 — ``applyLiveAttachAudibleKickIfReady`` stall-waits until
+                        // `isPlaybackLikelyToKeepUp` before publishing `.playing`.
                         // Must re-check sticky pause / soft-pause / teardown — user may have paused
                         // during connect while this item was still loading.
-                        // Authoritative `.playing` chrome is published only after the kick so
-                        // Now Playing rate / Live Activity glyph never lead audible audio.
                         Task { @MainActor [weak self] in
                             guard let self else { return }
                             guard item === self.playerItem else { return }
-                            guard await self.shouldAllowAudiblePlaybackKick() else {
-                                self.isDeferringFirstPlayKick = false
-                                self.player?.pause()
-                                self.player?.rate = 0.0
-                                #if DEBUG
-                                print("[DirectStreamingPlayer] readyToPlay kick suppressed — user pause / soft-pause / teardown")
-                                #endif
-                                return
-                            }
                             #if DEBUG
-                            print("[DirectStreamingPlayer] Item readyToPlay → starting playback")
+                            print("[DirectStreamingPlayer] Item readyToPlay — applying live-attach kick policy (likelyToKeepUp=\(item.isPlaybackLikelyToKeepUp))")
                             #endif
-                            
-                            self.initialPlaybackRetryCount = 0
-                            
-                            self.isDeferringFirstPlayKick = false
-                            self.cancelEarlyICYDropRecreate()
-                            if (self.player?.rate ?? 0) < 0.1 {
-                                self.player?.playImmediately(atRate: 1.0)
-                                #if DEBUG
-                                print("[DirectStreamingPlayer] playImmediately called — timeControlStatus: \(self.player?.timeControlStatus.rawValue ?? -1), rate: \(self.player?.rate ?? -1), item.status: \(item.status.rawValue)")
-                                #endif
-                            }
-                            self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
-                            self.stopBufferingTimer()
-                            self.hasStartedPlaying = true
-                            await self.publishAuthoritativePlayingIfNeeded()
+                            await self.applyLiveAttachAudibleKickIfReady(
+                                itemIsReadyToPlay: true,
+                                isPlaybackLikelyToKeepUp: item.isPlaybackLikelyToKeepUp
+                            )
                         }
                         
                     case .failed:
@@ -307,9 +289,15 @@ extension DirectStreamingPlayer {
             let likelyToKeepUpObs = playerItem.observe(\.isPlaybackLikelyToKeepUp, options: [.new]) { [weak self] item, change in
                 guard let self = self, let newValue = change.newValue else { return }
                 if newValue && item.status == .readyToPlay {
-                    guard !self.isDeferringFirstPlayKick else { return }
                     Task { @MainActor [weak self] in
                         guard let self else { return }
+                        if self.isDeferringFirstPlayKick {
+                            await self.applyLiveAttachAudibleKickIfReady(
+                                itemIsReadyToPlay: true,
+                                isPlaybackLikelyToKeepUp: true
+                            )
+                            return
+                        }
                         guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
                         if (self.player?.rate ?? 0) < 0.1 {
                             self.player?.play()
