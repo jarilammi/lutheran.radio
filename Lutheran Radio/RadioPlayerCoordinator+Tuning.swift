@@ -7,7 +7,8 @@
 //  Tuning-sound domain for RadioPlayerCoordinator (mechanical split).
 //
 //  Owns: cold-launch special clip (`playSpecialTuningSound`), stream-switch
-//  delight clip (`playTuningSound`), interrupt/stop (`stopTuningSound`), and
+//  delight clip (`playTuningSound` — duration-sleep then stop/nil, no
+//  TuningSoundCoordinator notify), interrupt/stop (`stopTuningSound`), and
 //  `AVAudioPlayerDelegate` finish/error paths that resume `TuningSoundCoordinator`
 //  waiters after the special clip.
 //
@@ -158,9 +159,16 @@ extension RadioPlayerCoordinator {
     /// Uses ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)`` so
     /// session configuration and `AVAudioPlayer` prepare/play stay off the main-actor
     /// activation path. Needle index is applied on the main actor after start returns.
+    /// After the duration sleep, stops and nils this clip the same way ``stopTuningSound()``
+    /// does (`stop` + nil + `isTuningSoundPlaying = false`) so a finished `AVAudioPlayer` is
+    /// not left as a second session client when Icecast attaches. Does **not** notify
+    /// ``TuningSoundCoordinator`` — that wait is the special cold-launch clip only;
+    /// stream-switch `play()` correctly skips it. Delegate stays nil (finish/error resume
+    /// is special-clip only). Does not paint playback chrome; callers already hold Connecting.
     ///
     /// - Parameter index: Optional stream index to commit to the view model while the clip plays.
-    /// - SeeAlso: ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
+    /// - SeeAlso: ``stopTuningSound()``,
+    ///   ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
     ///   ``DirectStreamingPlayer/configureAudioSessionAsync()``.
     func playTuningSound(animateNeedleTo index: Int? = nil) async {
         guard let tuningURL = Bundle.main.url(forResource: "tuning_sound_1", withExtension: "wav") else {
@@ -210,7 +218,7 @@ extension RadioPlayerCoordinator {
 
             let duration = clip.player.duration > 0 ? clip.player.duration : 0.8
             try? await Task.sleep(for: .seconds(duration + 0.1))
-            isTuningSoundPlaying = false
+            teardownStreamSwitchTuningClipIfCurrent(clip.player)
         } catch {
             #if DEBUG
             print("[RadioPlayerCoordinator] Failed to play tuning sound: \(error)")
@@ -222,13 +230,31 @@ extension RadioPlayerCoordinator {
         }
     }
 
+    /// Stops and nils the stream-switch delight clip without notifying ``TuningSoundCoordinator``.
+    ///
+    /// Same `stop` + nil + `isTuningSoundPlaying = false` postcondition as ``stopTuningSound()``.
+    /// Identity-guarded so a superseded clip's sleep cannot stop a newer `tuningPlayer`.
+    ///
+    /// - Parameter player: The `AVAudioPlayer` this ``playTuningSound(animateNeedleTo:)`` call started.
+    /// - SeeAlso: ``stopTuningSound()``, ``playTuningSound(animateNeedleTo:)``
+    private func teardownStreamSwitchTuningClipIfCurrent(_ player: AVAudioPlayer) {
+        guard tuningPlayer === player else { return }
+        tuningPlayer?.stop()
+        tuningPlayer = nil
+        isTuningSoundPlaying = false
+    }
+
     /// Stops any in-flight tuning clip and resumes ``TuningSoundCoordinator`` waiters when needed.
     ///
     /// Called from host interruption / route / disconnect paths that must silence delight audio
     /// without sticky-pausing secured playback. When a special cold-launch clip was active,
     /// notifies the coordinator so `SharedPlayerManager.play()` waiters can proceed.
     ///
-    /// - SeeAlso: ``playSpecialTuningSound(completion:)``, `TuningSoundCoordinator`
+    /// Stream-switch success teardown stops and nils `tuningPlayer` without calling this
+    /// method, so it does not notify the coordinator.
+    ///
+    /// - SeeAlso: ``playSpecialTuningSound(completion:)``, ``playTuningSound(animateNeedleTo:)``,
+    ///   `TuningSoundCoordinator`
     func stopTuningSound() {
         let wasActive = tuningPlayer != nil || isTuningSoundPlaying
         tuningPlayer?.stop()

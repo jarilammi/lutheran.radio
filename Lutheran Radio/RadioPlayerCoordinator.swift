@@ -98,7 +98,8 @@ import WidgetSurface
 /// ``DirectStreamingPlayer/startLocalClipPlayer``, finish via `AVAudioPlayerDelegate` →
 /// ``TuningSoundCoordinator``. Presentable cold launch (``markPresentableColdLaunchPlaybackReady`` /
 /// ``notePresentableSceneForColdLaunchPlayback``) is the sole production caller. Stream-switch
-/// delight uses ``playTuningSound(animateNeedleTo:)`` (duration-based; no main-stream gate).
+/// delight uses ``playTuningSound(animateNeedleTo:)`` (duration-based; no main-stream gate;
+/// the clip is stopped/niled after the sleep without notifying ``TuningSoundCoordinator``).
 /// Host interruption/route paths call ``stopTuningSound()``.
 ///
 /// - SeeAlso: ``SharedPlayerManager/signalWidgetPendingAction(visualState:action:language:)``,
@@ -123,7 +124,7 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     // |--------|------|----------------|
     // | Pending-action drain | RadioPlayerCoordinator+PendingActions.swift | App Group `pendingAction*` drain, play/pause debounce, UITestMode drain-without-execute, widget play/pause helpers + DEBUG seams |
     // | Sleep-timer UI glue | RadioPlayerCoordinator+SleepTimer.swift | Dialog settle windows, preset/cancel, local countdown Task + VM sync, SleepTimerNotification, metadata deferral window |
-    // | Tuning sounds | RadioPlayerCoordinator+Tuning.swift | Cold-launch special clip, stream-switch delight, stop/interrupt, AVAudioPlayerDelegate finish → TuningSoundCoordinator |
+    // | Tuning sounds | RadioPlayerCoordinator+Tuning.swift | Cold-launch special clip, stream-switch delight (duration-sleep stop/nil, no coordinator notify), stop/interrupt, AVAudioPlayerDelegate finish → TuningSoundCoordinator |
     // | Stream switch / language | RadioPlayerCoordinator+StreamSwitch.swift | Flag-tap completeStreamSwitch, widget silent switch, external deep-link switch, keyboard/menu adjacent wrap (`handleAdjacentLanguageSelection`), updateUserDefaultsLanguage, language VoiceOver announce |
     // | Status / chrome distribution | RadioPlayerCoordinator+StatusDistribution.swift | updateUI, handleStatusChange, SSOT visual chrome observation, RadioPlayerChromeVisualResolver, VM metadata/switch-flag sync, no-internet chrome, NP/widget save forwarders, thermal VoiceOver |
     // | Play / pause toggle | (this file) | handlePlayAction / handlePauseAction / handleTogglePlayback / handleUserTogglePlayback / pausePlayback / stopPlayback public shims |
