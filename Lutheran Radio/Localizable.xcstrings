@@ -93,6 +93,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -537,6 +543,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld dil"
+                }
+              }
+            }
+          }
+        },
+        "ha" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld harshe"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld harsuna"
                 }
               }
             }
@@ -1206,6 +1230,12 @@
             "value" : "Ses çıkış aletini seçmää üçin iki kerä bas"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Danna sau biyu don zaɓar na'urar fitar da sauti"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1460,6 +1490,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Şindiki radio programmasına dair malumat gösterer"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yana nuna bayani game da shirin rediyo na yanzu"
           }
         },
         "hr" : {
@@ -1718,6 +1754,12 @@
             "value" : "Radio yayınını çalêr yaki pauza eer"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yana juya kunna ko dakatar da watsawar rediyo"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1972,6 +2014,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Çalmaanın ne zaman duraceenı seç"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zaɓi tsawon lokaci har sai watsawa ta tsaya"
           }
         },
         "hr" : {
@@ -2230,6 +2278,12 @@
             "value" : "Çalmaa sesini ayarlêr"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yana daidaita ƙarar sautin watsawa"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2481,6 +2535,12 @@
           }
         },
         "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "ha" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -2743,6 +2803,12 @@
             "value" : "Lutheran Radio logosu"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tambarin Lutheran Radio"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2997,6 +3063,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauza"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dakata"
           }
         },
         "hr" : {
@@ -3256,6 +3328,12 @@
             "value" : "Foto %@"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoton %@"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3510,6 +3588,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Çal"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna"
           }
         },
         "hr" : {
@@ -3768,6 +3852,12 @@
             "value" : "Uyku taymeri"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agogon barci"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4022,6 +4112,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ses"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sauti"
           }
         },
         "hr" : {
@@ -4468,6 +4564,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld proţent"
+                }
+              }
+            }
+          }
+        },
+        "ha" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "kashi ɗari %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "kashi ɗari %lld"
                 }
               }
             }
@@ -5137,6 +5251,12 @@
             "value" : "Devam et"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ci gaba"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5391,6 +5511,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gene dene"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sake gwadawa"
           }
         },
         "hr" : {
@@ -5649,6 +5775,12 @@
             "value" : "Bu seans üçin izin ver"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yarda a wannan zama"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5903,6 +6035,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hep izin ver"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yarda koyaushe"
           }
         },
         "hr" : {
@@ -6161,6 +6299,12 @@
             "value" : "Şindi yok"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ba yanzu ba"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6415,6 +6559,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sil"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Goge"
           }
         },
         "hr" : {
@@ -6673,6 +6823,12 @@
             "value" : "Silindi"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An goge"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6927,6 +7083,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bu, çalmaayı durduracek, vidjet hem Live Activity verilerini kaldıracek hem bu aletdän son dinlemää durumunu silecek. Bu işlem geriyä alınamaz."
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wannan zai tsayar da watsawa, cire bayanan wijet da Live Activity, kuma goge kwanan nan na sauraro daga wannan na'ura. Ba za a iya soke wannan aikin ba."
           }
         },
         "hr" : {
@@ -7185,6 +7347,12 @@
             "value" : "Lokal çalmaa durumunu sil"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Goge yanayin watsawa na ciki"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7439,6 +7607,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio vidjeti konfiguratsiyası."
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saiti na wijet ɗin Lutheran Radio."
           }
         },
         "hr" : {
@@ -7698,6 +7872,12 @@
             "value" : "Bağlantı yannışı"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuskuren haɗi"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7955,6 +8135,12 @@
             "value" : "Lutheran Radio çalmaasını kontrol et hem şindiki stantsiyanı gör."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sarrafa watsawar Lutheran Radio kuma ka ga tashar yanzu."
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8209,6 +8395,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Çalmaayı kontrol et hem dil yayınnarı arasında geç."
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sarrafa watsawa kuma ka canza tsakanin watsawar harsuna."
           }
         },
         "hr" : {
@@ -8468,6 +8660,12 @@
             "value" : "Sesi azalt"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rage sauti"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8725,6 +8923,12 @@
             "value" : "Sesi artır"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ƙara sauti"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8979,6 +9183,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Çalêr"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ana kunna"
           }
         },
         "hr" : {
@@ -9238,6 +9448,12 @@
             "value" : "Dil"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Harshe"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9492,6 +9708,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dil kodu"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lambar harshe"
           }
         },
         "hr" : {
@@ -9751,6 +9973,12 @@
             "value" : "İnglizçä"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turanci"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10006,6 +10234,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estonçä"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Istoniyanci"
           }
         },
         "hr" : {
@@ -10265,6 +10499,12 @@
             "value" : "Finçä"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yaren Finland"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10520,6 +10760,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nemţä"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamusanci"
           }
         },
         "hr" : {
@@ -10779,6 +11025,12 @@
             "value" : "Şvedçä"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yaren Sweden"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11034,6 +11286,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Canlı yayın"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Watsawa kai tsaye"
           }
         },
         "hr" : {
@@ -11293,6 +11551,12 @@
             "value" : "Sade lokal"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Na ciki kawai"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11545,6 +11809,12 @@
           }
         },
         "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "ha" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -11807,6 +12077,12 @@
             "value" : "Soraki dil"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Harshe na gaba"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12062,6 +12338,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Çal/Dur"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna/Dakata"
           }
         },
         "hr" : {
@@ -12321,6 +12603,12 @@
             "value" : "Çalma"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watsawa"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12576,6 +12864,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "İlerki dil"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Harshe na baya"
           }
         },
         "hr" : {
@@ -12834,6 +13128,12 @@
             "value" : "Aplikatsiya mobil data kullanêr; bu, senin data tarifäna görä masrafa sebep olabilir."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manhajar tana amfani da odat ɗin waya, wanda zai iya haifar da kuɗi gwargwadon shirin odat ɗinku."
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13088,6 +13388,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobil data kullanımı"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amfani da odat ɗin waya"
           }
         },
         "hr" : {
@@ -13346,6 +13652,12 @@
             "value" : "Parça malumatı yok"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Babu bayanin waƙa"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13600,6 +13912,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Şindi çalêr"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ana kunna yanzu"
           }
         },
         "hr" : {
@@ -13858,6 +14176,12 @@
             "value" : "Tamam"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14113,6 +14437,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Öndän aplikatsiyanı aç"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buɗe manhaja da farko"
           }
         },
         "hr" : {
@@ -14373,6 +14703,12 @@
             "value" : "Lutheran Radio pauza et"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dakatar da Lutheran Radio"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14630,6 +14966,12 @@
             "value" : "Lutheran Radio çalmaasını pauza et."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dakatar da watsawar Lutheran Radio."
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14884,6 +15226,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Çal"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna"
           }
         },
         "hr" : {
@@ -15143,6 +15491,12 @@
             "value" : "Lutheran Radio çal"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna Lutheran Radio"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15397,6 +15751,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio çal yaki pauza et."
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna ko dakatar da Lutheran Radio."
           }
         },
         "hr" : {
@@ -15656,6 +16016,12 @@
             "value" : "Lutheran Radio çal yaki devam et."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna ko ci gaba da Lutheran Radio."
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15910,6 +16276,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Eminlik kontrolu yannışından çalmaa başlanameer. Internet bağlantını kontrol et hem aplikatsiyanın eni versiyada olduuunu bak. Problem devam ederä, aplikatsiyanı kapat hem taa bir kerä aç, sora gene dene."
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An kasa fara watsawa saboda gazawar tabbatar da tsaro. Da fatan za a duba haɗin intanet ɗinku kuma ku tabbatar cewa manhajar tana da sabuntawa. Idan matsalar ta ci gaba, sake kunna manhajar ku gwada kuma."
           }
         },
         "hr" : {
@@ -16168,6 +16540,12 @@
             "value" : "Eminlik kontrolu olmadı"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabbatar da tsaro ya gaza"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16423,6 +16801,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Seç %@"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zaɓi %@"
           }
         },
         "hr" : {
@@ -16869,6 +17253,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld minut kaldı"
+                }
+              }
+            }
+          }
+        },
+        "ha" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "minti %lld ya saura"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "mintuna %lld sun saura"
                 }
               }
             }
@@ -17538,6 +17940,12 @@
             "value" : "Taymeri kaldır"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soke agogo"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17792,6 +18200,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minut"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "minti 15"
           }
         },
         "hr" : {
@@ -18050,6 +18464,12 @@
             "value" : "30 minut"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "minti 30"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18304,6 +18724,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 minut"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "minti 45"
           }
         },
         "hr" : {
@@ -18562,6 +18988,12 @@
             "value" : "60 minut"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "minti 60"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18816,6 +19248,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uyku taymeri"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agogon barci"
           }
         },
         "hr" : {
@@ -19074,6 +19512,12 @@
             "value" : "Yayın serverleri SSL sertifikatlarını eniledi. Aplikatsiya uyum modunda işleer. En iyi eminlik üçin, eni versiya çıkınca aplikatsiyanı enile."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server ɗin watsawa sun sabunta takardun shaida na SSL. Manhajar tana aiki a yanayin daidaitawa. Da fatan za a sabunta zuwa sabuwar sigar da ta samu don tsaro mafi kyau."
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19328,6 +19772,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sertifikat enilendi"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An sabunta takardar shaida"
           }
         },
         "hr" : {
@@ -19587,6 +20037,12 @@
             "value" : "Lutheran Radio çalmaasını başlat yaki devam et."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fara ko ci gaba da watsawar Lutheran Radio."
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19841,6 +20297,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio çalmaasını başlat yaki durdur."
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fara ko tsayar da watsawar Lutheran Radio."
           }
         },
         "hr" : {
@@ -20099,6 +20561,12 @@
             "value" : "Büfer"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cikawa"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20353,6 +20821,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bağlan"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haɗa"
           }
         },
         "hr" : {
@@ -20611,6 +21085,12 @@
             "value" : "Olmadı"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya gaza"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20867,6 +21347,12 @@
             "value" : "Oflayn"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ba kan layi"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21121,6 +21607,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauza"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dakata"
           }
         },
         "hr" : {
@@ -21380,6 +21872,12 @@
             "value" : "Pauzada – Zvonok"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An dakata – Kira yana gudana"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21635,6 +22133,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Çalmaa olmadı: %@"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watsawa ta gaza: %@"
           }
         },
         "hr" : {
@@ -21894,6 +22398,12 @@
             "value" : "Çal"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22148,6 +22658,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Eminlik"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsaro"
           }
         },
         "hr" : {
@@ -22406,6 +22922,12 @@
             "value" : "SSL sertifikatı enilendi – aplikatsiyanı yakında enile"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An sabunta takardar shaida ta SSL - sabunta manhaja nan ba da jimawa ba"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22660,6 +23182,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Durdu"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An tsaya"
           }
         },
         "hr" : {
@@ -22918,6 +23446,12 @@
             "value" : "Kapalı"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kashe"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23172,6 +23706,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alet sıcak"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Na'ura mai zafi"
           }
         },
         "hr" : {
@@ -23430,6 +23970,12 @@
             "value" : "Yayın şindi geçici olarak yok. Lütfen taa sora gene dene."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watsawar ba ta samuwa a ɗan lokaci. Da fatan za a sake gwadawa daga baya."
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23684,6 +24230,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yayın yok"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watsawar ba ta samuwa"
           }
         },
         "hr" : {
@@ -23943,6 +24495,12 @@
             "value" : "Lutheran Radio dil yayınını däiştir."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canza watsawar harshen Lutheran Radio."
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24197,6 +24755,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yayını däiştir"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canza watsawa"
           }
         },
         "hr" : {
@@ -24456,6 +25020,12 @@
             "value" : "%@ dilinä geç"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canza zuwa %@"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24710,6 +25280,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Live Activity-dän başka dil yayınına geç."
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canza zuwa watsawar harshe daban daga Live Activity."
           }
         },
         "hr" : {
@@ -24968,6 +25544,12 @@
             "value" : "Başka dil yayınına geç."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canza zuwa watsawar harshe daban."
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25223,6 +25805,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ dilinä geçildi"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An canza zuwa %@"
           }
         },
         "hr" : {
@@ -25483,6 +26071,12 @@
             "value" : "Açmaa üçin bas"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taɓa don buɗewa"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25738,6 +26332,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio aç/kapa"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juya Lutheran Radio"
           }
         },
         "hr" : {
@@ -25996,6 +26596,12 @@
             "value" : "Lutheran Radio çalmaasını aç/kapa"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juya watsawar Lutheran Radio"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26250,6 +26856,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Live Activity-dän çal/pauza."
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juya kunna/dakata daga Live Activity."
           }
         },
         "hr" : {
@@ -26507,6 +27119,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Çalmaayı aç/kapa"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juya watsawa"
           }
         },
         "hr" : {
@@ -26953,6 +27571,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "Ses %lld proţentä ayarlandı"
+                }
+              }
+            }
+          }
+        },
+        "ha" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "An saita sauti zuwa kashi ɗari %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "An saita sauti zuwa kashi ɗari %lld"
                 }
               }
             }
@@ -27620,6 +28256,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vidjet konfiguratsiyası"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saitin wijet"
           }
         },
         "hr" : {

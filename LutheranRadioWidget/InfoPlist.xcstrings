@@ -94,6 +94,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
