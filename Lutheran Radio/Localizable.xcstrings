@@ -93,6 +93,18 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -153,6 +165,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -160,6 +178,12 @@
           }
         },
         "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
+        "om" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ %2$@"
@@ -226,6 +250,12 @@
           }
         },
         "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
+        "ta" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ %2$@"
@@ -530,6 +560,42 @@
             }
           }
         },
+        "ha" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld harshe"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld harsuna"
+                }
+              }
+            }
+          }
+        },
+        "hi" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld भाषा"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld भाषाएँ"
+                }
+              }
+            }
+          }
+        },
         "hr" : {
           "variations" : {
             "plural" : {
@@ -728,6 +794,18 @@
             }
           }
         },
+        "ng" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld omalaka"
+                }
+              }
+            }
+          }
+        },
         "nl" : {
           "variations" : {
             "plural" : {
@@ -759,6 +837,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld språk"
+                }
+              }
+            }
+          }
+        },
+        "om" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld afaan"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld afaanota"
                 }
               }
             }
@@ -1022,6 +1118,24 @@
             }
           }
         },
+        "ta" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld மொழி"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld மொழிகள்"
+                }
+              }
+            }
+          }
+        },
         "te" : {
           "variations" : {
             "plural" : {
@@ -1164,6 +1278,18 @@
             "value" : "Ses çıkış aletini seçmää üçin iki kerä bas"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Danna sau biyu don zaɓar na'urar fitar da sauti"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ऑडियो आउटपुट उपकरण चुनने के लिए दो बार दबाएँ"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1224,6 +1350,12 @@
             "value" : "Dobbelttrykk for å velge lydutgangsenhet"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhenga kaali opo u hogolole oshinima shokutuma omukumo"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1234,6 +1366,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dobbelttrykk for å velja lydutgangseining"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al lama tuqi meeshaa bahiinsa sagalee filachuuf"
           }
         },
         "pl" : {
@@ -1300,6 +1438,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gusa mara mbili ili kuchagua kifaa cha kutoa sauti"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஆடியோ அவுட்புட் சாதனத்தைத் தேர்ந்தெடுக்க இருமுறை அழுத்தவும்"
           }
         },
         "te" : {
@@ -1408,6 +1552,18 @@
             "value" : "Şindiki radio programmasına dair malumat gösterer"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yana nuna bayani game da shirin rediyo na yanzu"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "वर्तमान रेडियो कार्यक्रम की जानकारी दिखाता है"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1468,6 +1624,12 @@
             "value" : "Viser informasjon om gjeldende radioprogram"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otali ulike uuyelele woprogram yoradio ya paife"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1478,6 +1640,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Viser informasjon om gjeldande radioprogram"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odeeffannaa sagantaa raadiyoo ammaa agarsiisa"
           }
         },
         "pl" : {
@@ -1544,6 +1712,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Inaonyesha maelezo kuhusu programu ya redio inayocheza sasa"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "தற்போதைய ரேடியோ நிகழ்ச்சி பற்றிய தகவலைக் காட்டுகிறது"
           }
         },
         "te" : {
@@ -1652,6 +1826,18 @@
             "value" : "Radio yayınını çalêr yaki pauza eer"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yana juya kunna ko dakatar da watsawar rediyo"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "रेडियो स्ट्रीम प्लेबैक को टॉगल करता है"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1712,6 +1898,12 @@
             "value" : "Veksler mellom avspilling og pause av radiostrømmen"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otali lundulula okudhana kostream yoradio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1722,6 +1914,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vekslar mellom avspeling og pause av radiostraumen"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa toora raadiyoo banuu ykn cufuu jijjiira"
           }
         },
         "pl" : {
@@ -1788,6 +1986,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Inageuza uchezaji wa mtiririko wa redio"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ரேடியோ ஸ்ட்ரீம் பிளேபேக்கை டோகிள் செய்கிறது"
           }
         },
         "te" : {
@@ -1896,6 +2100,18 @@
             "value" : "Çalmaanın ne zaman duraceenı seç"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zaɓi tsawon lokaci har sai watsawa ta tsaya"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्लेबैक कितनी देर बाद रुके, चुनें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1956,6 +2172,12 @@
             "value" : "Velg hvor lenge før avspilling stopper"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hogolola ethimbo lyokukala okudhana"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1966,6 +2188,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vel kor lenge før avspeling stoppar"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hanga taphachiisni dhaabatu yeroo filadhu"
           }
         },
         "pl" : {
@@ -2032,6 +2260,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Chagua muda hadi uchezaji utakaposimama"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பிளேபேக் எவ்வளவு நேரத்துக்குப் பிறகு நிற்க வேண்டும் என்பதைத் தேர்ந்தெடுக்கவும்"
           }
         },
         "te" : {
@@ -2140,6 +2374,18 @@
             "value" : "Çalmaa sesini ayarlêr"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yana daidaita ƙarar sautin watsawa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्लेबैक वॉल्यूम समायोजित करता है"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2200,6 +2446,12 @@
             "value" : "Justerer avspillingsvolumet"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otali lundulula omukumo gwokudhana"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2210,6 +2462,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Justerer avspelingsvolumet"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sagalee taphachiisaa sirreessa"
           }
         },
         "pl" : {
@@ -2276,6 +2534,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Inarekebisha sauti ya uchezaji"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பிளேபேக் வால்யூமைச் சரிசெய்கிறது"
           }
         },
         "te" : {
@@ -2384,6 +2648,18 @@
             "value" : "AirPlay"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2444,6 +2720,12 @@
             "value" : "AirPlay"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2451,6 +2733,12 @@
           }
         },
         "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "om" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -2517,6 +2805,12 @@
           }
         },
         "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "ta" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -2629,6 +2923,18 @@
             "value" : "Lutheran Radio logosu"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tambarin Lutheran Radio"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio लोगो"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2689,6 +2995,12 @@
             "value" : "Lutheran Radio-logo"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ologo ya Lutheran Radio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2699,6 +3011,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio-logo"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asxaa Lutheran Radio"
           }
         },
         "pl" : {
@@ -2765,6 +3083,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nembo ya Lutheran Radio"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio லோகோ"
           }
         },
         "te" : {
@@ -2873,6 +3197,18 @@
             "value" : "Pauza"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dakata"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पॉज़"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2933,6 +3269,12 @@
             "value" : "Pause"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kala po"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2943,6 +3285,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pause"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhaabi"
           }
         },
         "pl" : {
@@ -3009,6 +3357,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sitisha"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பாஸ்"
           }
         },
         "te" : {
@@ -3118,6 +3472,18 @@
             "value" : "Foto %@"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoton %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ की फ़ोटो"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3178,6 +3544,12 @@
             "value" : "Bilde av %@"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ethano lya %@"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3188,6 +3560,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bilete av %@"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suuraa %@"
           }
         },
         "pl" : {
@@ -3254,6 +3632,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Picha ya %@"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ போட்டோ"
           }
         },
         "te" : {
@@ -3362,6 +3746,18 @@
             "value" : "Çal"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्ले"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3422,6 +3818,12 @@
             "value" : "Spill av"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3432,6 +3834,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel av"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisi"
           }
         },
         "pl" : {
@@ -3498,6 +3906,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cheza"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பிளே"
           }
         },
         "te" : {
@@ -3606,6 +4020,18 @@
             "value" : "Uyku taymeri"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agogon barci"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्लीप टाइमर"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3666,6 +4092,12 @@
             "value" : "Søvntimer"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otimer yokukotha"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3676,6 +4108,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Søvntimer"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taimera hirribaa"
           }
         },
         "pl" : {
@@ -3742,6 +4180,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kipima saa cha kulala"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஸ்லீப் டைமர்"
           }
         },
         "te" : {
@@ -3850,6 +4294,18 @@
             "value" : "Ses"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sauti"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "वॉल्यूम"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3910,6 +4366,12 @@
             "value" : "Volum"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3920,6 +4382,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volum"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sagalee"
           }
         },
         "pl" : {
@@ -3986,6 +4454,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sauti"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "வால்யூம்"
           }
         },
         "te" : {
@@ -4287,6 +4761,42 @@
             }
           }
         },
+        "ha" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "kashi ɗari %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "kashi ɗari %lld"
+                }
+              }
+            }
+          }
+        },
+        "hi" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld प्रतिशत"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld प्रतिशत"
+                }
+              }
+            }
+          }
+        },
         "hr" : {
           "variations" : {
             "plural" : {
@@ -4485,6 +4995,18 @@
             }
           }
         },
+        "ng" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld opercent"
+                }
+              }
+            }
+          }
+        },
         "nl" : {
           "variations" : {
             "plural" : {
@@ -4516,6 +5038,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld prosent"
+                }
+              }
+            }
+          }
+        },
+        "om" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "dhibbeentaa %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "dhibbeentaa %lld"
                 }
               }
             }
@@ -4779,6 +5319,24 @@
             }
           }
         },
+        "ta" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld சதவீதம்"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld சதவீதம்"
+                }
+              }
+            }
+          }
+        },
         "te" : {
           "variations" : {
             "plural" : {
@@ -4921,6 +5479,18 @@
             "value" : "Devam et"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ci gaba"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "जारी रखें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4981,6 +5551,12 @@
             "value" : "Fortsett"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsikila"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4991,6 +5567,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hald fram"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Itti fufi"
           }
         },
         "pl" : {
@@ -5057,6 +5639,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Endelea"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "தொடர்"
           }
         },
         "te" : {
@@ -5165,6 +5753,18 @@
             "value" : "Gene dene"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sake gwadawa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "फिर कोशिश करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5225,6 +5825,12 @@
             "value" : "Igjen"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kambadhala ishewe"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5235,6 +5841,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Igjen"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Irra deebi'ii yaali"
           }
         },
         "pl" : {
@@ -5301,6 +5913,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Jaribu tena"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "மீண்டும் முயற்சி"
           }
         },
         "te" : {
@@ -5409,6 +6027,18 @@
             "value" : "Bu seans üçin izin ver"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yarda a wannan zama"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "इस सेशन के लिए अनुमति दें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5469,6 +6099,12 @@
             "value" : "Tillat for denne økten"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pitika ethimbo ndika"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5479,6 +6115,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tillat for denne økta"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yeroo kanaaf hayyami"
           }
         },
         "pl" : {
@@ -5545,6 +6187,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ruhusu kwa kipindi hiki"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்த செஷனுக்கு அனுமதி"
           }
         },
         "te" : {
@@ -5653,6 +6301,18 @@
             "value" : "Hep izin ver"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yarda koyaushe"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "हमेशा अनुमति दें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5713,6 +6373,12 @@
             "value" : "Tillat alltid"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pitika aluhe"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5723,6 +6389,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tillat alltid"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yeroo hunda hayyami"
           }
         },
         "pl" : {
@@ -5789,6 +6461,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ruhusu kila wakati"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "எப்போதும் அனுமதி"
           }
         },
         "te" : {
@@ -5897,6 +6575,18 @@
             "value" : "Şindi yok"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ba yanzu ba"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "अभी नहीं"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5957,6 +6647,12 @@
             "value" : "Ikke nå"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nena aawe"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5967,6 +6663,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ikkje no"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amma miti"
           }
         },
         "pl" : {
@@ -6033,6 +6735,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Si sasa"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இப்போது வேண்டாம்"
           }
         },
         "te" : {
@@ -6141,6 +6849,18 @@
             "value" : "Sil"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Goge"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "क्लियर करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6201,6 +6921,12 @@
             "value" : "Tøm"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yedha"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6211,6 +6937,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tøm"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qulqulleessi"
           }
         },
         "pl" : {
@@ -6277,6 +7009,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Futa"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "கிளியர் செய்"
           }
         },
         "te" : {
@@ -6385,6 +7123,18 @@
             "value" : "Silindi"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An goge"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "क्लियर हो गया"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6445,6 +7195,12 @@
             "value" : "Tømt"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oya yedhwa"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6455,6 +7211,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tømt"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qulqulleeffameera"
           }
         },
         "pl" : {
@@ -6521,6 +7283,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Imefutwa"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "கிளியர் செய்யப்பட்டது"
           }
         },
         "te" : {
@@ -6629,6 +7397,18 @@
             "value" : "Bu, çalmaayı durduracek, vidjet hem Live Activity verilerini kaldıracek hem bu aletdän son dinlemää durumunu silecek. Bu işlem geriyä alınamaz."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wannan zai tsayar da watsawa, cire bayanan wijet da Live Activity, kuma goge kwanan nan na sauraro daga wannan na'ura. Ba za a iya soke wannan aikin ba."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "यह प्लेबैक रोक देगा, विजेट और Live Activity डेटा हटा देगा, और इस उपकरण से हाल की सुनने की स्थिति क्लियर कर देगा। यह क्रिया पूर्ववत नहीं की जा सकती।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6689,6 +7469,12 @@
             "value" : "Dette vil stoppe avspilling, fjerne widget- og Live Activity-data og tømme nylig lytteaktivitet fra denne enheten. Handlingen kan ikke angres."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shika ota ka kala okudhana, ta dhimitha odata yowidget naLive Activity, ta yedha onkalo yokupulakena ya pwa mooshinima shika. Iilonga ndika itayi vulu okugalulilwa."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6699,6 +7485,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dette vil stoppe avspeling, fjerne widget- og Live Activity-data og tømme nyleg lyttestatus frå denne eininga. Handlinga kan ikkje angrast."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kun taphachiisa dhaabsa, daataa wijetii fi Live Activity haqa, haala dhaggeeffannaa dhihoo meeshaa kana irraa qulqulleessa. Tarkaanfiin kun duubatti hin deebi'u."
           }
         },
         "pl" : {
@@ -6765,6 +7557,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hii itasimamisha uchezaji, kuondoa data ya wijeti na Live Activity, na kufuta hali ya hivi karibuni ya kusikiliza kutoka kwenye kifaa hiki. Kitendo hiki hakiwezi kubatilishwa."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இது பிளேபேக்கை நிறுத்தி, விட்ஜெட் மற்றும் Live Activity டேட்டாவை நீக்கி, இந்தச் சாதனத்திலிருந்து சமீபத்திய கேட்டல் நிலையைக் கிளியர் செய்யும். இந்தச் செயலைச் செயல்தவிர்க்க முடியாது."
           }
         },
         "te" : {
@@ -6873,6 +7671,18 @@
             "value" : "Lokal çalmaa durumunu sil"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Goge yanayin watsawa na ciki"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्थानीय प्लेबैक स्थिति क्लियर करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6933,6 +7743,12 @@
             "value" : "Tøm lokal avspillingsstatus"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yedha onkalo yokudhana yopaumwene"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6943,6 +7759,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tøm lokal avspillingsstatus"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haala taphachiisaa naannootti qulqulleessi"
           }
         },
         "pl" : {
@@ -7009,6 +7831,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Futa hali ya uchezaji wa ndani"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "உள்ளூர் பிளேபேக் நிலையைக் கிளியர் செய்"
           }
         },
         "te" : {
@@ -7117,6 +7945,18 @@
             "value" : "Lutheran Radio vidjeti konfiguratsiyası."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saiti na wijet ɗin Lutheran Radio."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio विजेट कॉन्फ़िगरेशन।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7177,6 +8017,12 @@
             "value" : "Konfigurasjon for Lutheran Radio widget."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elongekidho lyowidget ya Lutheran Radio."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7187,6 +8033,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Konfigurasjon for Lutheran Radio widget."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qindaa'ina wijetii Lutheran Radio."
           }
         },
         "pl" : {
@@ -7253,6 +8105,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mipangilio ya wijeti ya Lutheran Radio."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio விட்ஜெட் கான்பிகரேஷன்."
           }
         },
         "te" : {
@@ -7362,6 +8220,18 @@
             "value" : "Bağlantı yannışı"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuskuren haɗi"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "कनेक्शन त्रुटि"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7422,6 +8292,12 @@
             "value" : "Tilkoblingsfeil"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshipuko shekwatathano"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7432,6 +8308,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tilkoplingsfeil"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dogoggora qunnamtii"
           }
         },
         "pl" : {
@@ -7498,6 +8380,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hitilafu ya muunganisho"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "கனெக்ஷன் பிழை"
           }
         },
         "te" : {
@@ -7607,6 +8495,18 @@
             "value" : "Lutheran Radio çalmaasını kontrol et hem şindiki stantsiyanı gör."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sarrafa watsawar Lutheran Radio kuma ka ga tashar yanzu."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्लेबैक नियंत्रित करें और वर्तमान स्टेशन देखें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7667,6 +8567,12 @@
             "value" : "Kontroller Lutheran Radio avspilling og se gjeldende stasjon."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Longeka okudhana kwa Lutheran Radio nu tale ostasie ya paife."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7677,6 +8583,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kontroller Lutheran Radio avspeling og sjå gjeldande stasjon."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa Lutheran Radio to'adhu, buufata ammaa ilaali."
           }
         },
         "pl" : {
@@ -7743,6 +8655,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dhibiti uchezaji wa Lutheran Radio na uone kituo cha sasa."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio பிளேபேக்கைக் கட்டுப்படுத்தி தற்போதைய ஸ்டேஷனைப் பார்க்கவும்."
           }
         },
         "te" : {
@@ -7851,6 +8769,18 @@
             "value" : "Çalmaayı kontrol et hem dil yayınnarı arasında geç."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sarrafa watsawa kuma ka canza tsakanin watsawar harsuna."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्लेबैक नियंत्रित करें और भाषा स्ट्रीम के बीच बदलें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7911,6 +8841,12 @@
             "value" : "Kontroller avspilling og bytt mellom språkstrømmer."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Longeka okudhana nu lundulula pokati kostream dhomalaka."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7921,6 +8857,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kontroller avspeling og byt mellom språkstraumar."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa to'adhu, toora afaanii gidduutti jijjiiri."
           }
         },
         "pl" : {
@@ -7987,6 +8929,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dhibiti uchezaji na ubadilishe kati ya mitiririko ya lugha."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பிளேபேக்கைக் கட்டுப்படுத்தி மொழி ஸ்ட்ரீம்களுக்கு இடையே மாறவும்."
           }
         },
         "te" : {
@@ -8096,6 +9044,18 @@
             "value" : "Sesi azalt"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rage sauti"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "वॉल्यूम घटाएँ"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8156,6 +9116,12 @@
             "value" : "Reduser volumet"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shunitha volume"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8166,6 +9132,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mink volumet"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sagalee hir'isi"
           }
         },
         "pl" : {
@@ -8232,6 +9204,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Punguza sauti"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "வால்யூம் குறை"
           }
         },
         "te" : {
@@ -8341,6 +9319,18 @@
             "value" : "Sesi artır"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ƙara sauti"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "वॉल्यूम बढ़ाएँ"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8401,6 +9391,12 @@
             "value" : "Øk volumet"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gwedha volume"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8411,6 +9407,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Auk volumet"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sagalee dabali"
           }
         },
         "pl" : {
@@ -8477,6 +9479,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ongeza sauti"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "வால்யூம் அதிகரி"
           }
         },
         "te" : {
@@ -8585,6 +9593,18 @@
             "value" : "Çalêr"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ana kunna"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्ले हो रहा है"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8645,6 +9665,12 @@
             "value" : "Spiller"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ota dhana"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8655,6 +9681,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spelar"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachaa jira"
           }
         },
         "pl" : {
@@ -8721,6 +9753,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Inacheza"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பிளே ஆகிறது"
           }
         },
         "te" : {
@@ -8830,6 +9868,18 @@
             "value" : "Dil"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Harshe"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "भाषा"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8890,6 +9940,12 @@
             "value" : "Språk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elaka"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8900,6 +9956,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Språk"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afaan"
           }
         },
         "pl" : {
@@ -8966,6 +10028,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lugha"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "மொழி"
           }
         },
         "te" : {
@@ -9074,6 +10142,18 @@
             "value" : "Dil kodu"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lambar harshe"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "भाषा कोड"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9134,6 +10214,12 @@
             "value" : "Språkkode"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Okooda yelaka"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9144,6 +10230,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Språkkode"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koodii afaanii"
           }
         },
         "pl" : {
@@ -9210,6 +10302,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Msimbo wa lugha"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "மொழிக் கோட்"
           }
         },
         "te" : {
@@ -9319,6 +10417,18 @@
             "value" : "İnglizçä"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turanci"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "अंग्रेज़ी"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9379,6 +10489,12 @@
             "value" : "Engelsk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshiingilisa"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9389,6 +10505,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Engelsk"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingilizii"
           }
         },
         "pl" : {
@@ -9455,6 +10577,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kiingereza"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஆங்கிலம்"
           }
         },
         "te" : {
@@ -9564,6 +10692,18 @@
             "value" : "Estonçä"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Istoniyanci"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "एस्टोनियाई"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9624,6 +10764,12 @@
             "value" : "Estisk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshiestonia"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9634,6 +10780,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estisk"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Istooniyaa"
           }
         },
         "pl" : {
@@ -9700,6 +10852,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kiestonia"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "எஸ்டோனியன்"
           }
         },
         "te" : {
@@ -9809,6 +10967,18 @@
             "value" : "Finçä"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yaren Finland"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "फ़िनिश"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9869,6 +11039,12 @@
             "value" : "Finsk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshifinlandi"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9879,6 +11055,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Finsk"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fiinlaandi"
           }
         },
         "pl" : {
@@ -9945,6 +11127,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kifinlandi"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஃபின்னிஷ்"
           }
         },
         "te" : {
@@ -10054,6 +11242,18 @@
             "value" : "Nemţä"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamusanci"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "जर्मन"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10114,6 +11314,12 @@
             "value" : "Tysk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshindowiishi"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10124,6 +11330,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tysk"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jarmanii"
           }
         },
         "pl" : {
@@ -10190,6 +11402,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kijerumani"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஜெர்மன்"
           }
         },
         "te" : {
@@ -10299,6 +11517,18 @@
             "value" : "Şvedçä"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yaren Sweden"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्वीडिश"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10359,6 +11589,12 @@
             "value" : "Svensk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshiswedi"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10369,6 +11605,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Svensk"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Siwiidin"
           }
         },
         "pl" : {
@@ -10435,6 +11677,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kiswidi"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஸ்வீடிஷ்"
           }
         },
         "te" : {
@@ -10544,6 +11792,18 @@
             "value" : "%@ · Canlı yayın"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Watsawa kai tsaye"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · लाइव स्ट्रीम"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10604,6 +11864,12 @@
             "value" : "%@ · Direktesending"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Etumo mombepo"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10614,6 +11880,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Direktesending"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Toora kallattii"
           }
         },
         "pl" : {
@@ -10680,6 +11952,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Mtiririko hai"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · லைவ் ஸ்ட்ரீம்"
           }
         },
         "te" : {
@@ -10789,6 +12067,18 @@
             "value" : "Sade lokal"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Na ciki kawai"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "केवल स्थानीय"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10849,6 +12139,12 @@
             "value" : "Kun lokalt"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opaumwene ashike"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10859,6 +12155,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Berre lokalt"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Naannoo qofa"
           }
         },
         "pl" : {
@@ -10925,6 +12227,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ndani pekee"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "உள்ளூர் மட்டும்"
           }
         },
         "te" : {
@@ -11034,6 +12342,18 @@
             "value" : "Lutheran Radio"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11094,6 +12414,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11101,6 +12427,12 @@
           }
         },
         "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "om" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -11167,6 +12499,12 @@
           }
         },
         "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "ta" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -11279,6 +12617,18 @@
             "value" : "Soraki dil"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Harshe na gaba"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "अगली भाषा"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11339,6 +12689,12 @@
             "value" : "Neste språk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elaka lyilandula"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11349,6 +12705,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Neste språk"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afaan itti aanu"
           }
         },
         "pl" : {
@@ -11415,6 +12777,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lugha inayofuata"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "அடுத்த மொழி"
           }
         },
         "te" : {
@@ -11524,6 +12892,18 @@
             "value" : "Çal/Dur"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna/Dakata"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्ले/पॉज़"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11584,6 +12964,12 @@
             "value" : "Spill av/Pause"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana/Kala po"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11594,6 +12980,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel av/Pause"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisi/Dhaabi"
           }
         },
         "pl" : {
@@ -11660,6 +13052,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cheza/Sitisha"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பிளே/பாஸ்"
           }
         },
         "te" : {
@@ -11769,6 +13167,18 @@
             "value" : "Çalma"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watsawa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्लेबैक"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11829,6 +13239,12 @@
             "value" : "Avspilling"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Okudhana"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11839,6 +13255,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Avspeling"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa"
           }
         },
         "pl" : {
@@ -11905,6 +13327,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uchezaji"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பிளேபேக்"
           }
         },
         "te" : {
@@ -12014,6 +13442,18 @@
             "value" : "İlerki dil"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Harshe na baya"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पिछली भाषा"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12074,6 +13514,12 @@
             "value" : "Forrige språk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elaka lya pita"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12084,6 +13530,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Førre språk"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afaan duraa"
           }
         },
         "pl" : {
@@ -12150,6 +13602,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lugha iliyotangulia"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "முந்தைய மொழி"
           }
         },
         "te" : {
@@ -12258,6 +13716,18 @@
             "value" : "Aplikatsiya mobil data kullanêr; bu, senin data tarifäna görä masrafa sebep olabilir."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manhajar tana amfani da odat ɗin waya, wanda zai iya haifar da kuɗi gwargwadon shirin odat ɗinku."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ऐप मोबाइल डेटा का उपयोग कर रहा है, जिससे आपके डेटा प्लान के अनुसार शुल्क लग सकता है।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12318,6 +13788,12 @@
             "value" : "Appen bruker mobildata, noe som kan medføre kostnader avhengig av dataplanen din."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oapp otai longitha odata yomobile, ndjoka tai vulu okutwala iifuta pethimbo lyoshiketha shodata shoye."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12328,6 +13804,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Appen brukar mobildata, noko som kan medføra kostnader avhengig av dataplanen din."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appiin deetaa moobaayilaa fayyadamaa jira; karoora deetaa kee irratti hundaa'uun kaffaltii fidaa danda'a."
           }
         },
         "pl" : {
@@ -12394,6 +13876,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Programu inatumia data ya simu, ambayo inaweza kuleta gharama kulingana na mpango wako wa data."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஆப் மொபைல் டேட்டாவைப் பயன்படுத்துகிறது, உங்கள் டேட்டா பிளானைப் பொறுத்து கட்டணம் வரலாம்."
           }
         },
         "te" : {
@@ -12502,6 +13990,18 @@
             "value" : "Mobil data kullanımı"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amfani da odat ɗin waya"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "मोबाइल डेटा उपयोग"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12562,6 +14062,12 @@
             "value" : "Mobildatabruk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elongitho lyodata yomobile"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12572,6 +14078,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobildatabruk"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fayyadama deetaa moobaayilaa"
           }
         },
         "pl" : {
@@ -12638,6 +14150,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Matumizi ya data ya simu"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "மொபைல் டேட்டா பயன்பாடு"
           }
         },
         "te" : {
@@ -12746,6 +14264,18 @@
             "value" : "Parça malumatı yok"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Babu bayanin waƙa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ट्रैक जानकारी नहीं"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12806,6 +14336,12 @@
             "value" : "Ingen sporinformasjon"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kape na uuyelele woshimbo"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12816,6 +14352,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ingen sporinformasjon"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odeeffannaan tooraa hin jiru"
           }
         },
         "pl" : {
@@ -12882,6 +14424,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hakuna maelezo ya wimbo"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "டிராக் தகவல் இல்லை"
           }
         },
         "te" : {
@@ -12990,6 +14538,18 @@
             "value" : "Şindi çalêr"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ana kunna yanzu"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "अभी प्ले हो रहा है"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13050,6 +14610,12 @@
             "value" : "Spiller nå"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ota dhana paife"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13060,6 +14626,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spelar no"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amma taphachaa jira"
           }
         },
         "pl" : {
@@ -13126,6 +14698,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Inacheza sasa"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இப்போது பிளே ஆகிறது"
           }
         },
         "te" : {
@@ -13234,6 +14812,18 @@
             "value" : "Tamam"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13294,6 +14884,12 @@
             "value" : "Greit"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13304,6 +14900,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Greitt"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
           }
         },
         "pl" : {
@@ -13367,6 +14969,12 @@
           }
         },
         "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "ta" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -13479,6 +15087,18 @@
             "value" : "Öndän aplikatsiyanı aç"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buɗe manhaja da farko"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पहले ऐप खोलें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13539,6 +15159,12 @@
             "value" : "Åpne appen først"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Patulula oapp tete"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13549,6 +15175,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opna appen først"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dura appii bani"
           }
         },
         "pl" : {
@@ -13615,6 +15247,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fungua programu kwanza"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "முதலில் ஆப்பைத் திறக்கவும்"
           }
         },
         "te" : {
@@ -13725,6 +15363,18 @@
             "value" : "Lutheran Radio pauza et"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dakatar da Lutheran Radio"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio पॉज़ करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13785,6 +15435,12 @@
             "value" : "Sett Lutheran Radio på pause"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kala po Lutheran Radio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13795,6 +15451,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Set Lutheran Radio på pause"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio yeroof dhaabi"
           }
         },
         "pl" : {
@@ -13861,6 +15523,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sitisha Lutheran Radio"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio பாஸ் செய்"
           }
         },
         "te" : {
@@ -13970,6 +15638,18 @@
             "value" : "Lutheran Radio çalmaasını pauza et."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dakatar da watsawar Lutheran Radio."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्लेबैक पॉज़ करें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14030,6 +15710,12 @@
             "value" : "Pause Lutheran Radio-avspilling."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kala po okudhana kwa Lutheran Radio."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14040,6 +15726,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pause Lutheran Radio-avspeling."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa Lutheran Radio yeroof dhaabi."
           }
         },
         "pl" : {
@@ -14106,6 +15798,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sitisha uchezaji wa Lutheran Radio."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio பிளேபேக்கைப் பாஸ் செய்யவும்."
           }
         },
         "te" : {
@@ -14214,6 +15912,18 @@
             "value" : "Çal"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्ले"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14274,6 +15984,12 @@
             "value" : "Spill"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14284,6 +16000,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisi"
           }
         },
         "pl" : {
@@ -14350,6 +16072,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cheza"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பிளே"
           }
         },
         "te" : {
@@ -14459,6 +16187,18 @@
             "value" : "Lutheran Radio çal"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna Lutheran Radio"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्ले करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14519,6 +16259,12 @@
             "value" : "Spill Lutheran Radio"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana Lutheran Radio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14529,6 +16275,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel Lutheran Radio"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio taphachiisi"
           }
         },
         "pl" : {
@@ -14595,6 +16347,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cheza Lutheran Radio"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio பிளே செய்"
           }
         },
         "te" : {
@@ -14703,6 +16461,18 @@
             "value" : "Lutheran Radio çal yaki pauza et."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna ko dakatar da Lutheran Radio."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्ले करें या पॉज़ करें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14763,6 +16533,12 @@
             "value" : "Spill av eller sett på pause Lutheran Radio."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana nenge kala po Lutheran Radio."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14773,6 +16549,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel av eller pausa Lutheran Radio."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio taphachiisi ykn yeroof dhaabi."
           }
         },
         "pl" : {
@@ -14839,6 +16621,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cheza au sitisha Lutheran Radio."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio பிளே செய்யவும் அல்லது பாஸ் செய்யவும்."
           }
         },
         "te" : {
@@ -14948,6 +16736,18 @@
             "value" : "Lutheran Radio çal yaki devam et."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna ko ci gaba da Lutheran Radio."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्ले करें या जारी रखें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15008,6 +16808,12 @@
             "value" : "Spill eller fortsett Lutheran Radio."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana nenge tsikila Lutheran Radio."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15018,6 +16824,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel eller fortsett Lutheran Radio."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio taphachiisi ykn itti fufi."
           }
         },
         "pl" : {
@@ -15084,6 +16896,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cheza au endeleza Lutheran Radio."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio பிளே செய்யவும் அல்லது தொடரவும்."
           }
         },
         "te" : {
@@ -15192,6 +17010,18 @@
             "value" : "Eminlik kontrolu yannışından çalmaa başlanameer. Internet bağlantını kontrol et hem aplikatsiyanın eni versiyada olduuunu bak. Problem devam ederä, aplikatsiyanı kapat hem taa bir kerä aç, sora gene dene."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An kasa fara watsawa saboda gazawar tabbatar da tsaro. Da fatan za a duba haɗin intanet ɗinku kuma ku tabbatar cewa manhajar tana da sabuntawa. Idan matsalar ta ci gaba, sake kunna manhajar ku gwada kuma."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "सुरक्षा सत्यापन विफल होने के कारण प्लेबैक शुरू नहीं किया जा सका। कृपया अपना इंटरनेट कनेक्शन जाँचें और सुनिश्चित करें कि ऐप अपडेट है। समस्या बनी रहे तो ऐप को फिर से शुरू करके फिर कोशिश करें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15252,6 +17082,12 @@
             "value" : "Kan ikke starte avspilling på grunn av en feil i sikkerhetsvalideringen. Vennligst sjekk internettforbindelsen din og forsikre deg om at appen er oppdatert. Hvis problemet vedvarer, start appen på nytt og prøv igjen."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inashi vulu okutameka okudhana oshoka ekonakono lyeeuvitho inali pita. Tala ekwatathano lyo-internet lyoye nu tseya kutya oapp oyi li oshipe. Ngele oshipuko oshi tsikile, tameka oapp ishewe nu kambadhala."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15262,6 +17098,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kan ikkje starte avspeling på grunn av ein feil i tryggleiksvalideringa. Ver snill og sjekk internettforbindelsen din og sjå til at appen er oppdatert. Dersom problemet held fram, start appen på nytt og prøv igjen."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa jalqabuu hin dandeenye sababa mirkaneessiin nageenyaa kufeef. Qunnamtii interneetii kee mirkaneessi, appiin haaromfameera ta'uu mirkaneessi. Yoo rakkoon itti fufe, appii irra deebi'ii jalqabiitti yaali."
           }
         },
         "pl" : {
@@ -15328,6 +17170,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Imeshindwa kuanza uchezaji kwa sababu ya kushindwa kwa uthibitishaji wa usalama. Tafadhali angalia muunganisho wako wa intaneti na uhakikishe programu imesasishwa. Ikiwa tatizo litaendelea, anzisha tena programu na ujaribu tena."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பாதுகாப்பு சரிபார்ப்பு தோல்வியால் பிளேபேக்கைத் தொடங்க முடியவில்லை. உங்கள் இன்டர்நெட் கனெக்ஷனைச் சரிபார்த்து, ஆப் புதுப்பிக்கப்பட்டுள்ளதா என்பதை உறுதிப்படுத்தவும். சிக்கல் தொடர்ந்தால், ஆப்பை மறுதொடக்கம் செய்து மீண்டும் முயற்சிக்கவும்."
           }
         },
         "te" : {
@@ -15436,6 +17284,18 @@
             "value" : "Eminlik kontrolu olmadı"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabbatar da tsaro ya gaza"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "सुरक्षा सत्यापन विफल हुआ"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15496,6 +17356,12 @@
             "value" : "Sikkerhetsvalidering mislyktes"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ekonakono lyeeuvitho inali pita"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15506,6 +17372,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tryggleiksvalidering mislykka"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mirkaneessiin nageenyaa kufeera"
           }
         },
         "pl" : {
@@ -15572,6 +17444,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uthibitishaji wa usalama umeshindwa"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பாதுகாப்பு சரிபார்ப்பு தோல்வியடைந்தது"
           }
         },
         "te" : {
@@ -15681,6 +17559,18 @@
             "value" : "Seç %@"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zaɓi %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ चुनें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15741,6 +17631,12 @@
             "value" : "Velg %@"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hogolola %@"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15751,6 +17647,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vel %@"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ filadhu"
           }
         },
         "pl" : {
@@ -15817,6 +17719,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Chagua %@"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ஐத் தேர்ந்தெடுக்கவும்"
           }
         },
         "te" : {
@@ -16118,6 +18026,42 @@
             }
           }
         },
+        "ha" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "minti %lld ya saura"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "mintuna %lld sun saura"
+                }
+              }
+            }
+          }
+        },
+        "hi" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld मिनट शेष"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld मिनट शेष"
+                }
+              }
+            }
+          }
+        },
         "hr" : {
           "variations" : {
             "plural" : {
@@ -16316,6 +18260,18 @@
             }
           }
         },
+        "ng" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld oominute dha shala"
+                }
+              }
+            }
+          }
+        },
         "nl" : {
           "variations" : {
             "plural" : {
@@ -16347,6 +18303,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld minutt att"
+                }
+              }
+            }
+          }
+        },
+        "om" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Daqiiqaan %lld hafe"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Daqiiqoonni %lld hafan"
                 }
               }
             }
@@ -16610,6 +18584,24 @@
             }
           }
         },
+        "ta" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld நிமிடம் மீதமுள்ளது"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld நிமிடங்கள் மீதமுள்ளன"
+                }
+              }
+            }
+          }
+        },
         "te" : {
           "variations" : {
             "plural" : {
@@ -16752,6 +18744,18 @@
             "value" : "Taymeri kaldır"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soke agogo"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "टाइमर रद्द करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16812,6 +18816,12 @@
             "value" : "Avbryt timer"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kaleka otimer"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16822,6 +18832,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Avbryt timer"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taimera dhiisi"
           }
         },
         "pl" : {
@@ -16888,6 +18904,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ghairi kipima saa"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "டைமர் ரத்து செய்"
           }
         },
         "te" : {
@@ -16996,6 +19018,18 @@
             "value" : "15 minut"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "minti 15"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 मिनट"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17056,6 +19090,12 @@
             "value" : "15 minutter"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oominute 15"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17066,6 +19106,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minutt"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daqiiqaa 15"
           }
         },
         "pl" : {
@@ -17132,6 +19178,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dakika 15"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 நிமிடங்கள்"
           }
         },
         "te" : {
@@ -17240,6 +19292,18 @@
             "value" : "30 minut"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "minti 30"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 मिनट"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17300,6 +19364,12 @@
             "value" : "30 minutter"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oominute 30"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17310,6 +19380,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "30 minutt"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daqiiqaa 30"
           }
         },
         "pl" : {
@@ -17376,6 +19452,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dakika 30"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 நிமிடங்கள்"
           }
         },
         "te" : {
@@ -17484,6 +19566,18 @@
             "value" : "45 minut"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "minti 45"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 मिनट"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17544,6 +19638,12 @@
             "value" : "45 minutter"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oominute 45"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17554,6 +19654,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 minutt"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daqiiqaa 45"
           }
         },
         "pl" : {
@@ -17620,6 +19726,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dakika 45"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 நிமிடங்கள்"
           }
         },
         "te" : {
@@ -17728,6 +19840,18 @@
             "value" : "60 minut"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "minti 60"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 मिनट"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17788,6 +19912,12 @@
             "value" : "60 minutter"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oominute 60"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17798,6 +19928,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "60 minutt"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daqiiqaa 60"
           }
         },
         "pl" : {
@@ -17864,6 +20000,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dakika 60"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 நிமிடங்கள்"
           }
         },
         "te" : {
@@ -17972,6 +20114,18 @@
             "value" : "Uyku taymeri"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agogon barci"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्लीप टाइमर"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18032,6 +20186,12 @@
             "value" : "Søvntimer"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otimer yokukotha"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18042,6 +20202,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Søvntimer"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taimera hirribaa"
           }
         },
         "pl" : {
@@ -18108,6 +20274,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kipima saa cha kulala"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஸ்லீப் டைமர்"
           }
         },
         "te" : {
@@ -18216,6 +20388,18 @@
             "value" : "Yayın serverleri SSL sertifikatlarını eniledi. Aplikatsiya uyum modunda işleer. En iyi eminlik üçin, eni versiya çıkınca aplikatsiyanı enile."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server ɗin watsawa sun sabunta takardun shaida na SSL. Manhajar tana aiki a yanayin daidaitawa. Da fatan za a sabunta zuwa sabuwar sigar da ta samu don tsaro mafi kyau."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्ट्रीमिंग सर्वरों ने अपने SSL सर्टिफ़िकेट नवीनीकृत कर दिए हैं। ऐप संगतता मोड में चल रहा है। बेहतर सुरक्षा के लिए उपलब्ध होने पर नवीनतम संस्करण में अपडेट करें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18276,6 +20460,12 @@
             "value" : "Streaming-serverne har fornyet sine SSL-sertifikater. Appen kjører i kompatibilitetsmodus. Vennligst oppdater til nyeste versjon når den er tilgjengelig for optimal sikkerhet."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ooserver dhokutuma odha ningi oshipe oonzapo dhSSL. Oapp otai longa momukalo gweuvaneno. Ninga oshipe koshiverson sha pwa ngele oshi po opo u mone euvitho eli nawa."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18286,6 +20476,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Streaming-tenarane har fornyet SSL-sertifikata sine. Appen køyrer i kompatibilitetsmodus. Ver snill og oppdater til nyaste versjon når ho er tilgjengeleg for optimal tryggleik."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Serveeroonni dabarsaa sartifikeetii SSL isaanii haaromsaniiru. Appiin haala wal-simannaa keessatti hojjechaa jira. Nageenya gaarii argachuuf yeroo argamutti gara gosa haaraatti haaromsi."
           }
         },
         "pl" : {
@@ -18352,6 +20548,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Seva za utiririshaji zimesasisha vyeti vyao vya SSL. Programu inafanya kazi katika hali ya uoanifu. Tafadhali sasisha hadi toleo jipya zaidi linapopatikana kwa usalama bora."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஸ்ட்ரீமிங் சர்வர்கள் தங்கள் SSL சர்ட்டிஃபிகேட்களைப் புதுப்பித்துள்ளன. ஆப் இணக்க மோடில் இயங்குகிறது. சிறந்த பாதுகாப்புக்காக கிடைக்கும்போது சமீபத்திய பதிப்புக்கு அப்டேட் செய்யவும்."
           }
         },
         "te" : {
@@ -18460,6 +20662,18 @@
             "value" : "Sertifikat enilendi"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An sabunta takardar shaida"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "सर्टिफ़िकेट अपडेट हुआ"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18520,6 +20734,12 @@
             "value" : "Sertifikat oppdatert"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Onzapo ya ningwa oshipe"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18530,6 +20750,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sertifikat oppdatert"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sartifikeetiin haaromfameera"
           }
         },
         "pl" : {
@@ -18596,6 +20822,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cheti kimesasishwa"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "சர்ட்டிஃபிகேட் அப்டேட் ஆனது"
           }
         },
         "te" : {
@@ -18705,6 +20937,18 @@
             "value" : "Lutheran Radio çalmaasını başlat yaki devam et."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fara ko ci gaba da watsawar Lutheran Radio."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्लेबैक शुरू करें या जारी रखें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18765,6 +21009,12 @@
             "value" : "Start eller gjenoppta Lutheran Radio avspilling."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tameka nenge tsikila okudhana kwa Lutheran Radio."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18775,6 +21025,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start eller gjenoppta Lutheran Radio avspeling."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa Lutheran Radio jalqabi ykn itti fufi."
           }
         },
         "pl" : {
@@ -18841,6 +21097,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Anzisha au endeleza uchezaji wa Lutheran Radio."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio பிளேபேக்கைத் தொடங்கவும் அல்லது தொடரவும்."
           }
         },
         "te" : {
@@ -18949,6 +21211,18 @@
             "value" : "Lutheran Radio çalmaasını başlat yaki durdur."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fara ko tsayar da watsawar Lutheran Radio."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्लेबैक शुरू करें या रोकें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19009,6 +21283,12 @@
             "value" : "Start eller stopp Lutheran Radio avspilling."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tameka nenge kala okudhana kwa Lutheran Radio."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19019,6 +21299,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start eller stopp Lutheran Radio avspeling."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa Lutheran Radio jalqabi ykn dhaabi."
           }
         },
         "pl" : {
@@ -19085,6 +21371,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Anzisha au simamisha uchezaji wa Lutheran Radio."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio பிளேபேக்கைத் தொடங்கவும் அல்லது நிறுத்தவும்."
           }
         },
         "te" : {
@@ -19193,6 +21485,18 @@
             "value" : "Büfer"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cikawa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "बफ़र"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19253,6 +21557,12 @@
             "value" : "Buffer"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buffer"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19263,6 +21573,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buffer"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuusaa"
           }
         },
         "pl" : {
@@ -19329,6 +21645,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Inajaza"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பஃபர்"
           }
         },
         "te" : {
@@ -19437,6 +21759,18 @@
             "value" : "Bağlan"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haɗa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "कनेक्ट"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19497,6 +21831,12 @@
             "value" : "Kobler"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kwata"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19507,6 +21847,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Koplar"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qunnamsiisi"
           }
         },
         "pl" : {
@@ -19573,6 +21919,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unganisha"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "கனெக்ட்"
           }
         },
         "te" : {
@@ -19681,6 +22033,18 @@
             "value" : "Olmadı"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya gaza"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "विफल"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19741,6 +22105,12 @@
             "value" : "Mislyktes"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inashi pita"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19751,6 +22121,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mislukka"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kufe"
           }
         },
         "pl" : {
@@ -19817,6 +22193,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Imeshindwa"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "தோல்வி"
           }
         },
         "te" : {
@@ -19925,6 +22307,18 @@
             "value" : "Oflayn"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ba kan layi"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ऑफ़लाइन"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19985,6 +22379,12 @@
             "value" : "Frakoblet"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19995,6 +22395,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fråkopla"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toora ala"
           }
         },
         "pl" : {
@@ -20061,6 +22467,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Haina mtandao"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஆஃப்லைன்"
           }
         },
         "te" : {
@@ -20169,6 +22581,18 @@
             "value" : "Pauza"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dakata"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पॉज़"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20229,6 +22653,12 @@
             "value" : "Pauset"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kala po"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20239,6 +22669,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausa"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhaabi"
           }
         },
         "pl" : {
@@ -20305,6 +22741,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sitisha"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பாஸ்"
           }
         },
         "te" : {
@@ -20414,6 +22856,18 @@
             "value" : "Pauzada – Zvonok"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An dakata – Kira yana gudana"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पॉज़ – कॉल चल रही है"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20474,6 +22928,12 @@
             "value" : "Pauset – Anrop aktivt"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya kala po – Okudhengela kwa kwata"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20484,6 +22944,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausa – Anrop aktivt"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhaabbateera – Bilbilli hojjechaa jira"
           }
         },
         "pl" : {
@@ -20550,6 +23016,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Imesitishwa – Simu inaendelea"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பாஸ் – கால் நடைபெறுகிறது"
           }
         },
         "te" : {
@@ -20659,6 +23131,18 @@
             "value" : "Çalmaa olmadı: %@"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watsawa ta gaza: %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्लेबैक विफल: %@"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20719,6 +23203,12 @@
             "value" : "Avspilling mislyktes: %@"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Okudhana kwa kufa: %@"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20729,6 +23219,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Avspeling mislukka: %@"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisni kufeera: %@"
           }
         },
         "pl" : {
@@ -20795,6 +23291,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uchezaji umeshindwa: %@"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பிளேபேக் தோல்வி: %@"
           }
         },
         "te" : {
@@ -20904,6 +23406,18 @@
             "value" : "Çal"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्ले"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20964,6 +23478,12 @@
             "value" : "Spiller"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20974,6 +23494,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spelar"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisi"
           }
         },
         "pl" : {
@@ -21040,6 +23566,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cheza"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பிளே"
           }
         },
         "te" : {
@@ -21148,6 +23680,18 @@
             "value" : "Eminlik"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsaro"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "सुरक्षा"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21208,6 +23752,12 @@
             "value" : "Sikkerhet"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Euvitho"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21218,6 +23768,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tryggleik"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nageenya"
           }
         },
         "pl" : {
@@ -21284,6 +23840,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Usalama"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பாதுகாப்பு"
           }
         },
         "te" : {
@@ -21392,6 +23954,18 @@
             "value" : "SSL sertifikatı enilendi – aplikatsiyanı yakında enile"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An sabunta takardar shaida ta SSL - sabunta manhaja nan ba da jimawa ba"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL सर्टिफ़िकेट नवीनीकृत - जल्द ऐप अपडेट करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21452,6 +24026,12 @@
             "value" : "SSL-sertifikat fornyet - oppdater app snart"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Onzapo ya SSL ya ningwa oshipe - ninga oapp oshipe nena"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21462,6 +24042,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SSL-sertifikat fornyet - oppdater app snart"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sartifikeetiin SSL haaromfameera - appii daffisii haaromsi"
           }
         },
         "pl" : {
@@ -21528,6 +24114,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cheti cha SSL kimesasishwa - sasisha programu hivi karibuni"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL சர்ட்டிஃபிகேட் புதுப்பிக்கப்பட்டது - விரைவில் ஆப்பை அப்டேட் செய்யவும்"
           }
         },
         "te" : {
@@ -21636,6 +24228,18 @@
             "value" : "Durdu"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An tsaya"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "रुका हुआ"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21696,6 +24300,12 @@
             "value" : "Stoppet"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya kala"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21706,6 +24316,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stoppa"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhaabbateera"
           }
         },
         "pl" : {
@@ -21772,6 +24388,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Imesimamishwa"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "நிறுத்தப்பட்டது"
           }
         },
         "te" : {
@@ -21880,6 +24502,18 @@
             "value" : "Kapalı"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kashe"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ऑफ़"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21940,6 +24574,12 @@
             "value" : "Av"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pevi"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21950,6 +24590,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Av"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cufa"
           }
         },
         "pl" : {
@@ -22016,6 +24662,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Imezimwa"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஆஃப்"
           }
         },
         "te" : {
@@ -22124,6 +24776,18 @@
             "value" : "Alet sıcak"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Na'ura mai zafi"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "उपकरण गरम"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22184,6 +24848,12 @@
             "value" : "Enhet varm"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshinima oshi pyu"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22194,6 +24864,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Eining varm"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meeshaan ho'aa"
           }
         },
         "pl" : {
@@ -22260,6 +24936,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kifaa moto"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "சாதனம் சூடு"
           }
         },
         "te" : {
@@ -22368,6 +25050,18 @@
             "value" : "Yayın şindi geçici olarak yok. Lütfen taa sora gene dene."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watsawar ba ta samuwa a ɗan lokaci. Da fatan za a sake gwadawa daga baya."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्रसारण अस्थायी रूप से उपलब्ध नहीं है। कृपया बाद में फिर कोशिश करें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22428,6 +25122,12 @@
             "value" : "Sendingen er midlertidig ikke tilgjengelig. Prøv igjen senere."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Etumo mombepo inali po ethimbo shoka. Kambadhala ishewe konima."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22438,6 +25138,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sendinga er midlertidig ikkje tilgjengeleg. Prøv igjen seinare."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tamsaasni yeroo gabaabaaf hin argamu. Maaloo booda irra deebi'ii yaali."
           }
         },
         "pl" : {
@@ -22504,6 +25210,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Matangazo hayapatikani kwa sasa. Tafadhali jaribu tena baadaye."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஒலிபரப்பு தற்காலிகமாகக் கிடைக்கவில்லை. பின்னர் மீண்டும் முயற்சிக்கவும்."
           }
         },
         "te" : {
@@ -22612,6 +25324,18 @@
             "value" : "Yayın yok"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watsawar ba ta samuwa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्रसारण उपलब्ध नहीं"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22672,6 +25396,12 @@
             "value" : "Sending ikke tilgjengelig"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Etumo mombepo inali po"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22682,6 +25412,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sending ikkje tilgjengeleg"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tamsaasni hin argamu"
           }
         },
         "pl" : {
@@ -22748,6 +25484,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Matangazo hayapatikani"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஒலிபரப்பு கிடைக்கவில்லை"
           }
         },
         "te" : {
@@ -22857,6 +25599,18 @@
             "value" : "Lutheran Radio dil yayınını däiştir."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canza watsawar harshen Lutheran Radio."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio भाषा स्ट्रीम बदलें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22917,6 +25671,12 @@
             "value" : "Bytt Lutheran Radio språkstrøm."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula ostream yelaka ya Lutheran Radio."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22927,6 +25687,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt Lutheran Radio språkstraum."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toora afaanii Lutheran Radio jijjiiri."
           }
         },
         "pl" : {
@@ -22993,6 +25759,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Badilisha mtiririko wa lugha wa Lutheran Radio."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio மொழி ஸ்ட்ரீமை மாற்றவும்."
           }
         },
         "te" : {
@@ -23101,6 +25873,18 @@
             "value" : "Yayını däiştir"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canza watsawa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्ट्रीम बदलें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23161,6 +25945,12 @@
             "value" : "Bytt strøm"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula ostream"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23171,6 +25961,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt straum"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toora jijjiiri"
           }
         },
         "pl" : {
@@ -23237,6 +26033,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Badilisha mtiririko"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஸ்ட்ரீம் மாற்று"
           }
         },
         "te" : {
@@ -23346,6 +26148,18 @@
             "value" : "%@ dilinä geç"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canza zuwa %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ में बदलें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23406,6 +26220,12 @@
             "value" : "Bytt til %@"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula ko %@"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23416,6 +26236,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt til %@"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gara %@ jijjiiri"
           }
         },
         "pl" : {
@@ -23482,6 +26308,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Badilisha kuwa %@"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@க்கு மாற்று"
           }
         },
         "te" : {
@@ -23590,6 +26422,18 @@
             "value" : "Live Activity-dän başka dil yayınına geç."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canza zuwa watsawar harshe daban daga Live Activity."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity से किसी दूसरी भाषा स्ट्रीम में बदलें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23650,6 +26494,12 @@
             "value" : "Bytt til en annen språkstrøm fra Live-aktivitet."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula kostream yelaka yilwe za Live Activity."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23660,6 +26510,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt til ein annan språkstraum frå Live-aktivitet."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toora afaanii biraa Live Activity irraa jijjiiri."
           }
         },
         "pl" : {
@@ -23726,6 +26582,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Badilisha kwenda mtiririko mwingine wa lugha kutoka Live Activity."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity-இலிருந்து வேறு மொழி ஸ்ட்ரீமுக்கு மாறவும்."
           }
         },
         "te" : {
@@ -23834,6 +26696,18 @@
             "value" : "Başka dil yayınına geç."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canza zuwa watsawar harshe daban."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "किसी दूसरी भाषा स्ट्रीम में बदलें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23894,6 +26768,12 @@
             "value" : "Bytt til en annen språkstrøm."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula kostream yelaka yilwe."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23904,6 +26784,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt til ein annan språkstraum."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toora afaanii biraa jijjiiri."
           }
         },
         "pl" : {
@@ -23970,6 +26856,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Badilisha kwenda mtiririko mwingine wa lugha."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "வேறு மொழி ஸ்ட்ரீமுக்கு மாறவும்."
           }
         },
         "te" : {
@@ -24079,6 +26971,18 @@
             "value" : "%@ dilinä geçildi"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An canza zuwa %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ में बदला गया"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24139,6 +27043,12 @@
             "value" : "Byttet til %@"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oya lundululwa ko %@"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24149,6 +27059,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bytta til %@"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gara %@ jijjiirameera"
           }
         },
         "pl" : {
@@ -24215,6 +27131,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Imebadilishwa kuwa %@"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@க்கு மாற்றப்பட்டது"
           }
         },
         "te" : {
@@ -24325,6 +27247,18 @@
             "value" : "Açmaa üçin bas"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taɓa don buɗewa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "खोलने के लिए दबाएँ"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24385,6 +27319,12 @@
             "value" : "Trykk for å åpne"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhenga opo u patulule"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24395,6 +27335,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Trykk for å opna"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tuqi banuuf"
           }
         },
         "pl" : {
@@ -24461,6 +27407,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gusa ili kufungua"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "திறக்க அழுத்தவும்"
           }
         },
         "te" : {
@@ -24570,6 +27522,18 @@
             "value" : "Lutheran Radio aç/kapa"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juya Lutheran Radio"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio टॉगल करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24630,6 +27594,12 @@
             "value" : "Veksle Lutheran Radio"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula Lutheran Radio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24640,6 +27610,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veksla Lutheran Radio"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio jijjiiri"
           }
         },
         "pl" : {
@@ -24706,6 +27682,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Geuza Lutheran Radio"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio டோகிள் செய்"
           }
         },
         "te" : {
@@ -24814,6 +27796,18 @@
             "value" : "Lutheran Radio çalmaasını aç/kapa"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juya watsawar Lutheran Radio"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्लेबैक टॉगल करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24874,6 +27868,12 @@
             "value" : "Veksle Lutheran Radio avspilling"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula okudhana kwa Lutheran Radio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24884,6 +27884,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veksla Lutheran Radio avspeling"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa Lutheran Radio jijjiiri"
           }
         },
         "pl" : {
@@ -24950,6 +27956,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Geuza uchezaji wa Lutheran Radio"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio பிளேபேக் டோகிள் செய்"
           }
         },
         "te" : {
@@ -25058,6 +28070,18 @@
             "value" : "Live Activity-dän çal/pauza."
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juya kunna/dakata daga Live Activity."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity से प्ले/पॉज़ टॉगल करें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25118,6 +28142,12 @@
             "value" : "Veksle mellom avspilling og pause fra Live-aktivitet."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula dhana/kala po za Live Activity."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25128,6 +28158,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veksla mellom avspeling og pause frå Live-aktivitet."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisi/dhaabi Live Activity irraa jijjiiri."
           }
         },
         "pl" : {
@@ -25194,6 +28230,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Geuza cheza/sitisha kutoka Live Activity."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity-இலிருந்து பிளே/பாஸ் டோகிள் செய்யவும்."
           }
         },
         "te" : {
@@ -25303,6 +28345,18 @@
             "value" : "Çalmaayı aç/kapa"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juya watsawa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्लेबैक टॉगल करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25363,6 +28417,12 @@
             "value" : "Veksle avspilling"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula okudhana"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25373,6 +28433,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veksla avspeling"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa jijjiiri"
           }
         },
         "pl" : {
@@ -25439,6 +28505,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Geuza uchezaji"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பிளேபேக் டோகிள் செய்"
           }
         },
         "te" : {
@@ -25740,6 +28812,42 @@
             }
           }
         },
+        "ha" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "An saita sauti zuwa kashi ɗari %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "An saita sauti zuwa kashi ɗari %lld"
+                }
+              }
+            }
+          }
+        },
+        "hi" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "वॉल्यूम %lld प्रतिशत पर सेट किया गया"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "वॉल्यूम %lld प्रतिशत पर सेट किया गया"
+                }
+              }
+            }
+          }
+        },
         "hr" : {
           "variations" : {
             "plural" : {
@@ -25938,6 +29046,18 @@
             }
           }
         },
+        "ng" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume ya tulwa ko %lld opercent"
+                }
+              }
+            }
+          }
+        },
         "nl" : {
           "variations" : {
             "plural" : {
@@ -25969,6 +29089,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "Volum sett til %lld prosent"
+                }
+              }
+            }
+          }
+        },
+        "om" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sagaleen dhibbeentaa %lld irratti kaa'ameera"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sagaleen dhibbeentaa %lld irratti kaa'ameera"
                 }
               }
             }
@@ -26232,6 +29370,24 @@
             }
           }
         },
+        "ta" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "வால்யூம் %lld சதவீதத்திற்கு செட் செய்யப்பட்டது"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "வால்யூம் %lld சதவீதத்திற்கு செட் செய்யப்பட்டது"
+                }
+              }
+            }
+          }
+        },
         "te" : {
           "variations" : {
             "plural" : {
@@ -26374,6 +29530,18 @@
             "value" : "Vidjet konfiguratsiyası"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saitin wijet"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "विजेट कॉन्फ़िगरेशन"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26434,6 +29602,12 @@
             "value" : "Widget-konfigurasjon"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elongekidho lyowidget"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26444,6 +29618,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget-konfigurasjon"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qindaa'ina wijetii"
           }
         },
         "pl" : {
@@ -26510,6 +29690,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mipangilio ya wijeti"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "விட்ஜெட் கான்பிகரேஷன்"
           }
         },
         "te" : {

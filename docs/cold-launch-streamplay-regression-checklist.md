@@ -76,7 +76,7 @@ End with security impact, build status, localization needed.
 1. **Clean build** — `xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build` succeeds.
 2. **Clean test** — Same destination with `clean test` succeeds. Run build then test sequentially.
 3. **Swift 6 strictness** — All targets: `SWIFT_VERSION = 6`, `SWIFT_STRICT_CONCURRENCY = complete`, `SWIFT_APPROACHABLE_CONCURRENCY = NO`, `SWIFT_STRICT_MEMORY_SAFETY = YES`.
-4. **Localization** — User-visible strings use `String(localized:)` / `NSLocalizedString`, table `"Localizable"`; all 40 languages if keys added.
+4. **Localization** — User-visible strings use `String(localized:)` / `NSLocalizedString`, table `"Localizable"`; all 45 languages if keys added.
 5. **Mechanical-refactor exception** — Warning-only work may use `CODE_SIGNING_ALLOWED=NO` build + mandatory full test per `CODING_AGENT.md`; behavior-touching PRs require full signed build.
 
 ---

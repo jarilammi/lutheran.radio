@@ -94,6 +94,18 @@
             "value" : "Pauza et ${applicationName}"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dakata ${applicationName}"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} पॉज़ करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -154,6 +166,12 @@
             "value" : "Sett ${applicationName} på pause"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kala po ${applicationName}"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -164,6 +182,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Set ${applicationName} på pause"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} yeroof dhaabi"
           }
         },
         "pl" : {
@@ -230,6 +254,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sitisha ${applicationName}"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} பாஸ் செய்"
           }
         },
         "te" : {
@@ -339,6 +369,18 @@
             "value" : "Çal ${applicationName}"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna ${applicationName}"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} प्ले करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -399,6 +441,12 @@
             "value" : "Spill ${applicationName}"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana ${applicationName}"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -409,6 +457,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel ${applicationName}"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} taphachiisi"
           }
         },
         "pl" : {
@@ -475,6 +529,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cheza ${applicationName}"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} பிளே செய்"
           }
         },
         "te" : {
@@ -584,6 +644,18 @@
             "value" : "Çal ${applicationName} ${language} dilindä"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunna ${applicationName} a ${language}"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} को ${language} में प्ले करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -644,6 +716,12 @@
             "value" : "Spill ${applicationName} på ${language}"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana ${applicationName} mElaka ${language}"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -654,6 +732,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel ${applicationName} på ${language}"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} afaan ${language} taphachiisi"
           }
         },
         "pl" : {
@@ -720,6 +804,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cheza ${applicationName} kwa ${language}"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}ஐ ${language}இல் பிளே செய்"
           }
         },
         "te" : {
@@ -829,6 +919,18 @@
             "value" : "Başlat ${applicationName}"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fara ${applicationName}"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} शुरू करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -889,6 +991,12 @@
             "value" : "Start ${applicationName}"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tameka ${applicationName}"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -899,6 +1007,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start ${applicationName}"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} jalqabi"
           }
         },
         "pl" : {
@@ -965,6 +1079,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Anzisha ${applicationName}"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} தொடங்கு"
           }
         },
         "te" : {
@@ -1074,6 +1194,18 @@
             "value" : "Durdur ${applicationName}"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsaya ${applicationName}"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} रोकें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1134,6 +1266,12 @@
             "value" : "Stopp ${applicationName}"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kala ${applicationName}"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1144,6 +1282,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stopp ${applicationName}"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} dhaabi"
           }
         },
         "pl" : {
@@ -1210,6 +1354,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Simamisha ${applicationName}"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} நிறுத்து"
           }
         },
         "te" : {
@@ -1319,6 +1469,18 @@
             "value" : "${applicationName} ${language} dilinä geç"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canza ${applicationName} zuwa ${language}"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} को ${language} में बदलें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1379,6 +1541,12 @@
             "value" : "Bytt ${applicationName} til ${language}"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula ${applicationName} ko ${language}"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1389,6 +1557,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt ${applicationName} til ${language}"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} gara ${language} jijjiiri"
           }
         },
         "pl" : {
@@ -1455,6 +1629,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Badilisha ${applicationName} kuwa ${language}"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}ஐ ${language}க்கு மாற்று"
           }
         },
         "te" : {

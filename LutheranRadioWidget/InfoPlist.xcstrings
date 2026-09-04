@@ -94,6 +94,18 @@
             "value" : "Lutheran Radio"
           }
         },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -154,6 +166,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -161,6 +179,12 @@
           }
         },
         "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "om" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -227,6 +251,12 @@
           }
         },
         "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "ta" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
