@@ -150,6 +150,21 @@ import WidgetSurface
 /// is ineligible. Background auto-start remains ``handleAppWillEnterBackground()``
 /// (`isPlaying` only). Request eligibility is a separate start gate.
 ///
+/// ## One in-flight `Activity.request`
+/// ``startActivity()`` and ``refreshAllMediaSurfaces`` `.startOrUpdate` consult
+/// ``interactiveLiveActivityStartDisposition`` with **ownership and in-flight request**.
+/// `Activity.request` awaits (visual/language hops, then ActivityKit). Without a latch,
+/// a second presentable `.startOrUpdate` still sees `currentActivity == nil` and issues
+/// a second request — two interactive ids, which is **not** the stacking matrix
+/// (Now Playing + **one** Live Activity). One in-flight request: concurrent callers
+/// take ``.joinInFlightRequest``, wait, then ``.updateOwned`` (or no-op / pending ensure)
+/// once ownership is set. After a successful request, ``reapUnownedSystemResiduals``
+/// ends any extra system id with ``.immediate`` (never ``.default``), preserving the
+/// owned id. Deferred observe does not full-end while a request is in flight (that would
+/// dismiss the card about to be assigned). Never `Activity.request` / leading end while
+/// ineligible; never end the only interactive surface while ineligible; never invent
+/// `.playing`.
+///
 /// Intent-path optimistic toggles publish ContentState and align ``lastPushedContent``
 /// so a rapid second tap resolves from the post-toggle glyph; the sequential sticky
 /// lock / soft-silence path then converges actor state. Stream-switch optimistic
@@ -175,8 +190,11 @@ import WidgetSurface
 /// eligible** (Live Activities enabled and the application is active). `Activity.request`
 /// visibility is start/recreate only; ``startActivity()`` itself consults
 /// ``interactiveLiveActivityStartDisposition`` (owned → ``updateCurrentActivity()`` only,
-/// never end+request; eligible + unowned → request after ``.immediate`` residual end;
-/// ineligible + unowned → pending ensure, no request, no leading end).
+/// never end+request; in-flight request → join, then update owned; eligible + unowned
+/// and not in-flight → request after ``.immediate`` residual end; ineligible + unowned
+/// and not in-flight → pending ensure, no request, no leading end). Concurrent
+/// ``startActivity()`` callers share one `Activity.request`. After success, sibling
+/// system ids end with ``.immediate``.
 /// When request is ineligible (lock screen / background **visibility** constraints),
 /// the existing interactive activity is **kept** and a pending ensure is recorded so
 /// the next foreground cycle can start or re-bind. Recreation is capped so thrashing
@@ -464,6 +482,32 @@ class RadioLiveActivityManager: ObservableObject {
     /// While true, non-essential content pushes are skipped so concurrent updates do not
     /// target a dying activity id.
     private var isRecreatingLiveActivityAfterStalledContent = false
+
+    /// In-flight serialized `Activity.request` from ``startActivity()``.
+    ///
+    /// Concurrent `.startOrUpdate` / ``startActivity()`` callers await this task instead of
+    /// issuing a second request while ``currentActivity`` is still nil. Cleared after the
+    /// request task finishes (success, failure, or teardown-invalidated extra dismiss).
+    ///
+    /// - SeeAlso: ``interactiveLiveActivityStartDisposition(isRequestEligible:hasOwnedActivity:hasInFlightRequest:)``,
+    ///   ``performInteractiveLiveActivityRequest()``.
+    private var inFlightInteractiveLiveActivityRequestTask: Task<Void, Never>?
+
+    /// True while ``startActivity()`` has an `Activity.request` in flight (ownership still nil).
+    ///
+    /// ``refreshAllMediaSurfaces`` `.startOrUpdate` and deferred observe consult this so they
+    /// join or skip full residual sweep instead of treating in-flight as unowned.
+    internal var hasInFlightInteractiveLiveActivityRequest: Bool {
+        inFlightInteractiveLiveActivityRequestTask != nil
+    }
+
+    /// Bumped when local Live Activity ownership is torn down (``prepareLocalLiveActivityEndState``).
+    ///
+    /// A request that returns after privacy-clear / terminate / session end compares this
+    /// epoch and dismisses the extra `Activity` with ``.immediate`` instead of assigning
+    /// ``currentActivity``. Residual sibling end **before** a legitimate request captures
+    /// the post-end epoch so that end does not invalidate the request it just prepared for.
+    private var interactiveLiveActivityRequestInvalidationEpoch: UInt64 = 0
 
     /// When true, the next eligible foreground cycle should request an interactive Live
     /// Activity if session policy still needs one and none is owned.
@@ -990,16 +1034,19 @@ class RadioLiveActivityManager: ObservableObject {
     /// runner alive, manifesting as "very slow tests" or "hung before establishing
     /// connection" when running `xcodebuild ... test` from the shell.
     ///
-    /// **Request eligibility / ownership:** ``interactiveLiveActivityStartDisposition`` is
-    /// consulted before any `Activity.request` or leading ``endActivity()``. Visibility-class
+    /// **Request eligibility / ownership / in-flight:** ``interactiveLiveActivityStartDisposition``
+    /// is consulted before any `Activity.request` or leading ``endActivity()``. Visibility-class
     /// failures are start/recreate only. An already-owned interactive surface **always**
-    /// updates (never end+request). Eligible + unowned may `Activity.request`; residual
-    /// siblings end with ``.immediate`` (same as recreation) — never ``.default``.
-    /// Ineligible + unowned records ``pendingInteractiveLiveActivityEnsure`` and returns
-    /// (no request, no leading end).
+    /// updates (never end+request). An in-flight request (ownership still nil) is **joined**
+    /// — never a second `Activity.request`. Eligible + unowned + not in-flight may
+    /// `Activity.request`; residual siblings end with ``.immediate`` (same as recreation)
+    /// before the request, and again after success if a second system id appeared — never
+    /// ``.default``. Ineligible + unowned + not in-flight records
+    /// ``pendingInteractiveLiveActivityEnsure`` and returns (no request, no leading end).
     ///
     /// - Postcondition: If successful (non-test), `currentActivity` is non-nil and initial
-    ///   content uses the current `PlayerVisualState` SSOT. On request failure with no owned
+    ///   content uses the current `PlayerVisualState` SSOT. Concurrent callers of this
+    ///   method share one `Activity.request`. On request failure with no owned
     ///   activity, or ineligible start with no owned activity,
     ///   ``pendingInteractiveLiveActivityEnsure`` is set for foreground recovery.
     /// - Important: Only call from main-app code (never widget extension). The caller is
@@ -1007,13 +1054,15 @@ class RadioLiveActivityManager: ObservableObject {
     ///   a `.playing` transition). Prefer ``ensureInteractiveLiveActivityIfNeeded()`` on
     ///   foreground when recovering after a visibility-class request failure. Never ends
     ///   the only interactive surface while request is ineligible. Never replaces an
-    ///   already-owned interactive id (update that surface).
+    ///   already-owned interactive id (update that surface). Never issues two
+    ///   `Activity.request` for one presentable first play.
     /// - Note: The test short-circuit here is the companion to the identical guard
     ///   in `observeExistingActivities()`. It is what made the prior partial fix
     ///   (commit 2af37cf) insufficient.
     /// - SeeAlso: `updateCurrentActivity()`, `SharedPlayerManager.setPlaying`,
     ///   ``ensureInteractiveLiveActivityIfNeeded()``,
-    ///   ``interactiveLiveActivityStartDisposition(isRequestEligible:hasOwnedActivity:)``,
+    ///   ``interactiveLiveActivityStartDisposition(isRequestEligible:hasOwnedActivity:hasInFlightRequest:)``,
+    ///   ``shouldIssueInteractiveLiveActivityRequest(isRequestEligible:hasOwnedActivity:hasInFlightRequest:)``,
     ///   ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (start policy),
     ///   ``isRunningUnderTest``, ``observeExistingActivities()``, <doc:Architecture>
@@ -1060,13 +1109,18 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
+        if let inFlight = inFlightInteractiveLiveActivityRequestTask {
+            await inFlight.value
+        }
+
         let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
             areActivitiesEnabled: true,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         let startDisposition = Self.interactiveLiveActivityStartDisposition(
             isRequestEligible: requestEligible,
-            hasOwnedActivity: currentActivity != nil
+            hasOwnedActivity: currentActivity != nil,
+            hasInFlightRequest: inFlightInteractiveLiveActivityRequestTask != nil
         )
         switch startDisposition {
         case .deferPendingEnsure:
@@ -1087,6 +1141,26 @@ class RadioLiveActivityManager: ObservableObject {
             #endif
             await updateCurrentActivity()
             return
+        case .joinInFlightRequest:
+            if let inFlight = inFlightInteractiveLiveActivityRequestTask {
+                await inFlight.value
+            }
+            if currentActivity != nil {
+                #if DEBUG
+                print(
+                    "🔴 Live Activity start joined in-flight request; " +
+                    "updating existing surface only (keeping existing id)"
+                )
+                #endif
+                await updateCurrentActivity()
+                return
+            }
+            if !requestEligible {
+                pendingInteractiveLiveActivityEnsure = true
+                return
+            }
+            // First request failed and left us unowned; only a new serialized request may proceed.
+            guard inFlightInteractiveLiveActivityRequestTask == nil else { return }
         case .request:
             break
         }
@@ -1098,36 +1172,86 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
+        if let inFlight = inFlightInteractiveLiveActivityRequestTask {
+            await inFlight.value
+            if currentActivity != nil {
+                await updateCurrentActivity()
+            }
+            return
+        }
+
+        let requestTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performInteractiveLiveActivityRequest()
+        }
+        inFlightInteractiveLiveActivityRequestTask = requestTask
+        await requestTask.value
+        // Ownership is assigned (or the request failed) before this task completes, so
+        // joiners that wake here take ``.updateOwned`` or a new serialized request.
+        inFlightInteractiveLiveActivityRequestTask = nil
+    }
+
+    /// Single `Activity.request` body for ``startActivity()``. Callers serialize via
+    /// ``inFlightInteractiveLiveActivityRequestTask`` so concurrent `.startOrUpdate` cannot
+    /// issue a second request while ownership is still nil.
+    ///
+    /// Residual siblings end with ``.immediate`` before the request. After success, any
+    /// extra system id (this-process duplicate or leftover residual) is reaped with
+    /// ``reapUnownedSystemResiduals(preservingOwnedActivityId:)`` — never ``.default``.
+    /// A request that returns after ``prepareLocalLiveActivityEndState`` bumped
+    /// ``interactiveLiveActivityRequestInvalidationEpoch`` dismisses the extra activity
+    /// instead of assigning ``currentActivity``.
+    ///
+    /// - Precondition: ``currentActivity`` is nil and no other request task is in flight.
+    /// - SeeAlso: ``startActivity()``, ``interactiveLiveActivityStartDisposition(isRequestEligible:hasOwnedActivity:hasInFlightRequest:)``.
+    private func performInteractiveLiveActivityRequest() async {
+        if currentActivity != nil {
+            await updateCurrentActivity()
+            return
+        }
+
         // Residual siblings (not this-process ownership) must dismiss immediately.
         // ``.default`` leaves lock-screen cards until a distant calendar date.
         endActivity(dismissalPolicy: .immediate)
-        
+        let requestEpoch = interactiveLiveActivityRequestInvalidationEpoch
+
         let manager = SharedPlayerManager.shared
-        
+
         let attributes = LutheranRadioLiveActivityAttributes(
             appName: "Lutheran Radio",
             startTime: Date()
         )
-        
+
         // Safe actor access (now allowed because function is async)
         let visualState = await manager.currentVisualState
         let streamMetadata = await manager.currentStreamMetadata
             ?? SharedPlayerManager.loadPersistedStreamMetadata()
         // Prefer hold-time connecting language when a stream switch is in flight.
         let currentLanguage = await manager.liveActivityLanguageCodeForContentPush()
-        
+
         let initialContentState = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
             streamMetadata: streamMetadata,
             currentLanguage: currentLanguage
         )
-        
+
         do {
             let activity = try Activity<LutheranRadioLiveActivityAttributes>.request(
                 attributes: attributes,
                 content: .init(state: initialContentState, staleDate: nil)
             )
-            
+
+            guard requestEpoch == interactiveLiveActivityRequestInvalidationEpoch else {
+                #if DEBUG
+                print(
+                    "🔴 Live Activity request completed after ownership end — " +
+                    "dismissing extra id=\(activity.id)"
+                )
+                #endif
+                dismissInvalidatedInteractiveLiveActivityRequest(activity)
+                return
+            }
+
             currentActivity = activity
             pendingInteractiveLiveActivityEnsure = false
             beginObservingActivityEvents(activity)
@@ -1139,11 +1263,15 @@ class RadioLiveActivityManager: ObservableObject {
 
             // Initial push captures the starting state into lastPushedContent.
             await updateCurrentActivity()
-            
+
+            // This-process duplicate request (or leftover residual) must not remain
+            // interactive beside the owned id. Stacking matrix is Now Playing + one LA.
+            reapUnownedSystemResiduals(preservingOwnedActivityId: activity.id)
+
             #if DEBUG
             print("🔴 Privacy-first Live Activity started: \(activity.id)")
             #endif
-            
+
         } catch {
             #if DEBUG
             print("🔴 Failed to start Live Activity: \(error)")
@@ -1152,6 +1280,27 @@ class RadioLiveActivityManager: ObservableObject {
             // otherwise mark pending ensure so the next eligible foreground cycle can recover.
             await recoverAfterFailedInteractiveLiveActivityRequest()
         }
+    }
+
+    /// Dismisses an `Activity.request` that returned after local ownership was torn down.
+    ///
+    /// - Parameter activity: The extra interactive activity that must not become
+    ///   ``currentActivity``.
+    /// - Important: Dismissal is ``.immediate`` (never ``.default``). Does not clear
+    ///   an already-assigned owned id.
+    private func dismissInvalidatedInteractiveLiveActivityRequest(
+        _ activity: Activity<LutheranRadioLiveActivityAttributes>
+    ) {
+        let finalContentState = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .userPaused,
+            streamMetadata: activity.content.state.streamMetadata,
+            currentLanguage: activity.content.state.currentLanguage
+        )
+        endActivitiesInBackground(
+            [activity],
+            finalContentState: finalContentState,
+            dismissalPolicy: .immediate
+        )
     }
 
     /// After a failed `Activity.request`, re-bind a system-held activity if present; else mark
@@ -2110,25 +2259,32 @@ class RadioLiveActivityManager: ObservableObject {
         case contentUpdates
     }
 
-    /// How ``startActivity()`` proceeds given request eligibility and ownership.
+    /// How ``startActivity()`` proceeds given request eligibility, ownership, and in-flight request.
     ///
     /// Visibility-class failures are **start/recreate only**. Never end the only interactive
     /// surface while ``isInteractiveLiveActivityRequestEligible`` is false. Never
     /// ``startActivity()`` end+request while this process already owns an interactive id —
     /// ``refreshAllMediaSurfaces`` `.startOrUpdate` and ``startActivity()`` update that id.
-    /// Recreation may end+request only after an eligible
+    /// Never issue a second `Activity.request` while one is already in flight (ownership
+    /// still nil). Recreation may end+request only after an eligible
     /// ``recreateInteractiveLiveActivityAfterStalledContent()`` that already ended with
     /// ``.immediate``.
     ///
     /// - SeeAlso: ``startActivity()``,
-    ///   ``interactiveLiveActivityStartDisposition(isRequestEligible:hasOwnedActivity:)``,
+    ///   ``interactiveLiveActivityStartDisposition(isRequestEligible:hasOwnedActivity:hasInFlightRequest:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     enum InteractiveLiveActivityStartDisposition: Equatable, Sendable {
-        /// Eligible and unowned: end residual siblings with ``.immediate``, then `Activity.request`.
+        /// Eligible, unowned, and no in-flight request: end residual siblings with
+        /// ``.immediate``, then `Activity.request`.
         case request
         /// Already owned (eligible or not): ``updateCurrentActivity()`` only. Never end+request.
         case updateOwned
-        /// Ineligible with no owned surface: record pending ensure; do not request; do not end.
+        /// A request is already in flight (`currentActivity` still nil). Join that start;
+        /// do not issue a second `Activity.request`. After it completes, update owned if
+        /// ownership is set.
+        case joinInFlightRequest
+        /// Ineligible with no owned surface and no in-flight request: record pending ensure;
+        /// do not request; do not end.
         case deferPendingEnsure
     }
 
@@ -2480,22 +2636,68 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Parameters:
     ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``.
     ///   - hasOwnedActivity: Whether this process already owns an interactive activity.
+    ///   - hasInFlightRequest: Whether ``startActivity()`` already has an `Activity.request`
+    ///     in flight (``currentActivity`` still nil).
     /// - Returns: ``InteractiveLiveActivityStartDisposition``.
     /// - Important: `hasOwnedActivity == true` is always ``.updateOwned`` (eligible or not).
-    ///   Eligible + unowned is ``.request``. Ineligible + unowned is ``.deferPendingEnsure``.
-    ///   Recreation ends first so ``startActivity()`` sees unowned.
-    /// - SeeAlso: ``startActivity()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    ///   In-flight + unowned is ``.joinInFlightRequest`` (never a second `Activity.request`).
+    ///   Eligible + unowned + not in-flight is ``.request``. Ineligible + unowned + not
+    ///   in-flight is ``.deferPendingEnsure``. Recreation ends first so ``startActivity()``
+    ///   sees unowned.
+    /// - SeeAlso: ``startActivity()``,
+    ///   ``shouldIssueInteractiveLiveActivityRequest(isRequestEligible:hasOwnedActivity:hasInFlightRequest:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func interactiveLiveActivityStartDisposition(
         isRequestEligible: Bool,
-        hasOwnedActivity: Bool
+        hasOwnedActivity: Bool,
+        hasInFlightRequest: Bool
     ) -> InteractiveLiveActivityStartDisposition {
         if hasOwnedActivity {
             return .updateOwned
+        }
+        if hasInFlightRequest {
+            return .joinInFlightRequest
         }
         if isRequestEligible {
             return .request
         }
         return .deferPendingEnsure
+    }
+
+    /// Whether ``startActivity()`` may call `Activity.request`.
+    ///
+    /// Concurrent `.startOrUpdate` while a request is in flight must be false — that is the
+    /// dual-id hole (two interactive Live Activities for one presentable first play).
+    ///
+    /// - Returns: `true` only for eligible + unowned + not in-flight (``.request``).
+    /// - SeeAlso: ``interactiveLiveActivityStartDisposition(isRequestEligible:hasOwnedActivity:hasInFlightRequest:)``.
+    static func shouldIssueInteractiveLiveActivityRequest(
+        isRequestEligible: Bool,
+        hasOwnedActivity: Bool,
+        hasInFlightRequest: Bool
+    ) -> Bool {
+        interactiveLiveActivityStartDisposition(
+            isRequestEligible: isRequestEligible,
+            hasOwnedActivity: hasOwnedActivity,
+            hasInFlightRequest: hasInFlightRequest
+        ) == .request
+    }
+
+    /// Whether deferred ``observeExistingActivities()`` must skip the unowned full residual
+    /// sweep because a this-process `Activity.request` is already in flight.
+    ///
+    /// Full ``endActivity`` while unowned would bump
+    /// ``interactiveLiveActivityRequestInvalidationEpoch`` and dismiss the card about to be
+    /// assigned. Sibling reap after a successful request still preserves the owned id.
+    ///
+    /// - Returns: `true` when unowned **and** in-flight (skip full sweep). Owned observe
+    ///   still reaps siblings; unowned + not in-flight still full-ends residuals.
+    /// - SeeAlso: ``observeExistingActivities()``, ``reapUnownedSystemResiduals(preservingOwnedActivityId:)``.
+    static func shouldSkipUnownedResidualSweepWhileInteractiveRequestInFlight(
+        hasOwnedActivity: Bool,
+        hasInFlightRequest: Bool
+    ) -> Bool {
+        !hasOwnedActivity && hasInFlightRequest
     }
 
     /// Inter-attempt delay between soft-ensure `Activity.update` attempts.
@@ -2887,7 +3089,7 @@ class RadioLiveActivityManager: ObservableObject {
     ///     for a replacement interactive request; inactive/background is not).
     /// - Returns: `true` when both Live Activities are enabled and the app is active.
     /// - SeeAlso: ``startActivity()``,
-    ///   ``interactiveLiveActivityStartDisposition(isRequestEligible:hasOwnedActivity:)``,
+    ///   ``interactiveLiveActivityStartDisposition(isRequestEligible:hasOwnedActivity:hasInFlightRequest:)``,
     ///   ``shouldPerformStalledContentRecreation(consecutiveStalled:recreationsAttempted:isRecreationInProgress:isRequestEligible:threshold:maxRecreations:)``,
     ///   ``recreateInteractiveLiveActivityAfterStalledContent()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
@@ -7472,6 +7674,11 @@ class RadioLiveActivityManager: ObservableObject {
         }
         #endif
 
+        // Invalidate an in-flight `Activity.request` so a later success cannot assign
+        // ``currentActivity`` after privacy-clear / terminate / session end. Residual
+        // sibling end *before* a legitimate request captures the post-increment epoch.
+        interactiveLiveActivityRequestInvalidationEpoch += 1
+
         // Sweep system-held activities even when `currentActivity` is already nil
         // (observe race, prior partial end, force-quit residual reaped on next launch).
         let activities = collectActivitiesToEnd()
@@ -7749,9 +7956,12 @@ class RadioLiveActivityManager: ObservableObject {
     /// Activity and clear mirrors. Instead ``reapUnownedSystemResiduals(preservingOwnedActivityId:)``
     /// ends every system-held activity whose id differs from the owned one, preserving local
     /// tracking. This closes the hole where ownership skip alone could leave a second prior-
-    /// process residual interactive while this process owns a new surface. Happy path:
-    /// unowned ``startActivity()`` ends residual siblings with ``.immediate`` first, so the
-    /// sibling set is empty. Owned start updates only and never leads with end.
+    /// process residual interactive while this process owns a new surface. If a request is
+    /// **in flight** (ownership still nil), the unowned full sweep is skipped — that end would
+    /// invalidate the card about to be assigned; sibling reap after success still preserves
+    /// the owned id. Happy path: unowned ``startActivity()`` ends residual siblings with
+    /// ``.immediate`` first, so the sibling set is empty. Owned start updates only and never
+    /// leads with end. Concurrent starts join one in-flight `Activity.request`.
     ///
     /// Background audio with a living process never re-enters this path — the singleton
     /// is already initialized and `currentActivity` is managed by start/update/end.
@@ -7808,6 +8018,20 @@ class RadioLiveActivityManager: ObservableObject {
         // in ``systemResidualIdsToReap(systemActivityIds:ownedActivityId:)``.
         if let owned = currentActivity {
             reapUnownedSystemResiduals(preservingOwnedActivityId: owned.id)
+            return
+        }
+
+        // In-flight `Activity.request`: ownership is still nil, but a this-process start
+        // already passed residual end. Full ``endActivity`` would bump the invalidation
+        // epoch and dismiss the card about to be assigned. Sibling reap after success
+        // still preserves the owned id.
+        if Self.shouldSkipUnownedResidualSweepWhileInteractiveRequestInFlight(
+            hasOwnedActivity: false,
+            hasInFlightRequest: hasInFlightInteractiveLiveActivityRequest
+        ) {
+            #if DEBUG
+            print("🔴 Observe skipped full residual sweep — interactive request in flight")
+            #endif
             return
         }
 
@@ -9072,11 +9296,37 @@ class RadioLiveActivityManager: ObservableObject {
     /// White-box seam: start/request disposition (no ActivityKit).
     func _test_interactiveLiveActivityStartDisposition(
         isRequestEligible: Bool,
-        hasOwnedActivity: Bool
+        hasOwnedActivity: Bool,
+        hasInFlightRequest: Bool = false
     ) -> InteractiveLiveActivityStartDisposition {
         Self.interactiveLiveActivityStartDisposition(
             isRequestEligible: isRequestEligible,
-            hasOwnedActivity: hasOwnedActivity
+            hasOwnedActivity: hasOwnedActivity,
+            hasInFlightRequest: hasInFlightRequest
+        )
+    }
+
+    /// White-box seam: whether `Activity.request` may run (no ActivityKit).
+    func _test_shouldIssueInteractiveLiveActivityRequest(
+        isRequestEligible: Bool,
+        hasOwnedActivity: Bool,
+        hasInFlightRequest: Bool
+    ) -> Bool {
+        Self.shouldIssueInteractiveLiveActivityRequest(
+            isRequestEligible: isRequestEligible,
+            hasOwnedActivity: hasOwnedActivity,
+            hasInFlightRequest: hasInFlightRequest
+        )
+    }
+
+    /// White-box seam: skip unowned full residual sweep while a request is in flight.
+    func _test_shouldSkipUnownedResidualSweepWhileInteractiveRequestInFlight(
+        hasOwnedActivity: Bool,
+        hasInFlightRequest: Bool
+    ) -> Bool {
+        Self.shouldSkipUnownedResidualSweepWhileInteractiveRequestInFlight(
+            hasOwnedActivity: hasOwnedActivity,
+            hasInFlightRequest: hasInFlightRequest
         )
     }
 

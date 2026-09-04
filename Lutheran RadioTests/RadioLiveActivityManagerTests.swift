@@ -13,9 +13,10 @@
 //  (`_test_beginObservingSyntheticContentUpdates`, `_test_wouldSuppressLiveActivityUpdate`,
 //  `_test_setHarnessSimulatesActiveActivity`, `_test_cancelAttributeEventObservation`,
 //  `_test_finalEndContentState`, `_test_systemResidualIdsToReap`,
-//  `_test_shouldUseFullResidualEnd`, stalled-recreation eligibility /
-//  pending-ensure / foreground-ensure policy seams) so ActivityKit IPC is never
-//  exercised under the XCTest host.
+//  `_test_shouldUseFullResidualEnd`, `_test_shouldIssueInteractiveLiveActivityRequest`,
+//  `_test_shouldSkipUnownedResidualSweepWhileInteractiveRequestInFlight`,
+//  stalled-recreation eligibility / pending-ensure / foreground-ensure policy seams)
+//  so ActivityKit IPC is never exercised under the XCTest host.
 //
 //  - SeeAlso: ``RadioLiveActivityManager``, ``WidgetEventObserver``,
 //    docs/Event-Driven-Refactor-Roadmap.md (Tier 2 LA events / Tier 5),
@@ -4713,8 +4714,10 @@ class RadioLiveActivityManagerTests: XCTestCase {
 
     /// ``startActivity()`` and ``refreshAllMediaSurfaces`` `.startOrUpdate` consult
     /// ``interactiveLiveActivityStartDisposition``: owned always updates (never request);
-    /// eligible + unowned may request; ineligible + unowned records pending ensure
-    /// (no request, no leading end). Recreation ends first so start sees unowned.
+    /// eligible + unowned + not in-flight may request; ineligible + unowned records pending
+    /// ensure (no request, no leading end). In-flight join is
+    /// ``testConcurrentStartOrUpdateJoinsInFlightRequestInsteadOfSecondActivityRequest``.
+    /// Recreation ends first so start sees unowned.
     func testInteractiveLiveActivityStartRequiresRequestEligibility() {
         XCTAssertEqual(
             manager._test_interactiveLiveActivityStartDisposition(
@@ -4757,6 +4760,140 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 currentActivityIsNil: true
             ),
             "Unowned ineligible start records pending ensure (same flag as failed request)"
+        )
+        XCTAssertTrue(
+            manager._test_shouldIssueInteractiveLiveActivityRequest(
+                isRequestEligible: true,
+                hasOwnedActivity: false,
+                hasInFlightRequest: false
+            ),
+            "Eligible + unowned + not in-flight is the sole Activity.request"
+        )
+        XCTAssertFalse(
+            manager._test_shouldIssueInteractiveLiveActivityRequest(
+                isRequestEligible: true,
+                hasOwnedActivity: true,
+                hasInFlightRequest: false
+            ),
+            "Owned must never Activity.request"
+        )
+    }
+
+    /// Concurrent `.startOrUpdate` / ``startActivity()`` must not issue a second
+    /// `Activity.request` while one is already in flight (`currentActivity` still nil).
+    ///
+    /// **Invariant protected:** one presentable first play → one interactive Live Activity
+    /// (Now Playing + **one** Lutheran card). Owned always updates; in-flight joins;
+    /// eligible + unowned + not in-flight may request. Deferred observe skips the unowned
+    /// full residual sweep while the request is in flight so that end cannot invalidate
+    /// the card about to be assigned.
+    ///
+    /// Pure policy — no ActivityKit IPC. ``startActivity()`` itself is test-isolated.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/interactiveLiveActivityStartDisposition(isRequestEligible:hasOwnedActivity:hasInFlightRequest:)``,
+    ///   ``RadioLiveActivityManager/shouldIssueInteractiveLiveActivityRequest(isRequestEligible:hasOwnedActivity:hasInFlightRequest:)``,
+    ///   ``RadioLiveActivityManager/shouldSkipUnownedResidualSweepWhileInteractiveRequestInFlight(hasOwnedActivity:hasInFlightRequest:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testConcurrentStartOrUpdateJoinsInFlightRequestInsteadOfSecondActivityRequest() {
+        XCTAssertEqual(
+            manager._test_interactiveLiveActivityStartDisposition(
+                isRequestEligible: true,
+                hasOwnedActivity: false,
+                hasInFlightRequest: true
+            ),
+            .joinInFlightRequest,
+            "Eligible + unowned + in-flight must join, not request"
+        )
+        XCTAssertFalse(
+            manager._test_shouldIssueInteractiveLiveActivityRequest(
+                isRequestEligible: true,
+                hasOwnedActivity: false,
+                hasInFlightRequest: true
+            ),
+            "Concurrent .startOrUpdate must not Activity.request while one is in flight"
+        )
+
+        XCTAssertEqual(
+            manager._test_interactiveLiveActivityStartDisposition(
+                isRequestEligible: false,
+                hasOwnedActivity: false,
+                hasInFlightRequest: true
+            ),
+            .joinInFlightRequest,
+            "Ineligible must still join an in-flight request (not independently defer)"
+        )
+        XCTAssertFalse(
+            manager._test_shouldIssueInteractiveLiveActivityRequest(
+                isRequestEligible: false,
+                hasOwnedActivity: false,
+                hasInFlightRequest: true
+            )
+        )
+
+        XCTAssertEqual(
+            manager._test_interactiveLiveActivityStartDisposition(
+                isRequestEligible: true,
+                hasOwnedActivity: true,
+                hasInFlightRequest: true
+            ),
+            .updateOwned,
+            "Owned always wins over in-flight (request already assigned)"
+        )
+        XCTAssertFalse(
+            manager._test_shouldIssueInteractiveLiveActivityRequest(
+                isRequestEligible: true,
+                hasOwnedActivity: true,
+                hasInFlightRequest: true
+            )
+        )
+
+        XCTAssertTrue(
+            manager._test_shouldSkipUnownedResidualSweepWhileInteractiveRequestInFlight(
+                hasOwnedActivity: false,
+                hasInFlightRequest: true
+            ),
+            "Unowned observe must not full-end while a this-process request is in flight"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSkipUnownedResidualSweepWhileInteractiveRequestInFlight(
+                hasOwnedActivity: false,
+                hasInFlightRequest: false
+            ),
+            "Unowned + not in-flight still full-ends prior-process residuals"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSkipUnownedResidualSweepWhileInteractiveRequestInFlight(
+                hasOwnedActivity: true,
+                hasInFlightRequest: true
+            ),
+            "Owned observe still reaps siblings (not this skip)"
+        )
+    }
+
+    /// After a successful `Activity.request`, extra system ids are siblings — reap with
+    /// ``.immediate`` while preserving the owned id. Same id policy as deferred observe.
+    ///
+    /// **Invariant protected:** stacking is Now Playing + **one** interactive Live Activity.
+    /// A this-process duplicate id must not remain beside the owned surface.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/reapUnownedSystemResiduals(preservingOwnedActivityId:)``,
+    ///   ``RadioLiveActivityManager/systemResidualIdsToReap(systemActivityIds:ownedActivityId:)``,
+    ///   ``RadioLiveActivityManager/startActivity()``.
+    func testSiblingReapAfterSuccessfulInteractiveRequestPreservesOwnedId() {
+        let owned = "owned-after-request"
+        let extra = "duplicate-request-id"
+        let reaped = manager._test_systemResidualIdsToReap(
+            systemActivityIds: [owned, extra],
+            ownedActivityId: owned
+        )
+        XCTAssertEqual(reaped, [extra], "Post-request sibling reap must target only the extra id")
+        XCTAssertFalse(reaped.contains(owned), "Owned id after request must never be reaped")
+        XCTAssertTrue(
+            manager._test_systemResidualIdsToReap(
+                systemActivityIds: [owned],
+                ownedActivityId: owned
+            ).isEmpty,
+            "Sole owned id after request must produce an empty sibling reaping set"
         )
     }
 

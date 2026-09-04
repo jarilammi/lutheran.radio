@@ -27,8 +27,9 @@ enum MediaSurfaceLiveActivityMode: Sendable {
     case none
     /// Push when an activity is already active; no-op when `currentActivity == nil`.
     case updateIfActive
-    /// Start when request is eligible and unowned; update an already-owned surface
-    /// (eligible or not); ineligible + unowned records pending ensure (``setPlaying()`` policy).
+    /// Start when request is eligible, unowned, and no request is in flight; join an
+    /// in-flight request; update an already-owned surface (eligible or not); ineligible +
+    /// unowned records pending ensure (``setPlaying()`` policy). Never two `Activity.request`.
     case startOrUpdate
 }
 
@@ -604,17 +605,20 @@ extension SharedPlayerManager {
                 Self._test_recordMediaSurfaceCoordinationStep(.liveActivityUpdate)
                 #endif
             case .startOrUpdate:
-                // SAFETY: `currentActivity` and application state are MainActor-isolated.
-                // Start consults ``interactiveLiveActivityStartDisposition``: owned →
-                // update only (never startActivity end+request); eligible + unowned →
-                // request; ineligible + unowned → pending ensure (no request, no leading end).
+                // SAFETY: `currentActivity`, in-flight request, and application state are
+                // MainActor-isolated. Start consults ``interactiveLiveActivityStartDisposition``:
+                // owned → update only (never startActivity end+request); in-flight → join
+                // (never a second Activity.request); eligible + unowned → request;
+                // ineligible + unowned → pending ensure (no request, no leading end).
                 let startDisposition = await MainActor.run {
-                    RadioLiveActivityManager.interactiveLiveActivityStartDisposition(
+                    let manager = RadioLiveActivityManager.shared
+                    return RadioLiveActivityManager.interactiveLiveActivityStartDisposition(
                         isRequestEligible: RadioLiveActivityManager.isInteractiveLiveActivityRequestEligible(
                             areActivitiesEnabled: RadioLiveActivityManager.areActivitiesEnabledOnThisHost,
                             isApplicationActive: UIApplication.shared.applicationState == .active
                         ),
-                        hasOwnedActivity: RadioLiveActivityManager.shared.currentActivity != nil
+                        hasOwnedActivity: manager.currentActivity != nil,
+                        hasInFlightRequest: manager.hasInFlightInteractiveLiveActivityRequest
                     )
                 }
                 switch startDisposition {
@@ -622,6 +626,12 @@ extension SharedPlayerManager {
                     await RadioLiveActivityManager.shared.startActivity()
                     #if DEBUG
                     Self._test_recordMediaSurfaceCoordinationStep(.liveActivityStart)
+                    #endif
+                case .joinInFlightRequest:
+                    // Join the in-flight `Activity.request`; do not count a second start.
+                    await RadioLiveActivityManager.shared.startActivity()
+                    #if DEBUG
+                    Self._test_recordMediaSurfaceCoordinationStep(.liveActivityUpdate)
                     #endif
                 case .updateOwned:
                     await RadioLiveActivityManager.shared.updateCurrentActivity()
