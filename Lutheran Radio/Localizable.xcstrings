@@ -165,6 +165,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -764,6 +770,24 @@
             }
           }
         },
+        "om" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld afaan"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld afaanota"
+                }
+              }
+            }
+          }
+        },
         "pl" : {
           "variations" : {
             "plural" : {
@@ -1236,6 +1260,12 @@
             "value" : "Dobbelttrykk for å velja lydutgangseining"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al lama tuqi meeshaa bahiinsa sagalee filachuuf"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1478,6 +1508,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Viser informasjon om gjeldande radioprogram"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odeeffannaa sagantaa raadiyoo ammaa agarsiisa"
           }
         },
         "pl" : {
@@ -1724,6 +1760,12 @@
             "value" : "Vekslar mellom avspeling og pause av radiostraumen"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa toora raadiyoo banuu ykn cufuu jijjiira"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1966,6 +2008,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vel kor lenge før avspeling stoppar"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hanga taphachiisni dhaabatu yeroo filadhu"
           }
         },
         "pl" : {
@@ -2212,6 +2260,12 @@
             "value" : "Justerer avspelingsvolumet"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sagalee taphachiisaa sirreessa"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2451,6 +2505,12 @@
           }
         },
         "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "om" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -2701,6 +2761,12 @@
             "value" : "Lutheran Radio-logo"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asxaa Lutheran Radio"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2943,6 +3009,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pause"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhaabi"
           }
         },
         "pl" : {
@@ -3190,6 +3262,12 @@
             "value" : "Bilete av %@"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suuraa %@"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3432,6 +3510,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel av"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisi"
           }
         },
         "pl" : {
@@ -3678,6 +3762,12 @@
             "value" : "Søvntimer"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taimera hirribaa"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3920,6 +4010,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volum"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sagalee"
           }
         },
         "pl" : {
@@ -4521,6 +4617,24 @@
             }
           }
         },
+        "om" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "dhibbeentaa %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "dhibbeentaa %lld"
+                }
+              }
+            }
+          }
+        },
         "pl" : {
           "variations" : {
             "plural" : {
@@ -4993,6 +5107,12 @@
             "value" : "Hald fram"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Itti fufi"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5235,6 +5355,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Igjen"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Irra deebi'ii yaali"
           }
         },
         "pl" : {
@@ -5481,6 +5607,12 @@
             "value" : "Tillat for denne økta"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yeroo kanaaf hayyami"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5723,6 +5855,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tillat alltid"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yeroo hunda hayyami"
           }
         },
         "pl" : {
@@ -5969,6 +6107,12 @@
             "value" : "Ikkje no"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amma miti"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6211,6 +6355,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tøm"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qulqulleessi"
           }
         },
         "pl" : {
@@ -6457,6 +6607,12 @@
             "value" : "Tømt"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qulqulleeffameera"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6699,6 +6855,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dette vil stoppe avspeling, fjerne widget- og Live Activity-data og tømme nyleg lyttestatus frå denne eininga. Handlinga kan ikkje angrast."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kun taphachiisa dhaabsa, daataa wijetii fi Live Activity haqa, haala dhaggeeffannaa dhihoo meeshaa kana irraa qulqulleessa. Tarkaanfiin kun duubatti hin deebi'u."
           }
         },
         "pl" : {
@@ -6945,6 +7107,12 @@
             "value" : "Tøm lokal avspillingsstatus"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haala taphachiisaa naannootti qulqulleessi"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7187,6 +7355,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Konfigurasjon for Lutheran Radio widget."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qindaa'ina wijetii Lutheran Radio."
           }
         },
         "pl" : {
@@ -7434,6 +7608,12 @@
             "value" : "Tilkoplingsfeil"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dogoggora qunnamtii"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7679,6 +7859,12 @@
             "value" : "Kontroller Lutheran Radio avspeling og sjå gjeldande stasjon."
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa Lutheran Radio to'adhu, buufata ammaa ilaali."
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7921,6 +8107,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kontroller avspeling og byt mellom språkstraumar."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa to'adhu, toora afaanii gidduutti jijjiiri."
           }
         },
         "pl" : {
@@ -8168,6 +8360,12 @@
             "value" : "Mink volumet"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sagalee hir'isi"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8413,6 +8611,12 @@
             "value" : "Auk volumet"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sagalee dabali"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8655,6 +8859,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spelar"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachaa jira"
           }
         },
         "pl" : {
@@ -8902,6 +9112,12 @@
             "value" : "Språk"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afaan"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9144,6 +9360,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Språkkode"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koodii afaanii"
           }
         },
         "pl" : {
@@ -9391,6 +9613,12 @@
             "value" : "Engelsk"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingilizii"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9634,6 +9862,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estisk"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Istooniyaa"
           }
         },
         "pl" : {
@@ -9881,6 +10115,12 @@
             "value" : "Finsk"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fiinlaandi"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10124,6 +10364,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tysk"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jarmanii"
           }
         },
         "pl" : {
@@ -10371,6 +10617,12 @@
             "value" : "Svensk"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Siwiidin"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10614,6 +10866,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Direktesending"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Toora kallattii"
           }
         },
         "pl" : {
@@ -10861,6 +11119,12 @@
             "value" : "Berre lokalt"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Naannoo qofa"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11101,6 +11365,12 @@
           }
         },
         "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "om" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -11351,6 +11621,12 @@
             "value" : "Neste språk"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afaan itti aanu"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11594,6 +11870,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel av/Pause"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisi/Dhaabi"
           }
         },
         "pl" : {
@@ -11841,6 +12123,12 @@
             "value" : "Avspeling"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12084,6 +12372,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Førre språk"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afaan duraa"
           }
         },
         "pl" : {
@@ -12330,6 +12624,12 @@
             "value" : "Appen brukar mobildata, noko som kan medføra kostnader avhengig av dataplanen din."
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appiin deetaa moobaayilaa fayyadamaa jira; karoora deetaa kee irratti hundaa'uun kaffaltii fidaa danda'a."
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12572,6 +12872,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobildatabruk"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fayyadama deetaa moobaayilaa"
           }
         },
         "pl" : {
@@ -12818,6 +13124,12 @@
             "value" : "Ingen sporinformasjon"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odeeffannaan tooraa hin jiru"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13060,6 +13372,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spelar no"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amma taphachaa jira"
           }
         },
         "pl" : {
@@ -13306,6 +13624,12 @@
             "value" : "Greitt"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13549,6 +13873,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opna appen først"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dura appii bani"
           }
         },
         "pl" : {
@@ -13797,6 +14127,12 @@
             "value" : "Set Lutheran Radio på pause"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio yeroof dhaabi"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14042,6 +14378,12 @@
             "value" : "Pause Lutheran Radio-avspeling."
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa Lutheran Radio yeroof dhaabi."
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14284,6 +14626,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisi"
           }
         },
         "pl" : {
@@ -14531,6 +14879,12 @@
             "value" : "Spel Lutheran Radio"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio taphachiisi"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14773,6 +15127,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel av eller pausa Lutheran Radio."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio taphachiisi ykn yeroof dhaabi."
           }
         },
         "pl" : {
@@ -15020,6 +15380,12 @@
             "value" : "Spel eller fortsett Lutheran Radio."
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio taphachiisi ykn itti fufi."
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15262,6 +15628,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kan ikkje starte avspeling på grunn av ein feil i tryggleiksvalideringa. Ver snill og sjekk internettforbindelsen din og sjå til at appen er oppdatert. Dersom problemet held fram, start appen på nytt og prøv igjen."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa jalqabuu hin dandeenye sababa mirkaneessiin nageenyaa kufeef. Qunnamtii interneetii kee mirkaneessi, appiin haaromfameera ta'uu mirkaneessi. Yoo rakkoon itti fufe, appii irra deebi'ii jalqabiitti yaali."
           }
         },
         "pl" : {
@@ -15508,6 +15880,12 @@
             "value" : "Tryggleiksvalidering mislykka"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mirkaneessiin nageenyaa kufeera"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15751,6 +16129,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vel %@"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ filadhu"
           }
         },
         "pl" : {
@@ -16352,6 +16736,24 @@
             }
           }
         },
+        "om" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Daqiiqaan %lld hafe"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Daqiiqoonni %lld hafan"
+                }
+              }
+            }
+          }
+        },
         "pl" : {
           "variations" : {
             "plural" : {
@@ -16824,6 +17226,12 @@
             "value" : "Avbryt timer"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taimera dhiisi"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17066,6 +17474,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minutt"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daqiiqaa 15"
           }
         },
         "pl" : {
@@ -17312,6 +17726,12 @@
             "value" : "30 minutt"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daqiiqaa 30"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17554,6 +17974,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 minutt"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daqiiqaa 45"
           }
         },
         "pl" : {
@@ -17800,6 +18226,12 @@
             "value" : "60 minutt"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daqiiqaa 60"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18042,6 +18474,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Søvntimer"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taimera hirribaa"
           }
         },
         "pl" : {
@@ -18288,6 +18726,12 @@
             "value" : "Streaming-tenarane har fornyet SSL-sertifikata sine. Appen køyrer i kompatibilitetsmodus. Ver snill og oppdater til nyaste versjon når ho er tilgjengeleg for optimal tryggleik."
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Serveeroonni dabarsaa sartifikeetii SSL isaanii haaromsaniiru. Appiin haala wal-simannaa keessatti hojjechaa jira. Nageenya gaarii argachuuf yeroo argamutti gara gosa haaraatti haaromsi."
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18530,6 +18974,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sertifikat oppdatert"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sartifikeetiin haaromfameera"
           }
         },
         "pl" : {
@@ -18777,6 +19227,12 @@
             "value" : "Start eller gjenoppta Lutheran Radio avspeling."
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa Lutheran Radio jalqabi ykn itti fufi."
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19019,6 +19475,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start eller stopp Lutheran Radio avspeling."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa Lutheran Radio jalqabi ykn dhaabi."
           }
         },
         "pl" : {
@@ -19265,6 +19727,12 @@
             "value" : "Buffer"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuusaa"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19507,6 +19975,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Koplar"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qunnamsiisi"
           }
         },
         "pl" : {
@@ -19753,6 +20227,12 @@
             "value" : "Mislukka"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kufe"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19997,6 +20477,12 @@
             "value" : "Fråkopla"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toora ala"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20239,6 +20725,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausa"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhaabi"
           }
         },
         "pl" : {
@@ -20486,6 +20978,12 @@
             "value" : "Pausa – Anrop aktivt"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhaabbateera – Bilbilli hojjechaa jira"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20729,6 +21227,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Avspeling mislukka: %@"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisni kufeera: %@"
           }
         },
         "pl" : {
@@ -20976,6 +21480,12 @@
             "value" : "Spelar"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisi"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21218,6 +21728,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tryggleik"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nageenya"
           }
         },
         "pl" : {
@@ -21464,6 +21980,12 @@
             "value" : "SSL-sertifikat fornyet - oppdater app snart"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sartifikeetiin SSL haaromfameera - appii daffisii haaromsi"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21706,6 +22228,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stoppa"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhaabbateera"
           }
         },
         "pl" : {
@@ -21952,6 +22480,12 @@
             "value" : "Av"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cufa"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22194,6 +22728,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Eining varm"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meeshaan ho'aa"
           }
         },
         "pl" : {
@@ -22440,6 +22980,12 @@
             "value" : "Sendinga er midlertidig ikkje tilgjengeleg. Prøv igjen seinare."
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tamsaasni yeroo gabaabaaf hin argamu. Maaloo booda irra deebi'ii yaali."
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22682,6 +23228,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sending ikkje tilgjengeleg"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tamsaasni hin argamu"
           }
         },
         "pl" : {
@@ -22929,6 +23481,12 @@
             "value" : "Byt Lutheran Radio språkstraum."
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toora afaanii Lutheran Radio jijjiiri."
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23171,6 +23729,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt straum"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toora jijjiiri"
           }
         },
         "pl" : {
@@ -23418,6 +23982,12 @@
             "value" : "Byt til %@"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gara %@ jijjiiri"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23660,6 +24230,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt til ein annan språkstraum frå Live-aktivitet."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toora afaanii biraa Live Activity irraa jijjiiri."
           }
         },
         "pl" : {
@@ -23906,6 +24482,12 @@
             "value" : "Byt til ein annan språkstraum."
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toora afaanii biraa jijjiiri."
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24149,6 +24731,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bytta til %@"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gara %@ jijjiirameera"
           }
         },
         "pl" : {
@@ -24397,6 +24985,12 @@
             "value" : "Trykk for å opna"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tuqi banuuf"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24640,6 +25234,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veksla Lutheran Radio"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio jijjiiri"
           }
         },
         "pl" : {
@@ -24886,6 +25486,12 @@
             "value" : "Veksla Lutheran Radio avspeling"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa Lutheran Radio jijjiiri"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25128,6 +25734,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veksla mellom avspeling og pause frå Live-aktivitet."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisi/dhaabi Live Activity irraa jijjiiri."
           }
         },
         "pl" : {
@@ -25373,6 +25985,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veksla avspeling"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taphachiisa jijjiiri"
           }
         },
         "pl" : {
@@ -25974,6 +26592,24 @@
             }
           }
         },
+        "om" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sagaleen dhibbeentaa %lld irratti kaa'ameera"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sagaleen dhibbeentaa %lld irratti kaa'ameera"
+                }
+              }
+            }
+          }
+        },
         "pl" : {
           "variations" : {
             "plural" : {
@@ -26444,6 +27080,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget-konfigurasjon"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qindaa'ina wijetii"
           }
         },
         "pl" : {

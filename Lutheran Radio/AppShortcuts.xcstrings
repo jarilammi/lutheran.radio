@@ -166,6 +166,12 @@
             "value" : "Set ${applicationName} på pause"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} yeroof dhaabi"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -409,6 +415,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel ${applicationName}"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} taphachiisi"
           }
         },
         "pl" : {
@@ -656,6 +668,12 @@
             "value" : "Spel ${applicationName} på ${language}"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} afaan ${language} taphachiisi"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -899,6 +917,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start ${applicationName}"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} jalqabi"
           }
         },
         "pl" : {
@@ -1146,6 +1170,12 @@
             "value" : "Stopp ${applicationName}"
           }
         },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} dhaabi"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1389,6 +1419,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt ${applicationName} til ${language}"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} gara ${language} jijjiiri"
           }
         },
         "pl" : {
