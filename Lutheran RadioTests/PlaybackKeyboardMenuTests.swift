@@ -22,13 +22,13 @@ import XCTest
 
 final class PlaybackKeyboardMenuTests: XCTestCase {
 
-    /// UI catalog languages: README Localizations / Localizable coverage (the 40
+    /// UI catalog languages: README Localizations / Localizable coverage (the 45
     /// language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "af", "am", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
-        "fo", "fr", "gag", "hr", "hu", "id", "is", "it", "kl", "lt", "lv", "mg",
-        "nb", "nl", "nn", "pl", "pt", "pt-BR", "ro", "ru", "se", "sk", "sl", "sq",
-        "sv", "sw", "te", "uk",
+        "fo", "fr", "gag", "ha", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
+        "lv", "mg", "nb", "ng", "nl", "nn", "om", "pl", "pt", "pt-BR", "ro", "ru",
+        "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "uk",
     ]
 
     private let menuKeys: [String] = [
