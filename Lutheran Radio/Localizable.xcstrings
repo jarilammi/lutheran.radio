@@ -153,6 +153,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -734,6 +740,18 @@
             }
           }
         },
+        "ng" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld omalaka"
+                }
+              }
+            }
+          }
+        },
         "nl" : {
           "variations" : {
             "plural" : {
@@ -1248,6 +1266,12 @@
             "value" : "Dobbelttrykk for å velge lydutgangsenhet"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhenga kaali opo u hogolole oshinima shokutuma omukumo"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1496,6 +1520,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Viser informasjon om gjeldende radioprogram"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otali ulike uuyelele woprogram yoradio ya paife"
           }
         },
         "nl" : {
@@ -1748,6 +1778,12 @@
             "value" : "Veksler mellom avspilling og pause av radiostrømmen"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otali lundulula okudhana kostream yoradio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1996,6 +2032,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Velg hvor lenge før avspilling stopper"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hogolola ethimbo lyokukala okudhana"
           }
         },
         "nl" : {
@@ -2248,6 +2290,12 @@
             "value" : "Justerer avspillingsvolumet"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otali lundulula omukumo gwokudhana"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2493,6 +2541,12 @@
           }
         },
         "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "ng" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -2749,6 +2803,12 @@
             "value" : "Lutheran Radio-logo"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ologo ya Lutheran Radio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2997,6 +3057,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pause"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kala po"
           }
         },
         "nl" : {
@@ -3250,6 +3316,12 @@
             "value" : "Bilde av %@"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ethano lya %@"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3498,6 +3570,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spill av"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana"
           }
         },
         "nl" : {
@@ -3750,6 +3828,12 @@
             "value" : "Søvntimer"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otimer yokukotha"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3998,6 +4082,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volum"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume"
           }
         },
         "nl" : {
@@ -4581,6 +4671,18 @@
             }
           }
         },
+        "ng" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld opercent"
+                }
+              }
+            }
+          }
+        },
         "nl" : {
           "variations" : {
             "plural" : {
@@ -5095,6 +5197,12 @@
             "value" : "Fortsett"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsikila"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5343,6 +5451,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Igjen"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kambadhala ishewe"
           }
         },
         "nl" : {
@@ -5595,6 +5709,12 @@
             "value" : "Tillat for denne økten"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pitika ethimbo ndika"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5843,6 +5963,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tillat alltid"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pitika aluhe"
           }
         },
         "nl" : {
@@ -6095,6 +6221,12 @@
             "value" : "Ikke nå"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nena aawe"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6343,6 +6475,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tøm"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yedha"
           }
         },
         "nl" : {
@@ -6595,6 +6733,12 @@
             "value" : "Tømt"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oya yedhwa"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6843,6 +6987,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dette vil stoppe avspilling, fjerne widget- og Live Activity-data og tømme nylig lytteaktivitet fra denne enheten. Handlingen kan ikke angres."
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shika ota ka kala okudhana, ta dhimitha odata yowidget naLive Activity, ta yedha onkalo yokupulakena ya pwa mooshinima shika. Iilonga ndika itayi vulu okugalulilwa."
           }
         },
         "nl" : {
@@ -7095,6 +7245,12 @@
             "value" : "Tøm lokal avspillingsstatus"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yedha onkalo yokudhana yopaumwene"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7343,6 +7499,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Konfigurasjon for Lutheran Radio widget."
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elongekidho lyowidget ya Lutheran Radio."
           }
         },
         "nl" : {
@@ -7596,6 +7758,12 @@
             "value" : "Tilkoblingsfeil"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshipuko shekwatathano"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7847,6 +8015,12 @@
             "value" : "Kontroller Lutheran Radio avspilling og se gjeldende stasjon."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Longeka okudhana kwa Lutheran Radio nu tale ostasie ya paife."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8095,6 +8269,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kontroller avspilling og bytt mellom språkstrømmer."
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Longeka okudhana nu lundulula pokati kostream dhomalaka."
           }
         },
         "nl" : {
@@ -8348,6 +8528,12 @@
             "value" : "Reduser volumet"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shunitha volume"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8599,6 +8785,12 @@
             "value" : "Øk volumet"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gwedha volume"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8847,6 +9039,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spiller"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ota dhana"
           }
         },
         "nl" : {
@@ -9100,6 +9298,12 @@
             "value" : "Språk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elaka"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9348,6 +9552,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Språkkode"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Okooda yelaka"
           }
         },
         "nl" : {
@@ -9601,6 +9811,12 @@
             "value" : "Engelsk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshiingilisa"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9850,6 +10066,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estisk"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshiestonia"
           }
         },
         "nl" : {
@@ -10103,6 +10325,12 @@
             "value" : "Finsk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshifinlandi"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10352,6 +10580,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tysk"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshindowiishi"
           }
         },
         "nl" : {
@@ -10605,6 +10839,12 @@
             "value" : "Svensk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshiswedi"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10854,6 +11094,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Direktesending"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Etumo mombepo"
           }
         },
         "nl" : {
@@ -11107,6 +11353,12 @@
             "value" : "Kun lokalt"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opaumwene ashike"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11353,6 +11605,12 @@
           }
         },
         "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "ng" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -11609,6 +11867,12 @@
             "value" : "Neste språk"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elaka lyilandula"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11858,6 +12122,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spill av/Pause"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana/Kala po"
           }
         },
         "nl" : {
@@ -12111,6 +12381,12 @@
             "value" : "Avspilling"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Okudhana"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12360,6 +12636,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Forrige språk"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elaka lya pita"
           }
         },
         "nl" : {
@@ -12612,6 +12894,12 @@
             "value" : "Appen bruker mobildata, noe som kan medføre kostnader avhengig av dataplanen din."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oapp otai longitha odata yomobile, ndjoka tai vulu okutwala iifuta pethimbo lyoshiketha shodata shoye."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12860,6 +13148,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobildatabruk"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elongitho lyodata yomobile"
           }
         },
         "nl" : {
@@ -13112,6 +13406,12 @@
             "value" : "Ingen sporinformasjon"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kape na uuyelele woshimbo"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13360,6 +13660,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spiller nå"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ota dhana paife"
           }
         },
         "nl" : {
@@ -13612,6 +13918,12 @@
             "value" : "Greit"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13861,6 +14173,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Åpne appen først"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Patulula oapp tete"
           }
         },
         "nl" : {
@@ -14115,6 +14433,12 @@
             "value" : "Sett Lutheran Radio på pause"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kala po Lutheran Radio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14366,6 +14690,12 @@
             "value" : "Pause Lutheran Radio-avspilling."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kala po okudhana kwa Lutheran Radio."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14614,6 +14944,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spill"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana"
           }
         },
         "nl" : {
@@ -14867,6 +15203,12 @@
             "value" : "Spill Lutheran Radio"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana Lutheran Radio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15115,6 +15457,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spill av eller sett på pause Lutheran Radio."
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana nenge kala po Lutheran Radio."
           }
         },
         "nl" : {
@@ -15368,6 +15716,12 @@
             "value" : "Spill eller fortsett Lutheran Radio."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana nenge tsikila Lutheran Radio."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15616,6 +15970,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kan ikke starte avspilling på grunn av en feil i sikkerhetsvalideringen. Vennligst sjekk internettforbindelsen din og forsikre deg om at appen er oppdatert. Hvis problemet vedvarer, start appen på nytt og prøv igjen."
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inashi vulu okutameka okudhana oshoka ekonakono lyeeuvitho inali pita. Tala ekwatathano lyo-internet lyoye nu tseya kutya oapp oyi li oshipe. Ngele oshipuko oshi tsikile, tameka oapp ishewe nu kambadhala."
           }
         },
         "nl" : {
@@ -15868,6 +16228,12 @@
             "value" : "Sikkerhetsvalidering mislyktes"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ekonakono lyeeuvitho inali pita"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16117,6 +16483,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Velg %@"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hogolola %@"
           }
         },
         "nl" : {
@@ -16700,6 +17072,18 @@
             }
           }
         },
+        "ng" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld oominute dha shala"
+                }
+              }
+            }
+          }
+        },
         "nl" : {
           "variations" : {
             "plural" : {
@@ -17214,6 +17598,12 @@
             "value" : "Avbryt timer"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kaleka otimer"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17462,6 +17852,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minutter"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oominute 15"
           }
         },
         "nl" : {
@@ -17714,6 +18110,12 @@
             "value" : "30 minutter"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oominute 30"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17962,6 +18364,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 minutter"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oominute 45"
           }
         },
         "nl" : {
@@ -18214,6 +18622,12 @@
             "value" : "60 minutter"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oominute 60"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18462,6 +18876,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Søvntimer"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otimer yokukotha"
           }
         },
         "nl" : {
@@ -18714,6 +19134,12 @@
             "value" : "Streaming-serverne har fornyet sine SSL-sertifikater. Appen kjører i kompatibilitetsmodus. Vennligst oppdater til nyeste versjon når den er tilgjengelig for optimal sikkerhet."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ooserver dhokutuma odha ningi oshipe oonzapo dhSSL. Oapp otai longa momukalo gweuvaneno. Ninga oshipe koshiverson sha pwa ngele oshi po opo u mone euvitho eli nawa."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18962,6 +19388,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sertifikat oppdatert"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Onzapo ya ningwa oshipe"
           }
         },
         "nl" : {
@@ -19215,6 +19647,12 @@
             "value" : "Start eller gjenoppta Lutheran Radio avspilling."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tameka nenge tsikila okudhana kwa Lutheran Radio."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19465,6 +19903,12 @@
             "value" : "Start eller stopp Lutheran Radio avspilling."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tameka nenge kala okudhana kwa Lutheran Radio."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19710,6 +20154,12 @@
           }
         },
         "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buffer"
+          }
+        },
+        "ng" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buffer"
@@ -19965,6 +20415,12 @@
             "value" : "Kobler"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kwata"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20213,6 +20669,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mislyktes"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inashi pita"
           }
         },
         "nl" : {
@@ -20465,6 +20927,12 @@
             "value" : "Frakoblet"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20713,6 +21181,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauset"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kala po"
           }
         },
         "nl" : {
@@ -20966,6 +21440,12 @@
             "value" : "Pauset – Anrop aktivt"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya kala po – Okudhengela kwa kwata"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21215,6 +21695,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Avspilling mislyktes: %@"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Okudhana kwa kufa: %@"
           }
         },
         "nl" : {
@@ -21468,6 +21954,12 @@
             "value" : "Spiller"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21716,6 +22208,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sikkerhet"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Euvitho"
           }
         },
         "nl" : {
@@ -21968,6 +22466,12 @@
             "value" : "SSL-sertifikat fornyet - oppdater app snart"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Onzapo ya SSL ya ningwa oshipe - ninga oapp oshipe nena"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22216,6 +22720,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stoppet"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya kala"
           }
         },
         "nl" : {
@@ -22468,6 +22978,12 @@
             "value" : "Av"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pevi"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22716,6 +23232,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enhet varm"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oshinima oshi pyu"
           }
         },
         "nl" : {
@@ -22968,6 +23490,12 @@
             "value" : "Sendingen er midlertidig ikke tilgjengelig. Prøv igjen senere."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Etumo mombepo inali po ethimbo shoka. Kambadhala ishewe konima."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23216,6 +23744,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sending ikke tilgjengelig"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Etumo mombepo inali po"
           }
         },
         "nl" : {
@@ -23469,6 +24003,12 @@
             "value" : "Bytt Lutheran Radio språkstrøm."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula ostream yelaka ya Lutheran Radio."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23717,6 +24257,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bytt strøm"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula ostream"
           }
         },
         "nl" : {
@@ -23970,6 +24516,12 @@
             "value" : "Bytt til %@"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula ko %@"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24218,6 +24770,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bytt til en annen språkstrøm fra Live-aktivitet."
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula kostream yelaka yilwe za Live Activity."
           }
         },
         "nl" : {
@@ -24470,6 +25028,12 @@
             "value" : "Bytt til en annen språkstrøm."
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula kostream yelaka yilwe."
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24719,6 +25283,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byttet til %@"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oya lundululwa ko %@"
           }
         },
         "nl" : {
@@ -24973,6 +25543,12 @@
             "value" : "Trykk for å åpne"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhenga opo u patulule"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25222,6 +25798,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veksle Lutheran Radio"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula Lutheran Radio"
           }
         },
         "nl" : {
@@ -25474,6 +26056,12 @@
             "value" : "Veksle Lutheran Radio avspilling"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula okudhana kwa Lutheran Radio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25722,6 +26310,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veksle mellom avspilling og pause fra Live-aktivitet."
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula dhana/kala po za Live Activity."
           }
         },
         "nl" : {
@@ -25973,6 +26567,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veksle avspilling"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula okudhana"
           }
         },
         "nl" : {
@@ -26556,6 +27156,18 @@
             }
           }
         },
+        "ng" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Volume ya tulwa ko %lld opercent"
+                }
+              }
+            }
+          }
+        },
         "nl" : {
           "variations" : {
             "plural" : {
@@ -27068,6 +27680,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget-konfigurasjon"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elongekidho lyowidget"
           }
         },
         "nl" : {

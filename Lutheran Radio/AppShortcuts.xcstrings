@@ -154,6 +154,12 @@
             "value" : "Sett ${applicationName} på pause"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kala po ${applicationName}"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -403,6 +409,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spill ${applicationName}"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana ${applicationName}"
           }
         },
         "nl" : {
@@ -656,6 +668,12 @@
             "value" : "Spill ${applicationName} på ${language}"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhana ${applicationName} mElaka ${language}"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -905,6 +923,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start ${applicationName}"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tameka ${applicationName}"
           }
         },
         "nl" : {
@@ -1158,6 +1182,12 @@
             "value" : "Stopp ${applicationName}"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kala ${applicationName}"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1407,6 +1437,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bytt ${applicationName} til ${language}"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lundulula ${applicationName} ko ${language}"
           }
         },
         "nl" : {

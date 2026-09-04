@@ -154,6 +154,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
