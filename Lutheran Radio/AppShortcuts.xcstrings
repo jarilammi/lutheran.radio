@@ -100,6 +100,12 @@
             "value" : "Dakata ${applicationName}"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} पॉज़ करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -367,6 +373,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kunna ${applicationName}"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} प्ले करें"
           }
         },
         "hr" : {
@@ -638,6 +650,12 @@
             "value" : "Kunna ${applicationName} a ${language}"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} को ${language} में प्ले करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -905,6 +923,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fara ${applicationName}"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} शुरू करें"
           }
         },
         "hr" : {
@@ -1176,6 +1200,12 @@
             "value" : "Tsaya ${applicationName}"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} रोकें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1443,6 +1473,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Canza ${applicationName} zuwa ${language}"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} को ${language} में बदलें"
           }
         },
         "hr" : {

@@ -99,6 +99,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -567,6 +573,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld harsuna"
+                }
+              }
+            }
+          }
+        },
+        "hi" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld भाषा"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld भाषाएँ"
                 }
               }
             }
@@ -1260,6 +1284,12 @@
             "value" : "Danna sau biyu don zaɓar na'urar fitar da sauti"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ऑडियो आउटपुट उपकरण चुनने के लिए दो बार दबाएँ"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1526,6 +1556,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yana nuna bayani game da shirin rediyo na yanzu"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "वर्तमान रेडियो कार्यक्रम की जानकारी दिखाता है"
           }
         },
         "hr" : {
@@ -1796,6 +1832,12 @@
             "value" : "Yana juya kunna ko dakatar da watsawar rediyo"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "रेडियो स्ट्रीम प्लेबैक को टॉगल करता है"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2062,6 +2104,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zaɓi tsawon lokaci har sai watsawa ta tsaya"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्लेबैक कितनी देर बाद रुके, चुनें"
           }
         },
         "hr" : {
@@ -2332,6 +2380,12 @@
             "value" : "Yana daidaita ƙarar sautin watsawa"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्लेबैक वॉल्यूम समायोजित करता है"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2595,6 +2649,12 @@
           }
         },
         "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "hi" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -2869,6 +2929,12 @@
             "value" : "Tambarin Lutheran Radio"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio लोगो"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3135,6 +3201,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dakata"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पॉज़"
           }
         },
         "hr" : {
@@ -3406,6 +3478,12 @@
             "value" : "Hoton %@"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ की फ़ोटो"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3672,6 +3750,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kunna"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्ले"
           }
         },
         "hr" : {
@@ -3942,6 +4026,12 @@
             "value" : "Agogon barci"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्लीप टाइमर"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4208,6 +4298,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sauti"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "वॉल्यूम"
           }
         },
         "hr" : {
@@ -4678,6 +4774,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "kashi ɗari %lld"
+                }
+              }
+            }
+          }
+        },
+        "hi" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld प्रतिशत"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld प्रतिशत"
                 }
               }
             }
@@ -5371,6 +5485,12 @@
             "value" : "Ci gaba"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "जारी रखें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5637,6 +5757,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sake gwadawa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "फिर कोशिश करें"
           }
         },
         "hr" : {
@@ -5907,6 +6033,12 @@
             "value" : "Yarda a wannan zama"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "इस सेशन के लिए अनुमति दें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6173,6 +6305,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yarda koyaushe"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "हमेशा अनुमति दें"
           }
         },
         "hr" : {
@@ -6443,6 +6581,12 @@
             "value" : "Ba yanzu ba"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "अभी नहीं"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6709,6 +6853,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Goge"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "क्लियर करें"
           }
         },
         "hr" : {
@@ -6979,6 +7129,12 @@
             "value" : "An goge"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "क्लियर हो गया"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7245,6 +7401,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wannan zai tsayar da watsawa, cire bayanan wijet da Live Activity, kuma goge kwanan nan na sauraro daga wannan na'ura. Ba za a iya soke wannan aikin ba."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "यह प्लेबैक रोक देगा, विजेट और Live Activity डेटा हटा देगा, और इस उपकरण से हाल की सुनने की स्थिति क्लियर कर देगा। यह क्रिया पूर्ववत नहीं की जा सकती।"
           }
         },
         "hr" : {
@@ -7515,6 +7677,12 @@
             "value" : "Goge yanayin watsawa na ciki"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्थानीय प्लेबैक स्थिति क्लियर करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7781,6 +7949,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Saiti na wijet ɗin Lutheran Radio."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio विजेट कॉन्फ़िगरेशन।"
           }
         },
         "hr" : {
@@ -8052,6 +8226,12 @@
             "value" : "Kuskuren haɗi"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "कनेक्शन त्रुटि"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8321,6 +8501,12 @@
             "value" : "Sarrafa watsawar Lutheran Radio kuma ka ga tashar yanzu."
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्लेबैक नियंत्रित करें और वर्तमान स्टेशन देखें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8587,6 +8773,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sarrafa watsawa kuma ka canza tsakanin watsawar harsuna."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्लेबैक नियंत्रित करें और भाषा स्ट्रीम के बीच बदलें।"
           }
         },
         "hr" : {
@@ -8858,6 +9050,12 @@
             "value" : "Rage sauti"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "वॉल्यूम घटाएँ"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9127,6 +9325,12 @@
             "value" : "Ƙara sauti"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "वॉल्यूम बढ़ाएँ"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9393,6 +9597,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ana kunna"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्ले हो रहा है"
           }
         },
         "hr" : {
@@ -9664,6 +9874,12 @@
             "value" : "Harshe"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "भाषा"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9930,6 +10146,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lambar harshe"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "भाषा कोड"
           }
         },
         "hr" : {
@@ -10201,6 +10423,12 @@
             "value" : "Turanci"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "अंग्रेज़ी"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10468,6 +10696,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Istoniyanci"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "एस्टोनियाई"
           }
         },
         "hr" : {
@@ -10739,6 +10973,12 @@
             "value" : "Yaren Finland"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "फ़िनिश"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11006,6 +11246,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Jamusanci"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "जर्मन"
           }
         },
         "hr" : {
@@ -11277,6 +11523,12 @@
             "value" : "Yaren Sweden"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्वीडिश"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11544,6 +11796,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Watsawa kai tsaye"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · लाइव स्ट्रीम"
           }
         },
         "hr" : {
@@ -11815,6 +12073,12 @@
             "value" : "Na ciki kawai"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "केवल स्थानीय"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12079,6 +12343,12 @@
           }
         },
         "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "hi" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -12353,6 +12623,12 @@
             "value" : "Harshe na gaba"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "अगली भाषा"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12620,6 +12896,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kunna/Dakata"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्ले/पॉज़"
           }
         },
         "hr" : {
@@ -12891,6 +13173,12 @@
             "value" : "Watsawa"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्लेबैक"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13158,6 +13446,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Harshe na baya"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पिछली भाषा"
           }
         },
         "hr" : {
@@ -13428,6 +13722,12 @@
             "value" : "Manhajar tana amfani da odat ɗin waya, wanda zai iya haifar da kuɗi gwargwadon shirin odat ɗinku."
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ऐप मोबाइल डेटा का उपयोग कर रहा है, जिससे आपके डेटा प्लान के अनुसार शुल्क लग सकता है।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13694,6 +13994,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Amfani da odat ɗin waya"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "मोबाइल डेटा उपयोग"
           }
         },
         "hr" : {
@@ -13964,6 +14270,12 @@
             "value" : "Babu bayanin waƙa"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ट्रैक जानकारी नहीं"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14232,6 +14544,12 @@
             "value" : "Ana kunna yanzu"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "अभी प्ले हो रहा है"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14495,6 +14813,12 @@
           }
         },
         "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "hi" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -14769,6 +15093,12 @@
             "value" : "Buɗe manhaja da farko"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पहले ऐप खोलें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15037,6 +15367,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dakatar da Lutheran Radio"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio पॉज़ करें"
           }
         },
         "hr" : {
@@ -15308,6 +15644,12 @@
             "value" : "Dakatar da watsawar Lutheran Radio."
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्लेबैक पॉज़ करें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15574,6 +15916,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kunna"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्ले"
           }
         },
         "hr" : {
@@ -15845,6 +16193,12 @@
             "value" : "Kunna Lutheran Radio"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्ले करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16111,6 +16465,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kunna ko dakatar da Lutheran Radio."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्ले करें या पॉज़ करें।"
           }
         },
         "hr" : {
@@ -16382,6 +16742,12 @@
             "value" : "Kunna ko ci gaba da Lutheran Radio."
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्ले करें या जारी रखें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16648,6 +17014,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "An kasa fara watsawa saboda gazawar tabbatar da tsaro. Da fatan za a duba haɗin intanet ɗinku kuma ku tabbatar cewa manhajar tana da sabuntawa. Idan matsalar ta ci gaba, sake kunna manhajar ku gwada kuma."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "सुरक्षा सत्यापन विफल होने के कारण प्लेबैक शुरू नहीं किया जा सका। कृपया अपना इंटरनेट कनेक्शन जाँचें और सुनिश्चित करें कि ऐप अपडेट है। समस्या बनी रहे तो ऐप को फिर से शुरू करके फिर कोशिश करें।"
           }
         },
         "hr" : {
@@ -16918,6 +17290,12 @@
             "value" : "Tabbatar da tsaro ya gaza"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "सुरक्षा सत्यापन विफल हुआ"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17185,6 +17563,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zaɓi %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ चुनें"
           }
         },
         "hr" : {
@@ -17655,6 +18039,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "mintuna %lld sun saura"
+                }
+              }
+            }
+          }
+        },
+        "hi" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld मिनट शेष"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld मिनट शेष"
                 }
               }
             }
@@ -18348,6 +18750,12 @@
             "value" : "Soke agogo"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "टाइमर रद्द करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18614,6 +19022,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "minti 15"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 मिनट"
           }
         },
         "hr" : {
@@ -18884,6 +19298,12 @@
             "value" : "minti 30"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 मिनट"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19150,6 +19570,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "minti 45"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 मिनट"
           }
         },
         "hr" : {
@@ -19420,6 +19846,12 @@
             "value" : "minti 60"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 मिनट"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19686,6 +20118,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Agogon barci"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्लीप टाइमर"
           }
         },
         "hr" : {
@@ -19956,6 +20394,12 @@
             "value" : "Server ɗin watsawa sun sabunta takardun shaida na SSL. Manhajar tana aiki a yanayin daidaitawa. Da fatan za a sabunta zuwa sabuwar sigar da ta samu don tsaro mafi kyau."
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्ट्रीमिंग सर्वरों ने अपने SSL सर्टिफ़िकेट नवीनीकृत कर दिए हैं। ऐप संगतता मोड में चल रहा है। बेहतर सुरक्षा के लिए उपलब्ध होने पर नवीनतम संस्करण में अपडेट करें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20222,6 +20666,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "An sabunta takardar shaida"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "सर्टिफ़िकेट अपडेट हुआ"
           }
         },
         "hr" : {
@@ -20493,6 +20943,12 @@
             "value" : "Fara ko ci gaba da watsawar Lutheran Radio."
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्लेबैक शुरू करें या जारी रखें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20759,6 +21215,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fara ko tsayar da watsawar Lutheran Radio."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्लेबैक शुरू करें या रोकें।"
           }
         },
         "hr" : {
@@ -21029,6 +21491,12 @@
             "value" : "Cikawa"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "बफ़र"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21295,6 +21763,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Haɗa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "कनेक्ट"
           }
         },
         "hr" : {
@@ -21565,6 +22039,12 @@
             "value" : "Ya gaza"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "विफल"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21833,6 +22313,12 @@
             "value" : "Ba kan layi"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ऑफ़लाइन"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22099,6 +22585,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dakata"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पॉज़"
           }
         },
         "hr" : {
@@ -22370,6 +22862,12 @@
             "value" : "An dakata – Kira yana gudana"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पॉज़ – कॉल चल रही है"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22637,6 +23135,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Watsawa ta gaza: %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्लेबैक विफल: %@"
           }
         },
         "hr" : {
@@ -22908,6 +23412,12 @@
             "value" : "Kunna"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्ले"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23174,6 +23684,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tsaro"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "सुरक्षा"
           }
         },
         "hr" : {
@@ -23444,6 +23960,12 @@
             "value" : "An sabunta takardar shaida ta SSL - sabunta manhaja nan ba da jimawa ba"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL सर्टिफ़िकेट नवीनीकृत - जल्द ऐप अपडेट करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23710,6 +24232,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "An tsaya"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "रुका हुआ"
           }
         },
         "hr" : {
@@ -23980,6 +24508,12 @@
             "value" : "Kashe"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ऑफ़"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24246,6 +24780,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Na'ura mai zafi"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "उपकरण गरम"
           }
         },
         "hr" : {
@@ -24516,6 +25056,12 @@
             "value" : "Watsawar ba ta samuwa a ɗan lokaci. Da fatan za a sake gwadawa daga baya."
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्रसारण अस्थायी रूप से उपलब्ध नहीं है। कृपया बाद में फिर कोशिश करें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24782,6 +25328,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Watsawar ba ta samuwa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्रसारण उपलब्ध नहीं"
           }
         },
         "hr" : {
@@ -25053,6 +25605,12 @@
             "value" : "Canza watsawar harshen Lutheran Radio."
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio भाषा स्ट्रीम बदलें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25319,6 +25877,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Canza watsawa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्ट्रीम बदलें"
           }
         },
         "hr" : {
@@ -25590,6 +26154,12 @@
             "value" : "Canza zuwa %@"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ में बदलें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25856,6 +26426,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Canza zuwa watsawar harshe daban daga Live Activity."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity से किसी दूसरी भाषा स्ट्रीम में बदलें।"
           }
         },
         "hr" : {
@@ -26126,6 +26702,12 @@
             "value" : "Canza zuwa watsawar harshe daban."
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "किसी दूसरी भाषा स्ट्रीम में बदलें।"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26393,6 +26975,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "An canza zuwa %@"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ में बदला गया"
           }
         },
         "hr" : {
@@ -26665,6 +27253,12 @@
             "value" : "Taɓa don buɗewa"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "खोलने के लिए दबाएँ"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26932,6 +27526,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Juya Lutheran Radio"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio टॉगल करें"
           }
         },
         "hr" : {
@@ -27202,6 +27802,12 @@
             "value" : "Juya watsawar Lutheran Radio"
           }
         },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio प्लेबैक टॉगल करें"
+          }
+        },
         "hr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27468,6 +28074,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Juya kunna/dakata daga Live Activity."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity से प्ले/पॉज़ टॉगल करें।"
           }
         },
         "hr" : {
@@ -27737,6 +28349,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Juya watsawa"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्लेबैक टॉगल करें"
           }
         },
         "hr" : {
@@ -28207,6 +28825,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "An saita sauti zuwa kashi ɗari %lld"
+                }
+              }
+            }
+          }
+        },
+        "hi" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "वॉल्यूम %lld प्रतिशत पर सेट किया गया"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "वॉल्यूम %lld प्रतिशत पर सेट किया गया"
                 }
               }
             }
@@ -28898,6 +29534,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Saitin wijet"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "विजेट कॉन्फ़िगरेशन"
           }
         },
         "hr" : {
