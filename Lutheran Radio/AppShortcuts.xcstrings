@@ -250,6 +250,12 @@
             "value" : "Sitisha ${applicationName}"
           }
         },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} பாஸ் செய்"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -511,6 +517,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cheza ${applicationName}"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} பிளே செய்"
           }
         },
         "te" : {
@@ -776,6 +788,12 @@
             "value" : "Cheza ${applicationName} kwa ${language}"
           }
         },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}ஐ ${language}இல் பிளே செய்"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1037,6 +1055,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Anzisha ${applicationName}"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} தொடங்கு"
           }
         },
         "te" : {
@@ -1302,6 +1326,12 @@
             "value" : "Simamisha ${applicationName}"
           }
         },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} நிறுத்து"
+          }
+        },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1563,6 +1593,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Badilisha ${applicationName} kuwa ${language}"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}ஐ ${language}க்கு மாற்று"
           }
         },
         "te" : {
