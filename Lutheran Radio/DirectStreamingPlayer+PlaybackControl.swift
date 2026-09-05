@@ -273,7 +273,7 @@ extension DirectStreamingPlayer {
     ///     when the caller already owns the sticky lock and will refresh media surfaces once.
     /// - SeeAlso: ``stopAndWait(reason:silent:applyUserPauseVisualLock:)``,
     ///   ``invalidateInFlightPlaybackAttach()``, ``shouldContinueInFlightAttach(startedAt:)``,
-    ///   ``shouldAllowAudiblePlaybackKick()``, ``SharedPlayerManager/stop()``,
+    ///   ``shouldAllowAudiblePlaybackKick(startedAt:)``, ``SharedPlayerManager/stop()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause / transport coordination).
     func stop(
         reason: StopReason = .userAction,

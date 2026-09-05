@@ -14,7 +14,8 @@
 //  ``shouldSkipForceWidgetSaveOnStableStatus`` /
 //  ``shouldSkipSessionCoreDeactivate`` /
 //  ``audiblePlaybackKickTiming`` /
-//  ``shouldReplaceCurrentItemWithNilOnStop`` policy.
+//  ``shouldReplaceCurrentItemWithNilOnStop`` /
+//  ``shouldAllowAudiblePlaybackKick(startedAt:)`` policy.
 //
 //  - SeeAlso: ``DirectStreamingPlayer``, ``SharedPlayerManager``,
 //    ``DirectStreamingPlayer/configureAudioSessionAsync()``,
@@ -23,6 +24,7 @@
 //    ``DirectStreamingPlayer/shouldSkipForceWidgetSaveOnStableStatus(isPlaying:reasonKey:visual:)``,
 //    ``DirectStreamingPlayer/audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``,
 //    ``DirectStreamingPlayer/shouldReplaceCurrentItemWithNilOnStop(reason:)``,
+//    ``DirectStreamingPlayer/shouldAllowAudiblePlaybackKick(startedAt:)``,
 //    docs/Live-Activity-Stacking-and-Media-Surfaces.md,
 //    docs/Widget-Presentation-Dataflow.md (user-initiated main open),
 //    docs/cold-launch-streamplay-regression-checklist.md.
@@ -586,7 +588,7 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
     /// not a kick delay.
     ///
     /// - SeeAlso: ``DirectStreamingPlayer/audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``,
-    ///   ``DirectStreamingPlayer/shouldAllowAudiblePlaybackKick()``.
+    ///   ``DirectStreamingPlayer/shouldAllowAudiblePlaybackKick(startedAt:)``.
     func testAudiblePlaybackKickTimingPolicy() {
         XCTAssertEqual(
             DirectStreamingPlayer.audiblePlaybackKickTiming(
@@ -700,6 +702,69 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         XCTAssertFalse(
             canKick,
             "shouldAllowAudiblePlaybackKick must be false under sticky .userPaused (readyToPlay / head-start / recreate)"
+        )
+    }
+
+    /// User-action stop advances ``playbackAttachGeneration`` first. A deferred keep-up KVO
+    /// Task that still holds the pre-stop snapshot must not `play()` / publish after that bump
+    /// even when teardown is already cleared and play intent is re-armed (the leftover hole:
+    /// generation was not in ``shouldAllowAudiblePlaybackKick(startedAt:)``).
+    ///
+    /// Protects: stale live-attach kick after userAction stop. Current generation must still
+    /// allow kick after attach returns — do not gate on ``isCurrentlyAttemptingPlayback``.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/shouldAllowAudiblePlaybackKick(startedAt:)``,
+    ///   ``DirectStreamingPlayer/applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``,
+    ///   ``DirectStreamingPlayer/shouldContinueInFlightAttach(startedAt:)``.
+    func testAudibleKickRejectedForStaleAttachGeneration() async {
+        let engine = DirectStreamingPlayer.shared
+
+        await engine.test_stopAndWait(
+            reason: .userAction,
+            silent: true,
+            applyUserPauseVisualLock: false
+        )
+        engine.test_clearPlaybackTeardownGuard()
+        await SharedPlayerManager.shared.setUserIntentToPlay()
+
+        let staleGeneration = engine.test_beginInFlightPlaybackAttach()
+        engine.test_invalidateInFlightPlaybackAttach()
+        engine.test_endInFlightPlaybackAttach()
+
+        XCTAssertFalse(
+            engine.test_isCurrentlyAttemptingPlayback,
+            "Kick policy must not require an in-flight attach flag"
+        )
+        XCTAssertFalse(engine.test_isSoftPaused)
+        XCTAssertFalse(engine.test_isPlaybackTeardownActive)
+        XCTAssertNotEqual(
+            staleGeneration,
+            engine.test_playbackAttachGeneration,
+            "invalidateInFlightPlaybackAttach must advance generation"
+        )
+
+        let staleKick = await engine.test_shouldAllowAudiblePlaybackKick(startedAt: staleGeneration)
+        XCTAssertFalse(
+            staleKick,
+            "Stale attach generation must fail shouldAllowAudiblePlaybackKick even without teardown or sticky pause"
+        )
+
+        let currentKick = await engine.test_shouldAllowAudiblePlaybackKick(
+            startedAt: engine.test_playbackAttachGeneration
+        )
+        XCTAssertTrue(
+            currentKick,
+            "Current generation + play intent + no teardown must still allow kick after attach returns"
+        )
+
+        let applied = await engine.test_applyLiveAttachAudibleKickIfReady(
+            itemIsReadyToPlay: true,
+            isPlaybackLikelyToKeepUp: true,
+            startedAt: staleGeneration
+        )
+        XCTAssertFalse(
+            applied,
+            "Stale generation must not run the live-attach audible kick"
         )
     }
 

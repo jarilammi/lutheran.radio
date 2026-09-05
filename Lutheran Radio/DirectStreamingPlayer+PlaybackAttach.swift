@@ -8,7 +8,10 @@
 //  Icecast audible-kick policy). Live attach keeps ``automaticallyWaitsToMinimizeStalling`` and does not
 //  `playImmediately` before ``isPlaybackLikelyToKeepUp``. Same-stream hard-resume
 //  (``PlaybackAttachContext/resume``) forwards ``allowSameStreamWarmReuse`` into
-//  ``urlWithOptimalServer``; stream switch and cold launch do not.
+//  ``urlWithOptimalServer``; stream switch and cold launch do not. Deferred KVO / head-start /
+//  recreate kicks pass a bind-time ``playbackAttachGeneration`` into
+//  ``shouldAllowAudiblePlaybackKick(startedAt:)`` (same token as ``shouldContinueInFlightAttach(startedAt:)``;
+//  not ``isCurrentlyAttemptingPlayback``).
 //
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
 //  DirectStreamingPlayer remains the public façade; this file owns one domain.
@@ -385,9 +388,9 @@ extension DirectStreamingPlayer {
     ///   - context: Cold launch, stream switch, or resume attach semantics.
     ///   - attachGeneration: Snapshot from ``beginInFlightPlaybackAttach()``; discarded after
     ///     user pause via ``invalidateInFlightPlaybackAttach()``.
-    /// - SeeAlso: ``shouldContinueInFlightAttach(startedAt:)``, ``shouldAllowAudiblePlaybackKick()``,
+    /// - SeeAlso: ``shouldContinueInFlightAttach(startedAt:)``, ``shouldAllowAudiblePlaybackKick(startedAt:)``,
     ///   ``audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``,
-    ///   ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:)``.
+    ///   ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``.
     func startPlayback(context: PlaybackAttachContext = .coldLaunch, attachGeneration: UInt64) async {
         // UI Test isolation (defense-in-depth).
         guard !isTesting else {
@@ -479,7 +482,7 @@ extension DirectStreamingPlayer {
             // Defer the first chrome-publishing kick until a healthy live buffer
             // (`.readyToPlay` and `isPlaybackLikelyToKeepUp`). Do not call play() here —
             // AVPlayer loads the attached item; addObservers applies ``audiblePlaybackKickTiming``.
-            // That kick re-checks shouldAllowAudiblePlaybackKick() so user pause during connect wins.
+            // That kick re-checks shouldAllowAudiblePlaybackKick(startedAt:) so user pause during connect wins.
             self.isDeferringFirstPlayKick = true
             self.hasReceivedLiveStreamMetadata = false
             self.cancelEarlyICYDropRecreate()
@@ -519,7 +522,8 @@ extension DirectStreamingPlayer {
 
                 await self.applyLiveAttachAudibleKickIfReady(
                     itemIsReadyToPlay: player.currentItem?.status == .readyToPlay,
-                    isPlaybackLikelyToKeepUp: player.currentItem?.isPlaybackLikelyToKeepUp ?? false
+                    isPlaybackLikelyToKeepUp: player.currentItem?.isPlaybackLikelyToKeepUp ?? false,
+                    startedAt: headStartGeneration
                 )
                 #if DEBUG
                 print("[DirectStreamingPlayer] post-head-start kick policy applied (item.status: \(player.currentItem?.status.rawValue ?? -1), likelyToKeepUp: \(player.currentItem?.isPlaybackLikelyToKeepUp ?? false), hasStartedPlaying=\(self.hasStartedPlaying))")
@@ -598,7 +602,8 @@ extension DirectStreamingPlayer {
     /// - Important: Call after every significant `await` on the start path (security validation,
     ///   server selection, audio-session activation, stream model mutation). Fail closed: pause
     ///   chrome + silent engine is correct; "paused chrome + audible stream" is not.
-    /// - SeeAlso: ``canProceedWithPlayback()``, ``invalidateInFlightPlaybackAttach()``.
+    /// - SeeAlso: ``canProceedWithPlayback()``, ``invalidateInFlightPlaybackAttach()``,
+    ///   ``shouldAllowAudiblePlaybackKick(startedAt:)``.
     @MainActor
     func shouldContinueInFlightAttach(startedAt generation: UInt64) async -> Bool {
         guard generation == playbackAttachGeneration else {
@@ -650,7 +655,7 @@ extension DirectStreamingPlayer {
     /// because the item is already buffered.
     ///
     /// - SeeAlso: ``audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``,
-    ///   ``shouldAllowAudiblePlaybackKick()``, ``startPlayback(context:attachGeneration:)``,
+    ///   ``shouldAllowAudiblePlaybackKick(startedAt:)``, ``startPlayback(context:attachGeneration:)``,
     ///   ``makeSecuredPlayerItem(for:)``.
     enum AudiblePlaybackKickTiming: Equatable, Sendable {
         /// Item is not `.readyToPlay` — do not call `play()` or `playImmediately`.
@@ -671,8 +676,8 @@ extension DirectStreamingPlayer {
     /// - Important: Live attach (cold launch / stream switch / recreate) must not
     ///   `playImmediately` before `isPlaybackLikelyToKeepUp`. Do not treat
     ///   ``preferredLiveForwardBufferDuration`` as a kick delay.
-    /// - SeeAlso: ``shouldAllowAudiblePlaybackKick()``,
-    ///   ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:)``,
+    /// - SeeAlso: ``shouldAllowAudiblePlaybackKick(startedAt:)``,
+    ///   ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``,
     ///   ``resumeFromSoftPauseIfAvailable()``, ``makeSecuredPlayerItem(for:)``,
     ///   CODING_AGENT.md.
     static func audiblePlaybackKickTiming(
@@ -692,7 +697,7 @@ extension DirectStreamingPlayer {
         return .kickNow(usePlayImmediately: false)
     }
 
-    /// Applies the live-attach audible kick when policy and ``shouldAllowAudiblePlaybackKick()`` allow.
+    /// Applies the live-attach audible kick when policy and ``shouldAllowAudiblePlaybackKick(startedAt:)`` allow.
     ///
     /// Cold launch, stream switch, head-start fallback, and recreate share this helper so the
     /// first chrome-publishing kick waits for a healthy Icecast buffer. Soft-pause same-stream
@@ -704,23 +709,29 @@ extension DirectStreamingPlayer {
     /// - Parameters:
     ///   - itemIsReadyToPlay: Current item `.readyToPlay`.
     ///   - isPlaybackLikelyToKeepUp: Current item keep-up flag.
+    ///   - generation: Bind/attach snapshot — **not** fire-time ``playbackAttachGeneration``.
+    ///     Same token as ``shouldContinueInFlightAttach(startedAt:)``. Do not use
+    ///     ``isCurrentlyAttemptingPlayback``; first keep-up often fires after attach returns.
     /// - Returns: `true` when the chrome-publishing kick ran.
-    /// - Postcondition: Connecting chrome remains until a kick; user pause / teardown still wins.
+    /// - Postcondition: Connecting chrome remains until a kick; user pause / teardown / stale
+    ///   generation still wins. A rejected kick does not set ``isSoftPaused`` (user pause is
+    ///   Icecast hard teardown).
     /// - SeeAlso: ``audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``,
-    ///   ``shouldAllowAudiblePlaybackKick()``, ``publishAuthoritativePlayingIfNeeded()``,
+    ///   ``shouldAllowAudiblePlaybackKick(startedAt:)``, ``publishAuthoritativePlayingIfNeeded()``,
     ///   ``makeSecuredPlayerItem(for:)``, CODING_AGENT.md.
     @MainActor
     @discardableResult
     func applyLiveAttachAudibleKickIfReady(
         itemIsReadyToPlay: Bool,
-        isPlaybackLikelyToKeepUp: Bool
+        isPlaybackLikelyToKeepUp: Bool,
+        startedAt generation: UInt64
     ) async -> Bool {
-        guard await shouldAllowAudiblePlaybackKick() else {
+        guard await shouldAllowAudiblePlaybackKick(startedAt: generation) else {
             isDeferringFirstPlayKick = false
             player?.pause()
             player?.rate = 0.0
             #if DEBUG
-            print("[DirectStreamingPlayer] live-attach kick suppressed — user pause / soft-pause / teardown")
+            print("[DirectStreamingPlayer] live-attach kick suppressed — user pause / soft-pause / teardown / generation")
             #endif
             return false
         }
@@ -753,6 +764,16 @@ extension DirectStreamingPlayer {
             stopBufferingTimer()
             hasStartedPlaying = true
             await publishAuthoritativePlayingIfNeeded()
+            // Stop can hop onto MainActor during publish. Fail closed: do not leave a stale
+            // attach's play() as the success result, and do not treat this as soft-pause.
+            guard generation == playbackAttachGeneration else {
+                player?.pause()
+                player?.rate = 0.0
+                #if DEBUG
+                print("[DirectStreamingPlayer] live-attach audible kick discarded after publish — generation advanced")
+                #endif
+                return false
+            }
             #if DEBUG
             print("[DirectStreamingPlayer] live-attach audible kick — play(), timeControlStatus: \(player?.timeControlStatus.rawValue ?? -1), rate: \(player?.rate ?? -1)")
             #endif
@@ -761,13 +782,26 @@ extension DirectStreamingPlayer {
     }
 
     /// Shared gate for any path that would make the stream audible (readyToPlay / keep-up kick, head-start,
-    /// recreate restart). Blocks when soft-paused, teardown is active, or sticky intent forbids play.
+    /// recreate restart). Blocks when the captured attach generation is stale, soft-paused, teardown is
+    /// active, or sticky intent forbids play.
     ///
+    /// - Parameter generation: Snapshot from ``beginInFlightPlaybackAttach()`` or item-observer bind
+    ///   (``addObservers()``). Fire-time ``playbackAttachGeneration`` is already post-stop and cannot
+    ///   detect a stale item.
     /// - Returns: `true` when an audible kick is allowed.
+    /// - Important: Generation is complementary to intent / teardown / soft-pause (AND, not OR).
+    ///   Re-check after the intent `await` — ``stop(reason:completion:silent:)`` advances generation
+    ///   first, then teardown / sticky pause. Do not substitute ``isCurrentlyAttemptingPlayback``.
     /// - SeeAlso: ``shouldContinueInFlightAttach(startedAt:)``, ``canProceedWithPlayback()``,
     ///   ``audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``.
     @MainActor
-    func shouldAllowAudiblePlaybackKick() async -> Bool {
+    func shouldAllowAudiblePlaybackKick(startedAt generation: UInt64) async -> Bool {
+        guard generation == playbackAttachGeneration else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] audible kick suppressed — attach generation advanced")
+            #endif
+            return false
+        }
         guard !isSoftPaused else {
             #if DEBUG
             print("[DirectStreamingPlayer] audible kick suppressed — soft-paused")
@@ -783,6 +817,12 @@ extension DirectStreamingPlayer {
         guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
             #if DEBUG
             print("[DirectStreamingPlayer] audible kick suppressed — playbackIntent blocks")
+            #endif
+            return false
+        }
+        guard generation == playbackAttachGeneration else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] audible kick suppressed — attach generation advanced during intent check")
             #endif
             return false
         }
@@ -804,7 +844,7 @@ extension DirectStreamingPlayer {
     ///
     /// - Important: Never call from the start of ``SharedPlayerManager/play()`` or from
     ///   ``startPlayback(context:attachGeneration:)`` while still awaiting `isPlaybackLikelyToKeepUp`.
-    /// - SeeAlso: ``SharedPlayerManager/setPlaying()``, ``shouldAllowAudiblePlaybackKick()``,
+    /// - SeeAlso: ``SharedPlayerManager/setPlaying()``, ``shouldAllowAudiblePlaybackKick(startedAt:)``,
     ///   ``RadioLiveActivityManager/pushSettledLanguageAcceptanceContentIfNeeded()``,
     ///   ``RadioLiveActivityManager/pushSettledPlayingAcceptanceContentIfNeeded()``,
     ///   ``RadioLiveActivityManager/ensureAuthoritativePlayingContentIfNeeded()``,
@@ -867,10 +907,43 @@ extension DirectStreamingPlayer {
         await shouldContinueInFlightAttach(startedAt: generation)
     }
 
-    /// Test seam: audible kick gate (keep-up / head-start / recreate).
+    /// Test seam: audible kick gate using the current generation (teardown / intent / soft-pause).
     @MainActor
     func test_shouldAllowAudiblePlaybackKick() async -> Bool {
-        await shouldAllowAudiblePlaybackKick()
+        await shouldAllowAudiblePlaybackKick(startedAt: playbackAttachGeneration)
+    }
+
+    /// Test seam: audible kick gate with an explicit attach-generation snapshot.
+    ///
+    /// - Parameter generation: Bind/attach snapshot under test (stale vs current).
+    /// - SeeAlso: ``shouldAllowAudiblePlaybackKick(startedAt:)``.
+    @MainActor
+    func test_shouldAllowAudiblePlaybackKick(startedAt generation: UInt64) async -> Bool {
+        await shouldAllowAudiblePlaybackKick(startedAt: generation)
+    }
+
+    /// Test seam: live-attach kick helper with an explicit generation snapshot.
+    ///
+    /// - SeeAlso: ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``.
+    @MainActor
+    func test_applyLiveAttachAudibleKickIfReady(
+        itemIsReadyToPlay: Bool,
+        isPlaybackLikelyToKeepUp: Bool,
+        startedAt generation: UInt64
+    ) async -> Bool {
+        await applyLiveAttachAudibleKickIfReady(
+            itemIsReadyToPlay: itemIsReadyToPlay,
+            isPlaybackLikelyToKeepUp: isPlaybackLikelyToKeepUp,
+            startedAt: generation
+        )
+    }
+
+    /// Test seam: advance ``playbackAttachGeneration`` without Icecast teardown or sticky pause.
+    ///
+    /// - SeeAlso: ``invalidateInFlightPlaybackAttach()``.
+    @MainActor
+    func test_invalidateInFlightPlaybackAttach() {
+        invalidateInFlightPlaybackAttach()
     }
 
     /// Test seam: publish `.playing` only when not already playing (readyToPlay / soft-resume contract).
@@ -910,7 +983,7 @@ extension DirectStreamingPlayer {
     var test_hasAttachedPlayerItem: Bool { playerItem != nil }
 
     /// Test seam: hard-teardown guard after user pause / stream-switch / interruption stop.
-    /// - SeeAlso: ``activatePlaybackTeardownGuardFromStop()``, ``shouldAllowAudiblePlaybackKick()``.
+    /// - SeeAlso: ``activatePlaybackTeardownGuardFromStop()``, ``shouldAllowAudiblePlaybackKick(startedAt:)``.
     @MainActor
     var test_isPlaybackTeardownActive: Bool { isPlaybackTeardownActive }
 

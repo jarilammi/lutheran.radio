@@ -5,7 +5,9 @@
 //  Created by Jari Lammi on 24.7.2026.
 //
 //  AVPlayer / AVPlayerItem KVO observers, buffer timers, and observer teardown for the streaming engine façade.
-//  First-play kick is ``applyLiveAttachAudibleKickIfReady`` (Icecast `.readyToPlay` waits for keep-up).
+//  First-play kick is ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``
+//  (Icecast `.readyToPlay` waits for keep-up). ``addObservers()`` captures ``playbackAttachGeneration``
+//  at bind time and passes that snapshot into the kick — never fire-time generation.
 //
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
 //  DirectStreamingPlayer remains the public façade; this file owns one domain.
@@ -178,7 +180,10 @@ extension DirectStreamingPlayer {
     // The old direct accessor was no longer called after the LA/SSOT consolidation.
 
     func addObservers() {
-        audioQueue.async { [weak self] in
+        // Bind-time snapshot: stop() advances generation before nilling the item. Fire-time
+        // ``playbackAttachGeneration`` is already post-stop and cannot detect a stale KVO kick.
+        let kickGeneration = playbackAttachGeneration
+        audioQueue.async { [weak self, kickGeneration] in
             guard let self = self else { return }
             
             #if DEBUG
@@ -213,9 +218,9 @@ extension DirectStreamingPlayer {
                         // chrome until a healthy live buffer. `.readyToPlay` is not enough for
                         // Icecast MP3 — ``applyLiveAttachAudibleKickIfReady`` stall-waits until
                         // `isPlaybackLikelyToKeepUp` before publishing `.playing`.
-                        // Must re-check sticky pause / soft-pause / teardown — user may have paused
-                        // during connect while this item was still loading.
-                        Task { @MainActor [weak self] in
+                        // Must re-check generation (bind snapshot) + sticky pause / soft-pause /
+                        // teardown — user may have paused during connect while this item was loading.
+                        Task { @MainActor [weak self, kickGeneration] in
                             guard let self else { return }
                             guard item === self.playerItem else { return }
                             #if DEBUG
@@ -223,7 +228,8 @@ extension DirectStreamingPlayer {
                             #endif
                             await self.applyLiveAttachAudibleKickIfReady(
                                 itemIsReadyToPlay: true,
-                                isPlaybackLikelyToKeepUp: item.isPlaybackLikelyToKeepUp
+                                isPlaybackLikelyToKeepUp: item.isPlaybackLikelyToKeepUp,
+                                startedAt: kickGeneration
                             )
                         }
                         
@@ -289,16 +295,17 @@ extension DirectStreamingPlayer {
             let likelyToKeepUpObs = playerItem.observe(\.isPlaybackLikelyToKeepUp, options: [.new]) { [weak self] item, change in
                 guard let self = self, let newValue = change.newValue else { return }
                 if newValue && item.status == .readyToPlay {
-                    Task { @MainActor [weak self] in
+                    Task { @MainActor [weak self, kickGeneration] in
                         guard let self else { return }
                         if self.isDeferringFirstPlayKick {
                             await self.applyLiveAttachAudibleKickIfReady(
                                 itemIsReadyToPlay: true,
-                                isPlaybackLikelyToKeepUp: true
+                                isPlaybackLikelyToKeepUp: true,
+                                startedAt: kickGeneration
                             )
                             return
                         }
-                        guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
+                        guard await self.shouldAllowAudiblePlaybackKick(startedAt: kickGeneration) else { return }
                         if (self.player?.rate ?? 0) < 0.1 {
                             self.player?.play()
                         }

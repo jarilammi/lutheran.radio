@@ -261,12 +261,13 @@ extension DirectStreamingPlayer {
     /// entry and aborts if a concurrent ``stop(reason:completion:silent:)`` advanced it
     /// (stream-switch teardown or user pause supersedes the in-flight recreate).
     /// Rebinds player-level and item-level observers, then restarts only when
-    /// ``shouldAllowAudiblePlaybackKick()`` still allows audio. Recreate uses the same
-    /// keep-up kick policy as cold launch / stream switch (not `playImmediately` at `.readyToPlay`).
+    /// ``shouldAllowAudiblePlaybackKick(startedAt:)`` still allows audio (entry generation,
+    /// not ``isCurrentlyAttemptingPlayback``). Recreate uses the same keep-up kick policy as
+    /// cold launch / stream switch (not `playImmediately` at `.readyToPlay`).
     ///
     /// - SeeAlso: `attemptEarlyWindowTransientRecovery(reason:allowWhileDeferringFirstPlayKick:)`,
     ///   `makeSecuredPlayerItem(for:)`, `setupPlaybackObservers()`,
-    ///   ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:)``,
+    ///   ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``,
     ///   docs/cold-launch-streamplay-regression-checklist.md (§8).
     func recreatePlayerItem() {
         Task { @MainActor [weak self] in
@@ -335,9 +336,9 @@ extension DirectStreamingPlayer {
             self.setupPlaybackObservers()
             self.addObservers()
             
-            guard await self.shouldAllowAudiblePlaybackKick() else {
+            guard await self.shouldAllowAudiblePlaybackKick(startedAt: generationAtStart) else {
                 #if DEBUG
-                print("[DirectStreamingPlayer] recreatePlayerItem: audible restart suppressed (intent / soft-pause / teardown)")
+                print("[DirectStreamingPlayer] recreatePlayerItem: audible restart suppressed (intent / soft-pause / teardown / generation)")
                 #endif
                 self.isDeferringFirstPlayKick = false
                 self.player?.pause()
@@ -358,7 +359,8 @@ extension DirectStreamingPlayer {
             // live buffer; chrome-publishing kick waits for `isPlaybackLikelyToKeepUp`.
             await self.applyLiveAttachAudibleKickIfReady(
                 itemIsReadyToPlay: newItem.status == .readyToPlay,
-                isPlaybackLikelyToKeepUp: newItem.isPlaybackLikelyToKeepUp
+                isPlaybackLikelyToKeepUp: newItem.isPlaybackLikelyToKeepUp,
+                startedAt: generationAtStart
             )
             
             #if DEBUG

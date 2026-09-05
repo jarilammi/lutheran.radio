@@ -230,7 +230,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // | Deinit hygiene | DirectStreamingPlayer+DeinitHygiene.swift | `clearCallbacks` + ordered `performDeinitCleanup` (façade `deinit` stays on primary type) |
     // | Status callback delivery | DirectStreamingPlayer+StatusCallbackDelivery.swift | `safeOnStatusChange` / deliver / invoke + transient KVO suppress + metadata hop |
     // | Periodic certificate validation | DirectStreamingPlayer+PeriodicCertificateValidation.swift | `startPeriodicValidation` / `stopPeriodicCertificateValidation` (Core pin HEAD cadence) |
-    // | Playback attach | DirectStreamingPlayer+PlaybackAttach.swift | Generation, soft-pause, silence, prepareStreamChoice / attachAndPlay / startPlayback, Icecast audible-kick policy |
+    // | Playback attach | DirectStreamingPlayer+PlaybackAttach.swift | Generation, soft-pause, silence, prepareStreamChoice / attachAndPlay / startPlayback, Icecast audible-kick policy (``shouldAllowAudiblePlaybackKick(startedAt:)`` is generation + intent + teardown + soft-pause; not in-flight gated) |
     // | Item recovery | DirectStreamingPlayer+PlayerItemRecovery.swift | Startup safety net, early ICY recreate, secured recreate |
     // | Observers | DirectStreamingPlayer+Observers.swift | Player/item KVO, buffer timers |
     // | Metadata | DirectStreamingPlayer+Metadata.swift | ICY StreamTitle push delegate |
@@ -432,7 +432,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///   + ``SharedPlayerManager/canProceedWithPlayback()`` after every significant `await` and discards
     ///   when either fails.
     /// - SeeAlso: ``PlaybackAttachState``, ``beginInFlightPlaybackAttach()``,
-    ///   ``shouldContinueInFlightAttach(startedAt:)``,
+    ///   ``shouldContinueInFlightAttach(startedAt:)``, ``shouldAllowAudiblePlaybackKick(startedAt:)``,
     ///   ``invalidateInFlightPlaybackAttach()``, ``stopAndWait(reason:silent:applyUserPauseVisualLock:)``,
     ///   `SharedPlayerManager.stop()`, docs/Live-Activity-Stacking-and-Media-Surfaces.md (transport coordination).
     var isCurrentlyAttemptingPlayback = false
@@ -440,12 +440,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Monotonic generation for attach/start work.
     ///
     /// Advanced on every ``stop(reason:completion:silent:applyUserPauseVisualLock:)`` so await-crossing
-    /// start paths discard stale attach work after sticky `.userPaused` (or any other stop). Captured at
-    /// attach start via ``beginInFlightPlaybackAttach()`` and compared in
-    /// ``shouldContinueInFlightAttach(startedAt:)``.
+    /// start paths **and** deferred live-attach kicks discard stale work after sticky `.userPaused`
+    /// (or any other stop). Captured at attach start via ``beginInFlightPlaybackAttach()`` (and at
+    /// item-observer bind) and compared in ``shouldContinueInFlightAttach(startedAt:)`` and
+    /// ``shouldAllowAudiblePlaybackKick(startedAt:)``.
     ///
     /// AGENT NOTE: Single source of truth for "this attach attempt is still valid". Do not reset to 0;
-    /// only advance. Pair every post-`await` continue with a generation + intent re-check.
+    /// only advance. Pair every post-`await` continue with a generation + intent re-check. Do not
+    /// substitute ``isCurrentlyAttemptingPlayback`` for this token — first keep-up often fires after
+    /// attach returns. Kick callers must pass the bind/attach snapshot, never fire-time
+    /// ``playbackAttachGeneration``.
     var playbackAttachGeneration: UInt64 = 0
 
 
