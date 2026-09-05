@@ -17,6 +17,7 @@ Siri Shortcuts and voice control are supported out of the box ("Hey Siri, play L
   - [Prerequisites](#prerequisites)
   - [Swift Build Settings](#swift-build-settings)
   - [Troubleshooting](#troubleshooting)
+    - [Low disk after Xcode betas or a physical iPhone](#low-disk-after-xcode-betas-or-a-physical-iphone)
 - [Security Implementation](#security-implementation)
   - [Certificate Pinning](#certificate-pinning)
   - [Memory Safety (Compile-Time and Runtime)](#memory-safety-compile-time-and-runtime)
@@ -260,16 +261,56 @@ By verifying these steps on your local machine, you'll help maintain a consisten
 
 ### Troubleshooting
 
-If you encounter build or test issues, try these steps:
+Pick the matching cause. `xcodebuild clean` without a scheme does not fix a wrong toolchain, a full disk, or an ActivityKit stall.
 
-1. **Set Xcode Path:** If Xcode commands aren't found, run: ```sudo xcode-select -s /Applications/Xcode.app```
-   List available simulators with: ```xcrun simctl list devices available```. Use an iPhone 17-class device on iOS 26.5 for stable development.
+**Wrong or missing Xcode.** If `xcodebuild` is missing or `-version` is the wrong major, point `xcode-select` at the Xcode.app you actually use, then confirm:
 
-2. **Clean Build Folder**: ```xcodebuild clean```
+```bash
+sudo xcode-select -s /Applications/Xcode.app
+xcode-select -p
+xcodebuild -version
+xcrun simctl list devices available
+```
 
-3. **Clean Derived Data**: This removes all derived data for all projects, so use with caution: ```rm -rf ~/Library/Developer/Xcode/DerivedData/*```
+Use a simulator the listing actually prints for that toolchain. Do not invent a destination. Which SDK/OS pair is the contributor path vs the agent path lives in [Prerequisites](#prerequisites) and `CODING_AGENT.md` — those numbers move when a beta becomes stable; this section does not restate them.
 
-After cleaning, retry the build and test steps above.
+**Broken or stale builds.** Wipe Derived Data, then re-run the scheme gates above (not a bare `xcodebuild clean`). This directory is per-Mac and shared by every Xcode project:
+
+```bash
+rm -rf ~/Library/Developer/Xcode/DerivedData
+```
+
+Derived Data is the right lever for corrupt indexes, lingering Swift modules, or a build that will not recover. It is **not** the usual sudden tens-of-gigabytes leak on this project.
+
+#### Low disk after Xcode betas or a physical iPhone
+
+Xcode keeps a full debug-symbol pack under `~/Library/Developer/Xcode/iOS DeviceSupport` **every time** a physical iPhone appears on a new iOS *build*. Successive betas of the same marketing version do not replace the previous folder; each leftover pack is typically ~6 GB. That is the sudden disk hog. Interface Builder preview devices (`UserData/IB Support`) are a smaller, regenerable second.
+
+Inspect first (newest at the top):
+
+```bash
+du -sh ~/Library/Developer/Xcode/iOS\ DeviceSupport/* | sort -hr
+ls -lt ~/Library/Developer/Xcode/iOS\ DeviceSupport
+```
+
+Keep one folder per **(device model, iOS marketing version)** you still debug on hardware. Names look like `MODEL MARKETING (BUILD)` — device model identifier, marketing version, and build. Delete older **build** folders that share the same model and marketing version (stacked betas of one OS). Never `rm -rf` the whole `iOS DeviceSupport` directory: the next device connect re-downloads several gigabytes. Never delete the simulator runtime you still use for the gates in this README / `CODING_AGENT.md`.
+
+Copy the stale folder name from the inspect listing (spaces and parentheses must be escaped):
+
+```bash
+# Paste the exact name `ls` printed.
+rm -rf ~/Library/Developer/Xcode/iOS\ DeviceSupport/MODEL\ MARKETING\ \(OLD_BUILD\)
+```
+
+Regenerable extras (IB previews, unavailable simulators/runtimes):
+
+```bash
+rm -rf ~/Library/Developer/Xcode/UserData/IB\ Support/Simulator\ Devices
+xcrun simctl delete unavailable
+xcrun simctl runtime delete unavailable
+```
+
+Those `simctl` commands do not erase the available iPhone 17-class simulator you still run tests on, and they do not fix ActivityKit hangs (next subsection).
 
 **Test runs that appear to hang (especially after manual simulator use)**
 
