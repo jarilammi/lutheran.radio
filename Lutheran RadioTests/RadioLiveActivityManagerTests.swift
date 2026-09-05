@@ -63,6 +63,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
         manager.currentActivity = nil
         manager._test_setPendingInteractiveLiveActivityEnsure(false)
         manager._test_setLanguageEnsureQuietPendingDestination(nil)
+        manager._test_setExplicitPauseNeedsDestinationLanguageUpdate(false)
         manager._test_setPlayingEnsureQuietPending(false)
         manager._test_cancelAllPostQuietLongHorizonEnsure()
         // Singleton suppress memory must not leak across tests (optimistic stream-switch
@@ -75,6 +76,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
         // releasing. Prevents live Tasks / Timers keeping the runner alive.
         manager?._test_setPendingInteractiveLiveActivityEnsure(false)
         manager?._test_setLanguageEnsureQuietPendingDestination(nil)
+        manager?._test_setExplicitPauseNeedsDestinationLanguageUpdate(false)
         manager?._test_setPlayingEnsureQuietPending(false)
         manager?._test_cancelAllPostQuietLongHorizonEnsure()
         manager?._test_clearLastPushedContent()
@@ -2530,6 +2532,172 @@ class RadioLiveActivityManagerTests: XCTestCase {
             "Optimistic pause (Darwin .pause and Now Playing .stop) must clear language quiet when dest lags owned"
         )
         manager._test_setLanguageEnsureQuietPendingDestination(nil)
+        manager._test_clearLastPushedContent()
+    }
+
+    /// Explicit pause dest-language stays eligible after an uncommitted apply.
+    ///
+    /// ``shouldClearLanguageEnsureQuietPendingOnExplicitPause`` already issues dest-language
+    /// `Activity.update` when quiet is recorded at optimistic pause. ActivityKit can drop
+    /// that language-only apply; settle / long-horizon / dual-axis follow-up must **not**
+    /// record language quiet without committed exhaustion, or the next freeze-held pause
+    /// aligns lastPushed dest-language and then defers. Explicit pause therefore cancels
+    /// language long-horizon and post-settled retries, and stamps dest-language eligibility
+    /// so engine-complete ``updateCurrentActivity()`` still publishes dest+userPaused.
+    /// Status-driven freeze-held pause without that marker still defers. Playing toggle
+    /// does **not** clear language quiet. Does **not** invent `.playing`. Does **not**
+    /// raise max attempts. Does **not** `Activity.request` / end while ineligible.
+    /// Does **not** claim lock-screen paint.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/shouldIssueDestinationLanguageOnExplicitPause(visualState:destinationLanguage:ownedContentLanguage:)``,
+    ///   ``RadioLiveActivityManager/shouldApplyExplicitPauseDestinationLanguageUpdate(explicitPauseNeedsDestinationLanguageUpdate:candidateVisual:candidateLanguage:ownedContentLanguage:)``,
+    ///   ``RadioLiveActivityManager/shouldDeferRedundantLanguagePushWhileQuiet(candidateLanguage:ownedContentLanguage:ownedContentVisual:candidateVisual:quietPendingDestination:isRequestEligible:destinationLanguageUpdateAfterExplicitPause:)``,
+    ///   ``RadioLiveActivityManager/quietPendingDestinationAfterLanguageEnsureExhaustion(languageStillMismatches:isRequestEligible:destinationLanguage:committedAttemptsExhausted:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testExplicitPauseKeepsDestinationLanguageEligibleAfterUncommittedApply() {
+        XCTAssertTrue(
+            manager._test_shouldIssueDestinationLanguageOnExplicitPause(
+                visualState: .userPaused,
+                destinationLanguage: "fi",
+                ownedContentLanguage: "de"
+            ),
+            "Explicit pause while dest lags owned must keep dest-language eligible"
+        )
+        XCTAssertFalse(
+            manager._test_shouldIssueDestinationLanguageOnExplicitPause(
+                visualState: .playing,
+                destinationLanguage: "fi",
+                ownedContentLanguage: "de"
+            ),
+            "Playing toggle must not keep dest-language pause eligibility (freeze playing-visual skip stays)"
+        )
+        XCTAssertFalse(
+            manager._test_shouldIssueDestinationLanguageOnExplicitPause(
+                visualState: .userPaused,
+                destinationLanguage: "fi",
+                ownedContentLanguage: "fi"
+            ),
+            "Dest already on owned is visual-only pause"
+        )
+        XCTAssertFalse(
+            manager._test_shouldIssueDestinationLanguageOnExplicitPause(
+                visualState: .userPaused,
+                destinationLanguage: "",
+                ownedContentLanguage: "de"
+            ),
+            "Empty destination must not keep dest-language pause eligibility"
+        )
+        XCTAssertTrue(
+            manager._test_shouldIssueDestinationLanguageOnExplicitPause(
+                visualState: .userPaused,
+                destinationLanguage: "fi",
+                ownedContentLanguage: nil
+            ),
+            "Missing owned language while dest is known still needs dest-language on pause"
+        )
+
+        XCTAssertTrue(
+            manager._test_shouldApplyExplicitPauseDestinationLanguageUpdate(
+                explicitPauseNeedsDestinationLanguageUpdate: true,
+                candidateVisual: .userPaused,
+                candidateLanguage: "fi",
+                ownedContentLanguage: "de"
+            ),
+            "Engine-complete freeze-held pause must still dest-language after explicit pause"
+        )
+        XCTAssertFalse(
+            manager._test_shouldApplyExplicitPauseDestinationLanguageUpdate(
+                explicitPauseNeedsDestinationLanguageUpdate: false,
+                candidateVisual: .userPaused,
+                candidateLanguage: "fi",
+                ownedContentLanguage: "de"
+            ),
+            "Status-driven freeze-held pause without the explicit-pause marker must not skip quiet defer"
+        )
+        XCTAssertFalse(
+            manager._test_shouldApplyExplicitPauseDestinationLanguageUpdate(
+                explicitPauseNeedsDestinationLanguageUpdate: true,
+                candidateVisual: .playing,
+                candidateLanguage: "fi",
+                ownedContentLanguage: "de"
+            ),
+            "Playing candidate must not consume dest-language pause eligibility"
+        )
+
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantLanguagePushWhileQuiet(
+                candidateLanguage: "fi",
+                ownedContentLanguage: "de",
+                ownedContentVisual: .userPaused,
+                candidateVisual: .userPaused,
+                quietPendingDestination: "fi",
+                isRequestEligible: false,
+                destinationLanguageUpdateAfterExplicitPause: true
+            ),
+            "Explicit pause dest-language after uncommitted apply must not defer over freeze-held .userPaused"
+        )
+        XCTAssertTrue(
+            manager._test_shouldDeferRedundantLanguagePushWhileQuiet(
+                candidateLanguage: "fi",
+                ownedContentLanguage: "de",
+                ownedContentVisual: .userPaused,
+                candidateVisual: .userPaused,
+                quietPendingDestination: "fi",
+                isRequestEligible: false,
+                destinationLanguageUpdateAfterExplicitPause: false
+            ),
+            "Status-driven freeze-held pause still defers while language quiet is recorded"
+        )
+
+        XCTAssertNil(
+            manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
+                languageStillMismatches: true,
+                isRequestEligible: false,
+                destinationLanguage: "fi",
+                committedAttemptsExhausted: false
+            ),
+            "Settle, long-horizon, and dual-axis follow-up must not record language quiet after uncommitted dest-language apply"
+        )
+
+        manager._test_installDummyPostQuietLongHorizonLanguageEnsureTask()
+        manager._test_installDummyPostSettledLanguageEnsureRetryTask()
+        manager._test_setLanguageSettledAcceptanceConsumedDestination("fi")
+        manager._test_setLanguageEnsureQuietPendingDestination(nil)
+        XCTAssertTrue(manager._test_postQuietLongHorizonLanguageEnsureArmed())
+        XCTAssertTrue(manager._test_postSettledLanguageEnsureRetryScheduled())
+
+        manager.recordOptimisticToggleContent(visualState: .userPaused)
+        XCTAssertTrue(
+            manager._test_explicitPauseNeedsDestinationLanguageUpdate(),
+            "Optimistic pause while dest lags must stamp dest-language eligibility even when quiet is not recorded"
+        )
+        XCTAssertFalse(
+            manager._test_postQuietLongHorizonLanguageEnsureArmed(),
+            "Explicit pause must cancel language long-horizon so follow-up cannot record quiet before engine-complete"
+        )
+        XCTAssertFalse(
+            manager._test_postSettledLanguageEnsureRetryScheduled(),
+            "Explicit pause must cancel post-settled language retries"
+        )
+        XCTAssertNil(
+            manager._test_languageSettledAcceptanceConsumedDestinationValue(),
+            "Explicit pause dest-language must drop settled-acceptance consume for that destination"
+        )
+
+        manager._test_setLanguageEnsureQuietPendingDestination("et")
+        manager.recordOptimisticToggleContent(visualState: .playing)
+        XCTAssertEqual(
+            manager._test_languageEnsureQuietPendingDestinationValue(),
+            "et",
+            "Optimistic play must not clear language quiet"
+        )
+        XCTAssertFalse(
+            manager._test_explicitPauseNeedsDestinationLanguageUpdate(),
+            "Optimistic play must clear dest-language pause eligibility"
+        )
+
+        manager._test_setLanguageEnsureQuietPendingDestination(nil)
+        manager._test_setExplicitPauseNeedsDestinationLanguageUpdate(false)
         manager._test_clearLastPushedContent()
     }
 

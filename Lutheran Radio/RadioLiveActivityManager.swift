@@ -212,11 +212,16 @@ import WidgetSurface
 /// language is uncommitted apply — do not consume, do not quiet. Skip the next soft push
 /// while ``inFlightContentPushCandidate`` is unconfirmed. Immediate post-await
 /// `content.state` does not consume the budget.
-/// After the soft-retry budget is exhausted while interactive request is ineligible, language
-/// ensure enters a **quiet pending** state for that destination so status-driven media-surface
-/// refreshes do not thrash ActivityKit; re-arm on destination change, eligibility, become-active,
-/// or system `contentUpdates`. Language-only status re-pushes defer while quiet; visual mutations
-/// still push. **Settled language acceptance:** after stream-switch hold clears (authoritative
+/// After the **committed** soft-retry budget is exhausted while interactive request is ineligible,
+/// language ensure enters a **quiet pending** state for that destination so status-driven
+/// media-surface refreshes do not thrash ActivityKit. Quiet records only through
+/// ``quietPendingDestinationAfterLanguageEnsureExhaustion``. Settle, long-horizon, and dual-axis
+/// follow-up do not record quiet after an uncommitted dest-language apply. Quiet clears on
+/// destination change, eligibility, become-active, system `contentUpdates`, or explicit pause
+/// dest-language. Language-only status re-pushes defer while quiet; visual mutations still push.
+/// Explicit pause dest-language stays eligible for engine-complete ``updateCurrentActivity()``
+/// via ``explicitPauseNeedsDestinationLanguageUpdate`` even if quiet is recorded again before
+/// that refresh. **Settled language acceptance:** after stream-switch hold clears (authoritative
 /// ``setPlaying`` / soft-resume audible path), ``pushSettledLanguageAcceptanceContentIfNeeded()``
 /// clears language quiet and re-runs a **full** soft language-ensure budget for the destination
 /// (attach-storm exhaustion must not be the only acceptance window). Consume-once per destination
@@ -617,13 +622,32 @@ class RadioLiveActivityManager: ObservableObject {
     /// quiet is language-stall thrash protection only, not a full content freeze. Playing
     /// toggle does **not** clear this flag (freeze playing-visual skip stays).
     ///
+    /// Settle, long-horizon, and dual-axis follow-up record this only through
+    /// ``quietPendingDestinationAfterLanguageEnsureExhaustion`` (committed exhaustion).
+    /// An uncommitted dest-language apply must not record quiet, or the next explicit
+    /// pause is deferred with lastPushed already aligned.
+    ///
     /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
     ///   ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``,
-    ///   ``shouldDeferRedundantLanguagePushWhileQuiet(candidateLanguage:ownedContentLanguage:ownedContentVisual:candidateVisual:quietPendingDestination:isRequestEligible:)``,
+    ///   ``shouldDeferRedundantLanguagePushWhileQuiet(candidateLanguage:ownedContentLanguage:ownedContentVisual:candidateVisual:quietPendingDestination:isRequestEligible:destinationLanguageUpdateAfterExplicitPause:)``,
     ///   ``shouldClearLanguageEnsureQuietPendingOnExplicitPause(visualState:quietPendingDestination:destinationLanguage:ownedContentLanguage:)``,
+    ///   ``shouldIssueDestinationLanguageOnExplicitPause(visualState:destinationLanguage:ownedContentLanguage:)``,
     ///   ``pushSettledLanguageAcceptanceContentIfNeeded()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private var languageEnsureQuietPendingDestination: String?
+
+    /// Next freeze-held pause ``updateCurrentActivity()`` must still publish dest language.
+    ///
+    /// Set from ``recordOptimisticToggleContent(.userPaused)`` when dest language still
+    /// lags owned. Survives a follow-up quiet record between optimistic pause and
+    /// engine-complete refresh. Cleared after that dest-language pause update is
+    /// considered, when dest already matches, on play toggle, stream-switch, or end.
+    /// Does **not** invent `.playing`. Does **not** raise max attempts.
+    ///
+    /// - SeeAlso: ``shouldIssueDestinationLanguageOnExplicitPause(visualState:destinationLanguage:ownedContentLanguage:)``,
+    ///   ``shouldApplyExplicitPauseDestinationLanguageUpdate(explicitPauseNeedsDestinationLanguageUpdate:candidateVisual:candidateLanguage:ownedContentLanguage:)``,
+    ///   ``shouldDeferRedundantLanguagePushWhileQuiet(candidateLanguage:ownedContentLanguage:ownedContentVisual:candidateVisual:quietPendingDestination:isRequestEligible:destinationLanguageUpdateAfterExplicitPause:)``.
+    private var explicitPauseNeedsDestinationLanguageUpdate = false
 
     /// Destination for which a post-hold **settled** language acceptance cycle already ran while
     /// interactive request was ineligible.
@@ -1592,17 +1616,32 @@ class RadioLiveActivityManager: ObservableObject {
 
         // After language soft-ensure exhausted while request is ineligible, defer language-only
         // *status* re-pushes for the same destination. Durable mirrors already warmed above.
-        // Visual mutations still push. Explicit pause already cleared quiet when dest lags
-        // (recordOptimisticToggleContent) so dest-language still IPC over freeze-held pause.
-        // Re-arm: destination change, eligibility, become-active, contentUpdates, or that
-        // explicit pause (see languageEnsureQuietPendingDestination).
+        // Visual mutations still push. Explicit pause dest-language still publishes when dest
+        // lags owned — even if follow-up quiet is recorded after optimistic toggle and before
+        // this engine-complete refresh (uncommitted apply). Status-driven freeze-held pause
+        // without that pause marker still defers. Quiet clears on destination change,
+        // eligibility, become-active, contentUpdates, or explicit pause dest-language clear.
+        let destinationLanguageUpdateAfterExplicitPause =
+            Self.shouldApplyExplicitPauseDestinationLanguageUpdate(
+                explicitPauseNeedsDestinationLanguageUpdate: explicitPauseNeedsDestinationLanguageUpdate,
+                candidateVisual: candidate.visualState,
+                candidateLanguage: candidate.currentLanguage,
+                ownedContentLanguage: ownedLanguage
+            )
+        if explicitPauseNeedsDestinationLanguageUpdate,
+           ownedLanguage == candidate.currentLanguage || candidate.currentLanguage.isEmpty {
+            explicitPauseNeedsDestinationLanguageUpdate = false
+        } else if destinationLanguageUpdateAfterExplicitPause {
+            explicitPauseNeedsDestinationLanguageUpdate = false
+        }
         if Self.shouldDeferRedundantLanguagePushWhileQuiet(
             candidateLanguage: candidate.currentLanguage,
             ownedContentLanguage: ownedLanguage,
             ownedContentVisual: ownedVisual,
             candidateVisual: candidate.visualState,
             quietPendingDestination: languageEnsureQuietPendingDestination,
-            isRequestEligible: requestEligible
+            isRequestEligible: requestEligible,
+            destinationLanguageUpdateAfterExplicitPause: destinationLanguageUpdateAfterExplicitPause
         ) {
             // Quiet language-only stall: durable mirrors already warm; no ActivityKit IPC.
             // Rate-limit DEBUG — status callbacks re-hit this every attach frame.
@@ -3561,10 +3600,12 @@ class RadioLiveActivityManager: ObservableObject {
     /// still push — quiet is language-only.
     ///
     /// Freeze-held pause (owned visual already ``.userPaused``, candidate also ``.userPaused``)
-    /// is language-only here, so this helper still defers. Explicit pause must clear quiet
-    /// first via ``shouldClearLanguageEnsureQuietPendingOnExplicitPause`` so dest-language
-    /// still issues `Activity.update`. Do **not** bypass this helper for all pause candidates
-    /// — that re-opens status thrash. Does **not** invent `.playing`.
+    /// is language-only here, so this helper still defers on the **status** path. Explicit
+    /// pause dest-language uses ``destinationLanguageUpdateAfterExplicitPause`` so
+    /// engine-complete ``updateCurrentActivity()`` still publishes dest language when
+    /// dest lags owned — even if quiet was recorded again after optimistic toggle
+    /// (uncommitted apply). Do **not** treat every pause candidate as dest-language —
+    /// that re-opens status thrash. Does **not** invent `.playing`.
     ///
     /// - Parameters:
     ///   - candidateLanguage: Candidate ``ContentState.currentLanguage``.
@@ -3573,9 +3614,11 @@ class RadioLiveActivityManager: ObservableObject {
     ///   - candidateVisual: Candidate visual.
     ///   - quietPendingDestination: ``languageEnsureQuietPendingDestination``.
     ///   - isRequestEligible: Interactive request eligibility.
+    ///   - destinationLanguageUpdateAfterExplicitPause: ``shouldApplyExplicitPauseDestinationLanguageUpdate(explicitPauseNeedsDestinationLanguageUpdate:candidateVisual:candidateLanguage:ownedContentLanguage:)``.
     /// - Returns: `true` when ActivityKit IPC should be skipped for this language-only stall.
     /// - SeeAlso: ``updateCurrentActivity()``,
     ///   ``shouldClearLanguageEnsureQuietPendingOnExplicitPause(visualState:quietPendingDestination:destinationLanguage:ownedContentLanguage:)``,
+    ///   ``shouldIssueDestinationLanguageOnExplicitPause(visualState:destinationLanguage:ownedContentLanguage:)``,
     ///   ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``.
     static func shouldDeferRedundantLanguagePushWhileQuiet(
         candidateLanguage: String,
@@ -3583,7 +3626,8 @@ class RadioLiveActivityManager: ObservableObject {
         ownedContentVisual: PlayerVisualState,
         candidateVisual: PlayerVisualState,
         quietPendingDestination: String?,
-        isRequestEligible: Bool
+        isRequestEligible: Bool,
+        destinationLanguageUpdateAfterExplicitPause: Bool = false
     ) -> Bool {
         guard let quiet = quietPendingDestination else { return false }
         guard !isRequestEligible else { return false }
@@ -3592,6 +3636,11 @@ class RadioLiveActivityManager: ObservableObject {
         if ownedContentVisual != candidateVisual { return false }
         // Language already matches → not a language stall (suppress policy handles no-op).
         if ownedContentLanguage == candidateLanguage { return false }
+        // Explicit pause dest-language after an uncommitted apply still publishes.
+        if destinationLanguageUpdateAfterExplicitPause,
+           candidateVisual == .userPaused {
+            return false
+        }
         return true
     }
 
@@ -3617,7 +3666,8 @@ class RadioLiveActivityManager: ObservableObject {
     ///   - ownedContentLanguage: Owned `content.state.currentLanguage`.
     /// - Returns: `true` when pause must clear quiet so dest-language IPC can proceed.
     /// - SeeAlso: ``recordOptimisticToggleContent(visualState:)``,
-    ///   ``shouldDeferRedundantLanguagePushWhileQuiet(candidateLanguage:ownedContentLanguage:ownedContentVisual:candidateVisual:quietPendingDestination:isRequestEligible:)``,
+    ///   ``shouldIssueDestinationLanguageOnExplicitPause(visualState:destinationLanguage:ownedContentLanguage:)``,
+    ///   ``shouldDeferRedundantLanguagePushWhileQuiet(candidateLanguage:ownedContentLanguage:ownedContentVisual:candidateVisual:quietPendingDestination:isRequestEligible:destinationLanguageUpdateAfterExplicitPause:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func shouldClearLanguageEnsureQuietPendingOnExplicitPause(
         visualState: PlayerVisualState,
@@ -3632,6 +3682,66 @@ class RadioLiveActivityManager: ObservableObject {
             return false
         }
         return true
+    }
+
+    /// Whether explicit pause must keep dest-language eligible for engine-complete update.
+    ///
+    /// Independent of whether language-ensure quiet is currently recorded. Freeze-held
+    /// Darwin / Now Playing pause can land after an uncommitted dest-language apply
+    /// with quiet already cleared; settle or long-horizon follow-up may record quiet
+    /// again before ``updateCurrentActivity()``. Cancelling language long-horizon and
+    /// post-settled retries, and stamping ``explicitPauseNeedsDestinationLanguageUpdate``,
+    /// keeps dest-language `Activity.update` available. Playing toggle does **not**
+    /// qualify (freeze playing-visual skip stays). Dest already matching owned is
+    /// visual-only pause. Does **not** invent `.playing`. Does **not** raise max attempts.
+    ///
+    /// - Parameters:
+    ///   - visualState: Optimistic toggle visual from ``recordOptimisticToggleContent(visualState:)``.
+    ///   - destinationLanguage: Language the pause alignment will stamp.
+    ///   - ownedContentLanguage: Owned `content.state.currentLanguage`.
+    /// - Returns: `true` when pause must cancel language follow-up and keep dest-language
+    ///   eligible for the next freeze-held pause ``updateCurrentActivity()``.
+    /// - SeeAlso: ``recordOptimisticToggleContent(visualState:)``,
+    ///   ``shouldClearLanguageEnsureQuietPendingOnExplicitPause(visualState:quietPendingDestination:destinationLanguage:ownedContentLanguage:)``,
+    ///   ``shouldApplyExplicitPauseDestinationLanguageUpdate(explicitPauseNeedsDestinationLanguageUpdate:candidateVisual:candidateLanguage:ownedContentLanguage:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldIssueDestinationLanguageOnExplicitPause(
+        visualState: PlayerVisualState,
+        destinationLanguage: String,
+        ownedContentLanguage: String?
+    ) -> Bool {
+        guard visualState == .userPaused else { return false }
+        guard !destinationLanguage.isEmpty else { return false }
+        if let owned = ownedContentLanguage, owned == destinationLanguage {
+            return false
+        }
+        return true
+    }
+
+    /// Whether this ``updateCurrentActivity()`` is the dest-language pause after explicit pause.
+    ///
+    /// Consumed once for freeze-held ``.userPaused`` while dest still lags owned. Status-driven
+    /// language-only ticks without ``explicitPauseNeedsDestinationLanguageUpdate`` still defer
+    /// while quiet. Does **not** invent `.playing`.
+    ///
+    /// - Parameters:
+    ///   - explicitPauseNeedsDestinationLanguageUpdate: ``explicitPauseNeedsDestinationLanguageUpdate``.
+    ///   - candidateVisual: Candidate visual.
+    ///   - candidateLanguage: Candidate ``ContentState.currentLanguage``.
+    ///   - ownedContentLanguage: Owned `content.state.currentLanguage`.
+    /// - Returns: `true` when language-quiet defer must not drop this dest-language pause.
+    /// - SeeAlso: ``shouldDeferRedundantLanguagePushWhileQuiet(candidateLanguage:ownedContentLanguage:ownedContentVisual:candidateVisual:quietPendingDestination:isRequestEligible:destinationLanguageUpdateAfterExplicitPause:)``,
+    ///   ``shouldIssueDestinationLanguageOnExplicitPause(visualState:destinationLanguage:ownedContentLanguage:)``.
+    static func shouldApplyExplicitPauseDestinationLanguageUpdate(
+        explicitPauseNeedsDestinationLanguageUpdate: Bool,
+        candidateVisual: PlayerVisualState,
+        candidateLanguage: String,
+        ownedContentLanguage: String
+    ) -> Bool {
+        guard explicitPauseNeedsDestinationLanguageUpdate else { return false }
+        guard candidateVisual == .userPaused else { return false }
+        guard !candidateLanguage.isEmpty else { return false }
+        return ownedContentLanguage != candidateLanguage
     }
 
     /// Whether quiet-pending language ensure should clear after a system content yield or
@@ -5097,13 +5207,14 @@ class RadioLiveActivityManager: ObservableObject {
     /// re-entering this settle entry; bounded delayed retries continue after the entry when
     /// owned language still lags.
     ///
-    /// **Quiet re-arm (post-audible):** Clears ``languageEnsureQuietPendingDestination`` so
+    /// **Post-audible settle:** Clears ``languageEnsureQuietPendingDestination`` so
     /// ``shouldRunLanguageContentEnsureSoftPushes`` and ``shouldDeferRedundantLanguagePushWhileQuiet``
     /// do not drop the post-hold soft cycle, then ``ensureAuthoritativeLanguageContentIfNeeded()``.
     /// Marks ``languageSettledAcceptanceConsumedDestination`` while request is ineligible so
     /// soft-resume no-ops do not re-thrash the settle entry. When owned language still mismatches
-    /// after the soft cycle while ineligible, re-enters quiet for status thrash **and** schedules
-    /// ``schedulePostSettledLanguageEnsureRetriesIfNeeded(destination:)``.
+    /// after the soft cycle while ineligible, language quiet records only if that ensure
+    /// exhausted **committed** attempts; uncommitted dest-language apply stays eligible for
+    /// explicit pause. Schedules ``schedulePostSettledLanguageEnsureRetriesIfNeeded(destination:)``.
     ///
     /// - Precondition: Main actor; stream-switch hold should already be cleared by the caller
     ///   (policy also gates on hold). Interactive ``currentActivity`` may be nil (no-op).
@@ -5183,22 +5294,24 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
-        // Still lagging while locked — re-enter quiet for status thrash, keep pending ensure
-        // for become-active, and schedule longer-cadence soft ensure without end+request.
+        // Still lagging while locked — keep pending ensure for become-active and schedule
+        // longer-cadence soft ensure without end+request. Language quiet records only via
+        // ``quietPendingDestinationAfterLanguageEnsureExhaustion`` (committed exhaustion)
+        // inside ``ensureAuthoritativeLanguageContentIfNeeded()``. Uncommitted dest-language
+        // apply must stay eligible for explicit pause / status-driven update.
         let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
             areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         let holdAfter = await manager.isStreamSwitchPrePlayHoldActive
         if !eligibleAfter, !destination.isEmpty {
-            languageEnsureQuietPendingDestination = destination
-            languageEnsureQuietSkipLogged = false
             markContentEnsureFreezeSoftBudgetExhausted()
             #if DEBUG
             print(
                 "🔴 Live Activity settled language acceptance still lagging " +
                 "(destination=\(destination) owned=\(acceptedLanguage ?? "nil"); " +
-                "quiet re-armed; freeze soft budget exhausted; recreation remains eligibility-gated)"
+                "freeze soft budget exhausted; language quiet only after committed exhaustion; " +
+                "recreation remains eligibility-gated)"
             )
             #endif
         }
@@ -5310,14 +5423,14 @@ class RadioLiveActivityManager: ObservableObject {
                     return
                 }
 
-                // Still lagging — quiet status thrash until next delayed attempt or FG rail.
+                // Still lagging — language quiet only after committed exhaustion inside
+                // ensureAuthoritativeLanguageContentIfNeeded. Keep pending ensure for
+                // become-active. Dest-language after uncommitted apply stays eligible.
                 let eligible = Self.isInteractiveLiveActivityRequestEligible(
                     areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
                     isApplicationActive: UIApplication.shared.applicationState == .active
                 )
                 if !eligible {
-                    self.languageEnsureQuietPendingDestination = destination
-                    self.languageEnsureQuietSkipLogged = false
                     self.pendingInteractiveLiveActivityEnsure = true
                 }
             }
@@ -6131,8 +6244,6 @@ class RadioLiveActivityManager: ObservableObject {
                         isApplicationActive: UIApplication.shared.applicationState == .active
                     )
                     if !eligibleAfterDual {
-                        self.languageEnsureQuietPendingDestination = destination
-                        self.languageEnsureQuietSkipLogged = false
                         self.pendingInteractiveLiveActivityEnsure = true
                     }
                     continue
@@ -6163,8 +6274,6 @@ class RadioLiveActivityManager: ObservableObject {
                     isApplicationActive: UIApplication.shared.applicationState == .active
                 )
                 if !eligible {
-                    self.languageEnsureQuietPendingDestination = destination
-                    self.languageEnsureQuietSkipLogged = false
                     self.pendingInteractiveLiveActivityEnsure = true
                 }
             }
@@ -6175,7 +6284,8 @@ class RadioLiveActivityManager: ObservableObject {
     /// Schedules sparse delayed **dual-axis** soft-ensure fires after quiet / settle still lags on both axes.
     ///
     /// Each fire clears both quiet flags once, runs one ``ensureAuthoritativeDualAxisContentIfNeeded()``,
-    /// then re-engages quiet between fires while ineligible. Logs dual-axis retries distinctly.
+    /// then may record playing quiet between fires while ineligible. Language quiet records only
+    /// after committed language-ensure exhaustion. Logs dual-axis retries distinctly.
     ///
     /// - SeeAlso: ``postQuietLongHorizonEnsureDelayedIntervalsMilliseconds``,
     ///   ``armPostQuietLongHorizonDualAxisEnsureIfNeeded()``,
@@ -6326,10 +6436,9 @@ class RadioLiveActivityManager: ObservableObject {
                     isApplicationActive: UIApplication.shared.applicationState == .active
                 )
                 if !eligible {
-                    if stillLanguageLags {
-                        self.languageEnsureQuietPendingDestination = destination
-                        self.languageEnsureQuietSkipLogged = false
-                    }
+                    // Language quiet records only after committed language-ensure exhaustion.
+                    // Dual-axis does not consume those slots; dest-language after an
+                    // uncommitted apply stays eligible for explicit pause.
                     if stillVisualLags {
                         self.playingEnsureQuietPending = true
                         self.playingEnsureQuietSkipLogged = false
@@ -6362,8 +6471,10 @@ class RadioLiveActivityManager: ObservableObject {
     /// in one soft-push loop (not sequential single-axis budgets that each re-quiet).
     ///
     /// Clears both quiet flags, runs up to ``authoritativePlayingContentEnsureMaxAttempts``
-    /// ``updateCurrentActivity()`` pushes (candidate always carries both axes), and re-engages
-    /// quiet only for still-lagging axes after the budget. Does **not** invent `.playing` during
+    /// ``updateCurrentActivity()`` pushes (candidate always carries both axes). Playing quiet
+    /// may record again for a still-lagging visual axis. Language quiet records only via
+    /// ``quietPendingDestinationAfterLanguageEnsureExhaustion`` (committed exhaustion) —
+    /// dual-axis does not consume those slots. Does **not** invent `.playing` during
     /// hold/connect. Does **not** end+request.
     ///
     /// - SeeAlso: ``pushSettledDualAxisAcceptanceContentIfNeeded()``,
@@ -6494,7 +6605,8 @@ class RadioLiveActivityManager: ObservableObject {
             }
         }
 
-        // Soft dual budget exhausted — re-quiet only lagging axes while ineligible.
+        // Soft dual budget exhausted — playing quiet may record for a lagging visual axis.
+        // Language quiet records only after committed language-ensure exhaustion.
         let finalDest = await manager.liveActivityLanguageCodeForContentPush()
         let finalLangLags = Self.shouldEnsureAuthoritativeLanguageContent(
             destinationLanguage: finalDest,
@@ -6513,10 +6625,8 @@ class RadioLiveActivityManager: ObservableObject {
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         if !eligibleAfter {
-            if finalLangLags {
-                languageEnsureQuietPendingDestination = finalDest
-                languageEnsureQuietSkipLogged = false
-            }
+            // Dual-axis does not consume language-ensure committed slots. Language quiet
+            // records only via ``quietPendingDestinationAfterLanguageEnsureExhaustion``.
             let finalHold = await manager.isStreamSwitchPrePlayHoldActive
             let finalConnecting = await manager.isConnectingPlayback
             let finalActor = await manager.currentVisualState
@@ -7225,6 +7335,7 @@ class RadioLiveActivityManager: ObservableObject {
         cancelAllPostQuietLongHorizonEnsure()
         languageEnsureQuietPendingDestination = nil
         languageSettledAcceptanceConsumedDestination = nil
+        explicitPauseNeedsDestinationLanguageUpdate = false
         playingEnsureQuietPending = false
         playingSettledAcceptanceConsumed = false
         dualAxisSettledAcceptanceConsumed = false
@@ -7322,8 +7433,10 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ineligible visual-differing `.playing` IPC
     ///   (``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible``). Explicit pause
     ///   also clears ``languageEnsureQuietPendingDestination`` when dest language still lags
-    ///   owned so engine-complete ``updateCurrentActivity()`` dest-language IPC is not
-    ///   quiet-deferred over freeze-held ``.userPaused``. Playing toggle does **not** clear
+    ///   owned, cancels language long-horizon and post-settled retries, and stamps
+    ///   ``explicitPauseNeedsDestinationLanguageUpdate`` so engine-complete
+    ///   ``updateCurrentActivity()`` dest-language IPC is not quiet-deferred over freeze-held
+    ///   ``.userPaused`` after an uncommitted apply. Playing toggle does **not** clear
     ///   language quiet.
     /// - Note: Does not call `Activity.update` — the intent path owns that IPC via
     ///   `Activity.activities` so extension-hosted and main-hosted toggles share one push site.
@@ -7332,6 +7445,8 @@ class RadioLiveActivityManager: ObservableObject {
     ///   freeze-held pause visual.
     /// - SeeAlso: ``updateCurrentActivity()``,
     ///   ``shouldClearLanguageEnsureQuietPendingOnExplicitPause(visualState:quietPendingDestination:destinationLanguage:ownedContentLanguage:)``,
+    ///   ``shouldIssueDestinationLanguageOnExplicitPause(visualState:destinationLanguage:ownedContentLanguage:)``,
+    ///   ``shouldApplyExplicitPauseDestinationLanguageUpdate(explicitPauseNeedsDestinationLanguageUpdate:candidateVisual:candidateLanguage:ownedContentLanguage:)``,
     ///   ``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(isRequestEligible:freezeSoftBudgetExhausted:ownedVisual:candidateVisual:)``,
     ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
     ///   ``WidgetIntentExecution/performLiveActivityToggle()``,
@@ -7372,6 +7487,27 @@ class RadioLiveActivityManager: ObservableObject {
             ? SharedPlayerManager.mainAppLiveActivityLanguageCode()
             : resolved
         let ownedLanguage = currentActivity?.content.state.currentLanguage
+        if visualState != .userPaused {
+            explicitPauseNeedsDestinationLanguageUpdate = false
+        }
+        if Self.shouldIssueDestinationLanguageOnExplicitPause(
+            visualState: visualState,
+            destinationLanguage: language,
+            ownedContentLanguage: ownedLanguage
+        ) {
+            // Drop language follow-up so delayed settle / long-horizon cannot record
+            // quiet again before engine-complete dest-language updateCurrentActivity.
+            cancelPostSettledLanguageEnsureRetries()
+            cancelPostQuietLongHorizonLanguageEnsure()
+            languageSettledAcceptanceConsumedDestination = nil
+            explicitPauseNeedsDestinationLanguageUpdate = true
+            #if DEBUG
+            print(
+                "🔴 Live Activity dest-language kept eligible after explicit pause " +
+                "(destination=\(language) owned=\(ownedLanguage ?? "nil"))"
+            )
+            #endif
+        }
         if Self.shouldClearLanguageEnsureQuietPendingOnExplicitPause(
             visualState: visualState,
             quietPendingDestination: languageEnsureQuietPendingDestination,
@@ -7445,11 +7581,12 @@ class RadioLiveActivityManager: ObservableObject {
     @MainActor
     func recordOptimisticStreamSwitchContent(language: String, visualState: PlayerVisualState) {
         guard !language.isEmpty else { return }
-        // New language mutation re-arms soft language ensure for one high-priority cycle.
+        // New language mutation re-opens soft language ensure for one high-priority cycle.
         if languageEnsureQuietPendingDestination != language {
             languageEnsureQuietPendingDestination = nil
             languageEnsureQuietSkipLogged = false
         }
+        explicitPauseNeedsDestinationLanguageUpdate = false
         // New destination re-opens the post-hold settled language acceptance window and drops
         // delayed retries scheduled for a prior destination.
         if languageSettledAcceptanceConsumedDestination != language {
@@ -7634,6 +7771,7 @@ class RadioLiveActivityManager: ObservableObject {
             interactiveContentRecreationsAttempted = 0
             languageEnsureQuietPendingDestination = nil
             languageSettledAcceptanceConsumedDestination = nil
+            explicitPauseNeedsDestinationLanguageUpdate = false
             playingEnsureQuietPending = false
             playingSettledAcceptanceConsumed = false
             languageEnsureQuietSkipLogged = false
@@ -7660,6 +7798,7 @@ class RadioLiveActivityManager: ObservableObject {
             interactiveContentRecreationsAttempted = 0
             languageEnsureQuietPendingDestination = nil
             languageSettledAcceptanceConsumedDestination = nil
+            explicitPauseNeedsDestinationLanguageUpdate = false
             playingEnsureQuietPending = false
             playingSettledAcceptanceConsumed = false
             languageEnsureQuietSkipLogged = false
@@ -7693,6 +7832,7 @@ class RadioLiveActivityManager: ObservableObject {
         consecutiveStalledContentPushes = 0
         languageEnsureQuietPendingDestination = nil
         languageSettledAcceptanceConsumedDestination = nil
+        explicitPauseNeedsDestinationLanguageUpdate = false
         playingEnsureQuietPending = false
         playingSettledAcceptanceConsumed = false
         languageEnsureQuietSkipLogged = false
@@ -8384,6 +8524,7 @@ class RadioLiveActivityManager: ObservableObject {
             consecutiveStalledContentPushes = 0
             languageEnsureQuietPendingDestination = nil
             languageSettledAcceptanceConsumedDestination = nil
+            explicitPauseNeedsDestinationLanguageUpdate = false
             playingEnsureQuietPending = false
             playingSettledAcceptanceConsumed = false
             languageEnsureQuietSkipLogged = false
@@ -8408,6 +8549,7 @@ class RadioLiveActivityManager: ObservableObject {
         consecutiveStalledContentPushes = 0
         languageEnsureQuietPendingDestination = nil
         languageSettledAcceptanceConsumedDestination = nil
+        explicitPauseNeedsDestinationLanguageUpdate = false
         playingEnsureQuietPending = false
         playingSettledAcceptanceConsumed = false
         languageEnsureQuietSkipLogged = false
@@ -8603,7 +8745,8 @@ class RadioLiveActivityManager: ObservableObject {
         ownedContentVisual: PlayerVisualState,
         candidateVisual: PlayerVisualState,
         quietPendingDestination: String?,
-        isRequestEligible: Bool
+        isRequestEligible: Bool,
+        destinationLanguageUpdateAfterExplicitPause: Bool = false
     ) -> Bool {
         Self.shouldDeferRedundantLanguagePushWhileQuiet(
             candidateLanguage: candidateLanguage,
@@ -8611,7 +8754,36 @@ class RadioLiveActivityManager: ObservableObject {
             ownedContentVisual: ownedContentVisual,
             candidateVisual: candidateVisual,
             quietPendingDestination: quietPendingDestination,
-            isRequestEligible: isRequestEligible
+            isRequestEligible: isRequestEligible,
+            destinationLanguageUpdateAfterExplicitPause: destinationLanguageUpdateAfterExplicitPause
+        )
+    }
+
+    /// White-box seam: explicit pause dest-language eligibility (no ActivityKit).
+    func _test_shouldIssueDestinationLanguageOnExplicitPause(
+        visualState: PlayerVisualState,
+        destinationLanguage: String,
+        ownedContentLanguage: String?
+    ) -> Bool {
+        Self.shouldIssueDestinationLanguageOnExplicitPause(
+            visualState: visualState,
+            destinationLanguage: destinationLanguage,
+            ownedContentLanguage: ownedContentLanguage
+        )
+    }
+
+    /// White-box seam: dest-language pause update after explicit pause (no ActivityKit).
+    func _test_shouldApplyExplicitPauseDestinationLanguageUpdate(
+        explicitPauseNeedsDestinationLanguageUpdate: Bool,
+        candidateVisual: PlayerVisualState,
+        candidateLanguage: String,
+        ownedContentLanguage: String
+    ) -> Bool {
+        Self.shouldApplyExplicitPauseDestinationLanguageUpdate(
+            explicitPauseNeedsDestinationLanguageUpdate: explicitPauseNeedsDestinationLanguageUpdate,
+            candidateVisual: candidateVisual,
+            candidateLanguage: candidateLanguage,
+            ownedContentLanguage: ownedContentLanguage
         )
     }
 
@@ -8636,6 +8808,37 @@ class RadioLiveActivityManager: ObservableObject {
     /// White-box seam: set language ensure quiet destination (no ActivityKit).
     func _test_setLanguageEnsureQuietPendingDestination(_ value: String?) {
         languageEnsureQuietPendingDestination = value
+    }
+
+    /// White-box seam: dest-language pause marker after explicit pause (no ActivityKit).
+    func _test_explicitPauseNeedsDestinationLanguageUpdate() -> Bool {
+        explicitPauseNeedsDestinationLanguageUpdate
+    }
+
+    /// White-box seam: set dest-language pause marker (no ActivityKit).
+    func _test_setExplicitPauseNeedsDestinationLanguageUpdate(_ value: Bool) {
+        explicitPauseNeedsDestinationLanguageUpdate = value
+    }
+
+    /// White-box seam: plant a dummy language long-horizon task for cancel tests.
+    func _test_installDummyPostQuietLongHorizonLanguageEnsureTask() {
+        cancelPostQuietLongHorizonLanguageEnsure()
+        postQuietLongHorizonLanguageEnsureTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(60))
+        }
+    }
+
+    /// White-box seam: plant a dummy post-settled language retry task for cancel tests.
+    func _test_installDummyPostSettledLanguageEnsureRetryTask() {
+        cancelPostSettledLanguageEnsureRetries()
+        postSettledLanguageEnsureRetryTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(60))
+        }
+    }
+
+    /// White-box seam: whether a post-settled language retry task is scheduled.
+    func _test_postSettledLanguageEnsureRetryScheduled() -> Bool {
+        postSettledLanguageEnsureRetryTask != nil
     }
 
     /// White-box seam: settled language acceptance policy (no ActivityKit).
@@ -9055,8 +9258,11 @@ class RadioLiveActivityManager: ObservableObject {
     /// White-box seam: cancel all long-horizon rails (test sanitization).
     func _test_cancelAllPostQuietLongHorizonEnsure() {
         cancelAllPostQuietLongHorizonEnsure()
+        cancelPostSettledLanguageEnsureRetries()
+        cancelPostSettledPlayingEnsureRetries()
         postQuietLongHorizonDualAxisExhausted = false
         dualAxisSettledAcceptanceConsumed = false
+        explicitPauseNeedsDestinationLanguageUpdate = false
     }
 
     /// White-box seam: optimistic toggle language alignment (no ActivityKit).
