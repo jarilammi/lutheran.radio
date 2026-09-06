@@ -280,6 +280,12 @@
             "value" : "Призупини ${applicationName}"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dádúró ${applicationName}"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -565,6 +571,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Увімкни ${applicationName}"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ṣeré ${applicationName}"
           }
         },
         "zu" : {
@@ -854,6 +866,12 @@
             "value" : "Увімкни ${applicationName} мовою ${language}"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ṣeré ${applicationName} ní ${language}"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1139,6 +1157,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Запусти ${applicationName}"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bẹ̀rẹ̀ ${applicationName}"
           }
         },
         "zu" : {
@@ -1428,6 +1452,12 @@
             "value" : "Зупини ${applicationName}"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dáwọ́ ${applicationName}"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1713,6 +1743,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкни ${applicationName} на ${language}"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yí ${applicationName} sí ${language}"
           }
         },
         "zu" : {

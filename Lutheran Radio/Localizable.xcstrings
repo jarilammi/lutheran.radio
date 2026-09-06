@@ -279,6 +279,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1214,6 +1220,18 @@
             }
           }
         },
+        "yo" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld èdè"
+                }
+              }
+            }
+          }
+        },
         "zu" : {
           "variations" : {
             "plural" : {
@@ -1512,6 +1530,12 @@
             "value" : "Двічі торкніться, щоб вибрати пристрій виведення звуку"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tẹ̀ lẹ́ẹ̀mejì láti yan ẹ̀rọ ìjáde ohùn"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1796,6 +1820,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Показує інформацію про поточну радіопрограму"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ó ń ṣàfihàn ìsọfúnni nípa ètò rédíò lọ́wọ́lọ́wọ́"
           }
         },
         "zu" : {
@@ -2084,6 +2114,12 @@
             "value" : "Перемикає відтворення радіопотоку"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ó ń pààrọ̀ ìṣeré ìṣàn rédíò"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2368,6 +2404,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Виберіть, через скільки зупиниться відтворення"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yan iye àkókò kí ìṣeré tó dáwọ́"
           }
         },
         "zu" : {
@@ -2656,6 +2698,12 @@
             "value" : "Регулює гучність відтворення"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ó ń ṣàtúnṣe ìwọ̀n ohùn ìṣeré"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2937,6 +2985,12 @@
           }
         },
         "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "yo" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -3229,6 +3283,12 @@
             "value" : "Логотип Lutheran Radio"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Àmì Lutheran Radio"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3513,6 +3573,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пауза"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dádúró"
           }
         },
         "zu" : {
@@ -3802,6 +3868,12 @@
             "value" : "Фото %@"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Àwòrán %@"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4086,6 +4158,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Відтворити"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ṣeré"
           }
         },
         "zu" : {
@@ -4374,6 +4452,12 @@
             "value" : "Таймер сну"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aago ìsùn"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4658,6 +4742,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Гучність"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ohùn"
           }
         },
         "zu" : {
@@ -5595,6 +5685,18 @@
             }
           }
         },
+        "yo" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ìdá ọgọ́rùn-ún"
+                }
+              }
+            }
+          }
+        },
         "zu" : {
           "variations" : {
             "plural" : {
@@ -5893,6 +5995,12 @@
             "value" : "Продовжити"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tẹ̀síwájú"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6177,6 +6285,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Повторити"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tún gbìyànjú"
           }
         },
         "zu" : {
@@ -6465,6 +6579,12 @@
             "value" : "Дозволити для цього сеансу"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fàyè gba fún àkókò yìí"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6749,6 +6869,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Завжди дозволяти"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fàyè gba nígbà gbogbo"
           }
         },
         "zu" : {
@@ -7037,6 +7163,12 @@
             "value" : "Не зараз"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kìí ṣe nísinsìnyìí"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7321,6 +7453,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Очистити"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paarẹ́"
           }
         },
         "zu" : {
@@ -7609,6 +7747,12 @@
             "value" : "Очищено"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A ti paarẹ́"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7893,6 +8037,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Це зупинить відтворення, видалить дані віджета та Live Activity і очистить недавній стан прослуховування з цього пристрою. Дію не можна скасувати."
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Èyí yóò dáwọ́ ìṣeré, yóò yọ dátà wíjẹ́ẹ̀tì àti Live Activity kúrò, yóò sì paarẹ́ ipò ìgbọ́ àìpẹ́ lórí ẹ̀rọ yìí. A kò lè dá ìṣe yìí padà."
           }
         },
         "zu" : {
@@ -8181,6 +8331,12 @@
             "value" : "Очистити локальний стан відтворення"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paarẹ́ ipò ìṣeré ìbílẹ̀"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8465,6 +8621,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Конфігурація віджета Lutheran Radio."
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ìṣètò fún wíjẹ́ẹ̀tì Lutheran Radio."
           }
         },
         "zu" : {
@@ -8754,6 +8916,12 @@
             "value" : "Помилка з’єднання"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Àṣìṣe ìsopọ̀"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9041,6 +9209,12 @@
             "value" : "Керуйте відтворенням Lutheran Radio і переглядайте поточну станцію."
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ṣàkóso ìṣeré Lutheran Radio kí o sì wo ibùdó lọ́wọ́lọ́wọ́."
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9325,6 +9499,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Керуйте відтворенням і перемикайтеся між мовними потоками."
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ṣàkóso ìṣeré kí o sì yí láàrin àwọn ìṣàn èdè."
           }
         },
         "zu" : {
@@ -9614,6 +9794,12 @@
             "value" : "Зменшити гучність"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dín ohùn kù"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9901,6 +10087,12 @@
             "value" : "Збільшити гучність"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mú ohùn pọ̀ si"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10185,6 +10377,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Грає"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ń ṣeré"
           }
         },
         "zu" : {
@@ -10474,6 +10672,12 @@
             "value" : "Мова"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Èdè"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10758,6 +10962,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Код мови"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Àmì èdè"
           }
         },
         "zu" : {
@@ -11047,6 +11257,12 @@
             "value" : "Англійська"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gẹ̀ẹ́sì"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11332,6 +11548,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Естонська"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estóníà"
           }
         },
         "zu" : {
@@ -11621,6 +11843,12 @@
             "value" : "Фінська"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fínlándì"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11906,6 +12134,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Німецька"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jámánì"
           }
         },
         "zu" : {
@@ -12195,6 +12429,12 @@
             "value" : "Шведська"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Súwídìn"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12480,6 +12720,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Прямий ефір"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Ìtànkálẹ̀ lẹ́sẹ̀kẹsẹ̀"
           }
         },
         "zu" : {
@@ -12769,6 +13015,12 @@
             "value" : "Лише локально"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ìbílẹ̀ nìkan"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13051,6 +13303,12 @@
           }
         },
         "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "yo" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -13343,6 +13601,12 @@
             "value" : "Наступна мова"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Èdè tó kàn"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13628,6 +13892,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Відтворення/Пауза"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ṣeré/Dádúró"
           }
         },
         "zu" : {
@@ -13917,6 +14187,12 @@
             "value" : "Відтворення"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ìṣeré"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14202,6 +14478,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Попередня мова"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Èdè tẹ́lẹ̀"
           }
         },
         "zu" : {
@@ -14490,6 +14772,12 @@
             "value" : "Програма використовує мобільні дані, що може призвести до додаткових витрат залежно від вашого тарифного плану."
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Áàpù ń lo dátà alágbèéká, èyí tí ó lè fa ináwó gẹ́gẹ́ bí ètò dátà rẹ."
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14774,6 +15062,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Використання мобільних даних"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lílo dátà alágbèéká"
           }
         },
         "zu" : {
@@ -15062,6 +15356,12 @@
             "value" : "Немає інформації про трек"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kò sí ìsọfúnni orin"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15348,6 +15648,12 @@
             "value" : "Зараз грає"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ń ṣeré nísinsìnyìí"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15629,6 +15935,12 @@
           }
         },
         "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "yo" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -15921,6 +16233,12 @@
             "value" : "Спочатку відкрийте програму"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kọ́kọ́ ṣí áàpù"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16207,6 +16525,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Призупинити Lutheran Radio"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dádúró Lutheran Radio"
           }
         },
         "zu" : {
@@ -16496,6 +16820,12 @@
             "value" : "Призупинити відтворення Lutheran Radio."
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dádúró ìṣeré Lutheran Radio."
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16780,6 +17110,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Відтворити"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ṣeré"
           }
         },
         "zu" : {
@@ -17069,6 +17405,12 @@
             "value" : "Відтворити Lutheran Radio"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ṣeré Lutheran Radio"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17353,6 +17695,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Відтворити або призупинити Lutheran Radio."
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ṣeré tàbí dádúró Lutheran Radio."
           }
         },
         "zu" : {
@@ -17642,6 +17990,12 @@
             "value" : "Відтворити або відновити Lutheran Radio."
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ṣeré tàbí tẹ̀síwájú Lutheran Radio."
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17926,6 +18280,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Не вдається почати відтворення через збій перевірки безпеки. Будь ласка, перевірте підключення до інтернету та переконайтеся, що програму оновлено. Якщо проблема не зникає, перезапустіть програму й спробуйте знову."
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A kò lè bẹ̀rẹ̀ ìṣeré nítorí ìkùnà ìfidájú ààbò. Jọ̀wọ́ yẹ̀wò ìsopọ̀ ayélujára rẹ kí o sì rí i dájú pé áàpù ti wà ní ìmúdójúìwọ̀n. Tí ìṣòro náà bá tẹ̀síwájú, tún áàpù bẹ̀rẹ̀ kí o sì gbìyànjú lẹ́ẹ̀kan si."
           }
         },
         "zu" : {
@@ -18214,6 +18574,12 @@
             "value" : "Перевірка безпеки не вдалася"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ìfidájú ààbò kùnà"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18499,6 +18865,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Вибрати %@"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yan %@"
           }
         },
         "zu" : {
@@ -19436,6 +19808,18 @@
             }
           }
         },
+        "yo" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ìṣẹ́jú ló kù"
+                }
+              }
+            }
+          }
+        },
         "zu" : {
           "variations" : {
             "plural" : {
@@ -19734,6 +20118,12 @@
             "value" : "Скасувати таймер"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fagilé aago"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20018,6 +20408,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 хвилин"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 ìṣẹ́jú"
           }
         },
         "zu" : {
@@ -20306,6 +20702,12 @@
             "value" : "30 хвилин"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 ìṣẹ́jú"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20590,6 +20992,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 хвилин"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 ìṣẹ́jú"
           }
         },
         "zu" : {
@@ -20878,6 +21286,12 @@
             "value" : "60 хвилин"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 ìṣẹ́jú"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21162,6 +21576,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Таймер сну"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aago ìsùn"
           }
         },
         "zu" : {
@@ -21450,6 +21870,12 @@
             "value" : "Потокові сервери оновили свої SSL-сертифікати. Програма працює в режимі сумісності. Будь ласка, оновіть до останньої версії, коли вона буде доступна, для оптимальної безпеки."
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Àwọn olùpín ìtànkálẹ̀ ti tún àwọn ìwé ẹ̀rí SSL wọn ṣe. Áàpù ń ṣiṣẹ́ ní ipò ìbámu. Jọ̀wọ́ ṣe ìmúdójúìwọ̀n sí ẹ̀yà tuntun nígbà tí ó bá wà fún ààbò tó dára jù."
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21734,6 +22160,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сертифікат оновлено"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A ti ṣe ìmúdójúìwọ̀n ìwé ẹ̀rí"
           }
         },
         "zu" : {
@@ -22023,6 +22455,12 @@
             "value" : "Запустіть або відновіть відтворення Lutheran Radio."
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bẹ̀rẹ̀ tàbí tẹ̀síwájú ìṣeré Lutheran Radio."
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22307,6 +22745,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Запустіть або зупиніть відтворення Lutheran Radio."
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bẹ̀rẹ̀ tàbí dáwọ́ ìṣeré Lutheran Radio."
           }
         },
         "zu" : {
@@ -22595,6 +23039,12 @@
             "value" : "Буфер"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ìkójọ"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22879,6 +23329,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Підключає"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sopọ̀"
           }
         },
         "zu" : {
@@ -23167,6 +23623,12 @@
             "value" : "Помилка"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kùnà"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23453,6 +23915,12 @@
             "value" : "Офлайн"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Àìsí ìsopọ̀"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23737,6 +24205,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пауза"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dádúró"
           }
         },
         "zu" : {
@@ -24026,6 +24500,12 @@
             "value" : "Призупинено — Триває виклик"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dádúró – Ìpè ń lọ"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24311,6 +24791,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Помилка відтворення: %@"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ìṣeré kùnà: %@"
           }
         },
         "zu" : {
@@ -24600,6 +25086,12 @@
             "value" : "Грає"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ṣeré"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24884,6 +25376,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Безпека"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ààbò"
           }
         },
         "zu" : {
@@ -25172,6 +25670,12 @@
             "value" : "SSL-сертифікат оновлено - незабаром оновіть програму"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A ti tún ìwé ẹ̀rí SSL ṣe - ṣe ìmúdójúìwọ̀n áàpù láìpẹ́"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25456,6 +25960,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Зупинено"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ti dáwọ́"
           }
         },
         "zu" : {
@@ -25744,6 +26254,12 @@
             "value" : "Вимк"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kò sí"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26028,6 +26544,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Гаряче"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ẹ̀rọ gbóná"
           }
         },
         "zu" : {
@@ -26316,6 +26838,12 @@
             "value" : "Трансляція тимчасово недоступна. Спробуйте знову пізніше."
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ìtànkálẹ̀ kò sí fún ìgbà díẹ̀. Jọ̀wọ́ gbìyànjú lẹ́ẹ̀kan si lẹ́yìn."
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26600,6 +27128,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Трансляція недоступна"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ìtànkálẹ̀ kò sí"
           }
         },
         "zu" : {
@@ -26889,6 +27423,12 @@
             "value" : "Перемкнути мовний потік Lutheran Radio."
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yí ìṣàn èdè Lutheran Radio padà."
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27173,6 +27713,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкнути потік"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yí ìṣàn padà"
           }
         },
         "zu" : {
@@ -27462,6 +28008,12 @@
             "value" : "Перемкнутися на %@"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yí sí %@"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27746,6 +28298,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкнутися на інший мовний потік із Live Activity."
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yí sí ìṣàn èdè míì láti Live Activity."
           }
         },
         "zu" : {
@@ -28034,6 +28592,12 @@
             "value" : "Перемкнутися на інший мовний потік."
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yí sí ìṣàn èdè míì."
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28319,6 +28883,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкнено на %@"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A ti yí sí %@"
           }
         },
         "zu" : {
@@ -28609,6 +29179,12 @@
             "value" : "Натисніть, щоб відкрити"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tẹ̀ láti ṣí i"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28894,6 +29470,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкнути Lutheran Radio"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pààrọ̀ Lutheran Radio"
           }
         },
         "zu" : {
@@ -29182,6 +29764,12 @@
             "value" : "Перемкнути відтворення Lutheran Radio"
           }
         },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pààrọ̀ ìṣeré Lutheran Radio"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29466,6 +30054,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкнути відтворення/паузу з Live Activity."
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pààrọ̀ ṣeré/dádúró láti Live Activity."
           }
         },
         "zu" : {
@@ -29753,6 +30347,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкнути відтворення"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pààrọ̀ ìṣeré"
           }
         },
         "zu" : {
@@ -30690,6 +31290,18 @@
             }
           }
         },
+        "yo" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "A ti ṣètò ohùn sí %lld ìdá ọgọ́rùn-ún"
+                }
+              }
+            }
+          }
+        },
         "zu" : {
           "variations" : {
             "plural" : {
@@ -30986,6 +31598,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Конфігурація віджета"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ìṣètò wíjẹ́ẹ̀tì"
           }
         },
         "zu" : {
