@@ -267,6 +267,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1154,6 +1160,24 @@
             }
           }
         },
+        "ti" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ቋንቋ"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ቋንቋታት"
+                }
+              }
+            }
+          }
+        },
         "uk" : {
           "variations" : {
             "plural" : {
@@ -1452,6 +1476,12 @@
             "value" : "ఆడియో అవుట్‌పుట్ పరికరాన్ని ఎంచుకోవడానికి రెండుసార్లు నొక్కండి"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "መሳርሒ መውጽኢ ድምጺ ንምምራጽ ክልተ ግዜ ጠውቕ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1724,6 +1754,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ప్రస్తుత రేడియో కార్యక్రమం గురించిన సమాచారాన్ని చూపిస్తుంది"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ብዛዕባ እቲ ሕጂ ዘሎ መደብ ራድዮ ሓበሬታ የርኢ"
           }
         },
         "uk" : {
@@ -2000,6 +2036,12 @@
             "value" : "రేడియో స్ట్రీమ్ ప్లేబ్యాక్‌ని టోగుల్ చేస్తుంది"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምጽዋት ውሕጅ ራድዮ የለዋውጥ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2272,6 +2314,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ప్లేబ్యాక్ ఎంతసేపటి తర్వాత ఆగాలో ఎంచుకోండి"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምጽዋት ክሳብ ዝቋረጽ ክንደይ ግዜ ከም ዝጸንሕ ምረጽ"
           }
         },
         "uk" : {
@@ -2548,6 +2596,12 @@
             "value" : "ప్లేబ్యాక్ వాల్యూమ్‌ని సర్దుబాటు చేస్తుంది"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ድምጺ ምጽዋት የስተኻኽል"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2817,6 +2871,12 @@
           }
         },
         "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "ti" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -3097,6 +3157,12 @@
             "value" : "Lutheran Radio లోగో"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ሎጎ Lutheran Radio"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3369,6 +3435,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "పాజ్"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ኣቋርጽ"
           }
         },
         "uk" : {
@@ -3646,6 +3718,12 @@
             "value" : "%@ ఫోటో"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ስእሊ ናይ %@"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3918,6 +3996,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ప్లే"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ተጻወት"
           }
         },
         "uk" : {
@@ -4194,6 +4278,12 @@
             "value" : "స్లీప్ టైమర్"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ታይመር ድቃስ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4466,6 +4556,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "వాల్యూమ్"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ድምጺ"
           }
         },
         "uk" : {
@@ -5355,6 +5451,24 @@
             }
           }
         },
+        "ti" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ብመቶ"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ብመቶ"
+                }
+              }
+            }
+          }
+        },
         "uk" : {
           "variations" : {
             "plural" : {
@@ -5653,6 +5767,12 @@
             "value" : "కొనసాగించు"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ቀጽል"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5925,6 +6045,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "మళ్లీ ప్రయత్నించు"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "እንደገና ፈትን"
           }
         },
         "uk" : {
@@ -6201,6 +6327,12 @@
             "value" : "ఈ సెషన్‌కి అనుమతించు"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ንዚ ክፍለ ግዜ ፍቐድ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6473,6 +6605,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ఎల్లప్పుడూ అనుమతించు"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ኩሉ ግዜ ፍቐድ"
           }
         },
         "uk" : {
@@ -6749,6 +6887,12 @@
             "value" : "ఇప్పుడు కాదు"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ሕጂ ኣይኮነን"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7021,6 +7165,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "క్లియర్ చేయి"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ኣጽርይ"
           }
         },
         "uk" : {
@@ -7297,6 +7447,12 @@
             "value" : "క్లియర్ చేయబడింది"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ተጸሪዩ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7569,6 +7725,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ఇది ప్లేబ్యాక్‌ని ఆపి, విడ్జెట్ మరియు Live Activity డేటాను తొలగించి, ఈ పరికరం నుండి ఇటీవలి వినికిడి స్థితిని క్లియర్ చేస్తుంది. ఈ చర్యను రద్దు చేయలేరు."
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "እዚ ነቲ ምጽዋት ክቋርጽ፣ ናይ ዊጄትን Live Activity ን ዳታ ከውግድ፣ ከምኡ’ውን ካብዚ መሳርሒ ናይ ቀረባ ምስማዕ ኩነታት ከጽርይ እዩ። እዚ ተግባር ክምለስ ኣይክእልን።"
           }
         },
         "uk" : {
@@ -7845,6 +8007,12 @@
             "value" : "స్థానిక ప్లేబ్యాక్ స్థితిని క్లియర్ చేయి"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ናይ ከባቢ ምጽዋት ኩነታት ኣጽርይ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8117,6 +8285,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio విడ్జెట్ కాన్ఫిగరేషన్."
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ውቅረት ዊጄት Lutheran Radio።"
           }
         },
         "uk" : {
@@ -8394,6 +8568,12 @@
             "value" : "కనెక్షన్ లోపం"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ጌጋ ርክብ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8669,6 +8849,12 @@
             "value" : "Lutheran Radio ప్లేబ్యాక్‌ని నియంత్రించి ప్రస్తుత స్టేషన్‌ని చూడండి."
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምጽዋት Lutheran Radio ኣመሓድር እሞ ነቲ ሕጂ ዘሎ ጣብያ ርአ።"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8941,6 +9127,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ప్లేబ్యాక్‌ని నియంత్రించి భాషా స్ట్రీమ్‌ల మధ్య మారండి."
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምጽዋት ኣመሓድር እሞ ኣብ መንጎ ውሕጃት ቋንቋ ተቐያየር።"
           }
         },
         "uk" : {
@@ -9218,6 +9410,12 @@
             "value" : "వాల్యూమ్ తగ్గించు"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ድምጺ ኣጉድል"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9493,6 +9691,12 @@
             "value" : "వాల్యూమ్ పెంచు"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ድምጺ ወስኽ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9765,6 +9969,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ప్లే అవుతోంది"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ይጻወት ኣሎ"
           }
         },
         "uk" : {
@@ -10042,6 +10252,12 @@
             "value" : "భాష"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ቋንቋ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10314,6 +10530,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "భాషా కోడ్"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ኮድ ቋንቋ"
           }
         },
         "uk" : {
@@ -10591,6 +10813,12 @@
             "value" : "ఆంగ్లం"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "እንግሊዝኛ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10864,6 +11092,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ఎస్టోనియన్"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ኤስቶንኛ"
           }
         },
         "uk" : {
@@ -11141,6 +11375,12 @@
             "value" : "ఫిన్నిష్"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ፊንላንድኛ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11414,6 +11654,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "జర్మన్"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ጀርመን"
           }
         },
         "uk" : {
@@ -11691,6 +11937,12 @@
             "value" : "స్వీడిష్"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ስዊድንኛ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11964,6 +12216,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · లైవ్ స్ట్రీమ్"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · ህያው ውሕጅ"
           }
         },
         "uk" : {
@@ -12241,6 +12499,12 @@
             "value" : "స్థానికం మాత్రమే"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ዞባዊ ጥራይ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12511,6 +12775,12 @@
           }
         },
         "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "ti" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -12791,6 +13061,12 @@
             "value" : "తదుపరి భాష"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ዝቕጽል ቋንቋ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13064,6 +13340,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ప్లే/పాజ్"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ተጻወት/ኣቋርጽ"
           }
         },
         "uk" : {
@@ -13341,6 +13623,12 @@
             "value" : "ప్లేబ్యాక్"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምጽዋት"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13614,6 +13902,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "మునుపటి భాష"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ዝቐደመ ቋንቋ"
           }
         },
         "uk" : {
@@ -13890,6 +14184,12 @@
             "value" : "యాప్ మొబైల్ డేటాను ఉపయోగిస్తోంది, మీ డేటా ప్లాన్‌ను బట్టి ఛార్జీలు రావచ్చు."
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "እቲ ኣፕ ሞባይል ዳታ ይጥቀም ኣሎ፣ እዚ ድማ ብመሰረት ውጥን ዳታኻ ወጻኢታት ክስዕብ ይኽእል።"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14162,6 +14462,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "మొబైల్ డేటా వినియోగం"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምጥቃም ሞባይል ዳታ"
           }
         },
         "uk" : {
@@ -14438,6 +14744,12 @@
             "value" : "ట్రాక్ సమాచారం లేదు"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ሓበሬታ ትራክ የለን"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14712,6 +15024,12 @@
             "value" : "ఇప్పుడు ప్లే అవుతోంది"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ሕጂ ይጻወት"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14981,6 +15299,12 @@
           }
         },
         "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "ti" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -15261,6 +15585,12 @@
             "value" : "ముందుగా యాప్ తెరవండి"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "መጀመርታ ነቲ ኣፕ ክፈት"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15535,6 +15865,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio పాజ్ చేయి"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio ኣቋርጽ"
           }
         },
         "uk" : {
@@ -15812,6 +16148,12 @@
             "value" : "Lutheran Radio ప్లేబ్యాక్‌ని పాజ్ చేయండి."
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምጽዋት Lutheran Radio ኣቋርጽ።"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16084,6 +16426,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ప్లే"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ተጻወት"
           }
         },
         "uk" : {
@@ -16361,6 +16709,12 @@
             "value" : "Lutheran Radio ప్లే చేయి"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio ተጻወት"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16633,6 +16987,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio ప్లే చేయండి లేదా పాజ్ చేయండి."
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio ተጻወት ወይ ኣቋርጽ።"
           }
         },
         "uk" : {
@@ -16910,6 +17270,12 @@
             "value" : "Lutheran Radio ప్లే చేయండి లేదా కొనసాగించండి."
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio ተጻወት ወይ ቀጽል።"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17182,6 +17548,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "భద్రతా ధృవీకరణ వైఫల్యం కారణంగా ప్లేబ్యాక్ ప్రారంభించలేకపోయాం. దయచేసి మీ ఇంటర్నెట్ కనెక్షన్‌ని తనిఖీ చేసి, యాప్ తాజాగా ఉందని నిర్ధారించుకోండి. సమస్య కొనసాగితే, యాప్‌ని పునఃప్రారంభించి మళ్లీ ప్రయత్నించండి."
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ብሰንኪ ውድቀት ምርግጋጽ ጸጥታ ምጽዋት ክጅመር ኣይከኣለን። በይኻ ርክብ ኢንተርነትካ ምርመር እሞ እቲ ኣፕ ሓዲሽ ምዃኑ ኣረጋግጽ። እቲ ጸገም እንተቐጺሉ፣ ነቲ ኣፕ ዳግም ጀምሮ እንደገና ፈትን።"
           }
         },
         "uk" : {
@@ -17458,6 +17830,12 @@
             "value" : "భద్రతా ధృవీకరణ విఫలమైంది"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምርግጋጽ ጸጥታ ፈሺሉ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17731,6 +18109,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ని ఎంచుకోండి"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ምረጽ"
           }
         },
         "uk" : {
@@ -18620,6 +19004,24 @@
             }
           }
         },
+        "ti" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ደቒቕ ተሪፉ"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ደቓይቕ ተሪፎም"
+                }
+              }
+            }
+          }
+        },
         "uk" : {
           "variations" : {
             "plural" : {
@@ -18918,6 +19320,12 @@
             "value" : "టైమర్ రద్దు చేయి"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ነቲ ታይመር ሰርዝ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19190,6 +19598,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 నిమిషాలు"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 ደቓይቕ"
           }
         },
         "uk" : {
@@ -19466,6 +19880,12 @@
             "value" : "30 నిమిషాలు"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 ደቓይቕ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19738,6 +20158,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 నిమిషాలు"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 ደቓይቕ"
           }
         },
         "uk" : {
@@ -20014,6 +20440,12 @@
             "value" : "60 నిమిషాలు"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 ደቓይቕ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20286,6 +20718,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "స్లీప్ టైమర్"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ታይመር ድቃስ"
           }
         },
         "uk" : {
@@ -20562,6 +21000,12 @@
             "value" : "స్ట్రీమింగ్ సర్వర్‌లు తమ SSL సర్టిఫికేట్‌లను పునరుద్ధరించాయి. యాప్ అనుకూలత మోడ్‌లో పనిచేస్తోంది. ఉత్తమ భద్రత కోసం అందుబాటులోకి వచ్చినప్పుడు తాజా వెర్షన్‌కి అప్‌డేట్ చేయండి."
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ኣገልገልቲ ስትሪሚንግ ናይ SSL ምስክር ወረቐቶም ኣሓዲሶም። እቲ ኣፕ ብሞድ ምትእስሳር ይሰርሕ ኣሎ። ንዝበለጸ ጸጥታ ምስ ዝርከብ ናብቲ እዋናዊ ስሪት ኣሐድስ።"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20834,6 +21278,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "సర్టిఫికేట్ అప్‌డేట్ అయింది"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምስክር ወረቐት ተሓዲሱ"
           }
         },
         "uk" : {
@@ -21111,6 +21561,12 @@
             "value" : "Lutheran Radio ప్లేబ్యాక్‌ని ప్రారంభించండి లేదా కొనసాగించండి."
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምጽዋት Lutheran Radio ጀምር ወይ ቀጽል።"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21383,6 +21839,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio ప్లేబ్యాక్‌ని ప్రారంభించండి లేదా ఆపండి."
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምጽዋት Lutheran Radio ጀምር ወይ ኣቁም።"
           }
         },
         "uk" : {
@@ -21659,6 +22121,12 @@
             "value" : "బఫర్"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምጽዓን"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21931,6 +22399,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "కనెక్ట్"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ኣራኽብ"
           }
         },
         "uk" : {
@@ -22207,6 +22681,12 @@
             "value" : "విఫలం"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ፈሺሉ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22481,6 +22961,12 @@
             "value" : "ఆఫ్‌లైన్"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ዘይተራኸበ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22753,6 +23239,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "పాజ్"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ኣቋርጽ"
           }
         },
         "uk" : {
@@ -23030,6 +23522,12 @@
             "value" : "పాజ్ – కాల్ జరుగుతోంది"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ተቋሪጹ – ጻውዒት ኣሎ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23303,6 +23801,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ప్లేబ్యాక్ విఫలమైంది: %@"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምጽዋት ፈሺሉ: %@"
           }
         },
         "uk" : {
@@ -23580,6 +24084,12 @@
             "value" : "ప్లే"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ተጻወት"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23852,6 +24362,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "భద్రత"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ጸጥታ"
           }
         },
         "uk" : {
@@ -24128,6 +24644,12 @@
             "value" : "SSL సర్టిఫికేట్ పునరుద్ధరించబడింది - త్వరలో యాప్ అప్‌డేట్ చేయండి"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምስክር ወረቐት SSL ተሓዲሱ - ነቲ ኣፕ ቀልጢፍካ ኣሐድስ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24400,6 +24922,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ఆపబడింది"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ደው ኢሉ"
           }
         },
         "uk" : {
@@ -24676,6 +25204,12 @@
             "value" : "ఆఫ్"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ጠፊኡ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24948,6 +25482,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "పరికరం వేడి"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "መሳርሒ ውዑይ"
           }
         },
         "uk" : {
@@ -25224,6 +25764,12 @@
             "value" : "ప్రసారం తాత్కాలికంగా అందుబాటులో లేదు. దయచేసి తర్వాత మళ్లీ ప్రయత్నించండి."
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "እቲ ስርጭት ግዝያዊ ኣይርከብን። በይኻ ድሕሪኡ እንደገና ፈትን።"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25496,6 +26042,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ప్రసారం అందుబాటులో లేదు"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ስርጭት ኣይርከብን"
           }
         },
         "uk" : {
@@ -25773,6 +26325,12 @@
             "value" : "Lutheran Radio భాషా స్ట్రీమ్‌ని మార్చండి."
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ውሕጅ ቋንቋ Lutheran Radio ቀይር።"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26045,6 +26603,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "స్ట్రీమ్ మార్చు"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ውሕጅ ቀይር"
           }
         },
         "uk" : {
@@ -26322,6 +26886,12 @@
             "value" : "%@కి మార్చు"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ናብ %@ ቀይር"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26594,6 +27164,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Live Activity నుండి వేరే భాషా స్ట్రీమ్‌కి మారండి."
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ካብ Live Activity ናብ ካልእ ውሕጅ ቋንቋ ቀይር።"
           }
         },
         "uk" : {
@@ -26870,6 +27446,12 @@
             "value" : "వేరే భాషా స్ట్రీమ్‌కి మారండి."
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ናብ ካልእ ውሕጅ ቋንቋ ቀይር።"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27143,6 +27725,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@కి మార్చబడింది"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ናብ %@ ተቐይሩ"
           }
         },
         "uk" : {
@@ -27421,6 +28009,12 @@
             "value" : "తెరవడానికి నొక్కండి"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ንምኽፋት ጠውቕ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27694,6 +28288,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio టోగుల్ చేయి"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio ኣለዋውጥ"
           }
         },
         "uk" : {
@@ -27970,6 +28570,12 @@
             "value" : "Lutheran Radio ప్లేబ్యాక్ టోగుల్ చేయి"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምጽዋት Lutheran Radio ኣለዋውጥ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28242,6 +28848,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Live Activity నుండి ప్లే/పాజ్ టోగుల్ చేయండి."
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ካብ Live Activity ተጻወት/ኣቋርጽ ኣለዋውጥ።"
           }
         },
         "uk" : {
@@ -28517,6 +29129,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ప్లేబ్యాక్ టోగుల్ చేయి"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ምጽዋት ኣለዋውጥ"
           }
         },
         "uk" : {
@@ -29406,6 +30024,24 @@
             }
           }
         },
+        "ti" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ድምጺ ናብ %lld ብመቶ ተቐኒዑ"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ድምጺ ናብ %lld ብመቶ ተቐኒዑ"
+                }
+              }
+            }
+          }
+        },
         "uk" : {
           "variations" : {
             "plural" : {
@@ -29702,6 +30338,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "విడ్జెట్ కాన్ఫిగరేషన్"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ውቅረት ዊጄት"
           }
         },
         "uk" : {

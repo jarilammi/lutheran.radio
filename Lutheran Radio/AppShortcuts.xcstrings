@@ -268,6 +268,12 @@
             "value" : "${applicationName} పాజ్ చేయి"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ኣቋርጽ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -541,6 +547,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} ప్లే చేయి"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ተጻወት"
           }
         },
         "uk" : {
@@ -818,6 +830,12 @@
             "value" : "${applicationName}ని ${language}లో ప్లే చేయి"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ብ${language} ተጻወት"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1091,6 +1109,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} ప్రారంభించు"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ጀምር"
           }
         },
         "uk" : {
@@ -1368,6 +1392,12 @@
             "value" : "${applicationName} ఆపు"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ኣቁም"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1641,6 +1671,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName}ని ${language}కి మార్చు"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ናብ ${language} ቀይር"
           }
         },
         "uk" : {
