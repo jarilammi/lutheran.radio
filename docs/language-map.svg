@@ -1,6 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1067" width="800" height="1067">
+  <!--
+    The map is 800×1067 (portrait). It was 800×600 when it only showed
+    Europe; the extra height is Africa, drawn below southern Europe.
+    European shapes, labels, and connecting lines keep their original
+    positions and sizes.
+  -->
   <!-- Background -->
-  <rect width="800" height="600" fill="#f8f9fa"/>
+  <rect width="800" height="1067" fill="#f8f9fa"/>
   
   <!-- Germanic Languages (Blues) -->
   <!-- North Germanic subgroup -->
@@ -80,7 +86,7 @@
   <text x="650" y="240" font-family="Arial" font-size="10">Russian</text>
   <text x="650" y="250" font-family="Arial" font-size="10" fill="#555">русский</text>
 
-  <!-- Ukrainian - East Slavic, near Russian / Polish (same blob path as Russian) -->
+  <!-- Ukrainian - East Slavic, near Russian / Polish (same shape style as Russian) -->
   <path d="M690 310 Q730 290 750 330 T770 390 T730 410 T690 390 T690 310" 
         fill="#0e6655" opacity="0.8"/>
   <text x="700" y="350" font-family="Arial" font-size="10" fill="#fff">Ukrainian</text>
@@ -196,5 +202,63 @@
     <path d="M720 350 L650 250" fill="none"/>
     <!-- Ukrainian connecting toward Polish -->
     <path d="M720 350 L490 420" fill="none"/>
+  </g>
+
+  <!--
+    African languages, drawn in the space added under southern Europe.
+    Shape size and labels (English name and native name) match the rest of the map.
+    Color marks language family, not country.
+  -->
+
+  <!-- Hausa - Afro-Asiatic (Chadic), Sahel west of the Horn -->
+  <ellipse cx="250" cy="690" rx="40" ry="24" fill="#c87f0a" opacity="0.8"/>
+  <text x="250" y="685" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Hausa</text>
+  <text x="250" y="697" font-family="Arial" font-size="9" text-anchor="middle" fill="#fdebd0">Hausa</text>
+
+  <!-- Amharic - Afro-Asiatic (Ethio-Semitic), Ethiopian highlands -->
+  <path d="M550 665 Q595 640 650 662 T685 712 T640 742 T555 722 T550 665"
+        fill="#a04000" opacity="0.8"/>
+  <text x="610" y="695" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Amharic</text>
+  <text x="610" y="708" font-family="'Kefa III', Kefa, Ebrima, Nyala, 'Noto Sans Ethiopic', sans-serif" font-size="11" text-anchor="middle" fill="#fdebd0">አማርኛ</text>
+
+  <!-- Oromo - Afro-Asiatic (Cushitic), south/east of Amharic -->
+  <ellipse cx="640" cy="770" rx="44" ry="22" fill="#d68910" opacity="0.8"/>
+  <text x="640" y="765" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Oromo</text>
+  <text x="640" y="777" font-family="Arial" font-size="9" text-anchor="middle" fill="#fdebd0">Afaan Oromoo</text>
+
+  <!-- Swahili - Niger-Congo (Bantu), East African coast -->
+  <path d="M520 820 Q560 798 595 825 T615 885 T560 915 T515 880 T520 820"
+        fill="#5d6d2f" opacity="0.8"/>
+  <text x="555" y="858" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Swahili</text>
+  <text x="555" y="870" font-family="Arial" font-size="9" text-anchor="middle" fill="#eaf2d7">Kiswahili</text>
+
+  <!-- Malagasy - Austronesian, Madagascar (not related to the neighbouring Bantu languages) -->
+  <ellipse cx="720" cy="890" rx="40" ry="22" fill="#1a7a8c" opacity="0.8"/>
+  <text x="720" y="885" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Malagasy</text>
+  <text x="720" y="897" font-family="Arial" font-size="9" text-anchor="middle" fill="#d6eaf8">Malagasy</text>
+
+  <!-- Ndonga - Niger-Congo (Bantu), northern Namibia -->
+  <ellipse cx="240" cy="960" rx="38" ry="22" fill="#3d5c2e" opacity="0.8"/>
+  <text x="240" y="955" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Ndonga</text>
+  <text x="240" y="967" font-family="Arial" font-size="9" text-anchor="middle" fill="#eaf2d7">Oshindonga</text>
+
+  <!-- Afrikaans - West Germanic, Cape; same blue family as Dutch and German -->
+  <ellipse cx="310" cy="1030" rx="42" ry="22" fill="#1a5276" opacity="0.8"/>
+  <text x="310" y="1025" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Afrikaans</text>
+  <text x="310" y="1037" font-family="Arial" font-size="9" text-anchor="middle" fill="#d4e6f1">Afrikaans</text>
+
+  <!--
+    Connecting lines for related African languages. Afrikaans is not
+    linked to Dutch; the shared blue already shows it is Germanic.
+  -->
+  <g stroke="#ccd3e0" stroke-width="1" opacity="0.35">
+    <!-- Amharic connecting to Oromo -->
+    <path d="M610 710 L640 770" fill="none"/>
+    <!-- Swahili connecting to Ndonga -->
+    <path d="M555 860 L240 960" fill="none"/>
+  </g>
+  <g stroke="#ccd3e0" stroke-width="1" opacity="0.2">
+    <!-- Hausa connecting to Amharic -->
+    <path d="M250 690 L610 700" fill="none"/>
   </g>
 </svg>
