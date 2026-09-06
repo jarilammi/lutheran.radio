@@ -268,7 +268,25 @@
             "value" : "Lutheran Radio"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "zu" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"

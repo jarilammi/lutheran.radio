@@ -268,10 +268,28 @@
             "value" : "${applicationName} పాజ్ చేయి"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ኣቋርጽ"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Призупини ${applicationName}"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dádúró ${applicationName}"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Misa isikhashana ${applicationName}"
           }
         }
       }
@@ -543,10 +561,28 @@
             "value" : "${applicationName} ప్లే చేయి"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ተጻወት"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Увімкни ${applicationName}"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ṣeré ${applicationName}"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dlala ${applicationName}"
           }
         }
       }
@@ -818,10 +854,28 @@
             "value" : "${applicationName}ని ${language}లో ప్లే చేయి"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ብ${language} ተጻወት"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Увімкни ${applicationName} мовою ${language}"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ṣeré ${applicationName} ní ${language}"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dlala ${applicationName} ngolimi ${language}"
           }
         }
       }
@@ -1093,10 +1147,28 @@
             "value" : "${applicationName} ప్రారంభించు"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ጀምር"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Запусти ${applicationName}"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bẹ̀rẹ̀ ${applicationName}"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qala ${applicationName}"
           }
         }
       }
@@ -1368,10 +1440,28 @@
             "value" : "${applicationName} ఆపు"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ኣቁም"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Зупини ${applicationName}"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dáwọ́ ${applicationName}"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Misa ${applicationName}"
           }
         }
       }
@@ -1643,10 +1733,28 @@
             "value" : "${applicationName}ని ${language}కి మార్చు"
           }
         },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ናብ ${language} ቀይር"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкни ${applicationName} на ${language}"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yí ${applicationName} sí ${language}"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shintsha ${applicationName} kube ${language}"
           }
         }
       }
