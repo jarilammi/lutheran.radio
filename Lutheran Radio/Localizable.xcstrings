@@ -278,6 +278,12 @@
             "state" : "translated",
             "value" : "%1$@ %2$@"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
         }
       }
     },
@@ -1207,6 +1213,24 @@
               }
             }
           }
+        },
+        "zu" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ulimi"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld izilimi"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -1486,6 +1510,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Двічі торкніться, щоб вибрати пристрій виведення звуку"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thepha kabili ukuze ukhethe idivayisi yokukhipha umsindo"
           }
         }
       }
@@ -1767,6 +1797,12 @@
             "state" : "translated",
             "value" : "Показує інформацію про поточну радіопрограму"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ibonisa ulwazi ngohlelo lomsakazo lwamanje"
+          }
         }
       }
     },
@@ -2046,6 +2082,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемикає відтворення радіопотоку"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ishintsha ukudlala komsakazo"
           }
         }
       }
@@ -2327,6 +2369,12 @@
             "state" : "translated",
             "value" : "Виберіть, через скільки зупиниться відтворення"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Khetha isikhathi sokudlala kuze kuyeke"
+          }
         }
       }
     },
@@ -2607,6 +2655,12 @@
             "state" : "translated",
             "value" : "Регулює гучність відтворення"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ilungisa ivolumu yokudlala"
+          }
         }
       }
     },
@@ -2883,6 +2937,12 @@
           }
         },
         "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "zu" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -3168,6 +3228,12 @@
             "state" : "translated",
             "value" : "Логотип Lutheran Radio"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ilogo ye-Lutheran Radio"
+          }
         }
       }
     },
@@ -3447,6 +3513,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пауза"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Misa isikhashana"
           }
         }
       }
@@ -3729,6 +3801,12 @@
             "state" : "translated",
             "value" : "Фото %@"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isithombe sika-%@"
+          }
         }
       }
     },
@@ -4008,6 +4086,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Відтворити"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dlala"
           }
         }
       }
@@ -4289,6 +4373,12 @@
             "state" : "translated",
             "value" : "Таймер сну"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isibali sokulala"
+          }
         }
       }
     },
@@ -4568,6 +4658,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Гучність"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ivolumu"
           }
         }
       }
@@ -5498,6 +5594,24 @@
               }
             }
           }
+        },
+        "zu" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "iphesenti elingu-%lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "amaphesenti angu-%lld"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -5777,6 +5891,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Продовжити"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qhubeka"
           }
         }
       }
@@ -6058,6 +6178,12 @@
             "state" : "translated",
             "value" : "Повторити"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zama futhi"
+          }
         }
       }
     },
@@ -6337,6 +6463,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Дозволити для цього сеансу"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vumela kulesi sikhathi"
           }
         }
       }
@@ -6618,6 +6750,12 @@
             "state" : "translated",
             "value" : "Завжди дозволяти"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vumela njalo"
+          }
         }
       }
     },
@@ -6897,6 +7035,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Не зараз"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hhayi manje"
           }
         }
       }
@@ -7178,6 +7322,12 @@
             "state" : "translated",
             "value" : "Очистити"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sula"
+          }
         }
       }
     },
@@ -7457,6 +7607,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Очищено"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kusuliwe"
           }
         }
       }
@@ -7738,6 +7894,12 @@
             "state" : "translated",
             "value" : "Це зупинить відтворення, видалить дані віджета та Live Activity і очистить недавній стан прослуховування з цього пристрою. Дію не можна скасувати."
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lokhu kuzomisa ukudlala, kususwe idatha yewijethi ne-Live Activity, futhi kusulwe isimo sokulalela sakamuva kule divayisi. Lesi senzo asikwazi ukuhlehliswa."
+          }
         }
       }
     },
@@ -8018,6 +8180,12 @@
             "state" : "translated",
             "value" : "Очистити локальний стан відтворення"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sula isimo sokudlala sendawo"
+          }
         }
       }
     },
@@ -8297,6 +8465,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Конфігурація віджета Lutheran Radio."
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukuhlelwa kwewijethi ye-Lutheran Radio."
           }
         }
       }
@@ -8579,6 +8753,12 @@
             "state" : "translated",
             "value" : "Помилка з’єднання"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iphutha lokuxhumana"
+          }
         }
       },
       "extractionState" : "manual"
@@ -8860,6 +9040,12 @@
             "state" : "translated",
             "value" : "Керуйте відтворенням Lutheran Radio і переглядайте поточну станцію."
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lawula ukudlala kwe-Lutheran Radio futhi ubone isiteshi samanje."
+          }
         }
       }
     },
@@ -9139,6 +9325,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Керуйте відтворенням і перемикайтеся між мовними потоками."
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lawula ukudlala futhi ushintshe phakathi kwemisakazo yolimi."
           }
         }
       }
@@ -9421,6 +9613,12 @@
             "state" : "translated",
             "value" : "Зменшити гучність"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yehlisa ivolumu"
+          }
         }
       }
     },
@@ -9702,6 +9900,12 @@
             "state" : "translated",
             "value" : "Збільшити гучність"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Khuphula ivolumu"
+          }
         }
       }
     },
@@ -9981,6 +10185,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Грає"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iyadlala"
           }
         }
       }
@@ -10263,6 +10473,12 @@
             "state" : "translated",
             "value" : "Мова"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ulimi"
+          }
         }
       }
     },
@@ -10542,6 +10758,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Код мови"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ikhodi yolimi"
           }
         }
       }
@@ -10824,6 +11046,12 @@
             "state" : "translated",
             "value" : "Англійська"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IsiNgisi"
+          }
         }
       }
     },
@@ -11104,6 +11332,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Естонська"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isi-Estonia"
           }
         }
       }
@@ -11386,6 +11620,12 @@
             "state" : "translated",
             "value" : "Фінська"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IsiFinlandi"
+          }
         }
       }
     },
@@ -11666,6 +11906,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Німецька"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IsiJalimane"
           }
         }
       }
@@ -11948,6 +12194,12 @@
             "state" : "translated",
             "value" : "Шведська"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IsiSwidi"
+          }
         }
       }
     },
@@ -12228,6 +12480,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Прямий ефір"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Umsakazo obukhoma"
           }
         }
       },
@@ -12510,6 +12768,12 @@
             "state" : "translated",
             "value" : "Лише локально"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kule divayisi kuphela"
+          }
         }
       }
     },
@@ -12787,6 +13051,12 @@
           }
         },
         "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "zu" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -13072,6 +13342,12 @@
             "state" : "translated",
             "value" : "Наступна мова"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ulimi olulandelayo"
+          }
         }
       }
     },
@@ -13352,6 +13628,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Відтворення/Пауза"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dlala/Misa isikhashana"
           }
         }
       }
@@ -13634,6 +13916,12 @@
             "state" : "translated",
             "value" : "Відтворення"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukudlala"
+          }
         }
       }
     },
@@ -13915,6 +14203,12 @@
             "state" : "translated",
             "value" : "Попередня мова"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ulimi oludlule"
+          }
         }
       }
     },
@@ -14194,6 +14488,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Програма використовує мобільні дані, що може призвести до додаткових витрат залежно від вашого тарифного плану."
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uhlelo lokusebenza lisebenzisa idatha yeselula, okungadala izindleko kuye ngohlelo lwakho lwedatha."
           }
         }
       }
@@ -14475,6 +14775,12 @@
             "state" : "translated",
             "value" : "Використання мобільних даних"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukusetshenziswa kwedatha yeselula"
+          }
         }
       }
     },
@@ -14754,6 +15060,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Немає інформації про трек"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alukho ulwazi lwengoma"
           }
         }
       }
@@ -15035,6 +15347,12 @@
             "state" : "translated",
             "value" : "Зараз грає"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Okudlala manje"
+          }
         }
       }
     },
@@ -15311,6 +15629,12 @@
           }
         },
         "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "zu" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -15596,6 +15920,12 @@
             "state" : "translated",
             "value" : "Спочатку відкрийте програму"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vula uhlelo kuqala"
+          }
         }
       },
       "extractionState" : "manual"
@@ -15878,6 +16208,12 @@
             "state" : "translated",
             "value" : "Призупинити Lutheran Radio"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Misa isikhashana Lutheran Radio"
+          }
         }
       }
     },
@@ -16159,6 +16495,12 @@
             "state" : "translated",
             "value" : "Призупинити відтворення Lutheran Radio."
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Misa isikhashana ukudlala kwe-Lutheran Radio."
+          }
         }
       }
     },
@@ -16438,6 +16780,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Відтворити"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dlala"
           }
         }
       }
@@ -16720,6 +17068,12 @@
             "state" : "translated",
             "value" : "Відтворити Lutheran Radio"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dlala Lutheran Radio"
+          }
         }
       }
     },
@@ -16999,6 +17353,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Відтворити або призупинити Lutheran Radio."
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dlala noma misa isikhashana Lutheran Radio."
           }
         }
       }
@@ -17281,6 +17641,12 @@
             "state" : "translated",
             "value" : "Відтворити або відновити Lutheran Radio."
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dlala noma qhubeka Lutheran Radio."
+          }
         }
       }
     },
@@ -17560,6 +17926,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Не вдається почати відтворення через збій перевірки безпеки. Будь ласка, перевірте підключення до інтернету та переконайтеся, що програму оновлено. Якщо проблема не зникає, перезапустіть програму й спробуйте знову."
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ayikwazi ukuqala ukudlala ngenxa yokuhluleka kokuqinisekisa ukuphepha. Sicela uhlole uxhumano lwe-inthanethi yakho uqiniseke ukuthi uhlelo lokusebenza lubuyekeziwe. Uma inkinga iqhubeka, qala kabusha uhlelo lokusebenza bese uzama futhi."
           }
         }
       }
@@ -17841,6 +18213,12 @@
             "state" : "translated",
             "value" : "Перевірка безпеки не вдалася"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukuqinisekisa ukuphepha kuhlulekile"
+          }
         }
       }
     },
@@ -18121,6 +18499,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Вибрати %@"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Khetha %@"
           }
         }
       }
@@ -19051,6 +19435,24 @@
               }
             }
           }
+        },
+        "zu" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Kusele umzuzu ongu-%lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Kusele imizuzu engu-%lld"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -19330,6 +19732,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Скасувати таймер"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Khansela isibali"
           }
         }
       }
@@ -19611,6 +20019,12 @@
             "state" : "translated",
             "value" : "15 хвилин"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "imizuzu engu-15"
+          }
         }
       }
     },
@@ -19890,6 +20304,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "30 хвилин"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "imizuzu engu-30"
           }
         }
       }
@@ -20171,6 +20591,12 @@
             "state" : "translated",
             "value" : "45 хвилин"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "imizuzu engu-45"
+          }
         }
       }
     },
@@ -20450,6 +20876,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "60 хвилин"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "imizuzu engu-60"
           }
         }
       }
@@ -20731,6 +21163,12 @@
             "state" : "translated",
             "value" : "Таймер сну"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isibali sokulala"
+          }
         }
       }
     },
@@ -21011,6 +21449,12 @@
             "state" : "translated",
             "value" : "Потокові сервери оновили свої SSL-сертифікати. Програма працює в режимі сумісності. Будь ласка, оновіть до останньої версії, коли вона буде доступна, для оптимальної безпеки."
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amaseva okugeleza avuselele izitifiketi zawo ze-SSL. Uhlelo lokusebenza lisebenza ngemodi yokuhambisana. Sicela ubuyekeze kunguqulo yakamuva lapho itholakala khona ukuze uthole ukuphepha okungcono kakhulu."
+          }
         }
       }
     },
@@ -21290,6 +21734,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сертифікат оновлено"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isitifiketi sibuyekeziwe"
           }
         }
       }
@@ -21572,6 +22022,12 @@
             "state" : "translated",
             "value" : "Запустіть або відновіть відтворення Lutheran Radio."
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qala noma qhubeka ukudlala kwe-Lutheran Radio."
+          }
         }
       }
     },
@@ -21851,6 +22307,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Запустіть або зупиніть відтворення Lutheran Radio."
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qala noma misa ukudlala kwe-Lutheran Radio."
           }
         }
       }
@@ -22132,6 +22594,12 @@
             "state" : "translated",
             "value" : "Буфер"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iyalayisha"
+          }
         }
       }
     },
@@ -22411,6 +22879,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Підключає"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iyaxhuma"
           }
         }
       }
@@ -22692,6 +23166,12 @@
             "state" : "translated",
             "value" : "Помилка"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuhlulekile"
+          }
         }
       }
     },
@@ -22972,6 +23452,12 @@
             "state" : "translated",
             "value" : "Офлайн"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Axhunyiwe"
+          }
         }
       }
     },
@@ -23251,6 +23737,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пауза"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imiswe"
           }
         }
       }
@@ -23533,6 +24025,12 @@
             "state" : "translated",
             "value" : "Призупинено — Триває виклик"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imiswe – Ucingo luyasebenza"
+          }
         }
       },
       "isCommentAutoGenerated" : true
@@ -23813,6 +24311,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Помилка відтворення: %@"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukudlala kuhlulekile: %@"
           }
         }
       },
@@ -24095,6 +24599,12 @@
             "state" : "translated",
             "value" : "Грає"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dlala"
+          }
         }
       }
     },
@@ -24374,6 +24884,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Безпека"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukuphepha"
           }
         }
       }
@@ -24655,6 +25171,12 @@
             "state" : "translated",
             "value" : "SSL-сертифікат оновлено - незабаром оновіть програму"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isitifiketi se-SSL sivuselelwe - buyekeza uhlelo maduze"
+          }
         }
       }
     },
@@ -24934,6 +25456,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Зупинено"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kumisiwe"
           }
         }
       }
@@ -25215,6 +25743,12 @@
             "state" : "translated",
             "value" : "Вимк"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cishiwe"
+          }
         }
       }
     },
@@ -25494,6 +26028,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Гаряче"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idivayisi iyashisa"
           }
         }
       }
@@ -25775,6 +26315,12 @@
             "state" : "translated",
             "value" : "Трансляція тимчасово недоступна. Спробуйте знову пізніше."
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Umsakazo awutholakali okwesikhashana. Sicela uzame futhi kamuva."
+          }
         }
       }
     },
@@ -26054,6 +26600,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Трансляція недоступна"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Umsakazo awutholakali"
           }
         }
       }
@@ -26336,6 +26888,12 @@
             "state" : "translated",
             "value" : "Перемкнути мовний потік Lutheran Radio."
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shintsha umsakazo wolimi we-Lutheran Radio."
+          }
         }
       }
     },
@@ -26615,6 +27173,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкнути потік"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shintsha umsakazo"
           }
         }
       }
@@ -26897,6 +27461,12 @@
             "state" : "translated",
             "value" : "Перемкнутися на %@"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shintshela ku-%@"
+          }
         }
       }
     },
@@ -27176,6 +27746,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкнутися на інший мовний потік із Live Activity."
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shintshela kumsakazo wolimi ohlukile kusuka ku-Live Activity."
           }
         }
       }
@@ -27457,6 +28033,12 @@
             "state" : "translated",
             "value" : "Перемкнутися на інший мовний потік."
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shintshela kumsakazo wolimi ohlukile."
+          }
         }
       }
     },
@@ -27737,6 +28319,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкнено на %@"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kushintshelwe ku-%@"
           }
         }
       },
@@ -28020,6 +28608,12 @@
             "state" : "translated",
             "value" : "Натисніть, щоб відкрити"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thepha ukuze uvule"
+          }
         }
       },
       "extractionState" : "manual"
@@ -28301,6 +28895,12 @@
             "state" : "translated",
             "value" : "Перемкнути Lutheran Radio"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shintsha Lutheran Radio"
+          }
         }
       }
     },
@@ -28580,6 +29180,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкнути відтворення Lutheran Radio"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shintsha ukudlala kwe-Lutheran Radio"
           }
         }
       }
@@ -28861,6 +29467,12 @@
             "state" : "translated",
             "value" : "Перемкнути відтворення/паузу з Live Activity."
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shintsha ukudlala noma ukumisa isikhashana kusuka ku-Live Activity."
+          }
         }
       }
     },
@@ -29141,6 +29753,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкнути відтворення"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shintsha ukudlala"
           }
         }
       }
@@ -30071,6 +30689,24 @@
               }
             }
           }
+        },
+        "zu" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ivolumu ibekwe ku-iphesenti elingu-%lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ivolumu ibekwe kumaphesenti angu-%lld"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -30350,6 +30986,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Конфігурація віджета"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukuhlelwa kwewijethi"
           }
         }
       }

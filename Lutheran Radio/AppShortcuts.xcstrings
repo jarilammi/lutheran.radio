@@ -279,6 +279,12 @@
             "state" : "translated",
             "value" : "Призупини ${applicationName}"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Misa isikhashana ${applicationName}"
+          }
         }
       }
     },
@@ -559,6 +565,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Увімкни ${applicationName}"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dlala ${applicationName}"
           }
         }
       }
@@ -841,6 +853,12 @@
             "state" : "translated",
             "value" : "Увімкни ${applicationName} мовою ${language}"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dlala ${applicationName} ngolimi ${language}"
+          }
         }
       }
     },
@@ -1121,6 +1139,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Запусти ${applicationName}"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qala ${applicationName}"
           }
         }
       }
@@ -1403,6 +1427,12 @@
             "state" : "translated",
             "value" : "Зупини ${applicationName}"
           }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Misa ${applicationName}"
+          }
         }
       }
     },
@@ -1683,6 +1713,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Перемкни ${applicationName} на ${language}"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shintsha ${applicationName} kube ${language}"
           }
         }
       }
