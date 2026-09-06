@@ -9,7 +9,7 @@
 //  interpolation so Foundation can select the CLDR category.
 //
 //  Coverage is both catalog structure and compiled runtime for every README
-//  Localizations language (45 codes), not a 10-locale subset. A missing or
+//  Localizations language (48 codes), not a 10-locale subset. A missing or
 //  wrong Slovak `few` string, a dropped Northern Sami `two`, or a missing
 //  Latvian `zero` must fail CI. Integer-unreachable `many` (cs, sk, lt) and
 //  decimal-only `other` (pl, ru, uk) are catalog-gated; integer probes skip them.
@@ -36,13 +36,13 @@ final class CatalogPluralizationTests: XCTestCase {
     /// a Polish `.lproj` without `locale: "pl"` still applies Finnish one/other rules.
     private let appBundle = Bundle(for: PlayerViewModel.self)
 
-    /// UI catalog languages: README Localizations / Localizable coverage (the 45
+    /// UI catalog languages: README Localizations / Localizable coverage (the 48
     /// language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "af", "am", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "ha", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
         "lv", "mg", "nb", "ng", "nl", "nn", "om", "pl", "pt", "pt-BR", "ro", "ru",
-        "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "uk",
+        "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "ti", "uk", "yo", "zu",
     ]
 
     private let pluralKeys: [String] = [
@@ -104,7 +104,10 @@ final class CatalogPluralizationTests: XCTestCase {
         "sw": ["one", "other"],
         "ta": ["one", "other"],
         "te": ["one", "other"],
+        "ti": ["one", "other"],
         "uk": ["one", "few", "many", "other"],
+        "yo": ["other"],
+        "zu": ["one", "other"],
     ]
 
     /// Locales whose CLDR `many` is decimals only — runtime `%lld` probes cannot hit it.
@@ -124,7 +127,7 @@ final class CatalogPluralizationTests: XCTestCase {
         XCTAssertEqual(
             Set(requiredCatalogCategories.keys),
             Set(supportedLanguages),
-            "requiredCatalogCategories must list exactly the 45 UI catalog languages"
+            "requiredCatalogCategories must list exactly the 48 UI catalog languages"
         )
 
         let catalog = try loadLocalizableCatalog()

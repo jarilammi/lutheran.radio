@@ -25,13 +25,13 @@ import XCTest
 /// Source-catalog completeness for the widget extension gallery section name.
 final class WidgetExtensionDisplayNameLocalizationTests: XCTestCase {
 
-    /// UI catalog languages: README Localizations / Localizable coverage (the 45
+    /// UI catalog languages: README Localizations / Localizable coverage (the 48
     /// language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "af", "am", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "ha", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
         "lv", "mg", "nb", "ng", "nl", "nn", "om", "pl", "pt", "pt-BR", "ro", "ru",
-        "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "uk",
+        "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "ti", "uk", "yo", "zu",
     ]
 
     private let displayNameKey = "CFBundleDisplayName"

@@ -75,8 +75,11 @@ The app is fully localized in the following languages:
 - Swedish (sv)
 - Tamil (ta)
 - Telugu (te)
+- Tigrinya (ti)
 - Tornedalen Finnish (fit)
 - Ukrainian (uk)
+- Yoruba (yo)
+- Zulu (zu)
 
 </td>
 <td width="60%" style="border: none;">
