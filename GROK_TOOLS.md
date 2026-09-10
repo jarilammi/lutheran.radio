@@ -55,15 +55,16 @@ openssl s_client -connect livestream.siikkari.net:443 -servername livestream.sii
 
 Primary (`securitymodels.siikkari.net`) serves the live allow-list. Secondary/backup mirror it for transient-only fallback. Leaf DER SHA-256 for `*.siikkari.net` must match `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests` in `SecurityConfiguration` (see README "Current Security Snapshot" and "Media Apex Cutover").
 
-**Example — Clean build (canonical gate from CODING_AGENT.md — bleeding-edge for agents)**:
+**Example — Clean build (canonical gate from CODING_AGENT.md — Xcode 27+)**:
 ```bash
 xcrun simctl list devices available
+xcodebuild -scheme "Lutheran Radio" -showdestinations
 xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
-  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 17 Pro' clean build-for-testing
+  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build-for-testing
 # Look for: ** TEST BUILD SUCCEEDED **
 
 xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
-  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 17 Pro' test-without-building
+  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' test-without-building
 # Look for: ** TEST SUCCEEDED **
 ```
 
@@ -162,7 +163,7 @@ Do **not** call them as ordinary coding tools. Use them only to enhance the fina
 
 ## Environment Notes for Lutheran Radio
 - Working directory is the root of this repository.
-- Prefer **Xcode 27+** / iOS 27 simulators for agent gates (full MIE/EMTE); human contributors may use stable Xcode 26.x per README. Minimum deployment target is **iOS 26.2**.
+- Recommended toolchain: **Xcode 27 or later** (language mode `SWIFT_VERSION = 6`) with an **iOS 27.0** simulator. Canonical example: `platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro`. Discover with `xcrun simctl list devices available` / `-showdestinations`; never invent a destination. If `OS=27.0,name=…` is ambiguous, use the `id=` from `-showdestinations`. Minimum deployment target is **iOS 26.2**. Accepted fallback until Xcode 27 is available locally and on CI: Xcode 26.6+ / iOS 26.5 / iPhone 17-class (see README.md).
 - On macOS hosts you have full access to Xcode command-line tools (`xcodebuild`, `xcrun`, `swift`, `agvtool`, etc.).
 - Strict Swift 6 + memory safety build settings are enforced project-wide. Clean builds must emit **zero warnings** (unless the PR is scoped to warning cleanup per `CODING_AGENT.md`).
 - Security work **must** follow the mandatory reading order and verification commands documented in `README.md` and `CODING_AGENT.md`. Never duplicate DNS/cert logic outside `Core/`.

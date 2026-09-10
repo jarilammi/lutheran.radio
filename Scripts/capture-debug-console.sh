@@ -35,9 +35,10 @@
 # --short exit status: non-zero if required cold-launch markers are missing
 #   (cold-launch first play ≥ 1 and LIVE ICY ≥ 1). --manual / --analyze are advisory counts only.
 #
-# Build prerequisite (adjust SDK/destination from `xcrun simctl list devices available`):
-#   xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator \
-#     -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+# Build prerequisite (adjust SDK/destination from `xcrun simctl list devices available`
+# and `xcodebuild -scheme "Lutheran Radio" -showdestinations`; never invent a destination):
+#   xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+#     -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' build
 
 set -euo pipefail
 

@@ -129,24 +129,25 @@ These rules are especially strict for anything that could affect security invari
 
 2. **Build & Test Gate**
    - Every single change must keep these commands green.
-   - AI agents and full security validation use **bleeding-edge** Xcode 27 / iOS 27 simulators (required to exercise complete MIE/EMTE and latest runtime protections).
-   - First discover available simulators:
+   - Recommended toolchain for contributors, agents, local gates, and App Store archives: **Xcode 27 or later** with an **iOS 27.0** simulator. Canonical example destination: `platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro`. Use only a destination that discovery lists.
+   - First discover available simulators (use only a destination the listing actually prints):
      ```bash
      xcrun simctl list devices available
+     xcodebuild -scheme "Lutheran Radio" -showdestinations
      ```
-   - Canonical reference commands for agents (Xcode 27+):
+   - Canonical reference commands (Xcode 27+):
      ```bash
-     # Clean build (bleeding-edge reference)
+     # Clean build (recommended reference)
      xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
-       -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 17 Pro' clean build-for-testing
+       -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build-for-testing
      # Look for: ** TEST BUILD SUCCEEDED **
 
      # Full test suite
      xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
-       -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 17 Pro' test-without-building
+       -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' test-without-building
      # Look for: ** TEST SUCCEEDED **
      ```
-   - Any iPhone 17-class device on iOS 27.0 is preferred for agents. The project minimum deployment target is iOS 26.2. Stable Xcode 26 development uses iOS 26.5 (see README.md for human contributor guidance). Use only a simulator that discovery lists; substitute name and OS from that output when the canonical pair is absent. Mac Designed-for-iPad eyes-on is a different destination (see “iOS App Store binary on Apple Silicon Mac”) and does **not** replace these gates.
+   - Prefer `iPhone 18 Pro` on iOS 27.0 when discovery lists it. Never invent a destination. If `OS=27.0,name=…` is ambiguous, pin the destination with the `id=` from `-showdestinations`. The project minimum deployment target is iOS 26.2 (simulator OS is the run destination, not the deployment target). Substitute name and OS from discovery when the canonical pair is absent. Accepted fallback until Xcode 27 is available locally and on CI: Xcode 26.6+ with an iOS 26.5 simulator and an iPhone 17-class device (example: `iPhone 17 Pro`) — see README.md; do not treat 26.6 as the recommended copy-paste block. Mac Designed-for-iPad eyes-on is a different destination (see “iOS App Store binary on Apple Silicon Mac”) and does **not** replace these gates.
    - If either gate fails → fix it before suggesting the change.
 
    **Build Gate Exceptions for Mechanical / Warning / Refactoring Work**
@@ -173,10 +174,10 @@ These rules are especially strict for anything that could affect security invari
      - Widget extension gallery section (`CFBundleDisplayName`) → `LutheranRadioWidget/InfoPlist.xcstrings`. The OS reads `InfoPlist.strings`, not `Localizable`. Keep values in lockstep with `"lutheran_radio_title"`. `INFOPLIST_KEY_CFBundleDisplayName` is the development-language fallback and must be `"Lutheran Radio"` — never the target identifier `LutheranRadioWidget`.
 
 4. **iOS 26+ and Swift Toolchain**
-   - Minimum deployment target is **iOS 26.2** (no exceptions).
-   - Required for full **EMTE + MIE** hardware-backed memory protections.
-   - Agents must use Xcode 27+ for complete MIE/EMTE and latest simulator validation.
-   - Human contributors may use stable Xcode 26.6+.
+   - Minimum deployment target is **iOS 26.2** (no exceptions). Do not raise it to 27.0.
+   - Required for full **EMTE + MIE** hardware-backed memory protections. Hardware MIE/EMTE remains an “iPhone 17 and later / A19 or newer” claim.
+   - Recommended toolchain for agents and human contributors: **Xcode 27 or later** (language mode stays `SWIFT_VERSION = 6`) with an iOS 27.0 simulator (`iPhone 18 Pro` when listed).
+   - Accepted fallback until Xcode 27 is available locally and on CI: Xcode 26.6+ with an iOS 26.5 simulator and an iPhone 17-class device. Do not treat 26.6 as the recommended copy-paste path.
    - **All targets** use `SWIFT_VERSION = 6`, `SWIFT_STRICT_CONCURRENCY = complete`, `SWIFT_APPROACHABLE_CONCURRENCY = NO`, and `SWIFT_STRICT_MEMORY_SAFETY = YES`. Do not weaken or remove these without owner approval and a documented security impact assessment.
    - Prefer modern APIs and leverage Memory Integrity Enforcement wherever possible.
 
@@ -421,7 +422,7 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
   * `Core/Security/CertificateValidator.swift` (runtime full DER SHA-256 digest pinning + transition window leniency with time-skew protection; SPKI pinning is enforced exclusively by ATS in Info.plist)
   * ATS + NSPinnedDomains in Info.plist
   * DNS TXT security model validation (1-hour cache in UserDefaults)
-  * MIE/EMTE: Enabled via hardened runtime entitlements (agents use Xcode 27+ for full validation; minimum build support is Xcode 26)
+  * MIE/EMTE: Enabled via hardened runtime entitlements (recommended validation: Xcode 27+ / iOS 27 simulator; minimum build support remains Xcode 26.6)
 - Security logic is now isolated into the `Core/` framework module (`Core/Configuration/`, `Core/Actors/`, and `Core/Security/`) using Swift actors and strict concurrency for better isolation, testability, and maintainability. All security decisions flow through `SecurityConfiguration`, `SecurityModelValidator`, and `CertificateValidator`.
 - **Tests**: Unit + UI tests in dedicated targets
 - **Scripts**: Minimal Python (1%) — treat as build helpers only
@@ -454,7 +455,7 @@ xcodebuild -scheme "Lutheran Radio" -showdestinations
 xcrun simctl list devices available
 ```
 
-- **Simulator gates:** Prefer an iPhone 17-class device on iOS 27.0 from that listing. If the canonical `iPhone 17 Pro` / `27.0` name is missing, substitute the closest listed iPhone 17-class / iOS 27 simulator. Do not invent a destination.
+- **Simulator gates:** Prefer `iPhone 18 Pro` on iOS 27.0 from that listing. If that name is missing, substitute another listed iOS 27.0 simulator. Never invent a destination. If `OS=27.0` is ambiguous, use the `id=` from `-showdestinations`.
 - **Mac eyes-on (Apple Silicon only):** Use the *compatible* `platform=macOS` row whose variant is Designed for iPhone / iPad. The native macOS row for the same Mac is incompatible unless Catalyst is on — do not flip `SUPPORTS_MACCATALYST` to make it compatible. Eyes-on on that host does **not** replace the iOS 27 simulator gates.
 - **Destination specifiers:** `xcodebuild -destination` splits on commas. The Designed-for-iPad variant string contains commas; prefer the `id=` printed by `-showdestinations` over pasting the variant name.
 - **Launch:** Run through Xcode’s Designed-for-iPad action (the iOS-on-Mac wrapper). Do not `open` a raw `iphoneos` `.app`. The host Mac’s destination id is not an iOS CoreDevice for `devicectl`.
@@ -477,7 +478,7 @@ SpringBoard home LIVE chrome, lock-screen Live Activity stacking, and ActivityKi
 2. **Start the device session early**, then hand it to one child for exclusive use. Lifecycle: start → install-and-run (after each product change; includes the Xcode Debug build) → synthesize events (repeat) → end. Do not leave the session open.
 3. **Launch:** install-and-run is Debug of current `HEAD` via Xcode onto the chosen device. Do **not** `open` a raw `.app`. Do **not** pass `-UITestMode` — that short-circuits ActivityKit, WidgetCenter, DNS, and streaming. `isRunningInUITestMode` stays live in Release for XCUITests; this eyes-on path is not an XCUITest.
 4. **Observe:** capture hierarchy (and screenshot) before and after each gesture; tap hierarchy **center** coordinates. Trust **on-device paint** and extension DEBUG `creating entry: visualState=…`. Do **not** treat main-process “refresh executed … visualState” scheduler labels as rendered home chrome (`docs/Home-Live-Chrome-App-Group-Mirror-Design.md` §8.3). Do **not** treat “ensure logs ran” or long-horizon fire counts as lock-screen flag / glyph proof (`docs/Live-Activity-Stacking-and-Media-Surfaces.md`).
-5. Device eyes-on does **not** replace sequential iPhone 17-class / iOS 27 simulator `build-for-testing` then `test-without-building` after a product edit.
+5. Device eyes-on does **not** replace sequential iOS 27 simulator `build-for-testing` then `test-without-building` after a product edit.
 
 **SeeAlso:** `docs/Home-Live-Chrome-App-Group-Mirror-Design.md` §10.3 / §14, `docs/Live-Activity-Stacking-and-Media-Surfaces.md` (stacking matrix + language-switch release QA), `docs/Widget-Presentation-Dataflow.md` (Cleanup Invariant), `docs/Widget-Functionality-Roadmap.md` (force-quit liveness residual; Live Activity ContentState acceptance residual).
 
@@ -493,9 +494,9 @@ The `Core` framework is the **single source of truth** for all security decision
 
 ## Development Workflow (Always Follow)
 
-1. Open `Lutheran Radio.xcodeproj` in Xcode 27+ (bleeding-edge recommended for agents).
-2. Use an iPhone 17-class simulator on iOS 27.0. The canonical gate commands above use iPhone 17 Pro; run `xcrun simctl list devices available` and substitute as needed. Physical-iPhone SpringBoard / Live Activity eyes-on uses the **Device eyes-on** section — it does not replace these simulator gates.
-3. Run the two xcodebuild commands above when you have the final implementation. Stable Xcode 26 is acceptable for human contributors (see README.md) but agents should target the latest for full security verification.
+1. Open `Lutheran Radio.xcodeproj` in Xcode 27 or later (recommended for agents, contributors, local gates, and App Store archives).
+2. Use an iOS 27.0 simulator. The canonical gate commands above use `iPhone 18 Pro`; run `xcrun simctl list devices available` and `xcodebuild -scheme "Lutheran Radio" -showdestinations` and substitute from that output. Never invent a destination. Physical-iPhone SpringBoard / Live Activity eyes-on uses the **Device eyes-on** section — it does not replace these simulator gates.
+3. Run the two xcodebuild commands above sequentially when you have the final implementation (`build-for-testing` then `test-without-building`). Xcode 26.6+ remains an accepted fallback until Xcode 27 is available locally and on CI (see README.md); it is not the recommended path.
    For pure compiler warning cleanup, dead code removal, or mechanical refactoring, the lighter rules under "Build Gate Exceptions for Mechanical / Warning / Refactoring Work" apply.
    When running both gates in the same environment, execute them sequentially (build first, then test) to avoid transient build-database contention.
 4. Update `README.md`, relevant `docs/` files, and DocC articles (when security policy or architecture changes). **Improve inline source comments and `///` documentation per the "Documentation & Comment Standards for AI Coding Agents" section above.** Behavior changes must be reflected in the authoritative sources. Every touched file must be left in a better state for future agents (more self-contained, better "Why"/invariants, stronger cross-links).

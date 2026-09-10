@@ -174,42 +174,49 @@ openssl s_client -connect livestream.siikkari.net:443 -servername livestream.sii
 
 **4. Run the mandatory build & test gates (execute sequentially; see CODING_AGENT.md for mechanical-work exceptions):**
 
-First discover available simulators:
+First discover available simulators (use only a destination the listing actually prints; if `OS=27.0,name=…` is ambiguous, use `id=`):
 ```bash
 xcrun simctl list devices available
+xcodebuild -scheme "Lutheran Radio" -showdestinations
 ```
 
-**Stable development (Xcode 26.6+, recommended for contributors and CI):**
+**Recommended (Xcode 27 or later — contributors, agents, local gates, App Store archives):**
 ```bash
-# Clean build (stable reference)
-xcodebuild -scheme "Lutheran Radio" \
-  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' clean build-for-testing
+# Clean build (recommended reference)
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build-for-testing
 # Look for: ** TEST BUILD SUCCEEDED **
 
 # Full test suite (default `Lutheran Radio.xctestplan` includes
 # Lutheran RadioTests, Lutheran RadioUITests, CoreTests,
 # WidgetSurfaceTests, and LutheranRadioWidgetTests)
-xcodebuild -scheme "Lutheran Radio" \
-  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' test-without-building
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' test-without-building
 # Look for: ** TEST SUCCEEDED **
 
 # Fast path (Core / security / networking)
-xcodebuild -scheme "Lutheran Radio" \
-  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' clean test -only-testing:CoreTests
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean test -only-testing:CoreTests
 # Look for: ** TEST EXECUTE SUCCEEDED **
 
 # Widget unit tests only (extension-profile + pure WidgetSurface)
-xcodebuild -scheme "Lutheran Radio" \
-  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' \
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' \
   test-without-building \
   -only-testing:LutheranRadioWidgetTests \
   -only-testing:WidgetSurfaceTests
 # Look for: ** TEST SUCCEEDED ** (or ** TEST EXECUTE SUCCEEDED **)
 ```
 
-Any iPhone 17-class device on iOS 26.5 or newer satisfies the gate on stable Xcode 26. The project minimum deployment target is iOS 26.2.
+Prefer `iPhone 18 Pro` on iOS 27.0 when discovery lists it. Never invent a destination. The project minimum deployment target is iOS 26.2 (simulator OS is the run destination, not the deployment target). Canonical agent commands live in `CODING_AGENT.md`.
 
-**Bleeding-edge (full EMTE/MIE and latest simulator testing):** Use Xcode 27+ with iOS 27 simulators. See the canonical commands in `CODING_AGENT.md`.
+**Accepted fallback (until Xcode 27 is available locally and on CI):** Xcode 26.6+ with an iOS 26.5 simulator and an iPhone 17-class device (example: `iPhone 17 Pro`). Substitute from discovery. This is not the recommended copy-paste path.
+```bash
+xcodebuild -scheme "Lutheran Radio" \
+  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' clean build-for-testing
+xcodebuild -scheme "Lutheran Radio" \
+  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' test-without-building
+```
 
 **5. (Optional but recommended for security work) Build DocC for the best invariants/architecture reading experience:**
 
@@ -220,10 +227,10 @@ Any iPhone 17-class device on iOS 26.5 or newer satisfies the gate on stable Xco
 Cross-reference: "Current Security Snapshot" and "Single Sources of Truth — Key Files" tables above, the AI checklist, and the exact gates in [`CODING_AGENT.md`](CODING_AGENT.md).
 
 ### Prerequisites
- - Xcode 26.6+ (Swift 6.3 toolchain; language mode `SWIFT_VERSION = 6`) for stable development
- - Minimum deployment target: iOS 26.2 (required for EMTE + MIE hardened memory protections)
- - Recommended for most work and contributions: iPhone 17-class simulator on iOS 26.5 (stable Xcode 26)
- - For complete security feature validation (latest MIE/EMTE): Xcode 27+ with iOS 27 simulators (see CODING_AGENT.md)
+ - Xcode 27 or later (language mode `SWIFT_VERSION = 6`) — recommended for contributors, agents, local gates, and App Store archives
+ - Minimum deployment target: iOS 26.2 (required for EMTE + MIE hardened memory protections). Simulator OS is the run destination, not the deployment target.
+ - Recommended run destination: iPhone 18 Pro simulator on iOS 27.0 (discover with `xcrun simctl list devices available` / `-showdestinations`; never invent a destination)
+ - Accepted fallback until Xcode 27 is available locally and on CI: Xcode 26.6+ with an iOS 26.5 simulator and an iPhone 17-class device (example: iPhone 17 Pro)
  - The iOS App Store binary also runs on Apple Silicon Mac as Designed for iPhone / iPad (`ProcessInfo.processInfo.isiOSAppOnMac`). That host is the same iOS binary (`LSMinimumSystemVersion` 26.5). Live Activities are unavailable there — ``RadioLiveActivityManager`` skips ActivityKit IPC. Keyboard and menu Play/Pause (Space) and previous/next language (⌘[ / ⌘]) are inserted by ``AppDelegate/buildMenu(with:)`` and call ``userRequestedPlay()`` / ``stop()`` via ``handleTogglePlayback()`` and ``handleLanguageSelection(at:)`` via ``handleAdjacentLanguageSelection(offset:)``. Hardware MIE/EMTE remains an iPhone 17-class claim; do not describe equivalent memory tagging on Mac.
 
 ### Swift Build Settings
@@ -246,19 +253,19 @@ Clean builds should produce **zero Swift compiler warnings**. If enabling a new 
 
 To ensure a smooth development experience, follow these steps before contributing:
 
-First run `xcrun simctl list devices available` to confirm a suitable simulator.
+First run `xcrun simctl list devices available` and `xcodebuild -scheme "Lutheran Radio" -showdestinations` to confirm a suitable simulator.
 
-**Stable path (Xcode 26):**
-1. **Verify Project Build:** ```xcodebuild -scheme "Lutheran Radio" -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' clean build```
+**Recommended path (Xcode 27+):**
+1. **Verify Project Build:** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build```
    Ensure the output includes: **```** BUILD SUCCEEDED **```**
 
-2. **Run Test Suite:** ```xcodebuild -scheme "Lutheran Radio" -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' clean test```
+2. **Run Test Suite:** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean test```
    Check that the output includes: **```** TEST SUCCEEDED **```**
 
-3. **Run Core Module Tests Only (Fast Path):** ```xcodebuild -scheme "Lutheran Radio" -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' clean test -testPlan Core```
+3. **Run Core Module Tests Only (Fast Path):** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean test -testPlan Core```
    Check that the output includes: **```** TEST SUCCEEDED **```**
 
-Bleeding-edge verification (Xcode 27+) is documented in `CODING_AGENT.md`.
+Accepted fallback until Xcode 27 is available locally and on CI: Xcode 26.6+ / iOS 26.5 / iPhone 17-class (see the fallback block under Agent Verification Commands). Canonical sequential gates (`build-for-testing` then `test-without-building`) are in `CODING_AGENT.md`.
 
 By verifying these steps on your local machine, you'll help maintain a consistent development environment for the project.
 
@@ -313,7 +320,7 @@ xcrun simctl delete unavailable
 xcrun simctl runtime delete unavailable
 ```
 
-Those `simctl` commands do not erase the available iPhone 17-class simulator you still run tests on, and they do not fix ActivityKit hangs (next subsection).
+Those `simctl` commands do not erase the available simulator you still run tests on, and they do not fix ActivityKit hangs (next subsection).
 
 **Test runs that appear to hang (especially after manual simulator use)**
 

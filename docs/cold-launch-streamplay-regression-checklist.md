@@ -6,7 +6,7 @@ Regression guard for Lutheran Radio playback startup, resume, stream switching, 
 
 **Canonical agent rules:** [`CODING_AGENT.md`](../CODING_AGENT.md) — read first.
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-09-10
 
 ---
 
@@ -18,7 +18,7 @@ Read CODING_AGENT.md and docs/cold-launch-streamplay-regression-checklist.md.
 Scope: [describe your change — files, behavior].
 
 Walk every numbered check in sections that apply. Run xcodebuild clean build + test
-(sequential, iPhone 17 / iOS 26.5).
+(sequential, iPhone 18 Pro / iOS 27.0; discover with simctl / -showdestinations).
 
 Confirm happy-path log markers (Section 12) still appear. Flag any regression by
 mechanism name (e.g. recreateInFlight, attachedItemLanguageCode), not backlog IDs.
@@ -73,7 +73,7 @@ End with security impact, build status, localization needed.
 
 ## 2. Build, test, and toolchain
 
-1. **Clean build** — `xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build` succeeds.
+1. **Clean build** — `xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build` succeeds. Discover first (`xcrun simctl list devices available` / `-showdestinations`); substitute a listed destination; never invent a destination.
 2. **Clean test** — Same destination with `clean test` succeeds. Run build then test sequentially.
 3. **Swift 6 strictness** — All targets: `SWIFT_VERSION = 6`, `SWIFT_STRICT_CONCURRENCY = complete`, `SWIFT_APPROACHABLE_CONCURRENCY = NO`, `SWIFT_STRICT_MEMORY_SAFETY = YES`.
 4. **Localization** — User-visible strings use `String(localized:)` / `NSLocalizedString`, table `"Localizable"`; all 48 languages if keys added.
@@ -226,11 +226,14 @@ Console capture helper (Debug Simulator `print()` only — not UI automation):
 ### 12.1 Commands
 
 ```bash
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
-  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build
+xcrun simctl list devices available
+xcodebuild -scheme "Lutheran Radio" -showdestinations
 
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
-  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build
+
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean test
 ```
 
 ### 12.2 Happy-path log markers (must still appear)
