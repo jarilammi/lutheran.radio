@@ -19,6 +19,11 @@ import WidgetSurface
 /// ``WidgetIntentPendingDrainTests`` and ``WidgetIntentJoinedRoundTripTests``.
 /// Shared host factories live in `Support/WidgetIntentContractTestSupport.swift`.
 ///
+/// Widget-process simulation skips Darwin notify so the live XCTest-host observer cannot
+/// steal the pending mailbox (``notifyMainApp(action:parameter:)``). Keep
+/// ``RadioPlayerCoordinator`` alive across ``handleWidgetSwitchToLanguage`` — the work
+/// item captures `[weak self]`.
+///
 /// Never calls real `WidgetCenter.reloadTimelines` or ActivityKit IPC.
 ///
 /// - SeeAlso: ``WidgetIntentPendingDrainTests``, ``WidgetIntentJoinedRoundTripTests``,
@@ -466,9 +471,21 @@ final class WidgetIntentContractTests: XCTestCase {
 
     /// Widget pause → language switch must preserve `.userPaused` in the optimistic snapshot
     /// (2026-06-12 desync fix) and schedule a single fresh pending switch.
+    ///
+    /// Widget-process simulation skips Darwin notify (`notifyMainApp`) so the live XCTest-host
+    /// ``ViewController`` observer cannot UITestMode-clear the mailbox before this assertion.
+    /// Darwin round-trip is covered separately in ``WidgetIntentPendingDrainTests``.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/switchToStream(_:)``,
+    ///   ``SharedPlayerManager/notifyMainApp(action:parameter:)``,
+    ///   ``_test_setSimulateWidgetProcessContext(_:)``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§6).
     func testWidgetSwitchPreservesUserPausedVisualInOptimisticSnapshot() async {
         let streams = manager.availableStreams
-        guard streams.count >= 2 else { return }
+        guard streams.count >= 2 else {
+            XCTFail("Catalog must include ≥2 streams")
+            return
+        }
 
         let source = streams[0]
         let target = streams[1]
@@ -490,6 +507,13 @@ final class WidgetIntentContractTests: XCTestCase {
         let snapshot = SharedPlayerManager.loadPersistedWidgetState()
         XCTAssertEqual(snapshot?.visualState, .userPaused)
         XCTAssertEqual(snapshot?.currentLanguage, target.languageCode)
+
+        // Isolation lock: same-process Darwin must not have stolen the mailbox after a yield.
+        await Task.yield()
+        XCTAssertNotNil(
+            manager.getPendingActionIfFresh(),
+            "Widget-process simulation must not Darwin-loop-clear pending in the unit host"
+        )
     }
 
     /// Active-play widget-path switch stamps Connecting (``.prePlay``) + destination language on
@@ -529,9 +553,23 @@ final class WidgetIntentContractTests: XCTestCase {
 
     /// Main-app reconciliation for an explicit-paused widget switch updates the engine model
     /// without auto-resume (`switchToStreamFromWidget` paused branch).
+    ///
+    /// Holds the coordinator until the queued ``handleWidgetSwitchToLanguage`` work item
+    /// finishes — the work item captures `[weak self]`, so a `MainActor.run` local would
+    /// deinit before `DispatchQueue.main.async` ran and the switch would no-op.
+    /// Catalog ``streamForLanguageCode`` is not engine selection; this asserts
+    /// ``DirectStreamingPlayer/selectedStream``.
+    ///
+    /// - SeeAlso: ``RadioPlayerCoordinator/handleWidgetSwitchToLanguage(_:actionId:)``,
+    ///   ``SharedPlayerManager/_test_setSimulateWidgetProcessContext(_:)``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§6).
+    @MainActor
     func testPausedWidgetSwitchReconciliationPreservesIntentAndUpdatesStreamModel() async {
         let streams = manager.availableStreams
-        guard streams.count >= 2 else { return }
+        guard streams.count >= 2 else {
+            XCTFail("Catalog must include ≥2 streams")
+            return
+        }
 
         let target = streams[1]
         await manager.setUserPaused()
@@ -546,31 +584,44 @@ final class WidgetIntentContractTests: XCTestCase {
             return
         }
 
-        await MainActor.run {
-            let coordinator = RadioPlayerCoordinator(
-                backgroundImageController: BackgroundImageController(),
-                streamingPlayer: DirectStreamingPlayer.shared
-            )
-            coordinator.handleWidgetSwitchToLanguage(target.languageCode, actionId: pending.actionId)
-        }
+        let coordinator = RadioPlayerCoordinator(
+            backgroundImageController: BackgroundImageController(),
+            streamingPlayer: DirectStreamingPlayer.shared
+        )
+        coordinator.handleWidgetSwitchToLanguage(target.languageCode, actionId: pending.actionId)
 
-        try? await Task.sleep(for: .milliseconds(800))
+        let pendingCleared = await waitUntilWidgetIntentCondition {
+            manager.getPendingAction() == nil
+        }
+        XCTAssertTrue(pendingCleared, "Coordinator must clear pending switch after paused reconciliation")
 
         let intent = await manager.currentPlaybackIntent
         let visual = await manager.currentVisualState
         XCTAssertEqual(intent, .userPaused)
         XCTAssertEqual(visual, .userPaused)
-        XCTAssertNil(manager.getPendingAction())
-
-        let selected = SharedPlayerManager.streamForLanguageCode(target.languageCode)
-        XCTAssertEqual(selected.languageCode, target.languageCode)
+        XCTAssertEqual(
+            DirectStreamingPlayer.shared.selectedStream.languageCode,
+            target.languageCode,
+            "Paused widget switch must update the engine stream model"
+        )
+        _ = coordinator
     }
 
     /// Duplicate delivery of the same `actionId` to `handleWidgetSwitchToLanguage` is a no-op
     /// after the first insertion into `processedActionIds`.
+    ///
+    /// Holds the coordinator for the queued work item (`[weak self]`). Catalog
+    /// ``streamForLanguageCode`` is not engine selection.
+    ///
+    /// - SeeAlso: ``RadioPlayerCoordinator/handleWidgetSwitchToLanguage(_:actionId:)``,
+    ///   ``SharedPlayerManager/_test_setSimulateWidgetProcessContext(_:)``.
+    @MainActor
     func testHandleWidgetSwitchToLanguageDedupsIdenticalActionId() async {
         let streams = manager.availableStreams
-        guard streams.count >= 2 else { return }
+        guard streams.count >= 2 else {
+            XCTFail("Catalog must include ≥2 streams")
+            return
+        }
         let source = streams[0]
         let target = streams[1]
 
@@ -588,27 +639,23 @@ final class WidgetIntentContractTests: XCTestCase {
         }
         XCTAssertEqual(pending.actionId.count, 36)
 
-        await MainActor.run {
-            let coordinator = RadioPlayerCoordinator(
-                backgroundImageController: BackgroundImageController(),
-                streamingPlayer: DirectStreamingPlayer.shared
-            )
-            coordinator.handleWidgetSwitchToLanguage(target.languageCode, actionId: pending.actionId)
-            coordinator.handleWidgetSwitchToLanguage(target.languageCode, actionId: pending.actionId)
-        }
+        let coordinator = RadioPlayerCoordinator(
+            backgroundImageController: BackgroundImageController(),
+            streamingPlayer: DirectStreamingPlayer.shared
+        )
+        coordinator.handleWidgetSwitchToLanguage(target.languageCode, actionId: pending.actionId)
+        coordinator.handleWidgetSwitchToLanguage(target.languageCode, actionId: pending.actionId)
 
-        var pendingCleared = false
-        for _ in 0..<50 {
-            if manager.getPendingAction() == nil {
-                pendingCleared = true
-                break
-            }
-            try? await Task.sleep(for: .milliseconds(100))
+        let pendingCleared = await waitUntilWidgetIntentCondition {
+            manager.getPendingAction() == nil
         }
-
         XCTAssertTrue(pendingCleared, "Coordinator must clear pending switch after reconciliation")
-        let selected = SharedPlayerManager.streamForLanguageCode(target.languageCode)
-        XCTAssertEqual(selected.languageCode, target.languageCode)
+        XCTAssertEqual(
+            DirectStreamingPlayer.shared.selectedStream.languageCode,
+            target.languageCode,
+            "Deduped widget switch must still apply the destination engine model once"
+        )
+        _ = coordinator
     }
 
 

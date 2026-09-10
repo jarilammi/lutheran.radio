@@ -53,11 +53,17 @@ extension SharedPlayerManager {
     /// When `true` in the main-app test host, ``isRunningInWidget()`` and
     /// ``isWidgetProcess()`` report widget context so ``emit(_:)`` suppresses stream delivery
     /// and ``WidgetRefreshManager`` does not start the Tier 2 live observer.
+    /// ``notifyMainApp(action:parameter:)`` also skips Darwin post so the live host
+    /// ``ViewController`` observer cannot UITestMode-clear the pending mailbox the
+    /// simulated extension just wrote (same-process leak; production extension notify
+    /// still posts).
     ///
     /// - Parameter simulate: Pass `true` to exercise widget-process suppression; `false`
     ///   restores normal main-app behavior.
     /// - SeeAlso: ``isRunningInWidget()``, ``isWidgetProcess()``, ``emit(_:)``,
+    ///   ``notifyMainApp(action:parameter:)``,
     ///   ``SharedPlayerManagerEventTests``, ``WidgetRefreshManagerEventTests``,
+    ///   ``WidgetIntentContractTests``,
     ///   CODING_AGENT.md (fast test patterns),
     ///   docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func _test_setSimulateWidgetProcessContext(_ simulate: Bool) {

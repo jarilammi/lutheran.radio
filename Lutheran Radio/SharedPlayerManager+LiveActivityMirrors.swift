@@ -662,7 +662,31 @@ extension SharedPlayerManager {
     }
     
     /// Posts a Darwin notification so the main app processes a pending widget action.
+    ///
+    /// - Parameters:
+    ///   - action: Wire action (`play`, `pause`, `switch`).
+    ///   - parameter: Optional language code for switch (informational; mailbox keys are already written).
+    /// - Important: DEBUG ``_test_simulateWidgetProcessContext`` skips the post. The XCTest
+    ///   host already has a live ``ViewController`` Darwin observer; looping notify in-process
+    ///   races UITestMode clear-without-execute and steals the pending mailbox the widget path
+    ///   just wrote. Darwin round-trip remains covered by
+    ///   `WidgetIntentPendingDrainTests.testNotifyMainAppThenForegroundDrainExecutesPlayPending`
+    ///   without that seam.
+    /// - SeeAlso: ``signalWidgetSwitchAction(visualState:language:)``,
+    ///   ``signalWidgetPendingAction(visualState:action:language:)``,
+    ///   ``_test_setSimulateWidgetProcessContext(_:)``,
+    ///   ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
+    ///   docs/Widget-Functionality-Roadmap.md (Tier 2),
+    ///   CODING_AGENT.md (fast test patterns).
     nonisolated func notifyMainApp(action: String, parameter: String? = nil) {
+        #if DEBUG
+        if unsafe Self._test_simulateWidgetProcessContext {
+            // Same-process XCTest host isolation — not a production privacy or security bypass.
+            print("[SharedPlayerManager] Skipping Darwin notify under widget-process simulation (same-process host isolation)")
+            return
+        }
+        #endif
+
         #if LUTHERAN_MAIN_APP
         if !isRunningInWidget(), action == "pause" {
             DarwinSelfEchoGuard.markExpectingSelfPostedPauseEcho()
