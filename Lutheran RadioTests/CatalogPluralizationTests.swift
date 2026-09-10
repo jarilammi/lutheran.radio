@@ -374,6 +374,10 @@ final class CatalogPluralizationTests: XCTestCase {
 
     /// Golden strings are independent of parsing the catalog at assertion time
     /// so a wrong Slovak `few` (or a `two` copied onto Northern Sami `other`) fails.
+    /// AGENT NOTE: A new UI language must append integer-reachable cases to all
+    /// four tables. `testRuntimeProbesCoverEveryLocaleAndIntegerReachableCategory`
+    /// is the completeness gate — listing the code in `supportedLanguages` alone
+    /// is not enough. Yoruba (`yo`) is `other` only, same slot as `id` and `ng`.
     private struct PluralCase {
         let locale: String
         let count: Int
@@ -496,10 +500,15 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("ta", 2, "other", "2 நிமிடங்கள் மீதமுள்ளன"),
         .init("te", 1, "one", "1 నిమిషం మిగిలింది"),
         .init("te", 2, "other", "2 నిమిషాలు మిగిలాయి"),
+        .init("ti", 1, "one", "1 ደቒቕ ተሪፉ"),
+        .init("ti", 2, "other", "2 ደቓይቕ ተሪፎም"),
         .init("uk", 1, "one", "Залишилася 1 хвилина"),
         .init("uk", 2, "few", "Залишилося 2 хвилини"),
         .init("uk", 5, "many", "Залишилося 5 хвилин"),
         .init("uk", 21, "one", "Залишилася 21 хвилина"),
+        .init("yo", 2, "other", "2 ìṣẹ́jú ló kù"),
+        .init("zu", 1, "one", "Kusele umzuzu ongu-1"),
+        .init("zu", 2, "other", "Kusele imizuzu engu-2"),
     ]
 
     private let languageCountCases: [PluralCase] = [
@@ -610,10 +619,15 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("ta", 2, "other", "2 மொழிகள்"),
         .init("te", 1, "one", "1 భాష"),
         .init("te", 2, "other", "2 భాషలు"),
+        .init("ti", 1, "one", "1 ቋንቋ"),
+        .init("ti", 2, "other", "2 ቋንቋታት"),
         .init("uk", 1, "one", "1 мова"),
         .init("uk", 2, "few", "2 мови"),
         .init("uk", 5, "many", "5 мов"),
         .init("uk", 21, "one", "21 мова"),
+        .init("yo", 2, "other", "2 èdè"),
+        .init("zu", 1, "one", "1 ulimi"),
+        .init("zu", 2, "other", "2 izilimi"),
     ]
 
     private let volumePercentCases: [PluralCase] = [
@@ -724,10 +738,15 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("ta", 2, "other", "2 சதவீதம்"),
         .init("te", 1, "one", "1 శాతం"),
         .init("te", 2, "other", "2 శాతం"),
+        .init("ti", 1, "one", "1 ብመቶ"),
+        .init("ti", 2, "other", "2 ብመቶ"),
         .init("uk", 1, "one", "1 відсоток"),
         .init("uk", 2, "few", "2 відсотки"),
         .init("uk", 5, "many", "5 відсотків"),
         .init("uk", 21, "one", "21 відсоток"),
+        .init("yo", 2, "other", "2 ìdá ọgọ́rùn-ún"),
+        .init("zu", 1, "one", "iphesenti elingu-1"),
+        .init("zu", 2, "other", "amaphesenti angu-2"),
     ]
 
     private let volumeSetToCases: [PluralCase] = [
@@ -838,9 +857,14 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("ta", 2, "other", "வால்யூம் 2 சதவீதத்திற்கு செட் செய்யப்பட்டது"),
         .init("te", 1, "one", "వాల్యూమ్ 1 శాతానికి సెట్ చేయబడింది"),
         .init("te", 2, "other", "వాల్యూమ్ 2 శాతానికి సెట్ చేయబడింది"),
+        .init("ti", 1, "one", "ድምጺ ናብ 1 ብመቶ ተቐኒዑ"),
+        .init("ti", 2, "other", "ድምጺ ናብ 2 ብመቶ ተቐኒዑ"),
         .init("uk", 1, "one", "Гучність встановлено на 1 відсоток"),
         .init("uk", 2, "few", "Гучність встановлено на 2 відсотки"),
         .init("uk", 5, "many", "Гучність встановлено на 5 відсотків"),
         .init("uk", 21, "one", "Гучність встановлено на 21 відсоток"),
+        .init("yo", 2, "other", "A ti ṣètò ohùn sí 2 ìdá ọgọ́rùn-ún"),
+        .init("zu", 1, "one", "Ivolumu ibekwe ku-iphesenti elingu-1"),
+        .init("zu", 2, "other", "Ivolumu ibekwe kumaphesenti angu-2"),
     ]
 }
