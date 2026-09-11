@@ -65,7 +65,7 @@ xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
 
 xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
   -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' test-without-building
-# Look for: ** TEST SUCCEEDED **
+# Look for: ** TEST EXECUTE SUCCEEDED **
 ```
 
 Substitute destination from discovery when the canonical device is unavailable. Mechanical warning-only work may use the lighter gates in `CODING_AGENT.md` (full `test-without-building` remains mandatory).

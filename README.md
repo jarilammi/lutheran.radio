@@ -192,12 +192,12 @@ xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
 # WidgetSurfaceTests, and LutheranRadioWidgetTests)
 xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
   -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' test-without-building
-# Look for: ** TEST SUCCEEDED **
+# Look for: ** TEST EXECUTE SUCCEEDED **
 
 # Fast path (Core / security / networking)
 xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
   -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean test -only-testing:CoreTests
-# Look for: ** TEST EXECUTE SUCCEEDED **
+# Look for: ** TEST SUCCEEDED **
 
 # Widget unit tests only (extension-profile + pure WidgetSurface)
 xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
@@ -205,7 +205,7 @@ xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
   test-without-building \
   -only-testing:LutheranRadioWidgetTests \
   -only-testing:WidgetSurfaceTests
-# Look for: ** TEST SUCCEEDED ** (or ** TEST EXECUTE SUCCEEDED **)
+# Look for: ** TEST EXECUTE SUCCEEDED **
 ```
 
 Prefer `iPhone 18 Pro` on iOS 27.0 when discovery lists it. Never invent a destination. The project minimum deployment target is iOS 26.2 (simulator OS is the run destination, not the deployment target). Canonical agent commands live in `CODING_AGENT.md`.

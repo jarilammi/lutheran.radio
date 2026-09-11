@@ -145,7 +145,7 @@ These rules are especially strict for anything that could affect security invari
      # Full test suite
      xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
        -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' test-without-building
-     # Look for: ** TEST SUCCEEDED **
+     # Look for: ** TEST EXECUTE SUCCEEDED **
      ```
    - Prefer `iPhone 18 Pro` on iOS 27.0 when discovery lists it. Never invent a destination. If `OS=27.0,name=…` is ambiguous, pin the destination with the `id=` from `-showdestinations`. The project minimum deployment target is iOS 26.2 (simulator OS is the run destination, not the deployment target). Substitute name and OS from discovery when the canonical pair is absent. Accepted fallback until Xcode 27 is available locally and on CI: Xcode 26.6+ with an iOS 26.5 simulator and an iPhone 17-class device (example: `iPhone 17 Pro`) — see README.md; do not treat 26.6 as the recommended copy-paste block. Mac Designed-for-iPad eyes-on is a different destination (see “iOS App Store binary on Apple Silicon Mac”) and does **not** replace these gates.
    - If either gate fails → fix it before suggesting the change.
