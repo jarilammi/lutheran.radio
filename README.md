@@ -221,7 +221,7 @@ xcodebuild -scheme "Lutheran Radio" \
 **5. (Optional but recommended for security work) Build DocC for the best invariants/architecture reading experience:**
 
 ```bash
-# In Xcode: Product → Build Documentation, then search for "Core" or "Security-Invariants"
+# In Xcode: Product → Build Documentation, then search for "Lutheran Radio", "Core", or "Security-Invariants"
 ```
 
 Cross-reference: "Current Security Snapshot" and "Single Sources of Truth — Key Files" tables above, the AI checklist, and the exact gates in [`CODING_AGENT.md`](CODING_AGENT.md).
