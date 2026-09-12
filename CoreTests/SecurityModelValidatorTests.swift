@@ -335,6 +335,29 @@ struct SecurityModelValidatorTests {
     }
 }
 
+// MARK: - QueryContext claim-once (Mutex session, no DNS)
+
+@Suite("QueryContext claim-once (Mutex session)")
+struct QueryContextClaimOnceTests {
+
+    /// Protects the claim-once invariant: watchdog vs `dnsQueryCallback` cannot
+    /// both finish the same DNS-SD session (`DNSServiceRefDeallocate` /
+    /// `continuation.resume` / `rdata` parse).
+    @Test("First claimFinish wins; the second is alreadyFinished")
+    func firstClaimWinsSecondAlreadyFinished() {
+        let result = SecurityModelValidator._test_queryContextClaimFinishIsOnce()
+        #expect(result.firstWon, "First claimFinish must win the session")
+        #expect(result.secondAlreadyFinished, "Second claimFinish must be alreadyFinished")
+    }
+
+    /// Same invariant under concurrent callers (Mutex, not a single-thread flag).
+    @Test("Concurrent claimFinish produces exactly one winner")
+    func concurrentClaimsProduceExactlyOneWinner() {
+        let winners = SecurityModelValidator._test_queryContextConcurrentClaimWinnerCount()
+        #expect(winners == 1, "Exactly one racing claimFinish may win; got \(winners)")
+    }
+}
+
 // MARK: - Pure Parser Tests (safe to run in parallel)
 
 @Suite("parseInlineTXTRecord (pure DNS TXT parser) Tests")

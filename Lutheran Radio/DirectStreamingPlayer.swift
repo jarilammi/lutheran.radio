@@ -151,7 +151,7 @@ protocol StreamingPlayerDelegate: AnyObject {
 /// - **Dynamic Access Control**:
 ///   - Queries ordered `securityModelDomains` TXT hosts (primary `securitymodels.siikkari.net`, secondary `securitymodels.lutheranradio.eu`, backup `securitymodels.lutheranradio.sk`) to validate app authorization.
 ///   - Supports remote access control without requiring app updates.
-///   - Requires the app security model (`dallas`) to be in the authorized list.
+///   - Requires ``SecurityConfiguration/expectedSecurityModel`` to be in the authorized list.
 /// - **DNSSEC-authenticated name resolution** (iOS 16+ / always on this deployment target):
 ///   - Streaming, validation HEAD, and server-ping sessions are created with
 ///     `URLSessionConfiguration.requiresDNSSECValidation = true` (via

@@ -5,7 +5,7 @@
 //  Single source of truth for every security constant and networking policy.
 //
 //  This file owns:
-//  - The embedded `expectedSecurityModel` ("dallas")
+//  - The embedded `expectedSecurityModel` ("montereypark")
 //  - Authoritative certificate fingerprints (DER digest form)
 //  - Transition window + time-skew parameters
 //  - Distinct cache durations: `modelCacheDuration` (DNS TXT success, 1 h) and
@@ -52,7 +52,7 @@ public struct SecurityConfiguration: Sendable {
     /// If validation fails permanently, streaming is disabled for the lifetime of the process.
     ///
     /// - SeeAlso: ``<doc:Security-Invariants>``, ``SecurityModelValidator/validateSecurityModel()``
-    public let expectedSecurityModel: String = "dallas"
+    public let expectedSecurityModel: String = "montereypark"
     
     /// Primary domain queried for TXT record containing valid models (comma-separated).
     ///

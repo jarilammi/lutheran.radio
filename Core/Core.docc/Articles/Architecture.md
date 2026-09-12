@@ -66,6 +66,8 @@ An `actor` that:
 
 The actor uses a carefully constructed non-isolated static C callback + `Unmanaged` context to satisfy Swift 6 strict concurrency while still using the classic `dnssd` API.
 
+The C callback (`radio.lutheran.dnssd`) and the 5 s watchdog (global queue) cannot be actor-isolated. `QueryContext` holds a `Mutex` (`import Synchronization`) over a `~Copyable` session: first of watchdog, callback, or setup-failure to `claimFinish` wins; losers no-op. `DNSServiceRefDeallocate` and `continuation.resume` run **outside** the lock (the mutex is not recursive; deallocate may deliver work on the dns_sd queue). dns_sd `DNSServiceRef` / `Unmanaged` uses are marked `unsafe` (SE-0458); `// SAFETY:` comments at those sites. `Mutex` is not a replacement for the actor — cache, `validationState`, and in-flight coalescing stay actor-isolated.
+
 ### CertificateFingerprint
 
 A `Sendable` value type that:
@@ -97,6 +99,7 @@ An `actor` that:
 - All test seams are guarded by `#if DEBUG` and are compiled out of Release builds.
 - `SecurityModelValidator` and `CertificateValidator` both accept injectable time providers in DEBUG builds.
 - The TXT record parser is exposed via a static `_test_` method so that parsing logic can be exercised without network or DNS.
+- `QueryContext` claim-once (`claimFinish`) is exposed via DEBUG `_test_queryContextClaimFinishIsOnce` / `_test_queryContextConcurrentClaimWinnerCount` (no live `DNSServiceRef`).
 
 ## Documentation & Invariants
 
