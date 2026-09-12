@@ -286,6 +286,18 @@
             "value" : "Dádúró ${applicationName}"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂停 ${applicationName}"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暫停 ${applicationName}"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -577,6 +589,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ṣeré ${applicationName}"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放 ${applicationName}"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放 ${applicationName}"
           }
         },
         "zu" : {
@@ -872,6 +896,18 @@
             "value" : "Ṣeré ${applicationName} ní ${language}"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 ${language} 播放 ${applicationName}"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 ${language} 播放 ${applicationName}"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1163,6 +1199,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bẹ̀rẹ̀ ${applicationName}"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始 ${applicationName}"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始 ${applicationName}"
           }
         },
         "zu" : {
@@ -1458,6 +1506,18 @@
             "value" : "Dáwọ́ ${applicationName}"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止 ${applicationName}"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止 ${applicationName}"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1749,6 +1809,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yí ${applicationName} sí ${language}"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将 ${applicationName} 切换到 ${language}"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將 ${applicationName} 切換到 ${language}"
           }
         },
         "zu" : {

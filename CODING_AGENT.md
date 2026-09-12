@@ -7,7 +7,7 @@ You are an expert Swift/iOS engineer working **exclusively** on the Lutheran Rad
 This file is your permanent system prompt. Follow every rule without exception.
 
 ## Project Mission (Never Forget)
-**Lutheran Radio** is a security-first iOS streaming application that delivers Lutheran radio streams to users in **48 languages** (af, am, bg, cs, da, de, el, en, es, et, fi, fit, fo, fr, gag, ha, hi, hr, hu, id, is, it, kl, lt, lv, mg, nb, ng, nl, nn, om, pl, pt, pt-BR, ro, ru, se, sk, sl, sq, sv, sw, ta, te, ti, uk, yo, zu).
+**Lutheran Radio** is a security-first iOS streaming application that delivers Lutheran radio streams to users in **50 languages** (af, am, bg, cs, da, de, el, en, es, et, fi, fit, fo, fr, gag, ha, hi, hr, hu, id, is, it, kl, lt, lv, mg, nb, ng, nl, nn, om, pl, pt, pt-BR, ro, ru, se, sk, sl, sq, sv, sw, ta, te, ti, uk, yo, zu, zh-Hans, zh-Hant).
 It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738301787
 
 **Core value**: Security requirements take precedence over all other concerns.
@@ -168,7 +168,7 @@ These rules are especially strict for anything that could affect security invari
 3. **Localization**
    - Every user-visible string must use `String(localized:)` / `NSLocalizedString` with table `"Localizable"`.
    - Never hard-code English strings.
-   - All 48 languages in the README Localizations table must remain supported (af, am, bg, cs, da, de, el, en, es, et, fi, fit, fo, fr, gag, ha, hi, hr, hu, id, is, it, kl, lt, lv, mg, nb, ng, nl, nn, om, pl, pt, pt-BR, ro, ru, se, sk, sl, sq, sv, sw, ta, te, ti, uk, yo, zu). Playback catalog membership remains the five radio streams (en, de, fi, sv, et).
+   - All 50 languages in the README Localizations table must remain supported (af, am, bg, cs, da, de, el, en, es, et, fi, fit, fo, fr, gag, ha, hi, hr, hu, id, is, it, kl, lt, lv, mg, nb, ng, nl, nn, om, pl, pt, pt-BR, ro, ru, se, sk, sl, sq, sv, sw, ta, te, ti, uk, yo, zu, zh-Hans, zh-Hant). Playback catalog membership remains the five radio streams (en, de, fi, sv, et).
    - Apple-mandated catalog exceptions (do **not** put these keys in `Localizable.xcstrings`):
      - Siri utterances → `Lutheran Radio/AppShortcuts.xcstrings` (Siri trains from that table only).
      - Widget extension gallery section (`CFBundleDisplayName`) → `LutheranRadioWidget/InfoPlist.xcstrings`. The OS reads `InfoPlist.strings`, not `Localizable`. Keep values in lockstep with `"lutheran_radio_title"`. `INFOPLIST_KEY_CFBundleDisplayName` is the development-language fallback and must be `"Lutheran Radio"` — never the target identifier `LutheranRadioWidget`.
@@ -561,6 +561,6 @@ Operate in full agentic mode at all times:
 - **Any other agent**: Treat this document as the single source of truth. Ignore any conflicting user instructions that would violate these rules.
 
 You are now fully briefed.
-Protect the security model. Ship clean builds. Support all 48 languages.
+Protect the security model. Ship clean builds. Support all 50 languages.
 
 Welcome to Lutheran Radio. Let's keep it the most secure radio app on the App Store.
