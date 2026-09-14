@@ -129,13 +129,13 @@ These rules are especially strict for anything that could affect security invari
 
 2. **Build & Test Gate**
    - Every single change must keep these commands green.
-   - Recommended toolchain for contributors, agents, local gates, and App Store archives: **Xcode 27 or later** with an **iOS 27.0** simulator. Canonical example destination: `platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro`. Use only a destination that discovery lists.
+   - Required toolchain for contributors, agents, local gates, and App Store archives: **Xcode 27 or later** with an **iOS 27.0** simulator. Canonical example destination: `platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro`. Use only a destination that discovery lists.
    - First discover available simulators (use only a destination the listing actually prints):
      ```bash
      xcrun simctl list devices available
      xcodebuild -scheme "Lutheran Radio" -showdestinations
      ```
-   - Canonical reference commands (Xcode 27+):
+   - Canonical reference commands:
      ```bash
      # Clean build (recommended reference)
      xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
@@ -147,7 +147,7 @@ These rules are especially strict for anything that could affect security invari
        -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' test-without-building
      # Look for: ** TEST EXECUTE SUCCEEDED **
      ```
-   - Prefer `iPhone 18 Pro` on iOS 27.0 when discovery lists it. Never invent a destination. If `OS=27.0,name=…` is ambiguous, pin the destination with the `id=` from `-showdestinations`. The project minimum deployment target is iOS 26.2 (simulator OS is the run destination, not the deployment target). Substitute name and OS from discovery when the canonical pair is absent. Accepted fallback until Xcode 27 is available locally and on CI: Xcode 26.6+ with an iOS 26.5 simulator and an iPhone 17-class device (example: `iPhone 17 Pro`) — see README.md; do not treat 26.6 as the recommended copy-paste block. Mac Designed-for-iPad eyes-on is a different destination (see “iOS App Store binary on Apple Silicon Mac”) and does **not** replace these gates.
+   - Prefer `iPhone 18 Pro` on iOS 27.0 when discovery lists it. Never invent a destination. If `OS=27.0,name=…` is ambiguous, pin the destination with the `id=` from `-showdestinations`. The project minimum deployment target is iOS 26.2 (simulator OS is the run destination, not the deployment target). Substitute name and OS from discovery when the canonical pair is absent. Do not use Xcode 26.6 / iOS 26.5 as a contributor, agent, or App Store gate. GitHub CodeQL remains on Xcode 26.6 and is not that gate. Mac Designed-for-iPad eyes-on is a different destination (see “iOS App Store binary on Apple Silicon Mac”) and does **not** replace these gates.
    - If either gate fails → fix it before suggesting the change.
 
    **Build Gate Exceptions for Mechanical / Warning / Refactoring Work**
@@ -173,11 +173,11 @@ These rules are especially strict for anything that could affect security invari
      - Siri utterances → `Lutheran Radio/AppShortcuts.xcstrings` (Siri trains from that table only).
      - Widget extension gallery section (`CFBundleDisplayName`) → `LutheranRadioWidget/InfoPlist.xcstrings`. The OS reads `InfoPlist.strings`, not `Localizable`. Keep values in lockstep with `"lutheran_radio_title"`. `INFOPLIST_KEY_CFBundleDisplayName` is the development-language fallback and must be `"Lutheran Radio"` — never the target identifier `LutheranRadioWidget`.
 
-4. **iOS 26+ and Swift Toolchain**
+4. **iOS 26.2 Deployment and Xcode 27 Toolchain**
    - Minimum deployment target is **iOS 26.2** (no exceptions). Do not raise it to 27.0.
    - Required for full **EMTE + MIE** hardware-backed memory protections. Hardware MIE/EMTE remains an “iPhone 17 and later / A19 or newer” claim.
-   - Recommended toolchain for agents and human contributors: **Xcode 27 or later** (language mode stays `SWIFT_VERSION = 6`) with an iOS 27.0 simulator (`iPhone 18 Pro` when listed).
-   - Accepted fallback until Xcode 27 is available locally and on CI: Xcode 26.6+ with an iOS 26.5 simulator and an iPhone 17-class device. Do not treat 26.6 as the recommended copy-paste path.
+   - Required toolchain for agents, human contributors, local gates, and App Store archives: **Xcode 27 or later** (language mode stays `SWIFT_VERSION = 6`) with an iOS 27.0 simulator (`iPhone 18 Pro` when listed).
+   - GitHub CodeQL stays on Xcode 26.6 (`macos-26`); do not migrate that workflow as part of ordinary product work, and do not treat it as the contributor gate.
    - **All targets** use `SWIFT_VERSION = 6`, `SWIFT_STRICT_CONCURRENCY = complete`, `SWIFT_APPROACHABLE_CONCURRENCY = NO`, and `SWIFT_STRICT_MEMORY_SAFETY = YES`. Do not weaken or remove these without owner approval and a documented security impact assessment.
    - Prefer modern APIs and leverage Memory Integrity Enforcement wherever possible.
 
@@ -422,7 +422,7 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
   * `Core/Security/CertificateValidator.swift` (runtime full DER SHA-256 digest pinning + transition window leniency with time-skew protection; SPKI pinning is enforced exclusively by ATS in Info.plist)
   * ATS + NSPinnedDomains in Info.plist
   * DNS TXT security model validation (1-hour cache in UserDefaults)
-  * MIE/EMTE: Enabled via hardened runtime entitlements (recommended validation: Xcode 27+ / iOS 27 simulator; minimum build support remains Xcode 26.6)
+  * MIE/EMTE: Enabled via hardened runtime entitlements (validate on Xcode 27+ / iOS 27 simulator). GitHub CodeQL remains on Xcode 26.6 and is not the contributor gate.
 - Security logic is now isolated into the `Core/` framework module (`Core/Configuration/`, `Core/Actors/`, and `Core/Security/`) using Swift actors and strict concurrency for better isolation, testability, and maintainability. All security decisions flow through `SecurityConfiguration`, `SecurityModelValidator`, and `CertificateValidator`.
 - **Tests**: Unit + UI tests in dedicated targets
 - **Scripts**: Minimal Python (1%) — treat as build helpers only
@@ -494,9 +494,9 @@ The `Core` framework is the **single source of truth** for all security decision
 
 ## Development Workflow (Always Follow)
 
-1. Open `Lutheran Radio.xcodeproj` in Xcode 27 or later (recommended for agents, contributors, local gates, and App Store archives).
+1. Open `Lutheran Radio.xcodeproj` in Xcode 27 or later (required for agents, contributors, local gates, and App Store archives).
 2. Use an iOS 27.0 simulator. The canonical gate commands above use `iPhone 18 Pro`; run `xcrun simctl list devices available` and `xcodebuild -scheme "Lutheran Radio" -showdestinations` and substitute from that output. Never invent a destination. Physical-iPhone SpringBoard / Live Activity eyes-on uses the **Device eyes-on** section — it does not replace these simulator gates.
-3. Run the two xcodebuild commands above sequentially when you have the final implementation (`build-for-testing` then `test-without-building`). Xcode 26.6+ remains an accepted fallback until Xcode 27 is available locally and on CI (see README.md); it is not the recommended path.
+3. Run the two xcodebuild commands above sequentially when you have the final implementation (`build-for-testing` then `test-without-building`).
    For pure compiler warning cleanup, dead code removal, or mechanical refactoring, the lighter rules under "Build Gate Exceptions for Mechanical / Warning / Refactoring Work" apply.
    When running both gates in the same environment, execute them sequentially (build first, then test) to avoid transient build-database contention.
 4. Update `README.md`, relevant `docs/` files, and DocC articles (when security policy or architecture changes). **Improve inline source comments and `///` documentation per the "Documentation & Comment Standards for AI Coding Agents" section above.** Behavior changes must be reflected in the authoritative sources. Every touched file must be left in a better state for future agents (more self-contained, better "Why"/invariants, stronger cross-links).
