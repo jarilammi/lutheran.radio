@@ -2,7 +2,7 @@
 
 **Purpose:** Canonical reference for how Lutheran Radio coordinates **system Now Playing** (`MPNowPlayingInfoCenter`), **ActivityKit Live Activities**, and **WidgetKit** surfaces — including the intentional dual-card lock screen UX, Live Activity start policy, metadata push cost, and the ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)`` coordination wrapper.
 
-**SeeAlso:** [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md), [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md), `SharedPlayerManager+NowPlaying.swift`, `RadioLiveActivityManager.swift`, `StreamProgramMetadata.swift`, CODING_AGENT.md (Single Source of Truth Principles).
+**SeeAlso:** [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md), [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md), `SharedPlayerManager+NowPlaying.swift`, `RadioLiveActivityManager.swift`, `StreamProgramMetadata.swift`, `WidgetInteractiveIntents.swift`, CODING_AGENT.md (Single Source of Truth Principles).
 
 ---
 
@@ -62,6 +62,31 @@ Live Activities are **not** requested at cold launch. They start when playback b
 **Factory-idle `.prePlay` does not request a missing card.** ``sessionNeedsInteractiveLiveActivity(isPlaying:visualState:isConnectingPlayback:isStreamSwitchPrePlayHoldActive:)`` is false when visual is `.prePlay`, the start pipeline is inactive, and stream-switch hold is inactive (reset complete, ``play()`` not entered). Become-active ``ensureInteractiveLiveActivityIfNeeded()`` must not ``startActivity()`` a Connecting card before attach; if attach then fails, that card would remain with no engine. Connecting attach (``isConnectingPlayback`` or ``isStreamSwitchPrePlayHoldActive``) and this-process ``.userPaused`` still need chrome. Do **not** arm ``isPlaybackStartPipelineActive`` before ``play()`` to cover the factory special-tuning window — that latch is a duplicate same-stream start. This is **missing-card start** policy only; never end the only interactive surface while request is ineligible. Background auto-start remains ``handleAppWillEnterBackground()`` (`isPlaying` only). Request eligibility (``isInteractiveLiveActivityRequestEligible``) is a separate start gate. Gate: `testForegroundEnsureStartPolicy`.
 
 **One in-flight `Activity.request`:** `Activity.request` awaits (actor visual/language hops, then ActivityKit). Concurrent ``refreshAllMediaSurfaces`` `.startOrUpdate` (``setPlaying()`` dual media-surface refresh, coordinator chrome, overlapping start) still sees `currentActivity == nil` until the first request assigns ownership. ``interactiveLiveActivityStartDisposition`` takes ``.joinInFlightRequest`` while ``hasInFlightInteractiveLiveActivityRequest`` is true; those callers wait, then ``.updateOwned``. ``shouldIssueInteractiveLiveActivityRequest`` is true only for eligible + unowned + not in-flight. After a successful request, ``reapUnownedSystemResiduals(preservingOwnedActivityId:)`` ends any extra system id with ``.immediate`` (never ``.default``). Deferred ``observeExistingActivities()`` skips the unowned full residual sweep while a request is in flight (``shouldSkipUnownedResidualSweepWhileInteractiveRequestInFlight``) so that end cannot invalidate the card about to be assigned. Gates: `testConcurrentStartOrUpdateJoinsInFlightRequestInsteadOfSecondActivityRequest`, `testSiblingReapAfterSuccessfulInteractiveRequestPreservesOwnedId`; keep `testInteractiveLiveActivityStartRequiresRequestEligibility`.
+
+---
+
+## Lock-Screen Button Hosting (App Process)
+
+Archive / lock-screen Live Activity play/pause (and the same media-wake class for home / Control play-pause) must run `perform()` in the **main app process** without opening the UI.
+
+| Mechanism | Role |
+|-----------|------|
+| ``LiveActivityTogglePlaybackIntent`` / ``WidgetPlayRadioIntent`` / ``WidgetPauseRadioIntent`` / ``ToggleRadioIntent`` | Interactive AppIntent **types** in membership-exception `WidgetInteractiveIntents.swift` (main app + extension + `LutheranRadioWidgetTests`) |
+| ``AudioPlaybackIntent`` | Main-app profile: system launches/wakes the app in the background for play/pause |
+| ``LiveActivityIntent`` | Main-app profile: Live Activity play/pause (dual with ``AudioPlaybackIntent``) and language chips (``LiveActivitySwitchStreamIntent``) |
+| ``supportedModes`` = `.background` | Buttons must not foreground the app. ``openAppWhenRun`` stays `false` (deprecated alias). ``LiveActivityIntent`` must not be used to open the app |
+| ``WidgetIntentExecution/executeLiveActivityToggle(plan:)`` | Main app: ``submitMediaTransportCommandAndWait`` (same mailbox as Now Playing remotes). Do **not** also write `pendingAction*` + Darwin for that tap |
+| Darwin ``radio.lutheran.widget.action`` | Extension fallback when the system still hosts `perform()` in the extension (app not resident). Keep ``checkForPendingWidgetActions()`` |
+
+Views (`ActivityConfiguration`, home family, ControlWidget) stay in `LutheranRadioWidget/`. Do not compile those views into the main app. Do not put AppIntents that call ``SharedPlayerManager`` into WidgetSurface.
+
+**Privacy:** Main-app hosted `perform()` still persists through existing SSOT (optimistic snapshot, LA mirrors, ``saveCurrentState``). Do not open the home-widget ``hasActiveLutheranWidgets`` gate solely because an LA button was tapped if no home/Control widget exists. LA mirrors are not home-gate-bound.
+
+**Stream-switch chips:** ``LiveActivitySwitchStreamIntent`` adopts ``LiveActivityIntent`` + background modes. In-process switch is silent and pause-preserving; never invent `.playing` during stream-switch hold. Execution stays on ``WidgetIntentExecution/performLiveActivityStreamSwitch(languageCode:)``.
+
+Simulator unit tests do **not** prove Archive / locked-device behavior with main suspended. Physical-device / Archive eyes-on remains required for “LA play/pause on a locked device with main suspended.”
+
+**SeeAlso:** ``WidgetInteractiveIntents``, ``WidgetIntentExecution/executeLiveActivityToggle(plan:)``, ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``, [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md).
 
 **Never** start LA from widget extension processes. Activity ownership is main-app only.
 

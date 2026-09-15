@@ -5,16 +5,18 @@
 //  Created by Jari Lammi on 3.6.2025.
 //
 
-// SHARED: Cross-target source (main app + LutheranRadioWidgetExtension)
-//
-// Single physical file on disk, compiled into both targets via Xcode
-// File System Synchronized Group + membershipExceptions (see project.pbxproj).
+// Extension-only Live Activity views (`ActivityConfiguration`, Lock Screen,
+// Dynamic Island). Interactive AppIntent **types** live in membership-exception
+// `Lutheran Radio/WidgetInteractiveIntents.swift` (main app + extension +
+// `LutheranRadioWidgetTests`) so Archive / lock-screen play/pause can adopt
+// ``AudioPlaybackIntent`` / ``LiveActivityIntent`` in the app process.
+// Do **not** compile this view file into the main app.
 //
 // Purpose:
-// Live Activity (Dynamic Island + Lock Screen) view implementation and its
-// AppIntent handlers. Renders `LutheranRadioLiveActivityAttributes.ContentState`
-// (visualState + streamMetadata + currentLanguage) provided by
-// `RadioLiveActivityManager`.
+// Live Activity (Dynamic Island + Lock Screen) SwiftUI shells. Renders
+// `LutheranRadioLiveActivityAttributes.ContentState` (visualState + streamMetadata
+// + currentLanguage) provided by `RadioLiveActivityManager`. Buttons bind
+// ``LiveActivityTogglePlaybackIntent`` / ``LiveActivitySwitchStreamIntent``.
 //
 // Key invariants:
 // - Language chrome (flag, name, alt-stream “current”) reads **only**
@@ -59,7 +61,8 @@
 // "Local Only", resurrection, intent branching). Pure control glyph+tint decisions
 // must use the narrow `PlayerControlPresentation`. See PlayerVisualState.swift header.
 //
-// - SeeAlso: `LutheranRadioLiveActivityAttributes`, `SharedPlayerManager`
+// - SeeAlso: `LutheranRadioLiveActivityAttributes`, `WidgetInteractiveIntents.swift`,
+//   `SharedPlayerManager`
 //   (PersistedWidgetState, load*/persist*, userRequestedPlay, mainAppLiveActivityLanguageCode),
 //   `PlayerVisualState` (the three mappers + `isActivelyPlaying` semantics),
 //   `PlayerStatusPresentation`, `PlayerControlPresentation`, `WidgetNowPlayingDisplayModel`,
@@ -74,10 +77,10 @@
 //   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT),
 //   <doc:Architecture>, README.md.
 //
-// AGENT NOTE: This is presentation + intent surface only. State mutations belong
-// in SharedPlayerManager. When editing views or intents, keep the explicit-play
-// rule (userRequestedPlay for toggle "play" direction) and the fixed-metadata
-// region contract (no conditional row insertion) intact.
+// AGENT NOTE: This is presentation only. Intent types and perform() live in
+// ``WidgetInteractiveIntents``. State mutations belong in SharedPlayerManager
+// via ``WidgetIntentExecution``. Keep the explicit-play rule (userRequestedPlay
+// for toggle "play" direction) and the fixed-metadata region contract intact.
 
 import ActivityKit
 import WidgetKit
@@ -151,7 +154,12 @@ private func getAlternativeStreams(
 //   `SimpleEntry` for the home-screen widgets. See WidgetDisplayModels.swift header
 //   for the full invalidation-surface rationale.
 
-// MARK: - Live Activity Intents
+// MARK: - Live Activity views
+//
+// Interactive intents: ``LiveActivityTogglePlaybackIntent`` /
+// ``LiveActivitySwitchStreamIntent`` in membership-exception
+// `WidgetInteractiveIntents.swift` (app + extension). Buttons below bind those
+// types; `perform()` is not defined in this view file.
 //
 // Privacy note (SSOT + privacy gate):
 // Live Activities read state via the `PersistedWidgetState` snapshot carried in
@@ -159,114 +167,10 @@ private func getAlternativeStreams(
 // After `clearAllLocalState()` (or when `WidgetRefreshManager.hasActiveLutheranWidgets == false`
 // because no Lutheran widget/Control Center widget is installed), no snapshot is written
 // and the Live Activity ends; subsequent presentations fall back to neutral prePlay-like UI.
-//
-// All writes are gated in SharedPlayerManager via `hasActiveWidgets` (with an
-// `isWidgetProcess()` bypass only during AppIntent execution). See:
-// - `WidgetRefreshManager.hasActiveLutheranWidgets` (the single source of truth for the gate)
-// - `persistWidgetSnapshot`, `savePersistedWidgetState`, `writeInstantFeedback`, etc.
+// LA mirrors are not home-gate-bound. Do not open the home-widget privacy gate solely
+// because an LA button was tapped.
 //
 // See also the resurrection and persistence tables in SharedPlayerManager.swift.
-
-/// AppIntent that toggles playback when the user taps the play/pause button
-/// inside the Live Activity (Dynamic Island trailing region or Lock Screen row).
-///
-/// - Important: The "play/resume" direction (when `!isActivelyPlaying`) **must**
-///   call `SharedPlayerManager.userRequestedPlay()`. This is the single
-///   authoritative explicit-play entry point. It ensures `setUserIntentToPlay()`
-///   executes before any resurrection/one-shot/sticky-intent logic inside `play()`.
-///   The pause direction calls `stop()` directly (the correct path for immediate
-///   sticky `.userPaused`).
-///
-///   Explicit user-initiated play requests (from Live Activity, home widget,
-///   Control widget, Siri, remote commands, URL schemes, etc.) are semantically
-///   different from internal continuation/resumption. Only internal paths are
-///   allowed to call `play()` directly after a prior `userRequestedPlay()` has
-///   already established intent (see the resume branches inside
-///   `completeStreamSwitch` and `switchToStreamFromWidget`).
-///
-/// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``,
-///   ``SharedPlayerManager/play()``, ``SharedPlayerManager/stop()``,
-///   `LiveActivitySwitchStreamIntent`, <doc:Architecture>,
-///   CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared sources).
-///
-/// AGENT NOTE: Live Activity intents often run in a short-lived extension process
-/// whose memory-only session snapshot is empty. Direction is planned by
-/// ``WidgetIntentExecution/performLiveActivityToggle()`` from ActivityKit
-/// ContentState / durable App Group mirror first, then actor/snapshot fallbacks —
-/// never from bare default `.prePlay` alone. Treat play as an explicit user surface:
-/// always go through `userRequestedPlay()` for the "start playing" direction.
-/// Direct `play()` calls here would bypass the intent-setting guard and are forbidden.
-struct LiveActivityTogglePlaybackIntent: AppIntent {
-    nonisolated static var title: LocalizedStringResource { "Toggle Lutheran Radio Playback" }
-    nonisolated static var description: IntentDescription {
-        IntentDescription("Toggle play/pause from Live Activity.")
-    }
-    
-    func perform() async throws -> some IntentResult {
-        #if DEBUG
-        print("[LutheranRadioWidgetLiveActivity] LiveActivityTogglePlaybackIntent.perform called")
-        #endif
-
-        // AGENT NOTE: Full path is ``WidgetIntentExecution/performLiveActivityToggle()``.
-        // Plans from Live Activity ContentState / durable App Group mirror first — not only
-        // extension-local currentVisualState (empty session under home-widget write suppression
-        // used to invert the first lock-screen pause into play).
-        await WidgetIntentExecution.performLiveActivityToggle()
-
-        #if DEBUG
-        print("[LutheranRadioWidgetLiveActivity] LiveActivityTogglePlaybackIntent completed")
-        #endif
-
-        return .result()
-    }
-}
-
-/// AppIntent for switching the active stream/language directly from the Live Activity
-/// quick-switch buttons (Dynamic Island center region or Lock Screen language row).
-///
-/// The `languageCode` parameter is supplied by the `ForEach` over the result of
-/// `getAlternativeStreams(current:)`. The implementation looks up the canonical
-/// `DirectStreamingPlayer.Stream` via the authoritative `availableStreams` list
-/// (never constructs one locally) and calls `switchToStream`, which is the
-/// single correct path for language changes (it resets prePlay, preserves intent
-/// correctly, and updates the PersistedWidgetState snapshot).
-///
-/// - SeeAlso: ``SharedPlayerManager/switchToStream(_:)``,
-///   ``SharedPlayerManager/availableStreams``, `getAlternativeStreams`,
-///   `LiveActivityTogglePlaybackIntent`, CODING_AGENT.md.
-struct LiveActivitySwitchStreamIntent: AppIntent {
-    nonisolated static var title: LocalizedStringResource { "Switch Stream" }
-    nonisolated static var description: IntentDescription {
-        IntentDescription("Switch to a different language stream from Live Activity.")
-    }
-    
-    @Parameter(title: "Language Code")
-    var languageCode: String
-    
-    init() {}
-    init(languageCode: String) {
-        self.languageCode = languageCode
-    }
-
-    func perform() async throws -> some IntentResult {
-        #if DEBUG
-        print("[LutheranRadioWidgetLiveActivity] LiveActivitySwitchStreamIntent.perform called for language: \(languageCode)")
-        #endif
-
-        // AGENT NOTE: Full path is ``WidgetIntentExecution/performLiveActivityStreamSwitch(languageCode:)``.
-        let switched = await WidgetIntentExecution.performLiveActivityStreamSwitch(languageCode: languageCode)
-
-        #if DEBUG
-        if !switched {
-            print("[LutheranRadioWidgetLiveActivity] LiveActivitySwitchStreamIntent: Language stream not found")
-        } else {
-            print("[LutheranRadioWidgetLiveActivity] LiveActivitySwitchStreamIntent completed for \(languageCode)")
-        }
-        #endif
-
-        return .result()
-    }
-}
 
 /// The WidgetKit definition for the Lutheran Radio Live Activity.
 ///

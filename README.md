@@ -657,6 +657,7 @@ Two layers keep app, widget extension, and Live Activity presentation aligned. *
 - `DirectStreamingPlayer+WidgetStub.swift` — extension-only DirectStreamingPlayer type surface
 - `WidgetDisplayModels.swift` — `WidgetProviderSnapshotResolver` snapshot hygiene / catalog labels; catalog-aware `displayLanguageName(for:)` wrapper
 - `WidgetIntentExecution.swift` — AppIntent perform SSOT and side effects
+- `WidgetInteractiveIntents.swift` — Live Activity / home / Control interactive AppIntent types (main-app `AudioPlaybackIntent` / `LiveActivityIntent`; `supportedModes = .background`)
 - `MediaTransportLatencyTimeline.swift` (DEBUG-only structured latency timeline for media-transport / Live Activity / extension-drain measurement; stripped from Release)
 - `WidgetRefreshManager.swift` + `WidgetRefreshManager+TestSupport.swift` (DEBUG harness) — debouncing + active-widgets privacy gate
 - `Localizable.xcstrings` (extension + extension-profile tests)
@@ -712,6 +713,7 @@ See [docs/Widget-Presentation-Dataflow.md](docs/Widget-Presentation-Dataflow.md)
 | Backlog + architecture status | [docs/Widget-Functionality-Roadmap.md](docs/Widget-Functionality-Roadmap.md) |
 | Presentation framework | `WidgetSurface/` (coordinators, timeline factory, liveness, display models, language chrome, pure Provider assembly) |
 | Intent execution (cross-target) | `WidgetIntentExecution` in membership-exception `WidgetIntentExecution.swift` |
+| Interactive AppIntent types (app + extension) | `LiveActivityTogglePlaybackIntent` / `WidgetPlayRadioIntent` / `ToggleRadioIntent` in membership-exception `WidgetInteractiveIntents.swift` (`AudioPlaybackIntent` + `LiveActivityIntent` on the app profile; `supportedModes = .background`) |
 | Provider presentation assembly (pure) | `WidgetProviderPresentationAssembly` in `WidgetSurface/` |
 | Provider snapshot hygiene (SPM-coupled) | `WidgetProviderSnapshotResolver` in membership-exception `WidgetDisplayModels.swift` (``resolveHomeWidgetChromeFields``: agreement → session; disagreement → fresher `updatedAt`; neither → factory; session → ``homeWidgetStreamMetadata`` for program title) |
 | Privacy-gated home live chrome (cross-process paint) | App Group ``homeWidgetLiveChrome`` + [`docs/Home-Live-Chrome-App-Group-Mirror-Design.md`](docs/Home-Live-Chrome-App-Group-Mirror-Design.md); presentation dataflow § cross-process live chrome |

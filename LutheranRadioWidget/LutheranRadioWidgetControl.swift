@@ -10,8 +10,13 @@
 //  consumes only those narrow fields (no inline `makeStatusPresentation()` /
 //  `makeControlPresentation()` in the view body).
 //
+//  ``ToggleRadioIntent`` lives in membership-exception `WidgetInteractiveIntents.swift`
+//  (``SetValueIntent`` for ControlWidgetToggle; main-app ``AudioPlaybackIntent`` +
+//  ``supportedModes`` = `.background`). This file is the ControlWidget shell only.
+//
 //  - SeeAlso: `SimpleEntry` (WidgetKit parallel), `LutheranRadioWidget.swift` (Provider),
-//    docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md (Tier 1),
+//    ``ToggleRadioIntent``, docs/Widget-Presentation-Dataflow.md,
+//    docs/Widget-Functionality-Roadmap.md (Tier 1),
 //    CODING_AGENT.md (narrow inputs, cross-target shared sources).
 
 import AppIntents
@@ -23,36 +28,6 @@ import WidgetSurface
 struct NoOpControlConfiguration: ControlConfigurationIntent {
     nonisolated static var title: LocalizedStringResource {
         "lutheran_radio_title"
-    }
-}
-
-struct ToggleRadioIntent: SetValueIntent {
-    nonisolated static var title: LocalizedStringResource { "Toggle Lutheran Radio" }
-    nonisolated static var description: IntentDescription {
-        IntentDescription("Start or stop Lutheran Radio playback.")
-    }
-    
-    @Parameter(title: "Is Playing")
-    var value: Bool  // ← true = play, false = pause (this is what ControlWidgetToggle passes)
-    
-    init() {}
-    
-    func perform() async throws -> some IntentResult {
-        #if DEBUG
-        print("[LutheranRadioWidgetControl] ToggleRadioIntent.perform called with desired value: \(value)")
-        #endif
-
-        // AGENT NOTE: Full path is ``WidgetIntentExecution/performControlWidgetToggle(isPlayingRequested:)``
-        // so extension-profile unit tests exercise the same body as this AppIntent.
-        // Residual-only play refuse lives in that perform (same flags as
-        // ``performHomeWidgetToggle()`` / ``shouldDistrustDurableMirrorPlayPlanning()``).
-        await WidgetIntentExecution.performControlWidgetToggle(isPlayingRequested: value)
-
-        #if DEBUG
-        print("[LutheranRadioWidgetControl] ToggleRadioIntent completed successfully")
-        #endif
-
-        return .result()
     }
 }
 
