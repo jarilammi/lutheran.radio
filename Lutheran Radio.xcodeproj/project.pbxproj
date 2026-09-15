@@ -208,6 +208,7 @@
 				"SharedPlayerManager+PrivacyClear.swift",
 				WidgetDisplayModels.swift,
 				WidgetIntentExecution.swift,
+				WidgetInteractiveIntents.swift,
 				WidgetRefreshManager.swift,
 				"WidgetRefreshManager+TestSupport.swift",
 			);
@@ -236,6 +237,7 @@
 				"SharedPlayerManager+PrivacyClear.swift",
 				WidgetDisplayModels.swift,
 				WidgetIntentExecution.swift,
+				WidgetInteractiveIntents.swift,
 				WidgetRefreshManager.swift,
 				"WidgetRefreshManager+TestSupport.swift",
 			);
