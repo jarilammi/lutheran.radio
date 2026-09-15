@@ -13,6 +13,12 @@
 //  snapshot updates (`updateUserDefaultsLanguage`), and VoiceOver
 //  `announceSwitchedToLanguage`.
 //
+//  Blocked-path chrome: paused tails of `switchToStreamFromWidget` and
+//  `completeStreamSwitch` must re-sample visual/intent SSOT after every await
+//  (`paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive`) before touching
+//  the in-app pill. Never hard-code `updateUI(for: .userPaused)` after
+//  suspension — a later explicit play can already have painted Connecting.
+//
 //  Does not own: engine prep SSOT (`DirectStreamingPlayer.switchToStream`),
 //  visual/intent SSOT (`SharedPlayerManager`), tuning delight clips (`+Tuning`),
 //  pending-action drain (`+PendingActions` — calls into this domain for switch),
@@ -35,11 +41,15 @@
 //  Canonical private orchestrators (same type, file-private):
 //  - ``completeStreamSwitch(stream:index:)`` — main-app full UX (tuning + needle)
 //  - ``switchToStreamFromWidget(to:index:actionId:)`` — silent widget reconciliation
+//  - ``paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()`` — paused-tail
+//    chrome gate (paint visual SSOT if intent still not active; skip if a later
+//    play already made intent active)
 //
 //  - SeeAlso: ``DirectStreamingPlayer/switchToStream(_:)``,
 //    ``SharedPlayerManager/play()``, ``SharedPlayerManager/userRequestedPlay()``,
 //    ``SharedPlayerManager/resetToPrePlayForNewStream(preserveActiveSleepTimer:)``,
 //    RadioPlayerCoordinator.swift (isolation map),
+//    docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority),
 //    docs/cold-launch-streamplay-regression-checklist.md,
 //    CODING_AGENT.md (Single Source of Truth Principles).
 //
@@ -104,7 +114,11 @@ extension RadioPlayerCoordinator {
     // branches deliberately use direct `play()` (internal continuation of active intent).
     // See the `///` on `switchToStreamFromWidget`, `completeStreamSwitch`, `userRequestedPlay`,
     // and `play()` for the full analysis and "keep as-is" rule.
-    // Update this block + the `///` docs on the four symbols together on any architecture change.
+    // Paused/blocked tails re-sample SSOT after awaits via
+    // `paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive` — never hard-code
+    // `updateUI(for: .userPaused)` after suspension (a later explicit play can already
+    // have painted Connecting). Update this block + the `///` docs on the four symbols
+    // together on any architecture change.
 
     // MARK: - External / deep-link language switch
 
@@ -279,9 +293,12 @@ extension RadioPlayerCoordinator {
     /// 3. Engine preparation exclusively via `DirectStreamingPlayer.switchToStream(_:)`
     ///    (the SSOT: model update, transient reset, awaited stop for lang change, counter reset).
     /// 4. Mirror selection + language snapshot + LA language mirror + media-surface refresh.
-    /// 5. If `!shouldResumeAfterSwitch`: clear soft-pause stash, force `.userPaused` visual,
-    ///    clear destination stamp if not holding, announce, clear the `actionId`, and return
-    ///    (no playback started).
+    /// 5. If `!shouldResumeAfterSwitch`: clear soft-pause stash, then
+    ///    ``paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()`` (re-sample
+    ///    intent/visual SSOT after the await — do not hard-code `.userPaused` over
+    ///    Connecting already painted by a later explicit play). Clear destination
+    ///    stamp if not holding, announce, clear the `actionId`, and return
+    ///    (no playback started; never auto-resume from this branch).
     /// 6. If resuming: `SharedPlayerManager.play()` (hold already active). Stream failure leaves
     ///    intent active (`.shouldBePlaying` / `.sleepTimer`), so this path auto-resumes without
     ///    an extra play tap.
@@ -309,7 +326,10 @@ extension RadioPlayerCoordinator {
     ///   for the duration (this method does not own the flag). Must run on the @MainActor.
     /// - Postcondition: Engine model and UI selection reflect `stream`. If the pre-switch
     ///   intent was active, playback proceeds (or is initiated) for the new stream; otherwise
-    ///   the selection is left in `.userPaused`. The `actionId` has been cleared.
+    ///   destination is stamped and blocked-path chrome follows current visual SSOT
+    ///   (typically sticky `.userPaused`) unless a later explicit play already made
+    ///   intent active — then Connecting/playing chrome is left to SSOT observation.
+    ///   The `actionId` has been cleared. Never auto-resumes from the blocked branch.
     ///
     /// - Important: This method **never** plays the tuning sound and never animates the
     ///   needle. Those effects are owned exclusively by `completeStreamSwitch`.
@@ -328,6 +348,8 @@ extension RadioPlayerCoordinator {
     ///   ``SharedPlayerManager/clearStreamSwitchDestinationLanguageIfNotHolding()``,
     ///   ``SharedPlayerManager/markPlaybackStoppedByStreamFailure(_:)``,
     ///   ``SharedPlayerManager/currentPlaybackIntent``,
+    ///   ``paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()``,
+    ///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority),
     ///   docs/cold-launch-streamplay-regression-checklist.md (§6.12, §10),
     ///   CODING_AGENT.md (Single Source of Truth Principles),
     ///   <doc:Architecture>.
@@ -387,7 +409,9 @@ extension RadioPlayerCoordinator {
             #endif
             await SharedPlayerManager.shared.clearSoftPauseMetadataStashForLanguageChange()
             viewModel?.selectedStreamIndex = index // migrated from // languageSelectorView (SwiftUI uses VM) .setSelectedIndex(index, caller: "widgetSwitch-paused")
-            updateUI(for: .userPaused)
+            // Re-sample SSOT after the stash-clear await — do not hard-code `.userPaused`
+            // over Connecting already painted by a concurrent explicit play.
+            await paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()
             // Destination fully stamped (snapshot + mirror + surfaces); drop stamp without hold.
             await SharedPlayerManager.shared.clearStreamSwitchDestinationLanguageIfNotHolding()
             announceSwitchedToLanguage(stream)
@@ -597,8 +621,11 @@ extension RadioPlayerCoordinator {
     /// 3. **Awaited** language snapshot + Live Activity language mirror + media-surface refresh
     ///    (visual is already Connecting or sticky pause — never `.playing` mid-teardown;
     ///    destination language must land before refresh/save re-resolve).
-    /// 4. If not resuming: clear soft-pause metadata, force `.userPaused` UI, clear destination
-    ///    stamp if not holding, announce, return.
+    /// 4. If not resuming: clear soft-pause metadata, then
+    ///    ``paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()`` (re-sample
+    ///    intent/visual SSOT after the await — do not hard-code `.userPaused` over
+    ///    Connecting already painted by a later explicit play). Clear destination
+    ///    stamp if not holding, announce, return (no auto-resume).
     /// 5. If resuming: optional tuning sound + needle animation, second guard,
     ///    conditional redundant-hold skip (still clears a superseded start-pipeline latch),
     ///    then `SharedPlayerManager.play()`.
@@ -635,6 +662,8 @@ extension RadioPlayerCoordinator {
     ///   ``SharedPlayerManager/stampStreamSwitchDestinationLanguage(_:)``,
     ///   ``SharedPlayerManager/clearStreamSwitchDestinationLanguageIfNotHolding()``,
     ///   ``SharedPlayerManager/currentPlaybackIntent``,
+    ///   ``paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()``,
+    ///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority),
     ///   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared source files"),
     ///   <doc:Architecture>.
     ///
@@ -713,7 +742,9 @@ extension RadioPlayerCoordinator {
 
                 self.backgroundImageController.cancelPendingDeferral()
                 self.backgroundImageController.update(for: stream)
-                self.updateUI(for: .userPaused)
+                // Re-sample SSOT after the stash-clear await — do not hard-code `.userPaused`
+                // over Connecting already painted by a concurrent explicit play.
+                await paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()
                 self.viewModel?.selectedStreamIndex = index
                 await SharedPlayerManager.shared.clearStreamSwitchDestinationLanguageIfNotHolding()
                 announceSwitchedToLanguage(stream)
@@ -772,6 +803,68 @@ extension RadioPlayerCoordinator {
             #endif
         }
     }
+
+    // MARK: - Blocked-path chrome gate (paused switch tails)
+
+    /// Paints in-app chrome from visual SSOT after a paused/blocked stream-switch tail, only when intent is still not active.
+    ///
+    /// Entry-time `shouldResumeAfterSwitch` is a snapshot. After
+    /// ``clearSoftPauseMetadataStashForLanguageChange()`` (and earlier switch / language
+    /// snapshot awaits) a concurrent widget play pending or in-app play
+    /// (``SharedPlayerManager/userRequestedPlay()`` → ``setUserIntentToPlay()`` → `.prePlay`) can already
+    /// have painted Connecting. Hard-coding ``updateUI(for: .userPaused)`` after those
+    /// awaits overwrites ``lastAppliedVisualState`` without re-reading SSOT — a
+    /// coordinator-side stale paint, not an SPM mutation.
+    ///
+    /// - Precondition: Caller is on the paused/blocked branch (`shouldResumeAfterSwitch`
+    ///   was false at entry). Must run on the `@MainActor`. The last await before chrome
+    ///   on that branch has completed.
+    /// - Postcondition: If ``currentPlaybackIntent`` is still not
+    ///   ``PlaybackIntent/isActivePlaybackIntent``, in-app chrome matches current visual
+    ///   SSOT (typically `.userPaused`; `.securityLocked` / `.cleared` are not overwritten
+    ///   with hardcoded `.userPaused`). If a later explicit play already made intent
+    ///   active (`.shouldBePlaying` / `.sleepTimer`), chrome is left untouched — no
+    ///   ``updateUI(for: .userPaused)``, no `play()`, no `stop()`, no `setUserPaused()`,
+    ///   no `setVisualState(.userPaused)`.
+    /// - Important: Never starts playback. Active-intent play already belongs to
+    ///   ``SharedPlayerManager/userRequestedPlay()`` / the in-app play control. Blocked
+    ///   branch stays "no auto-resume." Visual SSOT remains SharedPlayerManager; this
+    ///   is paint-only.
+    /// - SeeAlso: ``switchToStreamFromWidget(to:index:actionId:)``,
+    ///   ``completeStreamSwitch(stream:index:)``, ``updateUI(for:)``,
+    ///   ``PlaybackIntent/isActivePlaybackIntent``,
+    ///   ``SharedPlayerManager/currentVisualState``,
+    ///   ``SharedPlayerManager/currentPlaybackIntent``,
+    ///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority),
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§6.12),
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
+    ///
+    /// AGENT NOTE: Both canonical paused tails must call this after the last pre-chrome
+    /// await. Do not reintroduce unconditional `updateUI(for: .userPaused)` on those
+    /// branches. This helper is not a second visual SSOT.
+    private func paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive() async {
+        let intent = await SharedPlayerManager.shared.currentPlaybackIntent
+        let visual = await SharedPlayerManager.shared.currentVisualState
+
+        if intent.isActivePlaybackIntent {
+            #if DEBUG
+            print("[RadioPlayerCoordinator] [Blocked switch] Skipping chrome paint — intent already active, leaving chrome to SSOT")
+            #endif
+            return
+        }
+
+        updateUI(for: visual)
+    }
+
+    #if DEBUG
+    /// White-box seam: paused-switch tail chrome gate without driving the full orchestrators.
+    ///
+    /// - SeeAlso: ``paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()``,
+    ///   chrome visual resolver tests (blocked-path overwrite skip + still-paused paint).
+    func _test_paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive() async {
+        await paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()
+    }
+    #endif
 
     // MARK: - Accessibility (language switch)
 

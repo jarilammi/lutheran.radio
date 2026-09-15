@@ -35,6 +35,10 @@ import WidgetSurface
 /// - After ``setPlaying()``, main chrome is `.playing` **without** status delivery.
 /// - Explicit ``setUserPaused()`` / ``stop()`` paint grey via visual SSOT (no status).
 /// - Status supersession: race-lead promote allowed; settled SSOT not regressively overwritten.
+/// - Paused stream-switch blocked-path chrome: after a later explicit play has painted
+///   Connecting, ``paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()`` must not
+///   overwrite ``lastAppliedVisualState`` with `.userPaused`; still-paused intent still
+///   paints visual SSOT.
 ///
 /// Why pure + light integration:
 /// - ``RadioPlayerChromeVisualResolver`` is side-effect free (fast, no AVPlayer / ActivityKit).
@@ -46,6 +50,7 @@ import WidgetSurface
 ///   ``RadioPlayerChromeVisualResolver/shouldApplyStatusPathChromePaint(policyResult:latestVisual:latestIntent:lastApplied:)``,
 ///   ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
 ///   ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``,
+///   ``RadioPlayerCoordinator/_test_paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()``,
 ///   ``SharedPlayerManager/setPlaying()``, ``SharedPlayerManager/stop()``,
 ///   ``SharedPlayerManager/makeEventsStreamWithReplay()``,
 ///   ``PlaybackIntent/isActivePlaybackIntent``, CODING_AGENT.md (fast test patterns),
@@ -929,5 +934,125 @@ final class RadioPlayerChromeVisualResolverTests: XCTestCase {
             "Settled SSOT .playing chrome must not regress to Connecting on late status_connecting chatter"
         )
         XCTAssertEqual(coordinator.lastAppliedVisualState, .playing)
+    }
+
+    // MARK: - Blocked stream-switch chrome gate (stale paint vs no auto-resume)
+
+    /// After sticky pause, a concurrent explicit play that already painted Connecting
+    /// must not be overwritten to grey by the paused-switch tail chrome gate.
+    ///
+    /// Protects the coordinator-side stale-paint class: entry-time
+    /// `shouldResumeAfterSwitch` is false, then `setUserIntentToPlay()` + `.prePlay`
+    /// lands while the blocked path is suspended. The helper re-samples SSOT and
+    /// skips ``updateUI(for: .userPaused)``. Does not auto-resume (no `play()` /
+    /// `stop()` from the blocked branch).
+    ///
+    /// Language-switch play is Connecting (not same-stream soft-resume hold): tests
+    /// stamp `.prePlay` explicitly after intent is active so the race matches
+    /// destination-stream attach, not residual grey.
+    ///
+    /// - SeeAlso: ``RadioPlayerCoordinator/_test_paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()``,
+    ///   ``SharedPlayerManager/setUserIntentToPlay()``,
+    ///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority).
+    func testBlockedSwitchChromeGateDoesNotOverwritePrePlayAfterLaterPlay() async {
+        await manager.setUserPaused()
+
+        let coordinator = RadioPlayerCoordinator(
+            backgroundImageController: BackgroundImageController(),
+            streamingPlayer: DirectStreamingPlayer.shared
+        )
+        let viewModel = PlayerViewModel()
+        coordinator.viewModel = viewModel
+        coordinator.updateUI(for: .userPaused)
+        XCTAssertEqual(coordinator.lastAppliedVisualState, .userPaused)
+
+        // Concurrent explicit play (widget pending / in-app) already painted Connecting.
+        await manager.setUserIntentToPlay()
+        await manager.setVisualState(.prePlay)
+        coordinator.updateUI(for: .prePlay)
+        XCTAssertEqual(coordinator.lastAppliedVisualState, .prePlay)
+
+        await coordinator._test_paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()
+
+        XCTAssertEqual(
+            coordinator.lastAppliedVisualState,
+            .prePlay,
+            "Blocked-path chrome must not overwrite Connecting with .userPaused after a later play"
+        )
+        XCTAssertEqual(viewModel.visualState, .prePlay)
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertTrue(
+            intent.isActivePlaybackIntent,
+            "Blocked chrome gate must not call stop() / setUserPaused(); intent stays active"
+        )
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .prePlay)
+    }
+
+    /// Same gate: if SSOT already settled to `.playing`, blocked-path paint must not
+    /// regress the pill to `.userPaused`.
+    ///
+    /// Protects the overwrite-skip when the later play has already reached audible
+    /// chrome (not only Connecting). Still no auto-resume / extra `stop()`.
+    func testBlockedSwitchChromeGateDoesNotOverwritePlayingAfterLaterPlay() async {
+        await manager.setUserPaused()
+
+        let coordinator = RadioPlayerCoordinator(
+            backgroundImageController: BackgroundImageController(),
+            streamingPlayer: DirectStreamingPlayer.shared
+        )
+        let viewModel = PlayerViewModel()
+        coordinator.viewModel = viewModel
+        coordinator.updateUI(for: .userPaused)
+
+        await manager.setUserIntentToPlay()
+        await manager.setPlaying()
+        coordinator.updateUI(for: .playing)
+        XCTAssertEqual(coordinator.lastAppliedVisualState, .playing)
+
+        await coordinator._test_paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()
+
+        XCTAssertEqual(
+            coordinator.lastAppliedVisualState,
+            .playing,
+            "Blocked-path chrome must not overwrite .playing with .userPaused after a later play"
+        )
+        XCTAssertEqual(viewModel.visualState, .playing)
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertTrue(intent.isActivePlaybackIntent)
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .playing)
+    }
+
+    /// Control: paused switch whose intent is still `.userPaused` after the awaits
+    /// still paints sticky grey from visual SSOT (not leftover Connecting).
+    ///
+    /// Protects no-auto-resume chrome honesty: the gate must still apply
+    /// ``updateUI(for:)`` from SSOT when intent has not gone active.
+    func testBlockedSwitchChromeGatePaintsUserPausedWhenIntentStillPaused() async {
+        await manager.setUserPaused()
+
+        let coordinator = RadioPlayerCoordinator(
+            backgroundImageController: BackgroundImageController(),
+            streamingPlayer: DirectStreamingPlayer.shared
+        )
+        let viewModel = PlayerViewModel()
+        coordinator.viewModel = viewModel
+        // Simulate leftover Connecting from a prior attach so the gate must actively paint grey.
+        coordinator.updateUI(for: .prePlay)
+        XCTAssertEqual(coordinator.lastAppliedVisualState, .prePlay)
+
+        await coordinator._test_paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()
+
+        XCTAssertEqual(
+            coordinator.lastAppliedVisualState,
+            .userPaused,
+            "Still-paused blocked tail must paint visual SSOT .userPaused"
+        )
+        XCTAssertEqual(viewModel.visualState, .userPaused)
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertEqual(intent, .userPaused)
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .userPaused)
     }
 }

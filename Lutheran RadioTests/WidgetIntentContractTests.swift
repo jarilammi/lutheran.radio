@@ -554,6 +554,11 @@ final class WidgetIntentContractTests: XCTestCase {
     /// Main-app reconciliation for an explicit-paused widget switch updates the engine model
     /// without auto-resume (`switchToStreamFromWidget` paused branch).
     ///
+    /// Protects: paused widget/LA language switch must not auto-resume. Intent stays
+    /// `.userPaused`; engine model advances; in-app chrome paints visual SSOT grey
+    /// (`lastAppliedVisualState == .userPaused`). No `play()` / `userRequestedPlay()`
+    /// from the blocked branch.
+    ///
     /// Holds the coordinator until the queued ``handleWidgetSwitchToLanguage`` work item
     /// finishes — the work item captures `[weak self]`, so a `MainActor.run` local would
     /// deinit before `DispatchQueue.main.async` ran and the switch would no-op.
@@ -561,8 +566,9 @@ final class WidgetIntentContractTests: XCTestCase {
     /// ``DirectStreamingPlayer/selectedStream``.
     ///
     /// - SeeAlso: ``RadioPlayerCoordinator/handleWidgetSwitchToLanguage(_:actionId:)``,
+    ///   ``RadioPlayerCoordinator/paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()``,
     ///   ``SharedPlayerManager/_test_setSimulateWidgetProcessContext(_:)``,
-    ///   docs/cold-launch-streamplay-regression-checklist.md (§6).
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§6.12).
     @MainActor
     func testPausedWidgetSwitchReconciliationPreservesIntentAndUpdatesStreamModel() async {
         let streams = manager.availableStreams
@@ -599,6 +605,11 @@ final class WidgetIntentContractTests: XCTestCase {
         let visual = await manager.currentVisualState
         XCTAssertEqual(intent, .userPaused)
         XCTAssertEqual(visual, .userPaused)
+        XCTAssertEqual(
+            coordinator.lastAppliedVisualState,
+            .userPaused,
+            "Still-paused widget switch must paint visual SSOT .userPaused (no auto-resume chrome)"
+        )
         XCTAssertEqual(
             DirectStreamingPlayer.shared.selectedStream.languageCode,
             target.languageCode,
