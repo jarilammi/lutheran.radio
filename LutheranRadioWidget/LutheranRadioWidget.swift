@@ -41,7 +41,9 @@ import WidgetSurface
 //
 // Play/pause control is **direction-bound** (``WidgetPlayRadioIntent`` / ``WidgetPauseRadioIntent``)
 // from the control glyph so residual LIVE cannot schedule the opposite verb of the visible
-// affordance. ``openAppWhenRun`` is false; root EntryView must **not** thrash structural `.id`
+// affordance. Intent **types** live in membership-exception `WidgetInteractiveIntents.swift`
+// (``AudioPlaybackIntent`` + ``supportedModes`` = `.background` on the app profile;
+// ``openAppWhenRun`` stays false). Root EntryView must **not** thrash structural `.id`
 // on paint wakes (intent miss → WidgetKit host open). Home optimistic play never invents
 // ``.playing`` (see ``optimisticHomeWidgetVisualAfterPlayPlan``).
 //
@@ -829,130 +831,12 @@ private func homeWidgetPlayPauseButton(
     }
 }
 
-// MARK: - App Intents
-
-/// Direction-explicit **play** from the home-widget control (play glyph).
-///
-/// Runs in the widget extension process. Does **not** open the main app
-/// (``openAppWhenRun`` is `false`). Audio work is pending-mailbox + Darwin to a
-/// already-running/background main process when present.
-///
-/// - SeeAlso: ``WidgetIntentExecution/performHomeWidgetPlay()``, ``WidgetPauseRadioIntent``.
-struct WidgetPlayRadioIntent: AppIntent {
-    nonisolated static var title: LocalizedStringResource { "Play Lutheran Radio" }
-    nonisolated static var description: IntentDescription {
-        IntentDescription("Start or resume Lutheran Radio playback.")
-    }
-    /// Interactive home control must stay in-widget; never foreground main for play/pause.
-    nonisolated static var openAppWhenRun: Bool { false }
-
-    init() {}
-
-    func perform() async throws -> some IntentResult {
-        #if DEBUG
-        print("[LutheranRadioWidget] WidgetPlayRadioIntent.perform called")
-        #endif
-        await WidgetIntentExecution.performHomeWidgetPlay()
-        #if DEBUG
-        print("[LutheranRadioWidget] WidgetPlayRadioIntent completed")
-        #endif
-        return .result()
-    }
-}
-
-/// Direction-explicit **pause** from the home-widget control (pause glyph).
-///
-/// Runs in the widget extension process. Does **not** open the main app
-/// (``openAppWhenRun`` is `false`).
-///
-/// - SeeAlso: ``WidgetIntentExecution/performHomeWidgetPause()``, ``WidgetPlayRadioIntent``.
-struct WidgetPauseRadioIntent: AppIntent {
-    nonisolated static var title: LocalizedStringResource { "Pause Lutheran Radio" }
-    nonisolated static var description: IntentDescription {
-        IntentDescription("Pause Lutheran Radio playback.")
-    }
-    /// Interactive home control must stay in-widget; never foreground main for play/pause.
-    nonisolated static var openAppWhenRun: Bool { false }
-
-    init() {}
-
-    func perform() async throws -> some IntentResult {
-        #if DEBUG
-        print("[LutheranRadioWidget] WidgetPauseRadioIntent.perform called")
-        #endif
-        await WidgetIntentExecution.performHomeWidgetPause()
-        #if DEBUG
-        print("[LutheranRadioWidget] WidgetPauseRadioIntent completed")
-        #endif
-        return .result()
-    }
-}
-
-/// Legacy single-intent toggle (tests / Shortcuts). Home family views use direction-bound intents.
-///
-/// Does **not** open the main app (``openAppWhenRun`` is `false`) — same in-widget contract as
-/// ``WidgetPlayRadioIntent`` / ``WidgetPauseRadioIntent``. Prefer those direction-bound intents
-/// for LIVE chrome so residual glyphs cannot invert the scheduled verb.
-///
-/// - SeeAlso: ``WidgetIntentExecution/performHomeWidgetToggle()``, ``WidgetPlayRadioIntent``.
-struct WidgetToggleRadioIntent: AppIntent {
-    nonisolated static var title: LocalizedStringResource { "Toggle Lutheran Radio" }
-    nonisolated static var description: IntentDescription {
-        IntentDescription("Play or pause Lutheran Radio.")
-    }
-    /// Shortcuts / tests must stay in-widget; never foreground main for a toggle.
-    nonisolated static var openAppWhenRun: Bool { false }
-
-    init() {}
-    
-    func perform() async throws -> some IntentResult {
-        #if DEBUG
-        print("[LutheranRadioWidget] WidgetToggleRadioIntent.perform called")
-        #endif
-
-        // AGENT NOTE: Full path is ``WidgetIntentExecution/performHomeWidgetToggle()`` so
-        // extension-profile unit tests exercise the same body as this AppIntent.
-        await WidgetIntentExecution.performHomeWidgetToggle()
-
-        #if DEBUG
-        print("[LutheranRadioWidget] WidgetToggleRadioIntent completed")
-        #endif
-
-        return .result()
-    }
-}
-
-public struct SwitchStreamIntent: AppIntent {
-    public init() {}
-    public init(streamLanguageCode: String) {
-        self.streamLanguageCode = streamLanguageCode
-    }
-
-    public nonisolated static var title: LocalizedStringResource { "Switch Stream" }
-    public nonisolated static var description: IntentDescription {
-        IntentDescription("Switch to a different language stream.")
-    }
-    /// Stream chips must stay in-widget; never foreground main for language switch.
-    public nonisolated static var openAppWhenRun: Bool { false }
-
-    @Parameter(title: "Language Code")
-    var streamLanguageCode: String
-
-    public func perform() async throws -> some IntentResult {
-        #if DEBUG
-        print("[LutheranRadioWidget] SwitchStreamIntent.perform called for language: \(streamLanguageCode)")
-        #endif
-
-        // AGENT NOTE: Full path is ``WidgetIntentExecution/performHomeWidgetStreamSwitch(languageCode:)``.
-        await WidgetIntentExecution.performHomeWidgetStreamSwitch(languageCode: streamLanguageCode)
-
-        #if DEBUG
-        print("[LutheranRadioWidget] SwitchStreamIntent completed for \(streamLanguageCode)")
-        #endif
-
-        return .result()
-    }
-}
+// MARK: - Widget configuration
+//
+// Interactive play/pause/switch AppIntent types live in membership-exception
+// ``WidgetInteractiveIntents`` (`WidgetPlayRadioIntent`, `WidgetPauseRadioIntent`,
+// `WidgetToggleRadioIntent`, `SwitchStreamIntent`). This file keeps only the
+// WidgetKit configuration intent used by the home family.
 
 public struct RadioWidgetConfiguration: WidgetConfigurationIntent {
     public init() {}

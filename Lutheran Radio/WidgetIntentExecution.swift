@@ -8,12 +8,15 @@
 //  LutheranRadioWidgetTests). AppIntent perform SSOT and side effects via
 //  SharedPlayerManager + WidgetRefreshManager.
 //
-//  Planning (pure mapping) lives in WidgetIntentCoordinators (WidgetSurface).
-//  Snapshot hygiene / Provider assembly live in WidgetDisplayModels.swift.
+//  Interactive AppIntent **types** live in `WidgetInteractiveIntents.swift` (same
+//  membership set). Planning (pure mapping) lives in WidgetIntentCoordinators
+//  (WidgetSurface). Snapshot hygiene / Provider assembly live in WidgetDisplayModels.swift.
 //
-//  Mechanical split from WidgetDisplayModels.swift — no API renames, no behavior change.
+//  Main-app play/pause: media-transport mailbox (no pendingAction + Darwin on the
+//  same tap). Extension: pending + Darwin ``radio.lutheran.widget.action``.
 //
-//  - SeeAlso: WidgetDisplayModels.swift, WidgetIntentCoordinators,
+//  - SeeAlso: WidgetInteractiveIntents.swift, WidgetDisplayModels.swift,
+//    WidgetIntentCoordinators, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
 //    docs/Widget-Functionality-Roadmap.md, CODING_AGENT.md (cross-target membership exceptions).
 //
 
@@ -623,14 +626,19 @@ enum WidgetIntentExecution {
         )
     }
 
-    /// Optimistic snapshot + pending action + immediate widget refresh for play/pause toggles.
+    /// Optimistic snapshot + engine work + immediate widget refresh for play/pause toggles.
     ///
     /// Imperative **extensionOptimistic** path: the extension process cannot emit
     /// ``PlayerEvent``; immediate ``refreshIfNeeded`` is the only cross-process reload lever
-    /// until the main app drains the pending action.
+    /// until the main app drains the pending action (extension) or the in-process mailbox
+    /// completes (``AudioPlaybackIntent`` host).
     ///
-    /// **Home live chrome:** ``signalWidgetPendingAction`` → ``persistOptimisticWidgetSnapshot``
-    /// stamps privacy-gated ``homeWidgetLiveChrome`` with the plan’s ``targetVisualState``
+    /// **Process split:** extension writes pending + Darwin via ``signalWidgetPendingAction``.
+    /// Main-app ``AudioPlaybackIntent`` persists optimistic chrome then
+    /// ``submitMediaTransportCommandAndWait`` — never both Darwin and mailbox for one tap.
+    ///
+    /// **Home live chrome:** ``persistOptimisticWidgetSnapshot`` stamps privacy-gated
+    /// ``homeWidgetLiveChrome`` with the plan’s ``targetVisualState``
     /// (reason `"optimisticToggle"`). Pause → ``.userPaused``; home play →
     /// ``optimisticHomeWidgetVisualAfterPlayPlan`` (hold sticky pause or Connecting — never invent
     /// home ``.playing`` before engine settle); Control may still target ``.playing``. Main-app
@@ -676,11 +684,20 @@ enum WidgetIntentExecution {
         // stamp that locale into session + live chrome while ``homeWidgetLiveChrome`` is `et`.
         let language = SharedPlayerManager.languageForInstantFeedbackWrite(language)
         let manager = SharedPlayerManager.shared
+        #if LUTHERAN_MAIN_APP
+        // AudioPlaybackIntent hosts `perform()` in the app process. Persist optimistic
+        // chrome here, then run the media-transport mailbox below. Do **not** write
+        // pendingAction* + Darwin for the same tap — that double-drains with mailbox
+        // ``stop()`` / ``userRequestedPlay()``.
+        manager.persistOptimisticWidgetSnapshot(plan.targetVisualState, language: language)
+        SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
+        #else
         _ = manager.signalWidgetPendingAction(
             visualState: plan.targetVisualState,
             action: plan.action.wireValue,
             language: language
         )
+        #endif
         // Instant-feedback language must match the optimistic snapshot / live chrome just
         // stamped above — play/pause of a settled stream, not a prior Live Activity language.
         if !language.isEmpty {
@@ -725,13 +742,42 @@ enum WidgetIntentExecution {
             immediate: true,
             trigger: .extensionOptimistic
         )
+        #if LUTHERAN_MAIN_APP
+        await executeHomeOrControlToggleViaMailbox(plan: plan)
+        #endif
     }
 
-    /// Home-widget stream switch: optimistic path through ``SharedPlayerManager/switchToStream(_:)`` + refresh.
+    #if LUTHERAN_MAIN_APP
+    /// Home / Control play-pause engine work when ``AudioPlaybackIntent`` hosts `perform()`
+    /// in the app process (same mailbox as Now Playing remotes and Live Activity toggle).
+    ///
+    /// - Parameter plan: Executable play or pause plan (caller already guarded refuse).
+    /// - SeeAlso: ``executeLiveActivityToggle(plan:)``,
+    ///   ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``.
+    private static func executeHomeOrControlToggleViaMailbox(plan: WidgetToggleActionPlan) async {
+        let manager = SharedPlayerManager.shared
+        switch plan.action {
+        case .pause:
+            await manager.submitMediaTransportCommandAndWait(.pause)
+        case .play:
+            await manager.submitMediaTransportCommandAndWait(.play)
+        case .none:
+            break
+        @unknown default:
+            break
+        }
+    }
+    #endif
+
+    /// Home-widget stream switch: optimistic chrome, then engine work.
     ///
     /// Imperative **extensionOptimistic** path (no PlayerEvent emission in the extension process).
     /// When a Live Activity is visible in this process, also pushes destination language into
     /// ActivityKit ContentState so lock-screen flag chrome does not lag a home-widget chip tap.
+    ///
+    /// **Process split:** extension ``switchToStream`` writes pending + Darwin. Main-app
+    /// ``AudioPlaybackIntent`` hosts run silent in-process orchestration (pause-preserving;
+    /// never invent `.playing`) without a second Darwin drain.
     ///
     /// **First home paint honesty:** The optimistic refresh visual uses the same pure stream-switch
     /// rule as Live Activity ContentState — actively playing → Connecting (``.prePlay``); sticky
@@ -769,7 +815,12 @@ enum WidgetIntentExecution {
         // Lock-screen LA may coexist with the home widget — advance flag chrome before drain.
         await publishOptimisticStreamSwitchLanguageChrome(languageCode: languageCode)
 
+        #if LUTHERAN_MAIN_APP
+        persistHomeSwitchOptimisticChrome(visualState: optimisticHomeVisual, language: languageCode)
+        await executeInProcessStreamSwitch(targetStream: targetStream)
+        #else
         await manager.switchToStream(targetStream)
+        #endif
         // Same LIVE wake as toggle: sticky / identical chrome still needs interactive re-resolve.
         SharedPlayerManager.bumpHomeWidgetInteractivePaintEpoch(reason: "optimisticSwitch")
         SharedPlayerManager.publishHomeWidgetInteractivePaintSignature(
@@ -789,11 +840,13 @@ enum WidgetIntentExecution {
         )
     }
 
-    /// Live Activity stream switch: optimistic language ContentState, then pending + Darwin.
+    /// Live Activity stream switch: optimistic language ContentState, then engine work.
     ///
     /// Publishes destination ``ContentState/currentLanguage`` (and Connecting / preserved
-    /// pause visual) **before** ``switchToStream`` so lock-screen flag/name track the chip
-    /// tap immediately. Engine attach remains main-app drain ownership.
+    /// pause visual) **before** engine work so lock-screen flag/name track the chip tap
+    /// immediately. Extension hosts keep pending + Darwin. Main-app ``LiveActivityIntent``
+    /// hosts run silent in-process orchestration (same pause-preserving rules as
+    /// ``RadioPlayerCoordinator`` widget reconciliation) — never invent `.playing`.
     ///
     /// - Parameter languageCode: Target stream code from ``LiveActivitySwitchStreamIntent``.
     /// - Returns: `true` when a matching stream was found and the switch was invoked.
@@ -809,9 +862,71 @@ enum WidgetIntentExecution {
 
         await publishOptimisticStreamSwitchLanguageChrome(languageCode: languageCode)
 
+        #if LUTHERAN_MAIN_APP
+        await executeInProcessStreamSwitch(targetStream: targetStream)
+        #else
         await manager.switchToStream(targetStream)
+        #endif
         return true
     }
+
+    #if LUTHERAN_MAIN_APP
+    /// Silent in-process stream switch for app-hosted Live Activity / home chip intents.
+    ///
+    /// Mirrors ``RadioPlayerCoordinator`` widget reconciliation: Connecting hold when
+    /// playback intent is active; destination stamp only when sticky-paused; engine prep
+    /// via ``DirectStreamingPlayer/switchToStream(_:)``; internal ``play()`` continuation
+    /// when intent was already active. Does **not** write `pendingAction*` or Darwin.
+    /// Does **not** play tuning / open UI. Never invents `.playing` during hold.
+    ///
+    /// - Parameter targetStream: Catalog stream already resolved by the caller.
+    /// - SeeAlso: ``SharedPlayerManager/resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
+    ///   ``SharedPlayerManager/stampStreamSwitchDestinationLanguage(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    private static func executeInProcessStreamSwitch(
+        targetStream: DirectStreamingPlayer.Stream
+    ) async {
+        let manager = SharedPlayerManager.shared
+        let playbackIntent = await manager.currentPlaybackIntent
+        let shouldResume = playbackIntent.isActivePlaybackIntent
+        if shouldResume {
+            await manager.resetToPrePlayForNewStream(
+                preserveActiveSleepTimer: playbackIntent == .sleepTimer,
+                connectingLanguageCode: targetStream.languageCode
+            )
+        } else {
+            await manager.stampStreamSwitchDestinationLanguage(targetStream.languageCode)
+        }
+        await DirectStreamingPlayer.shared.switchToStream(targetStream)
+        SharedPlayerManager.persistLiveActivityLanguageMirror(targetStream.languageCode)
+        await manager.refreshAllMediaSurfaces(liveActivity: .updateIfActive)
+        if shouldResume {
+            await manager.play()
+        } else {
+            await manager.clearSoftPauseMetadataStashForLanguageChange()
+            await manager.clearStreamSwitchDestinationLanguageIfNotHolding()
+        }
+    }
+
+    /// Home-widget optimistic session + live chrome without pendingAction / Darwin.
+    ///
+    /// - Parameters:
+    ///   - visualState: Connecting (``.prePlay``) when leaving play; preserved pause otherwise.
+    ///   - language: Destination stream language code.
+    private static func persistHomeSwitchOptimisticChrome(
+        visualState: PlayerVisualState,
+        language: String
+    ) {
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: visualState,
+            language: language,
+            clearStreamMetadata: true,
+            liveChromeStampReason: "optimisticSwitch"
+        )
+        SharedPlayerManager.writeInstantFeedback(language: language)
+        SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
+    }
+    #endif
 
     /// Resolves optimistic switch visual and pushes Live Activity language chrome.
     ///
@@ -835,11 +950,14 @@ enum WidgetIntentExecution {
 
     /// Live Activity play/pause toggle via actor-isolated manager APIs.
     ///
-    /// On the main app, engine work is enqueued on the same serial media-transport mailbox
-    /// as system Now Playing / headset remotes (``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``)
-    /// so interleaved lock-screen taps cannot invert direction. The extension process keeps
-    /// direct ``stop()`` / ``userRequestedPlay()`` so pending-action + Darwin drain remains
-    /// the cross-process path (no main-app mailbox in the extension binary).
+    /// On the main app (``AudioPlaybackIntent`` / ``LiveActivityIntent`` host), engine work
+    /// is enqueued on the same serial media-transport mailbox as system Now Playing /
+    /// headset remotes (``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``)
+    /// so interleaved lock-screen taps cannot invert direction. Do **not** also write
+    /// `pendingAction*` + Darwin for that tap. The extension process keeps direct
+    /// ``stop()`` / ``userRequestedPlay()`` so pending-action + Darwin
+    /// ``radio.lutheran.widget.action`` remains the defense-in-depth path when the
+    /// system still hosts `perform()` in the extension (app not resident).
     ///
     /// **Extension host latency:** optimistic ContentState + durable mirror are published
     /// before this method runs (``performLiveActivityToggle()``). Engine silence / first

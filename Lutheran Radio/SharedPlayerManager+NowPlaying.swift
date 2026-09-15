@@ -37,8 +37,9 @@ enum MediaSurfaceLiveActivityMode: Sendable {
 
 /// Transport verbs that share ``SharedPlayerManager``'s serial media-transport mailbox.
 ///
-/// System Now Playing / Control Center / headset remotes and main-process Live Activity
-/// toggle execution enqueue through this type so rapid clicks cannot invert direction by
+/// System Now Playing / Control Center / headset remotes and main-process Live Activity /
+/// home / Control ``AudioPlaybackIntent`` execution enqueue through this type so rapid
+/// clicks cannot invert direction by
 /// sampling `isActivelyPlaying` before a prior verb commits sticky intent / visual state.
 ///
 /// - SeeAlso: ``SharedPlayerManager/submitMediaTransportCommand(_:)``,

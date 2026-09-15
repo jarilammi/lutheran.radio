@@ -11,7 +11,8 @@
 // `SharedPlayerManager+PlaybackPipeline.swift`, `+AppGroup.swift`,
 // `+LiveActivityMirrors.swift`, `+Persistence.swift`, `+PrivacyClear.swift`,
 // `+DebugTestSeams.swift`. Widget DirectStreamingPlayer stub lives in
-// `DirectStreamingPlayer+WidgetStub.swift`. All membership-exception files are
+// `DirectStreamingPlayer+WidgetStub.swift`. Interactive AppIntent types live in
+// `WidgetInteractiveIntents.swift`. All membership-exception files are
 // listed in project.pbxproj (extension + LutheranRadioWidgetTests).
 //
 // Compiled into both targets via Xcode File System Synchronized Group +

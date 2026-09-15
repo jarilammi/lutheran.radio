@@ -16,6 +16,7 @@
 //    docs/Widget-Functionality-Roadmap.md, CODING_AGENT.md (fast test patterns).
 //
 
+import AppIntents
 import XCTest
 import WidgetSurface
 
@@ -74,6 +75,23 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         let streamEvents = await collectionTask.value
 
         XCTAssertTrue(streamEvents.isEmpty, "Widget process must suppress AsyncStream yields")
+    }
+
+    /// **Invariant protected:** Extension compile still has the same AppIntent types
+    /// with ``supportedModes`` background so `Button(intent:)` stays in-widget.
+    /// ``AudioPlaybackIntent`` / ``LiveActivityIntent`` are main-app-only; this
+    /// profile must not require those conformances.
+    func testExtensionInteractiveIntentsSupportBackgroundMode() {
+        XCTAssertTrue(LiveActivityTogglePlaybackIntent.supportedModes.contains(.background))
+        XCTAssertFalse(LiveActivityTogglePlaybackIntent.openAppWhenRun)
+        XCTAssertTrue(LiveActivitySwitchStreamIntent.supportedModes.contains(.background))
+        XCTAssertFalse(LiveActivitySwitchStreamIntent.openAppWhenRun)
+        XCTAssertTrue(WidgetPlayRadioIntent.supportedModes.contains(.background))
+        XCTAssertTrue(WidgetPauseRadioIntent.supportedModes.contains(.background))
+        XCTAssertTrue(WidgetToggleRadioIntent.supportedModes.contains(.background))
+        XCTAssertTrue(SwitchStreamIntent.supportedModes.contains(.background))
+        XCTAssertTrue(ToggleRadioIntent.supportedModes.contains(.background))
+        XCTAssertFalse(ToggleRadioIntent.openAppWhenRun)
     }
 
     // MARK: - Pending action / optimistic persist
