@@ -575,12 +575,21 @@ extension SharedPlayerManager {
     /// ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)`` —
     /// actively playing → Connecting (``.prePlay``); sticky pause preserved.
     ///
+    /// **Process split:** pendingAction + Darwin ``radio.lutheran.widget.action`` are the
+    /// extension / cold-host note so the main app can drain later. Presentable main-app
+    /// ``LiveActivityIntent`` / ``AudioPlaybackIntent`` chips already run in this process
+    /// (``WidgetIntentExecution/executeInProcessStreamSwitch``) and must **not** leave
+    /// that note — snapshot + instant feedback still write so widgets / Live Activity /
+    /// Now Playing can read the destination language.
+    ///
     /// - Parameters:
     ///   - visualState: Optimistic switch visual (``.prePlay`` leaving play; ``.userPaused`` when paused).
     ///   - language: Destination stream language code.
     /// - SeeAlso: ``persistWidgetSnapshot(visualState:language:streamMetadata:clearStreamMetadata:hasError:liveChromeStampReason:)``,
     ///   ``handleWidgetSwitch(to:)``,
-    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3, §9).
+    ///   ``WidgetIntentExecution/executeInProcessStreamSwitch(targetStream:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3, §9),
+    ///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority).
     @discardableResult
     nonisolated func signalWidgetSwitchAction(
         visualState: PlayerVisualState,
@@ -597,6 +606,16 @@ extension SharedPlayerManager {
         )
         Self.writeInstantFeedback(language: language)
         Self.bumpWidgetLivenessTimestamp(policy: .immediate)
+        #if LUTHERAN_MAIN_APP
+        // In-process chip host: engine + chrome already run here. Do not write a Darwin
+        // drain note "for consistency" — that double-drains with executeInProcessStreamSwitch.
+        if !isRunningInWidget() {
+            #if DEBUG
+            print("[SharedPlayerManager] Skipping pending switch + Darwin — in-process chip host")
+            #endif
+            return nil
+        }
+        #endif
         let actionId = scheduleWidgetAction(action: "switch", parameter: language)
         notifyMainApp(action: "switch", parameter: language)
         return actionId
@@ -669,7 +688,9 @@ extension SharedPlayerManager {
     /// - Important: DEBUG ``_test_simulateWidgetProcessContext`` skips the post. The XCTest
     ///   host already has a live ``ViewController`` Darwin observer; looping notify in-process
     ///   races UITestMode clear-without-execute and steals the pending mailbox the widget path
-    ///   just wrote. Darwin round-trip remains covered by
+    ///   just wrote. DEBUG ``_test_darwinNotifyAttemptCount`` still increments so tests can
+    ///   distinguish “never called” (in-process chips) from “called then skipped” (simulated
+    ///   extension). Darwin round-trip remains covered by
     ///   `WidgetIntentPendingDrainTests.testNotifyMainAppThenForegroundDrainExecutesPlayPending`
     ///   without that seam.
     /// - SeeAlso: ``signalWidgetSwitchAction(visualState:language:)``,
@@ -680,6 +701,8 @@ extension SharedPlayerManager {
     ///   CODING_AGENT.md (fast test patterns).
     nonisolated func notifyMainApp(action: String, parameter: String? = nil) {
         #if DEBUG
+        unsafe Self._test_darwinNotifyAttemptCount += 1
+        unsafe Self._test_lastDarwinNotifyAction = action
         if unsafe Self._test_simulateWidgetProcessContext {
             // Same-process XCTest host isolation — not a production privacy or security bypass.
             print("[SharedPlayerManager] Skipping Darwin notify under widget-process simulation (same-process host isolation)")

@@ -578,7 +578,9 @@ enum WidgetIntentExecution {
     /// 1. Push optimistic ActivityKit ``ContentState`` with destination language (flag/name
     ///    chrome) and Connecting or preserved pause visual
     /// 2. Warm durable language mirror
-    /// 3. Invoke ``SharedPlayerManager/switchToStream(_:)`` (pending + Darwin)
+    /// 3. **Extension host:** ``SharedPlayerManager/switchToStream(_:)`` (pending + Darwin).
+    ///    **Main-app ``LiveActivityIntent`` host:** ``executeInProcessStreamSwitch``
+    ///    (engine + in-app chrome; no pendingAction / Darwin)
     ///
     /// Home-widget snapshot visual may still preserve `.playing` across the optimistic
     /// App Group write; Live Activity ContentState uses Connecting when leaving active play
@@ -777,18 +779,21 @@ enum WidgetIntentExecution {
     /// When a Live Activity is visible in this process, also pushes destination language into
     /// ActivityKit ContentState so lock-screen flag chrome does not lag a home-widget chip tap.
     ///
-    /// **Process split:** extension ``switchToStream`` writes pending + Darwin. Main-app
-    /// ``AudioPlaybackIntent`` hosts run silent in-process orchestration (pause-preserving;
-    /// never invent `.playing`) without a second Darwin drain, then sync in-app language
-    /// chrome via ``RadioPlayerCoordinator/syncLanguageChromeFromChosenStream``.
+    /// **Process split:** extension ``switchToStream`` → ``handleWidgetSwitch`` →
+    /// ``signalWidgetSwitchAction`` writes pending + Darwin. Main-app
+    /// ``AudioPlaybackIntent`` hosts persist optimistic home chrome then run silent
+    /// in-process orchestration (pause-preserving; never invent `.playing`) without a
+    /// Darwin drain note, then sync in-app language chrome via
+    /// ``RadioPlayerCoordinator/syncLanguageChromeFromChosenStream``.
     ///
     /// **First home paint honesty:** The optimistic refresh visual uses the same pure stream-switch
     /// rule as Live Activity ContentState — actively playing → Connecting (``.prePlay``); sticky
-    /// pause preserved. ``switchToStream`` → ``handleWidgetSwitch`` → ``signalWidgetSwitchAction``
-    /// writes that visual + destination language into session RAM **and** privacy-gated
-    /// ``homeWidgetLiveChrome`` (reason `"optimisticSwitch"`) before the immediate reload, so
-    /// destination language does not flash mid-switch "playing" chrome during silent attach hold.
-    /// Authoritative ``.playing`` arrives later via main-app attach / ``setPlaying()``.
+    /// pause preserved. Extension ``signalWidgetSwitchAction`` / main-app
+    /// ``persistHomeSwitchOptimisticChrome`` write that visual + destination language into
+    /// session RAM **and** privacy-gated ``homeWidgetLiveChrome`` (reason `"optimisticSwitch"`)
+    /// before the immediate reload, so destination language does not flash mid-switch
+    /// "playing" chrome during silent attach hold. Authoritative ``.playing`` arrives later
+    /// via main-app attach / ``setPlaying()``.
     ///
     /// - Parameter languageCode: Target stream BCP-47-style code from ``SwitchStreamIntent``.
     /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``,

@@ -985,11 +985,16 @@ extension SharedPlayerManager {
     
     /// Nonisolated entry point for stream switching (signaling + dispatch).
     ///
-    /// - Widget / extension paths (including Live Activity intents): immediately schedule
-    ///   optimistic state + pending action via App Group + Darwin. The authoritative
-    ///   main-app reconciliation then happens via `RadioPlayerCoordinator.handleWidgetSwitchToLanguage`
-    ///   → `switchToStreamFromWidget(to:index:actionId:)`.
-    /// - Main-app forwarding (Siri, shortcuts, some legacy): forwards directly to
+    /// - **Extension / cold widget host:** immediately schedule optimistic state +
+    ///   pending action via App Group + Darwin. The authoritative main-app drain is
+    ///   `RadioPlayerCoordinator.handleWidgetSwitchToLanguage` →
+    ///   `switchToStreamFromWidget(to:index:actionId:)`.
+    /// - **Presentable main-app Live Activity / home chips:** do **not** use this
+    ///   façade. ``WidgetIntentExecution/executeInProcessStreamSwitch`` calls
+    ///   ``DirectStreamingPlayer/switchToStream(_:)`` and paints chrome via
+    ///   ``RadioPlayerCoordinator/syncLanguageChromeFromChosenStream`` — no
+    ///   `pendingAction*` and no Darwin ``radio.lutheran.widget.action``.
+    /// - **Main-app forwarding (Siri, shortcuts, some legacy):** forwards directly to
     ///   `DirectStreamingPlayer.switchToStream` (the engine prep SSOT).
     ///
     /// **Full UI stream choice from flag taps in the main app** must go through
@@ -1002,6 +1007,7 @@ extension SharedPlayerManager {
     ///   `RadioPlayerCoordinator.switchToStreamFromWidget(to:index:actionId:)`,
     ///   `RadioPlayerCoordinator.handleWidgetSwitchToLanguage`,
     ///   `RadioPlayerCoordinator.handleLanguageSelection`,
+    ///   ``WidgetIntentExecution/executeInProcessStreamSwitch(targetStream:)``,
     ///   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared source files").
     nonisolated func switchToStream(_ stream: DirectStreamingPlayer.Stream) async {
         if isRunningInWidget() {
@@ -1646,6 +1652,9 @@ extension SharedPlayerManager {
     
     // This helper must be nonisolated because it's called from the nonisolated switchToStream
     nonisolated private func handleWidgetSwitch(to stream: DirectStreamingPlayer.Stream) {
+        // Extension / cold-host only (``switchToStream`` returns here when
+        // ``isRunningInWidget()``). Presentable in-process chips never enter this
+        // helper — they use ``DirectStreamingPlayer/switchToStream`` + chrome sync.
         // Optimistic home-widget (and extension LA co-path) snapshot for stream switch.
         // Snapshot-derived only — retired App Group `isPlaying` is never consulted.
         //

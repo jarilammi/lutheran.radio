@@ -21,8 +21,10 @@ import WidgetSurface
 /// Shared host factories live in `Support/WidgetIntentContractTestSupport.swift`.
 ///
 /// Widget-process simulation skips Darwin notify so the live XCTest-host observer cannot
-/// steal the pending mailbox (``notifyMainApp(action:parameter:)``). Keep
-/// ``RadioPlayerCoordinator`` alive across ``handleWidgetSwitchToLanguage`` — the work
+/// steal the pending mailbox (``notifyMainApp(action:parameter:)``). DEBUG Darwin-attempt
+/// accounting still increments so extension-shaped tests can prove a switch note was
+/// requested while in-process chip tests prove ``notifyMainApp`` was never entered.
+/// Keep ``RadioPlayerCoordinator`` alive across ``handleWidgetSwitchToLanguage`` — the work
 /// item captures `[weak self]`.
 ///
 /// Never calls real `WidgetCenter.reloadTimelines` or ActivityKit IPC.
@@ -496,6 +498,7 @@ final class WidgetIntentContractTests: XCTestCase {
         SharedPlayerManager._test_setSimulateWidgetProcessContext(true)
         defer { SharedPlayerManager._test_setSimulateWidgetProcessContext(false) }
 
+        SharedPlayerManager._test_resetDarwinNotifyAccounting()
         await manager.switchToStream(target)
 
         guard let pending = manager.getPendingActionIfFresh() else {
@@ -504,6 +507,16 @@ final class WidgetIntentContractTests: XCTestCase {
         }
         XCTAssertEqual(pending.action, "switch")
         XCTAssertEqual(pending.parameter, target.languageCode)
+        XCTAssertGreaterThan(
+            SharedPlayerManager._test_darwinNotifyAttemptCount,
+            0,
+            "Extension-shaped switch must enter notifyMainApp (Darwin post skipped under widget-process simulation)"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager._test_lastDarwinNotifyAction,
+            "switch",
+            "Extension-shaped switch must request Darwin radio.lutheran.widget.action for switch"
+        )
 
         let snapshot = SharedPlayerManager.loadPersistedWidgetState()
         XCTAssertEqual(snapshot?.visualState, .userPaused)
@@ -534,6 +547,7 @@ final class WidgetIntentContractTests: XCTestCase {
         SharedPlayerManager._test_setSimulateWidgetProcessContext(true)
         defer { SharedPlayerManager._test_setSimulateWidgetProcessContext(false) }
 
+        SharedPlayerManager._test_resetDarwinNotifyAccounting()
         await manager.switchToStream(target)
 
         guard let pending = manager.getPendingActionIfFresh() else {
@@ -542,6 +556,12 @@ final class WidgetIntentContractTests: XCTestCase {
         }
         XCTAssertEqual(pending.action, "switch")
         XCTAssertEqual(pending.parameter, target.languageCode)
+        XCTAssertGreaterThan(
+            SharedPlayerManager._test_darwinNotifyAttemptCount,
+            0,
+            "Extension-shaped playing switch must still enter notifyMainApp"
+        )
+        XCTAssertEqual(SharedPlayerManager._test_lastDarwinNotifyAction, "switch")
 
         let snapshot = SharedPlayerManager.loadPersistedWidgetState()
         XCTAssertEqual(
@@ -664,15 +684,13 @@ final class WidgetIntentContractTests: XCTestCase {
 
         XCTAssertNil(manager.getPendingAction(), "Precondition: no leftover pending action")
 
+        SharedPlayerManager._test_resetDarwinNotifyAccounting()
         let switched = await WidgetIntentExecution.executeLiveActivityStreamSwitch(
             languageCode: target.languageCode
         )
         XCTAssertTrue(switched, "In-process Live Activity switch must resolve the catalog stream")
 
-        XCTAssertNil(
-            manager.getPendingAction(),
-            "In-process chip switch must not write a pending Darwin switch action"
-        )
+        assertNoPendingDarwinSwitchNote(manager: manager)
         XCTAssertEqual(
             coordinator.selectedStreamIndex,
             targetIndex,
@@ -688,6 +706,15 @@ final class WidgetIntentContractTests: XCTestCase {
             target.languageCode,
             "In-process chip switch must still update the engine stream model"
         )
+
+        SharedPlayerManager._test_resetDarwinNotifyAccounting()
+        let again = await WidgetIntentExecution.executeLiveActivityStreamSwitch(
+            languageCode: target.languageCode
+        )
+        XCTAssertTrue(again, "Same-language in-process chip must stay idempotent")
+        assertNoPendingDarwinSwitchNote(manager: manager)
+        XCTAssertEqual(coordinator.selectedStreamIndex, targetIndex)
+        XCTAssertEqual(viewModel.selectedStreamIndex, targetIndex)
         _ = coordinator
     }
 
@@ -729,16 +756,70 @@ final class WidgetIntentContractTests: XCTestCase {
 
         XCTAssertNil(manager.getPendingAction(), "Precondition: no leftover pending action")
 
+        SharedPlayerManager._test_resetDarwinNotifyAccounting()
         let switched = await WidgetIntentExecution.executeLiveActivityStreamSwitch(
             languageCode: target.languageCode
         )
         XCTAssertTrue(switched)
 
-        XCTAssertNil(
-            manager.getPendingAction(),
-            "Attaching in-process chip switch must not write a pending Darwin switch action"
-        )
+        assertNoPendingDarwinSwitchNote(manager: manager)
         XCTAssertEqual(coordinator.selectedStreamIndex, targetIndex)
+        XCTAssertEqual(viewModel.selectedStreamIndex, targetIndex)
+        XCTAssertEqual(
+            DirectStreamingPlayer.shared.selectedStream.languageCode,
+            target.languageCode
+        )
+        _ = coordinator
+    }
+
+    /// Home-widget in-process chip switch is the same no-note path as Live Activity chips.
+    ///
+    /// Protects: ``SwitchStreamIntent`` hosted as ``AudioPlaybackIntent`` must not write
+    /// `pendingAction*` or Darwin. Flags / needle still follow the destination without
+    /// a Darwin drain through ``handleWidgetSwitchToLanguage``.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/executeHomeWidgetStreamSwitch(languageCode:)``,
+    ///   ``testInProcessStreamSwitchSyncsMainAppLanguageChromeWithoutPendingDarwin``.
+    @MainActor
+    func testInProcessHomeWidgetStreamSwitchSyncsMainAppLanguageChromeWithoutPendingDarwin() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Catalog must include ≥2 streams")
+            return
+        }
+
+        let source = streams[0]
+        let target = streams[1]
+        guard let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: {
+            $0.languageCode == target.languageCode
+        }) else {
+            XCTFail("Target stream must exist in the catalog")
+            return
+        }
+
+        await manager.setUserPaused()
+        await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: source)
+
+        let viewModel = PlayerViewModel()
+        viewModel.selectedStreamIndex = 0
+        let coordinator = RadioPlayerCoordinator(
+            backgroundImageController: BackgroundImageController(),
+            streamingPlayer: DirectStreamingPlayer.shared
+        )
+        coordinator.viewModel = viewModel
+        coordinator.selectedStreamIndex = 0
+
+        XCTAssertNil(manager.getPendingAction(), "Precondition: no leftover pending action")
+
+        SharedPlayerManager._test_resetDarwinNotifyAccounting()
+        await WidgetIntentExecution.executeHomeWidgetStreamSwitch(languageCode: target.languageCode)
+
+        assertNoPendingDarwinSwitchNote(manager: manager)
+        XCTAssertEqual(
+            coordinator.selectedStreamIndex,
+            targetIndex,
+            "Home-widget in-process chip must move the in-app flag highlight without Darwin drain"
+        )
         XCTAssertEqual(viewModel.selectedStreamIndex, targetIndex)
         XCTAssertEqual(
             DirectStreamingPlayer.shared.selectedStream.languageCode,

@@ -178,6 +178,41 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         XCTAssertEqual(SharedPlayerManager.loadPersistedWidgetState()?.visualState, .userPaused)
     }
 
+    /// Extension-shaped stream switch still leaves the Darwin drain note.
+    ///
+    /// Protects: when the widget extension hosts ``SwitchStreamIntent``,
+    /// ``signalWidgetSwitchAction`` must write `pendingAction == "switch"` + destination
+    /// `pendingLanguage` so the main app can drain. Presentable in-process chips are the
+    /// other path (``WidgetIntentContractTests`` asserts they do **not** write this note).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/signalWidgetSwitchAction(visualState:language:)``,
+    ///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority).
+    func testSignalWidgetSwitchActionWritesPendingSwitchAndLanguage() {
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: "fi")
+
+        let actionId = manager.signalWidgetSwitchAction(
+            visualState: .userPaused,
+            language: "de"
+        )
+
+        XCTAssertNotNil(actionId)
+        guard let pending = manager.getPendingActionIfFresh() else {
+            XCTFail("Expected fresh switch pending after signalWidgetSwitchAction")
+            return
+        }
+        XCTAssertEqual(pending.action, "switch")
+        XCTAssertEqual(pending.parameter, "de")
+        XCTAssertEqual(pending.actionId, actionId)
+        XCTAssertEqual(
+            SharedPlayerManager.loadPersistedWidgetState()?.currentLanguage,
+            "de"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadPersistedWidgetState()?.visualState,
+            .userPaused
+        )
+    }
+
     // MARK: - AppIntent perform-path SSOT (extension profile)
 
     // Note on pending-action assertions under TEST_HOST:

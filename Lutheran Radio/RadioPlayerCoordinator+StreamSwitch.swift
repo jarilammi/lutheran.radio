@@ -7,10 +7,11 @@
 //  Stream-switch / language domain for RadioPlayerCoordinator (mechanical split).
 //
 //  Owns: main-app flag-tap orchestration (`handleLanguageSelection` →
-//  `completeStreamSwitch`), widget/LA silent reconciliation
+//  `completeStreamSwitch`), **extension / cold** widget-LA Darwin drain
 //  (`handleWidgetSwitchToLanguage` → `switchToStreamFromWidget`), in-process
 //  Live Activity / home chip language chrome
-//  (`syncLanguageChromeFromChosenStream` — no Darwin, no tuning), external /
+//  (`syncLanguageChromeFromChosenStream` — no pendingAction, no Darwin, no
+//  tuning; chips do **not** leave a disk note for later drain), external /
 //  deep-link / Siri-adjacent entry (`handleSwitchToLanguage`), session language
 //  snapshot updates (`updateUserDefaultsLanguage`), and VoiceOver
 //  `announceSwitchedToLanguage`.
@@ -111,10 +112,12 @@ extension RadioPlayerCoordinator {
     //   Its `switchToStream` is the nonisolated signaling façade: widget context → schedule
     //   + Darwin; main-app context → forwards directly to engine.
     //
-    // Widget paths: extension hosts write pending + Darwin then
+    // Widget paths: **extension / cold** hosts write pending + Darwin then
     // `handleWidgetSwitchToLanguage`. Presentable main-app `LiveActivityIntent` /
-    // `AudioPlaybackIntent` hosts run ``WidgetIntentExecution/executeInProcessStreamSwitch``
-    // (no second Darwin) and paint chrome via ``syncLanguageChromeFromChosenStream``.
+    // `AudioPlaybackIntent` chips run ``WidgetIntentExecution/executeInProcessStreamSwitch``
+    // (no pendingAction, no Darwin ``radio.lutheran.widget.action``) and paint chrome
+    // via ``syncLanguageChromeFromChosenStream``. Do not route in-process chips
+    // through `handleWidgetSwitchToLanguage` just to move flags.
     //
     // AGENT NOTE: Never re-introduce manual "setSelectedStreamModelOnly + resetTransient
     // + stop + resetCounters" sequences anywhere. Route engine work exclusively through

@@ -39,6 +39,7 @@ func prepareWidgetIntentContractTestIsolation() {
     WidgetRefreshManager._test_setBypassUITestModeForDebounceObservation(false)
     WidgetRefreshManager.shared._test_suspendPlayerEventObservation()
     WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
+    SharedPlayerManager._test_resetDarwinNotifyAccounting()
 }
 
 /// Plants ``instantFeedbackLanguage`` on the App Group suite without going through
@@ -80,10 +81,59 @@ func plantHomeWidgetLiveChrome(language: String, updatedAt: TimeInterval) {
     )
 }
 
+/// Asserts an in-process chip switch left no Darwin drain note.
+///
+/// Protects: presentable ``LiveActivityIntent`` / ``AudioPlaybackIntent`` hosts must
+/// not write `pendingAction*` / `pendingLanguage` or enter ``notifyMainApp``
+/// (``radio.lutheran.widget.action``). Session language snapshot and Live Activity
+/// language mirror may still write — those are not the leftover-note path.
+///
+/// - SeeAlso: ``SharedPlayerManager/_test_resetDarwinNotifyAccounting()``,
+///   ``WidgetIntentExecution/executeInProcessStreamSwitch(targetStream:)``.
+func assertNoPendingDarwinSwitchNote(
+    manager: SharedPlayerManager,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    XCTAssertNil(
+        manager.getPendingAction(),
+        "In-process chip switch must not write a pending Darwin switch action",
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        SharedPlayerManager._test_darwinNotifyAttemptCount,
+        0,
+        "In-process chip switch must not post Darwin radio.lutheran.widget.action",
+        file: file,
+        line: line
+    )
+    let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
+    XCTAssertNil(
+        defaults?.string(forKey: "pendingAction"),
+        "In-process chip switch must not leave pendingAction",
+        file: file,
+        line: line
+    )
+    XCTAssertNil(
+        defaults?.string(forKey: "pendingActionId"),
+        "In-process chip switch must not leave pendingActionId",
+        file: file,
+        line: line
+    )
+    XCTAssertNil(
+        defaults?.string(forKey: "pendingLanguage"),
+        "In-process chip switch must not leave pendingLanguage",
+        file: file,
+        line: line
+    )
+}
+
 /// Symmetric tear-down for ``prepareWidgetIntentContractTestIsolation()``.
 @MainActor
 func tearDownWidgetIntentContractTestIsolation() {
     SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
+    SharedPlayerManager._test_resetDarwinNotifyAccounting()
     ViewController._test_setBypassUITestModeForPendingActionProcessing(false)
     WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(false)
     WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)

@@ -31,6 +31,12 @@ extension SharedPlayerManager {
     // the established nonisolated(unsafe) pattern for gate-observation seams in WidgetRefreshManager.
     nonisolated(unsafe) internal static var _test_simulateWidgetProcessContext = false
 
+    // SAFETY: DEBUG-only Darwin-notify accounting for in-process vs extension switch
+    // tests. Production ``notifyMainApp`` still posts CFNotification; these counters
+    // are compiled out of Release and never change notify delivery.
+    nonisolated(unsafe) internal static var _test_darwinNotifyAttemptCount = 0
+    nonisolated(unsafe) internal static var _test_lastDarwinNotifyAction: String?
+
     // SAFETY: DEBUG-only host-capability override for Designed-for-iPhone Mac tests.
     // Production ``isRunningAsIOSAppOnMac`` reads ``ProcessInfo/isiOSAppOnMac`` only.
     // Not a privacy, security, or PlayerEvent bypass — tests inject the same Bool
@@ -68,6 +74,20 @@ extension SharedPlayerManager {
     ///   docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func _test_setSimulateWidgetProcessContext(_ simulate: Bool) {
         unsafe _test_simulateWidgetProcessContext = simulate
+    }
+
+    /// Clears Darwin ``radio.lutheran.widget.action`` attempt accounting.
+    ///
+    /// Call from widget-intent suite ``setUp`` so in-process chip tests can assert
+    /// ``notifyMainApp(action:parameter:)`` was never entered, while extension-shaped
+    /// tests can assert it was entered even when widget-process simulation skips the
+    /// actual CF post.
+    ///
+    /// - SeeAlso: ``notifyMainApp(action:parameter:)``,
+    ///   ``WidgetIntentContractTests``.
+    nonisolated static func _test_resetDarwinNotifyAccounting() {
+        unsafe _test_darwinNotifyAttemptCount = 0
+        unsafe _test_lastDarwinNotifyAction = nil
     }
 
     /// Unit-test seam: force or clear the play start pipeline for Connecting-cancel / idempotent-play gates.
