@@ -8,7 +8,9 @@
 //
 //  Owns: main-app flag-tap orchestration (`handleLanguageSelection` →
 //  `completeStreamSwitch`), widget/LA silent reconciliation
-//  (`handleWidgetSwitchToLanguage` → `switchToStreamFromWidget`), external /
+//  (`handleWidgetSwitchToLanguage` → `switchToStreamFromWidget`), in-process
+//  Live Activity / home chip language chrome
+//  (`syncLanguageChromeFromChosenStream` — no Darwin, no tuning), external /
 //  deep-link / Siri-adjacent entry (`handleSwitchToLanguage`), session language
 //  snapshot updates (`updateUserDefaultsLanguage`), and VoiceOver
 //  `announceSwitchedToLanguage`.
@@ -34,6 +36,9 @@
 //  Public/entry surfaces on the same type:
 //  - ``handleSwitchToLanguage(_:)`` — SceneDelegate / deep-link / external
 //  - ``handleWidgetSwitchToLanguage(_:actionId:)`` — widget/LA pending switch
+//  - ``syncLanguageChromeFromChosenStream(_:isAttaching:)`` — flags / needle /
+//    background / session language from an already-chosen stream
+//  - ``syncInProcessLanguageChromeIfPresent(for:isAttaching:)`` — in-process chip hook
 //  - ``updateUserDefaultsLanguage(_:)`` — awaited destination language + privacy-gated liveness
 //  - ``handleLanguageSelection(at:)`` — LanguageSelectorView / PlayerViewModel
 //  - ``handleAdjacentLanguageSelection(offset:)`` — menu / keyboard previous-next wrap
@@ -77,7 +82,12 @@ extension RadioPlayerCoordinator {
     //     and UI side effects. The primary "user tapped a language" path.
     //   - `switchToStreamFromWidget(to:index:actionId:)` — canonical **widget/LA reconciliation**
     //     (silent, no tuning/needle). Thinly wrapped by `handleWidgetSwitchToLanguage`.
-    //   - `handleWidgetSwitchToLanguage` — public entry (with actionId dedup + debounce)
+    //     Language chrome (index / VM / background / session language) is
+    //     ``syncLanguageChromeFromChosenStream(_:isAttaching:)``.
+    //   - `syncLanguageChromeFromChosenStream` — paints in-app flags / needle / background
+    //     from an already-chosen stream. Darwin drain and in-process chip switch share it.
+    //     Does not play, write Darwin, or call ``completeStreamSwitch``.
+    //   - `handleWidgetSwitchToLanguage` — public Darwin-drain entry (with actionId dedup + debounce)
     //     that delegates to the widget canonical.
     //   - `handleSwitchToLanguage` — external (Siri/shortcut/deep-link) path. Uses the
     //     engine SSOT + reset/play but is kept on a separate attach style for minimality;
@@ -101,13 +111,16 @@ extension RadioPlayerCoordinator {
     //   Its `switchToStream` is the nonisolated signaling façade: widget context → schedule
     //   + Darwin; main-app context → forwards directly to engine.
     //
-    // Widget paths originate from optimistic state + pending action + Darwin notification,
-    // then land in `handleWidgetSwitchToLanguage` (or the Live Activity intent path via SPM).
+    // Widget paths: extension hosts write pending + Darwin then
+    // `handleWidgetSwitchToLanguage`. Presentable main-app `LiveActivityIntent` /
+    // `AudioPlaybackIntent` hosts run ``WidgetIntentExecution/executeInProcessStreamSwitch``
+    // (no second Darwin) and paint chrome via ``syncLanguageChromeFromChosenStream``.
     //
     // AGENT NOTE: Never re-introduce manual "setSelectedStreamModelOnly + resetTransient
     // + stop + resetCounters" sequences anywhere. Route engine work exclusively through
     // `DirectStreamingPlayer.switchToStream`. Main-app flag UX lives in `completeStreamSwitch`.
-    // Widget reconciliation lives in `switchToStreamFromWidget`. Siri/external use SPM.switchToStream
+    // Widget Darwin reconciliation lives in `switchToStreamFromWidget`. In-process chip
+    // chrome lives in `syncLanguageChromeFromChosenStream`. Siri/external use SPM.switchToStream
     // + reset + userRequestedPlay (non-UI paths).
     // All explicit play initiation must use userRequestedPlay (or end at the permitted direct
     // `play()` sites after an active playback intent check). The two canonical switch resume
@@ -230,10 +243,12 @@ extension RadioPlayerCoordinator {
     ///   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared source files"),
     ///   <doc:Architecture>.
     ///
-    /// AGENT NOTE: handleWidgetSwitchToLanguage is the *only* public entry for widget-driven
-    /// language changes into the main app. The actionId/processed/debounce wrapper must stay here.
-    /// Core orchestration (reset/switchToStream/play sequencing) lives in the private canonical below.
-    /// Update both this doc and the canonical on any change to the widget path.
+    /// AGENT NOTE: handleWidgetSwitchToLanguage is the Darwin-drain entry for widget-driven
+    /// language changes. Presentable in-process chip switch does **not** come through here
+    /// (no pendingAction + Darwin); it paints chrome via ``syncLanguageChromeFromChosenStream``.
+    /// The actionId/processed/debounce wrapper must stay here. Core orchestration
+    /// (reset/switchToStream/play sequencing) lives in the private canonical below.
+    /// Update this doc, the canonical, and the in-process chrome helper together.
     func handleWidgetSwitchToLanguage(_ languageCode: String, actionId: String) {
         guard !processedActionIds.contains(actionId) else { return }
         processedActionIds.insert(actionId)
@@ -292,7 +307,8 @@ extension RadioPlayerCoordinator {
     ///    (sticky `.userPaused` chrome; language advances immediately).
     /// 3. Engine preparation exclusively via `DirectStreamingPlayer.switchToStream(_:)`
     ///    (the SSOT: model update, transient reset, awaited stop for lang change, counter reset).
-    /// 4. Mirror selection + language snapshot + LA language mirror + media-surface refresh.
+    /// 4. Language chrome via ``syncLanguageChromeFromChosenStream`` (index / VM / background /
+    ///    awaited session language) + LA language mirror + media-surface refresh.
     /// 5. If `!shouldResumeAfterSwitch`: clear soft-pause stash, then
     ///    ``paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()`` (re-sample
     ///    intent/visual SSOT after the await — do not hard-code `.userPaused` over
@@ -349,6 +365,7 @@ extension RadioPlayerCoordinator {
     ///   ``SharedPlayerManager/markPlaybackStoppedByStreamFailure(_:)``,
     ///   ``SharedPlayerManager/currentPlaybackIntent``,
     ///   ``paintBlockedSwitchChromeFromSSOTIfIntentStillNotActive()``,
+    ///   ``syncLanguageChromeFromChosenStream(_:isAttaching:)``,
     ///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority),
     ///   docs/cold-launch-streamplay-regression-checklist.md (§6.12, §10),
     ///   CODING_AGENT.md (Single Source of Truth Principles),
@@ -389,19 +406,15 @@ extension RadioPlayerCoordinator {
         // on the widget path.
         await streamingPlayer.switchToStream(stream)
 
-        selectedStreamIndex = index
-        backgroundImageController.update(for: stream)
         // Session snapshot language after engine model prep (destination already stamped when
         // paused; hold-time destination when resuming). Must complete before media-surface
         // refresh / any saveCurrentState so destination is not clobbered by a re-resolve from
-        // a lagging preferred/snapshot.
-        await updateUserDefaultsLanguage(stream.languageCode)
+        // a lagging preferred/snapshot. Shared with in-process chip switch.
+        await syncLanguageChromeFromChosenStream(stream, isAttaching: shouldResumeAfterSwitch)
         SharedPlayerManager.persistLiveActivityLanguageMirror(stream.languageCode)
         #if LUTHERAN_MAIN_APP
         await SharedPlayerManager.shared.refreshAllMediaSurfaces(liveActivity: .updateIfActive)
         #endif
-
-        viewModel?.selectedStreamIndex = index // migrated from // languageSelectorView (SwiftUI uses VM) .setSelectedIndex(index, animated: true, caller: "widgetSwitch")
 
         guard shouldResumeAfterSwitch else {
             #if DEBUG
@@ -434,6 +447,73 @@ extension RadioPlayerCoordinator {
 
         announceSwitchedToLanguage(stream)
         SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
+    }
+
+    /// Syncs in-app flag highlight, needle, decorative background, and session language
+    /// from a catalog stream that is already chosen.
+    ///
+    /// Owner for presentable language chrome after Live Activity / home chip switch and
+    /// after Darwin ``switchToStreamFromWidget``. Does **not** switch the engine, play,
+    /// write `pendingAction*` / Darwin, or call ``completeStreamSwitch`` (no tuning).
+    /// Idempotent when the same language is already selected.
+    ///
+    /// - Parameters:
+    ///   - stream: Catalog stream already resolved by the caller (engine model already applied
+    ///     or being applied on this path).
+    ///   - isAttaching: `true` when playback intent is active (Connecting attach) — defer
+    ///     heavy background CI until attach is stable. `false` when sticky-paused — apply
+    ///     the destination image immediately.
+    /// - Postcondition: `selectedStreamIndex` and `viewModel?.selectedStreamIndex` match
+    ///   `stream`. Session language snapshot is awaited via ``updateUserDefaultsLanguage``.
+    /// - SeeAlso: ``switchToStreamFromWidget(to:index:actionId:)``,
+    ///   ``syncInProcessLanguageChromeIfPresent(for:isAttaching:)``,
+    ///   ``WidgetIntentExecution/executeInProcessStreamSwitch(targetStream:)``,
+    ///   ``BackgroundImageController/scheduleDeferredForStreamSwitch(_:)``,
+    ///   ``updateUserDefaultsLanguage(_:)``,
+    ///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority).
+    func syncLanguageChromeFromChosenStream(
+        _ stream: DirectStreamingPlayer.Stream,
+        isAttaching: Bool
+    ) async {
+        let index = DirectStreamingPlayer.indexForLanguageCode(stream.languageCode)
+        selectedStreamIndex = index
+        viewModel?.selectedStreamIndex = index
+
+        if isAttaching {
+            backgroundImageController.scheduleDeferredForStreamSwitch(stream)
+        } else {
+            backgroundImageController.cancelPendingDeferral()
+            backgroundImageController.update(for: stream)
+        }
+
+        await updateUserDefaultsLanguage(stream.languageCode)
+
+        #if DEBUG
+        print(
+            "[RadioPlayerCoordinator] Synced language chrome from chosen stream: " +
+            "\(stream.languageCode) index=\(index) attaching=\(isAttaching)"
+        )
+        #endif
+    }
+
+    /// Paints presentable language chrome if a coordinator is registered as owner.
+    ///
+    /// In-process ``LiveActivityIntent`` / ``AudioPlaybackIntent`` chip switch calls this
+    /// after engine prep. No-ops when the main UI is not constructed (weak owner nil).
+    ///
+    /// - Parameters:
+    ///   - stream: Destination catalog stream.
+    ///   - isAttaching: Forwarded to ``syncLanguageChromeFromChosenStream(_:isAttaching:)``.
+    /// - SeeAlso: ``inProcessLanguageChromeOwner``,
+    ///   ``WidgetIntentExecution/executeInProcessStreamSwitch(targetStream:)``.
+    static func syncInProcessLanguageChromeIfPresent(
+        for stream: DirectStreamingPlayer.Stream,
+        isAttaching: Bool
+    ) async {
+        await inProcessLanguageChromeOwner?.syncLanguageChromeFromChosenStream(
+            stream,
+            isAttaching: isAttaching
+        )
     }
 
     // MARK: - Main-app flag-tap language selection
@@ -530,7 +610,8 @@ extension RadioPlayerCoordinator {
     /// - Parameter languageCode: The target stream language (e.g. "fi", "de").
     ///
     /// This is called on every user- or widget-driven language change (completeStreamSwitch,
-    /// switchToStreamFromWidget, handleSwitchToLanguage, and early cold-launch seeding).
+    /// switchToStreamFromWidget, syncLanguageChromeFromChosenStream, handleSwitchToLanguage,
+    /// and early cold-launch seeding).
     ///
     /// **Why the visual must be preserved (not forced to .prePlay):**
     /// When the user changes language while paused (`.userPaused` visual + sticky intent),
@@ -591,6 +672,7 @@ extension RadioPlayerCoordinator {
     ///   ``SharedPlayerManager/saveCurrentState()``,
     ///   ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
     ///   ``completeStreamSwitch(stream:index:)``, ``switchToStreamFromWidget(to:index:actionId:)``,
+    ///   ``syncLanguageChromeFromChosenStream(_:isAttaching:)``,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     func updateUserDefaultsLanguage(_ languageCode: String) async {
         // Privacy-gated liveness only — never write lastUpdateTime raw (residual after clear / no widgets).

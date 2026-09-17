@@ -14,6 +14,8 @@
 //
 //  Main-app play/pause: media-transport mailbox (no pendingAction + Darwin on the
 //  same tap). Extension: pending + Darwin ``radio.lutheran.widget.action``.
+//  Main-app stream chips: in-process engine switch + coordinator language chrome
+//  (no pendingAction + Darwin on the same tap).
 //
 //  - SeeAlso: WidgetInteractiveIntents.swift, WidgetDisplayModels.swift,
 //    WidgetIntentCoordinators, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
@@ -777,7 +779,8 @@ enum WidgetIntentExecution {
     ///
     /// **Process split:** extension ``switchToStream`` writes pending + Darwin. Main-app
     /// ``AudioPlaybackIntent`` hosts run silent in-process orchestration (pause-preserving;
-    /// never invent `.playing`) without a second Darwin drain.
+    /// never invent `.playing`) without a second Darwin drain, then sync in-app language
+    /// chrome via ``RadioPlayerCoordinator/syncLanguageChromeFromChosenStream``.
     ///
     /// **First home paint honesty:** The optimistic refresh visual uses the same pure stream-switch
     /// rule as Live Activity ContentState — actively playing → Connecting (``.prePlay``); sticky
@@ -846,7 +849,8 @@ enum WidgetIntentExecution {
     /// pause visual) **before** engine work so lock-screen flag/name track the chip tap
     /// immediately. Extension hosts keep pending + Darwin. Main-app ``LiveActivityIntent``
     /// hosts run silent in-process orchestration (same pause-preserving rules as
-    /// ``RadioPlayerCoordinator`` widget reconciliation) — never invent `.playing`.
+    /// ``RadioPlayerCoordinator`` widget reconciliation, including in-app language chrome)
+    /// — never invent `.playing`.
     ///
     /// - Parameter languageCode: Target stream code from ``LiveActivitySwitchStreamIntent``.
     /// - Returns: `true` when a matching stream was found and the switch was invoked.
@@ -875,13 +879,17 @@ enum WidgetIntentExecution {
     ///
     /// Mirrors ``RadioPlayerCoordinator`` widget reconciliation: Connecting hold when
     /// playback intent is active; destination stamp only when sticky-paused; engine prep
-    /// via ``DirectStreamingPlayer/switchToStream(_:)``; internal ``play()`` continuation
+    /// via ``DirectStreamingPlayer/switchToStream(_:)``; in-app language chrome via
+    /// ``RadioPlayerCoordinator/syncLanguageChromeFromChosenStream(_:isAttaching:)``
+    /// (flags / needle / background / session language); internal ``play()`` continuation
     /// when intent was already active. Does **not** write `pendingAction*` or Darwin.
     /// Does **not** play tuning / open UI. Never invents `.playing` during hold.
     ///
     /// - Parameter targetStream: Catalog stream already resolved by the caller.
     /// - SeeAlso: ``SharedPlayerManager/resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
     ///   ``SharedPlayerManager/stampStreamSwitchDestinationLanguage(_:)``,
+    ///   ``RadioPlayerCoordinator/syncInProcessLanguageChromeIfPresent(for:isAttaching:)``,
+    ///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority),
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private static func executeInProcessStreamSwitch(
         targetStream: DirectStreamingPlayer.Stream
@@ -898,6 +906,16 @@ enum WidgetIntentExecution {
             await manager.stampStreamSwitchDestinationLanguage(targetStream.languageCode)
         }
         await DirectStreamingPlayer.shared.switchToStream(targetStream)
+        #if DEBUG
+        print(
+            "[WidgetIntentExecution] In-process stream switch syncing language chrome: " +
+            "\(targetStream.languageCode) attaching=\(shouldResume)"
+        )
+        #endif
+        await RadioPlayerCoordinator.syncInProcessLanguageChromeIfPresent(
+            for: targetStream,
+            isAttaching: shouldResume
+        )
         SharedPlayerManager.persistLiveActivityLanguageMirror(targetStream.languageCode)
         await manager.refreshAllMediaSurfaces(liveActivity: .updateIfActive)
         if shouldResume {

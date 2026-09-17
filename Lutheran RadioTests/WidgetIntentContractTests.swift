@@ -13,7 +13,8 @@ import WidgetSurface
 @testable import Lutheran_Radio
 
 /// Main-app host contracts for App Group pending actions, instant-feedback windows,
-/// optimistic widget snapshots, widget stream-switch SSOT, and toggle-action mapping.
+/// optimistic widget snapshots, widget stream-switch SSOT (Darwin drain **and**
+/// in-process chip language chrome), and toggle-action mapping.
 ///
 /// Pending-action drain execution and joined optimistic→drain round-trips live in
 /// ``WidgetIntentPendingDrainTests`` and ``WidgetIntentJoinedRoundTripTests``.
@@ -614,6 +615,134 @@ final class WidgetIntentContractTests: XCTestCase {
             DirectStreamingPlayer.shared.selectedStream.languageCode,
             target.languageCode,
             "Paused widget switch must update the engine stream model"
+        )
+        _ = coordinator
+    }
+
+    /// Presentable in-process Live Activity chip switch paints coordinator language chrome
+    /// without writing a pending Darwin `"switch"` action.
+    ///
+    /// Protects: after `#114`, `LiveActivityIntent` / `AudioPlaybackIntent` hosts run
+    /// ``WidgetIntentExecution/executeInProcessStreamSwitch`` inside the main app. Engine
+    /// + snapshot move; flags / needle must follow via
+    /// ``RadioPlayerCoordinator/syncLanguageChromeFromChosenStream(_:isAttaching:)``.
+    /// This is the production presentable-app path, not Darwin drain
+    /// (``testPausedWidgetSwitchReconciliationPreservesIntentAndUpdatesStreamModel``).
+    /// UITestMode still skips ActivityKit / network; it must not hide chrome sync.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/executeLiveActivityStreamSwitch(languageCode:)``,
+    ///   ``RadioPlayerCoordinator/inProcessLanguageChromeOwner``,
+    ///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority).
+    @MainActor
+    func testInProcessStreamSwitchSyncsMainAppLanguageChromeWithoutPendingDarwin() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Catalog must include ≥2 streams")
+            return
+        }
+
+        let source = streams[0]
+        let target = streams[1]
+        guard let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: {
+            $0.languageCode == target.languageCode
+        }) else {
+            XCTFail("Target stream must exist in the catalog")
+            return
+        }
+
+        await manager.setUserPaused()
+        await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: source)
+
+        let viewModel = PlayerViewModel()
+        viewModel.selectedStreamIndex = 0
+        let coordinator = RadioPlayerCoordinator(
+            backgroundImageController: BackgroundImageController(),
+            streamingPlayer: DirectStreamingPlayer.shared
+        )
+        coordinator.viewModel = viewModel
+        coordinator.selectedStreamIndex = 0
+
+        XCTAssertNil(manager.getPendingAction(), "Precondition: no leftover pending action")
+
+        let switched = await WidgetIntentExecution.executeLiveActivityStreamSwitch(
+            languageCode: target.languageCode
+        )
+        XCTAssertTrue(switched, "In-process Live Activity switch must resolve the catalog stream")
+
+        XCTAssertNil(
+            manager.getPendingAction(),
+            "In-process chip switch must not write a pending Darwin switch action"
+        )
+        XCTAssertEqual(
+            coordinator.selectedStreamIndex,
+            targetIndex,
+            "In-process chip switch must move the in-app flag highlight"
+        )
+        XCTAssertEqual(
+            viewModel.selectedStreamIndex,
+            targetIndex,
+            "In-process chip switch must move the language-selector needle"
+        )
+        XCTAssertEqual(
+            DirectStreamingPlayer.shared.selectedStream.languageCode,
+            target.languageCode,
+            "In-process chip switch must still update the engine stream model"
+        )
+        _ = coordinator
+    }
+
+    /// Active-intent in-process chip switch also syncs coordinator chrome without Darwin.
+    ///
+    /// Protects: attaching chips (Connecting hold + internal `play()`) must not leave
+    /// flags on the last in-app tap. Same chrome owner as the paused test; `isAttaching`
+    /// defers decorative background instead of applying immediately.
+    ///
+    /// - SeeAlso: ``testInProcessStreamSwitchSyncsMainAppLanguageChromeWithoutPendingDarwin``.
+    @MainActor
+    func testInProcessStreamSwitchWhileAttachingSyncsMainAppLanguageChromeWithoutPendingDarwin() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Catalog must include ≥2 streams")
+            return
+        }
+
+        let source = streams[0]
+        let target = streams[1]
+        guard let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: {
+            $0.languageCode == target.languageCode
+        }) else {
+            XCTFail("Target stream must exist in the catalog")
+            return
+        }
+
+        await manager.setUserIntentToPlay()
+        await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: source)
+
+        let viewModel = PlayerViewModel()
+        viewModel.selectedStreamIndex = 0
+        let coordinator = RadioPlayerCoordinator(
+            backgroundImageController: BackgroundImageController(),
+            streamingPlayer: DirectStreamingPlayer.shared
+        )
+        coordinator.viewModel = viewModel
+        coordinator.selectedStreamIndex = 0
+
+        XCTAssertNil(manager.getPendingAction(), "Precondition: no leftover pending action")
+
+        let switched = await WidgetIntentExecution.executeLiveActivityStreamSwitch(
+            languageCode: target.languageCode
+        )
+        XCTAssertTrue(switched)
+
+        XCTAssertNil(
+            manager.getPendingAction(),
+            "Attaching in-process chip switch must not write a pending Darwin switch action"
+        )
+        XCTAssertEqual(coordinator.selectedStreamIndex, targetIndex)
+        XCTAssertEqual(viewModel.selectedStreamIndex, targetIndex)
+        XCTAssertEqual(
+            DirectStreamingPlayer.shared.selectedStream.languageCode,
+            target.languageCode
         )
         _ = coordinator
     }

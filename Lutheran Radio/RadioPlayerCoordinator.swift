@@ -19,8 +19,8 @@
 //  - RadioPlayerCoordinator+Tuning.swift — cold-launch special clip, stream-switch delight clip,
 //    stop/interrupt, AVAudioPlayerDelegate finish paths → TuningSoundCoordinator.
 //  - RadioPlayerCoordinator+StreamSwitch.swift — language / stream-switch orchestration
-//    (flag-tap completeStreamSwitch, widget silent switch, external deep-link switch,
-//    updateUserDefaultsLanguage, VoiceOver language announce).
+//    (flag-tap completeStreamSwitch, widget silent switch, in-process chip language chrome,
+//    external deep-link switch, updateUserDefaultsLanguage, VoiceOver language announce).
 //  - RadioPlayerCoordinator+StatusDistribution.swift — chrome / status distribution
 //    (updateUI, handleStatusChange, RadioPlayerChromeVisualResolver, VM metadata sync,
 //    no-internet chrome, Now Playing / widget save thin forwarders, thermal VoiceOver).
@@ -77,8 +77,9 @@ import WidgetSurface
 /// `PlayerViewModel` closures. Wire via ``wireSleepTimerUIGlue()`` from ``wireAndInitialSetup()``.
 ///
 /// **Stream index / language switch:** Single owner of `selectedStreamIndex` (wired to
-/// `PlayerViewModel` and all language / widget / stream-switch paths). Behavior lives in
-/// `RadioPlayerCoordinator+StreamSwitch.swift`. The host does not mirror this value.
+/// `PlayerViewModel` and all language / widget / stream-switch paths, including in-process
+/// Live Activity / home chip chrome via ``syncLanguageChromeFromChosenStream(_:isAttaching:)``).
+/// Behavior lives in `RadioPlayerCoordinator+StreamSwitch.swift`. The host does not mirror this value.
 ///
 /// **Status / chrome distribution:** `updateUI`, `handleStatusChange`, SSOT visual observation
 /// (``beginObservingVisualStateForChrome()``), and `RadioPlayerChromeVisualResolver` live in
@@ -125,7 +126,7 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     // | Pending-action drain | RadioPlayerCoordinator+PendingActions.swift | App Group `pendingAction*` drain, play/pause debounce, UITestMode drain-without-execute, widget play/pause helpers + DEBUG seams |
     // | Sleep-timer UI glue | RadioPlayerCoordinator+SleepTimer.swift | Dialog settle windows, preset/cancel, local countdown Task + VM sync, SleepTimerNotification, metadata deferral window |
     // | Tuning sounds | RadioPlayerCoordinator+Tuning.swift | Cold-launch special clip, stream-switch delight (duration-sleep stop/nil, no coordinator notify), stop/interrupt, AVAudioPlayerDelegate finish → TuningSoundCoordinator |
-    // | Stream switch / language | RadioPlayerCoordinator+StreamSwitch.swift | Flag-tap completeStreamSwitch, widget silent switch, external deep-link switch, keyboard/menu adjacent wrap (`handleAdjacentLanguageSelection`), updateUserDefaultsLanguage, language VoiceOver announce |
+    // | Stream switch / language | RadioPlayerCoordinator+StreamSwitch.swift | Flag-tap completeStreamSwitch, widget silent switch, in-process chip language chrome (`syncLanguageChromeFromChosenStream`), external deep-link switch, keyboard/menu adjacent wrap (`handleAdjacentLanguageSelection`), updateUserDefaultsLanguage, language VoiceOver announce |
     // | Status / chrome distribution | RadioPlayerCoordinator+StatusDistribution.swift | updateUI, handleStatusChange, SSOT visual chrome observation, RadioPlayerChromeVisualResolver, VM metadata/switch-flag sync, no-internet chrome, NP/widget save forwarders, thermal VoiceOver |
     // | Play / pause toggle | (this file) | handlePlayAction / handlePauseAction / handleTogglePlayback / handleUserTogglePlayback / pausePlayback / stopPlayback public shims |
     // | Privacy clear | (this file) | confirmAndClearLocalState + localStateCleared observer; UIAlert present timing is PlaybackControlsView ``SleepTimerPrivacyClearPresentation`` then ViewController ``presentCoordinatorAlertAfterOutgoingPresentationSettles`` (glass hosts gone) |
@@ -269,6 +270,15 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     /// Legacy URL-scheme `handleWidgetAction` on ViewController keeps a separate set for that surface only.
     var processedActionIds: Set<String> = []
 
+    /// Presentable owner of in-app language chrome for in-process Live Activity / home chip switch.
+    ///
+    /// Weak; last constructed coordinator wins. ``WidgetIntentExecution/executeInProcessStreamSwitch``
+    /// paints flags / needle / background through this owner without Darwin. Auto-nils on deinit.
+    ///
+    /// - SeeAlso: ``syncLanguageChromeFromChosenStream(_:isAttaching:)``,
+    ///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority).
+    static weak var inProcessLanguageChromeOwner: RadioPlayerCoordinator?
+
     // MARK: - Init / Wiring
     init(
         backgroundImageController: BackgroundImageController,
@@ -277,6 +287,7 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         self.backgroundImageController = backgroundImageController
         self.streamingPlayer = streamingPlayer
         super.init()
+        Self.inProcessLanguageChromeOwner = self
     }
 
     /// Called by VC after it has added the subviews to the hierarchy (setupUI complete).
