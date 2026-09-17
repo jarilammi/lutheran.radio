@@ -4,7 +4,9 @@
 //
 //  Created by Jari Lammi on 24.7.2026.
 //
-//  Player-item recovery domain: startup safety net, early ICY drop recreate, early-window transient recovery, secured recreatePlayerItem, loading/item failure classification hooks.
+//  Player-item recovery domain: startup safety net (first-byte grace SSOT — never a 5 s
+//  recreate of an unknown item), early ICY drop recreate, early-window transient recovery,
+//  secured recreatePlayerItem, loading/item failure classification hooks.
 //
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
 //  DirectStreamingPlayer remains the public façade; this file owns one domain.
@@ -37,65 +39,165 @@ extension DirectStreamingPlayer {
         startupSafetyNetWorkItem = nil
     }
     // MARK: - Startup Safety Net (cold launch / stream-switch first attach)
+
+    /// Formatted elapsed-seconds for DEBUG safety-net logs (no C-varargs `unsafe`).
+    @MainActor
+    private func startupSafetyNetElapsedText() -> String {
+        let elapsed = currentAttachBeganAt.map { Date().timeIntervalSince($0) } ?? 0
+        return elapsed.formatted(
+            .number
+                .precision(.fractionLength(2))
+                .locale(Locale(identifier: "en_US_POSIX"))
+        )
+    }
+
+    /// Host of the current secured item, or `"?"` when the asset is not an `AVURLAsset`.
+    @MainActor
+    private func startupSafetyNetHostText(for item: AVPlayerItem?) -> String {
+        (item?.asset as? AVURLAsset)?.url.host ?? "?"
+    }
+
+    /// Delay until the next safety-net evaluation. Unknown + no error uses remaining
+    /// ``earlyAttachFirstByteGraceSeconds``; ready-but-silent uses remaining loading grace
+    /// plus debounce; failed/error fires almost immediately. Never a hard-coded `5.0`.
+    ///
+    /// - Returns: Positive delay in seconds (minimum 50 ms so the work item is not synchronous).
+    /// - SeeAlso: ``earlyAttachFirstByteGraceSeconds``, ``earlyAttachLoadingGraceSeconds``,
+    ///   ``scheduleStartupSafetyNet()``
+    @MainActor
+    func nextStartupSafetyNetDelaySeconds() -> TimeInterval {
+        if let item = playerItem {
+            if item.error != nil || item.status == .failed {
+                return 0.05
+            }
+            switch item.status {
+            case .unknown:
+                return max(0.05, remainingEarlyAttachFirstByteGraceSeconds())
+            case .readyToPlay:
+                return max(
+                    0.05,
+                    remainingEarlyAttachLoadingGraceSeconds() + earlyAttachStallDebounceSeconds
+                )
+            case .failed:
+                return 0.05
+            @unknown default:
+                return max(0.05, remainingEarlyAttachFirstByteGraceSeconds())
+            }
+        }
+        return max(0.05, remainingEarlyAttachFirstByteGraceSeconds())
+    }
+
+    /// Whether the startup safety net may ``recreatePlayerItem()`` right now.
+    ///
+    /// Reuses ``shouldAttemptEarlyAttachStallRecovery(item:rate:)`` so unknown + no error
+    /// inside first-byte grace is refused. Audible `.readyToPlay` is never recreated.
+    ///
+    /// - Parameters:
+    ///   - item: Current player item, if any.
+    ///   - rate: Current `AVPlayer.rate`.
+    /// - Returns: `true` when a last-resort secured recreate is admitted.
+    /// - SeeAlso: ``shouldAttemptEarlyAttachStallRecovery(item:rate:)``,
+    ///   ``scheduleStartupSafetyNet()``
+    @MainActor
+    func shouldStartupSafetyNetRecreate(item: AVPlayerItem?, rate: Float) -> Bool {
+        let isActuallyPlaying = rate > 0.1 && (item?.status ?? currentItemStatus) == .readyToPlay
+        if isActuallyPlaying { return false }
+        guard let item else { return false }
+        return shouldAttemptEarlyAttachStallRecovery(item: item, rate: rate)
+    }
+
+    /// Last-resort recreate for cold-launch / stream-switch first attach.
+    ///
+    /// Delay comes from ``nextStartupSafetyNetDelaySeconds()`` (first-byte grace for unknown
+    /// items, loading grace for ready-but-silent). When the work item fires, admission is
+    /// ``shouldStartupSafetyNetRecreate(item:rate:)`` — the same unknown-item predicate as
+    /// stall recovery. A skip while first-byte grace remains reschedules the remainder;
+    /// it does **not** abort in-flight DNS/TLS with a 5 s recreate.
+    ///
+    /// - Important: Do not call `play()` here. Kick policy still waits for `.readyToPlay`.
+    /// - SeeAlso: ``earlyAttachFirstByteGraceSeconds``, ``shouldAttemptEarlyAttachStallRecovery(item:rate:)``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§8).
     @MainActor
     func scheduleStartupSafetyNet() {
         guard initialPlaybackRetryCount < maxInitialRetries else { return }
 
         cancelStartupSafetyNet()
+        let delay = nextStartupSafetyNetDelaySeconds()
+        #if DEBUG
+        print("[DirectStreamingPlayer] [Playback] Startup safety net: scheduled in \(delay.formatted(.number.precision(.fractionLength(2)).locale(Locale(identifier: "en_US_POSIX"))))s (first-byte grace=\(Int(earlyAttachFirstByteGraceSeconds))s)")
+        #endif
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
 
             Task { @MainActor in
-                // ──────────────────────────────────────────────────────────────
                 // intent-driven startup safety net.
-                // The .prePlay visual-state heuristic has been removed (last remaining
-                // currentVisualState decision point for control flow in DirectStreamingPlayer).
-                // Activation now relies solely on: intent check + actual playback facts.
+                // Activation relies solely on: intent check + actual playback facts.
                 guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                     #if DEBUG
                     print("[DirectStreamingPlayer] startup safety net: resurrection suppressed by playbackIntent")
                     #endif
                     return
                 }
-                // ──────────────────────────────────────────────────────────────
-                
-                let isActuallyPlaying = (self.player?.rate ?? 0) > 0.1 &&
-                                        self.currentItemStatus == .readyToPlay
-                
-                if !isActuallyPlaying {
-                    // Share the same hard budget as early-window recovery so stall recreates
-                    // and the 5 s safety net cannot stack into a multi-recreate storm.
-                    if self.initialPlaybackRetryCount >= self.maxInitialRetries {
-                        #if DEBUG
-                        let tc = self.player?.timeControlStatus.rawValue ?? -1
-                        print("[DirectStreamingPlayer] [Playback] Startup safety net: budget already exhausted (\(self.initialPlaybackRetryCount)/\(self.maxInitialRetries))")
-                        print("[DirectStreamingPlayer] [Playback] Safety net terminal: hasPermanentError=\(self.hasPermanentError) | timeControlStatus=\(tc) | rate=\(self.player?.rate ?? -1) | currentItemStatus=\(self.currentItemStatus.rawValue)")
-                        #endif
 
-                        if self.hasPermanentError {
-                            self.safeOnStatusChange(isPlaying: false, reasonKey: "status_failed")
-                        } else {
-                            // One last secured recreate only — still no permanent red UX for
-                            // pure transient ICY/Fig noise. Intent stays active so a later
-                            // language switch or explicit play can recover.
-                            #if DEBUG
-                            print("[DirectStreamingPlayer] [Playback] Transient give-up: performing FINAL recreatePlayerItem() then suppressing severe status. No red popup.")
-                            #endif
-                            self.recreatePlayerItem()
-                        }
-                        return
-                    }
+                let rate = self.player?.rate ?? 0
+                let item = self.playerItem
+                let elapsedText = self.startupSafetyNetElapsedText()
+                let host = self.startupSafetyNetHostText(for: item)
+                let statusRaw = item?.status.rawValue ?? self.currentItemStatus.rawValue
+                let errorDesc = item?.error.map { String(describing: $0) } ?? "nil"
 
-                    self.initialPlaybackRetryCount += 1
+                let isActuallyPlaying = rate > 0.1 &&
+                    (item?.status ?? self.currentItemStatus) == .readyToPlay
+                if isActuallyPlaying {
                     #if DEBUG
-                    print("[DirectStreamingPlayer] [Playback] Startup safety net: no playback detected after 5s – retry \(self.initialPlaybackRetryCount)/\(self.maxInitialRetries) | hasStartedPlaying=\(self.hasStartedPlaying) | currentItemStatus=\(self.currentItemStatus.rawValue) | hasPlayerItem=\(self.playerItem != nil) | rate=\(self.player?.rate ?? -1)")
+                    print("[DirectStreamingPlayer] [Playback] Startup safety net: skip — already playing (elapsed=\(elapsedText)s host=\(host))")
                     #endif
-                    self.recreatePlayerItem()
+                    return
                 }
+
+                // Share the same hard budget as early-window recovery so stall recreates
+                // and the safety net cannot stack into a multi-recreate storm.
+                if self.initialPlaybackRetryCount >= self.maxInitialRetries {
+                    #if DEBUG
+                    let tc = self.player?.timeControlStatus.rawValue ?? -1
+                    print("[DirectStreamingPlayer] [Playback] Startup safety net: budget already exhausted (\(self.initialPlaybackRetryCount)/\(self.maxInitialRetries)) elapsed=\(elapsedText)s status=\(statusRaw) error=\(errorDesc) host=\(host)")
+                    print("[DirectStreamingPlayer] [Playback] Safety net terminal: hasPermanentError=\(self.hasPermanentError) | timeControlStatus=\(tc) | rate=\(rate) | currentItemStatus=\(statusRaw)")
+                    #endif
+
+                    if self.hasPermanentError {
+                        self.safeOnStatusChange(isPlaying: false, reasonKey: "status_failed")
+                    } else {
+                        // One last secured recreate only — still no permanent red UX for
+                        // pure transient ICY/Fig noise. Intent stays active so a later
+                        // language switch or explicit play can recover.
+                        #if DEBUG
+                        print("[DirectStreamingPlayer] [Playback] Transient give-up: performing FINAL recreatePlayerItem() then suppressing severe status. No red popup. elapsed=\(elapsedText)s status=\(statusRaw) error=\(errorDesc) host=\(host)")
+                        #endif
+                        self.recreatePlayerItem()
+                    }
+                    return
+                }
+
+                if !self.shouldStartupSafetyNetRecreate(item: item, rate: rate) {
+                    let remaining = self.remainingEarlyAttachFirstByteGraceSeconds()
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] [Playback] Startup safety net: skip recreate — still loading (elapsed=\(elapsedText)s status=\(statusRaw) error=\(errorDesc) host=\(host) remainingFirstByte=\(remaining.formatted(.number.precision(.fractionLength(2)).locale(Locale(identifier: "en_US_POSIX"))))s)")
+                    #endif
+                    if remaining > 0 {
+                        self.scheduleStartupSafetyNet()
+                    }
+                    return
+                }
+
+                self.initialPlaybackRetryCount += 1
+                #if DEBUG
+                print("[DirectStreamingPlayer] [Playback] Startup safety net: recreate — retry \(self.initialPlaybackRetryCount)/\(self.maxInitialRetries) elapsed=\(elapsedText)s status=\(statusRaw) error=\(errorDesc) host=\(host) hasStartedPlaying=\(self.hasStartedPlaying) rate=\(rate)")
+                #endif
+                self.recreatePlayerItem()
             }
         }
         startupSafetyNetWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
     @MainActor
     func activatePlaybackTeardownGuard() {
@@ -145,22 +247,97 @@ extension DirectStreamingPlayer {
         earlyICYDropRecreateTask = nil
     }
 
-    /// Seconds remaining in the post-attach loading grace (0 when expired or not started).
+    /// Seconds remaining in the ready-but-silent loading grace (0 when expired or not started).
     @MainActor
     func remainingEarlyAttachLoadingGraceSeconds() -> TimeInterval {
+        remainingAttachGraceSeconds(window: earlyAttachLoadingGraceSeconds)
+    }
+
+    /// Seconds remaining in the unknown-item first-byte grace (0 when expired or not started).
+    ///
+    /// - SeeAlso: ``earlyAttachFirstByteGraceSeconds``, ``shouldAttemptEarlyAttachStallRecovery(item:rate:)``
+    @MainActor
+    func remainingEarlyAttachFirstByteGraceSeconds() -> TimeInterval {
+        remainingAttachGraceSeconds(window: earlyAttachFirstByteGraceSeconds)
+    }
+
+    /// Seconds remaining in `window` since ``currentAttachBeganAt``.
+    ///
+    /// No clock yet (observers before attach mark) is treated as the full window so we do
+    /// not recreate from a zero-delay path.
+    @MainActor
+    private func remainingAttachGraceSeconds(window: TimeInterval) -> TimeInterval {
         guard let began = currentAttachBeganAt else {
-            // No clock yet (observers before attach mark) — treat as full grace so we do not
-            // recreate from a zero-delay path.
-            return earlyAttachLoadingGraceSeconds
+            return window
         }
         let elapsed = Date().timeIntervalSince(began)
-        return max(0, earlyAttachLoadingGraceSeconds - elapsed)
+        return max(0, window - elapsed)
+    }
+
+    /// Pure stall-admission policy (no engine instance). Unknown + no error is refused until
+    /// first-byte grace elapses; `.failed` / `item.error` and ready-but-silent are admitted
+    /// when the shared recreate budget remains.
+    ///
+    /// - Parameters:
+    ///   - hasStartedPlaying: Stable audible play already achieved for this attach.
+    ///   - retryCount: ``initialPlaybackRetryCount``.
+    ///   - maxRetries: ``maxInitialRetries``.
+    ///   - rate: Current `AVPlayer.rate`.
+    ///   - itemStatus: Current `AVPlayerItem.status`.
+    ///   - itemHasError: `item.error != nil`.
+    ///   - remainingFirstByteGraceSeconds: Remaining ``earlyAttachFirstByteGraceSeconds``.
+    /// - Returns: `true` when a stall-class early recreate is allowed to proceed.
+    /// - SeeAlso: ``shouldAttemptEarlyAttachStallRecovery(item:rate:)``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§8).
+    static func shouldAttemptEarlyAttachStallRecovery(
+        hasStartedPlaying: Bool,
+        retryCount: Int,
+        maxRetries: Int,
+        rate: Float,
+        itemStatus: AVPlayerItem.Status,
+        itemHasError: Bool,
+        remainingFirstByteGraceSeconds: TimeInterval
+    ) -> Bool {
+        guard !hasStartedPlaying else { return false }
+        guard retryCount < maxRetries else { return false }
+        guard rate < 0.1 else { return false }
+        if itemHasError { return true }
+        switch itemStatus {
+        case .failed:
+            return true
+        case .readyToPlay:
+            // Ready but silent — short patience already applied by the caller's debounce.
+            return true
+        case .unknown:
+            // Progressive ICY / cold DNS: unknown + no error is normal loading until first-byte grace.
+            return remainingFirstByteGraceSeconds <= 0
+        @unknown default:
+            return remainingFirstByteGraceSeconds <= 0
+        }
+    }
+
+    /// Whether Connecting Play should nudge the existing item instead of no-op.
+    ///
+    /// Fresh connect (first-byte grace remaining and no safety-net retry yet) stays a no-op
+    /// so a 1 s connect does not stack ``attachAndPlay``. After first-byte grace, or after
+    /// the safety net has already retried, Play is stale and must not be swallowed forever.
+    ///
+    /// - Parameters:
+    ///   - remainingFirstByteGraceSeconds: Remaining ``earlyAttachFirstByteGraceSeconds``.
+    ///   - initialPlaybackRetryCount: Shared recreate budget consumed so far.
+    /// - Returns: `true` when Connecting is stale.
+    /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``, ``nudgeStaleConnectingPlay()``
+    static func isConnectingAttachStale(
+        remainingFirstByteGraceSeconds: TimeInterval,
+        initialPlaybackRetryCount: Int
+    ) -> Bool {
+        remainingFirstByteGraceSeconds <= 0 || initialPlaybackRetryCount > 0
     }
 
     /// Whether "buffer not likely to keep up + rate 0" may enter early-window recovery.
     ///
     /// Returns `false` while the secured item is still legitimately loading
-    /// (`status == .unknown`, no error) inside ``earlyAttachLoadingGraceSeconds``.
+    /// (`status == .unknown`, no error) inside ``earlyAttachFirstByteGraceSeconds``.
     /// Hard errors and post-ready stuck rate always return `true` when the early budget remains.
     ///
     /// - Parameters:
@@ -168,25 +345,19 @@ extension DirectStreamingPlayer {
     ///   - rate: Current `AVPlayer.rate`.
     /// - Returns: `true` when a stall-class early recreate is allowed to proceed.
     /// - SeeAlso: ``attemptEarlyWindowTransientRecovery(reason:allowWhileDeferringFirstPlayKick:)``,
-    ///   ``earlyAttachLoadingGraceSeconds``, docs/cold-launch-streamplay-regression-checklist.md (§8).
+    ///   ``earlyAttachFirstByteGraceSeconds``, ``earlyAttachLoadingGraceSeconds``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§8).
     @MainActor
     func shouldAttemptEarlyAttachStallRecovery(item: AVPlayerItem, rate: Float) -> Bool {
-        guard !hasStartedPlaying else { return false }
-        guard initialPlaybackRetryCount < maxInitialRetries else { return false }
-        guard rate < 0.1 else { return false }
-        if item.error != nil { return true }
-        switch item.status {
-        case .failed:
-            return true
-        case .readyToPlay:
-            // Ready but silent — short patience already applied by the caller's debounce.
-            return true
-        case .unknown:
-            // Progressive ICY: unknown + no error is normal loading, not a stall, until grace ends.
-            return remainingEarlyAttachLoadingGraceSeconds() <= 0
-        @unknown default:
-            return remainingEarlyAttachLoadingGraceSeconds() <= 0
-        }
+        Self.shouldAttemptEarlyAttachStallRecovery(
+            hasStartedPlaying: hasStartedPlaying,
+            retryCount: initialPlaybackRetryCount,
+            maxRetries: maxInitialRetries,
+            rate: rate,
+            itemStatus: item.status,
+            itemHasError: item.error != nil,
+            remainingFirstByteGraceSeconds: remainingEarlyAttachFirstByteGraceSeconds()
+        )
     }
 
     /// Silent recovery for transient ICY / Fig / decoder noise on a fresh attach.

@@ -154,6 +154,21 @@ final class DirectStreamingPlayerServerSelectionTests: XCTestCase {
         )
     }
 
+    /// Protects: dual timeout must not stamp ``lastServerSelectionTime``, so the 10 s
+    /// throttle cannot treat “we learned nothing” as a real cluster selection.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/shouldStampLastServerSelection(hasValidPingResult:)``
+    func testDualTimeoutMustNotStampServerSelection() {
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldStampLastServerSelection(hasValidPingResult: true),
+            "A valid ping RTT may stamp the measured cluster"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldStampLastServerSelection(hasValidPingResult: false),
+            "Dual timeout must not stamp — next attach must be allowed to ping again"
+        )
+    }
+
     /// Protects: once the warm window expires, same-stream resume pings again.
     func testWarmWindowExpiryForcesPingEvenOnSameStreamResume() {
         let expired = DirectStreamingPlayer.sameStreamWarmServerReuseInterval + 0.001

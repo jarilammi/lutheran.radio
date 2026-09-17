@@ -17,7 +17,8 @@
 //  ``SecurityConfiguration/preferredStreamingDomainSuffix`` (today `siikkari.net`).
 //  Do not hard-code apex strings here — keep EU = european.<apex>, US = livestream.<apex>.
 //  Skipping a warm same-stream ping does **not** skip stream TLS / Core pin / DNS TXT —
-//  only the EU/US RTT probe before ``urlWithOptimalServer(for:)`` builds the host.
+//  only the EU/US RTT probe. First attach is not blocked on that probe: default/last-good
+//  (EU / ``servers[0]``) is used immediately while pings run in the background.
 //
 //  Same-stream hard-resume (user pause already tore Icecast down) may reuse
 //  ``currentSelectedServer`` while ``lastServerSelectionTime`` is inside
@@ -98,10 +99,28 @@ extension DirectStreamingPlayer {
     }
 
     /// Repeat probes within this window reuse ``currentSelectedServer`` for every attach context
-    /// (cold launch, stream switch, resume, recovery).
+    /// (cold launch, stream switch, resume, recovery). Only a **valid ping RTT** stamps
+    /// ``lastServerSelectionTime``; dual timeout must not, or this window would skip the next
+    /// real probe after “we learned nothing.”
     ///
-    /// - SeeAlso: ``sameStreamWarmServerReuseInterval``, ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``
+    /// - SeeAlso: ``sameStreamWarmServerReuseInterval``, ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``,
+    ///   ``shouldStampLastServerSelection(hasValidPingResult:)``
     static let serverSelectionThrottleInterval: TimeInterval = 10.0
+
+    /// Whether a completed ping pair may stamp ``lastServerSelectionTime``.
+    ///
+    /// Dual timeout (`hasValidPingResult == false`) must not stamp: the 10 s throttle would
+    /// otherwise treat a no-result as a real selection and skip the next probe. A valid RTT
+    /// stamps so the next attach can reuse the measured cluster.
+    ///
+    /// - Parameter hasValidPingResult: At least one ping returned a finite latency.
+    /// - Returns: `true` only when a measured cluster exists.
+    /// - Important: Ping is latency optimization, not a security gate. DNS TXT / Core pins
+    ///   still run on the stream URL via ``makeSecuredPlayerItem(for:)``.
+    /// - SeeAlso: ``selectOptimalServer(completion:)``, ``lastServerSelectionTime``
+    static func shouldStampLastServerSelection(hasValidPingResult: Bool) -> Bool {
+        hasValidPingResult
+    }
 
     /// Same-stream hard-resume (``PlaybackAttachContext/resume``) may reuse the last measured
     /// cluster without a new EU/US ping pair while the last success is this young.
@@ -198,7 +217,8 @@ extension DirectStreamingPlayer {
             completion(currentSelectedServer)
             return
         }
-        
+
+        serverSelectionInFlight = true
         serverSelectionWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else {
@@ -217,26 +237,24 @@ extension DirectStreamingPlayer {
                         await SharedPlayerManager.shared.saveCurrentState()
                     }
                     
-                    self.lastServerSelectionTime = Date()
+                    if Self.shouldStampLastServerSelection(hasValidPingResult: true) {
+                        self.lastServerSelectionTime = Date()
+                    }
                     
                     #if DEBUG
                     print("[DirectStreamingPlayer] [Server Selection] Selected \(bestResult.server.name) with latency \(bestResult.latency)s")
                     #endif
                 } else {
-                    self.currentSelectedServer = Self.servers[0]
-                    
-                    // Fire-and-forget save
-                    Task {
-                        await SharedPlayerManager.shared.saveCurrentState()
-                    }
-                    
-                    self.lastServerSelectionTime = Date()
-                    
+                    // Dual timeout: keep default/last-good. Do **not** stamp
+                    // ``lastServerSelectionTime`` so the 10 s throttle cannot treat a
+                    // no-result as a real selection. Do not overwrite a previous
+                    // measured cluster with EU solely because this pair timed out.
                     #if DEBUG
-                    print("[DirectStreamingPlayer] [Server Selection] No valid ping results, falling back to \(self.currentSelectedServer.name)")
+                    print("[DirectStreamingPlayer] [Server Selection] No valid ping results, keeping \(self.currentSelectedServer.name) (not stamping)")
                     #endif
                 }
-                
+
+                self.serverSelectionInFlight = false
                 completion(self.currentSelectedServer)
             }
         }
@@ -245,13 +263,38 @@ extension DirectStreamingPlayer {
         let selectionDelay: TimeInterval = isLowEfficiencyMode ? 1.0 : 0.5
         DispatchQueue.main.asyncAfter(deadline: .now() + selectionDelay, execute: workItem)
     }
+
+    /// Starts the EU/US RTT probe without waiting. First attach uses default/last-good
+    /// (``servers[0]`` / EU, or a previously measured cluster) immediately.
+    ///
+    /// Isolation: no-op under UITestMode. Coalesces while ``serverSelectionInFlight``.
+    /// Does not skip DNS TXT / Core pins on the stream URL.
+    ///
+    /// - SeeAlso: ``ensureOptimalServerSelected(allowSameStreamWarmReuse:)``,
+    ///   ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``
+    func beginBackgroundServerSelectionIfNeeded() {
+        guard !isTesting else { return }
+        guard !serverSelectionInFlight else { return }
+        let age = lastServerSelectionTime.map { Date().timeIntervalSince($0) }
+        if Self.shouldReuseCachedServerSelection(
+            lastSelectionAge: age,
+            allowSameStreamWarmReuse: false
+        ) {
+            return
+        }
+        selectOptimalServer { _ in }
+    }
     
-    /// Ensures the optimal server — the one with the lowest measured latency — has been
-    /// confidently selected before any playback path constructs a `selectedStream.url`.
+    /// Ensures a cluster is available for URL construction without blocking first audible attach.
     ///
     /// Fast-path: ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``
     /// returns immediately with zero allocation and no suspension (10 s throttle for every
     /// context; longer warm window only when `allowSameStreamWarmReuse` is true).
+    ///
+    /// Otherwise starts the EU/US ping pair in the **background** and returns immediately on
+    /// default/last-good (``servers[0]`` / EU). Ping is latency optimization, not a security
+    /// gate — DNS TXT / Core pins still run on the stream URL. Dual timeout does not stamp
+    /// ``lastServerSelectionTime``.
     ///
     /// This is the internal implementation detail behind
     /// ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``.
@@ -259,7 +302,8 @@ extension DirectStreamingPlayer {
     /// - Parameter allowSameStreamWarmReuse: Pass `true` only from ``PlaybackAttachContext/resume``
     ///   attach (same-stream hard-resume after user pause). Default `false` keeps the 10 s
     ///   throttle only — required for stream switch, cold launch, and recovery ``play()``.
-    /// - SeeAlso: ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``
+    /// - SeeAlso: ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``,
+    ///   ``beginBackgroundServerSelectionIfNeeded()``
     func ensureOptimalServerSelected(allowSameStreamWarmReuse: Bool = false) async {
         let age = lastServerSelectionTime.map { Date().timeIntervalSince($0) }
         if Self.shouldReuseCachedServerSelection(
@@ -285,19 +329,24 @@ extension DirectStreamingPlayer {
             return
         }
 
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            selectOptimalServer { _ in cont.resume() }
-        }
+        #if DEBUG
+        print("[DirectStreamingPlayer] ensureOptimalServerSelected: attaching on \(currentSelectedServer.name) without waiting for ping pair")
+        #endif
+        beginBackgroundServerSelectionIfNeeded()
     }
 
-    /// Returns a playback URL for `stream` whose host is guaranteed to be the current
-    /// optimal server (lowest latency, or the best non-failed server if one has recently failed).
+    /// Returns a playback URL for `stream` on the current cluster (default/last-good, or a
+    /// just-measured winner if a background ping already completed).
     ///
     /// This is the **single source of truth** for all URL construction that feeds AVURLAsset
     /// or AVPlayerItem on cold launch, stream switch, same-stream resume, or direct start paths.
     ///
     /// Internally calls ``ensureOptimalServerSelected(allowSameStreamWarmReuse:)`` then
     /// reads the computed `stream.url` (which consults `currentSelectedServer` at read time).
+    /// First attach is **not** serialized behind the ping pair: default/last-good is used
+    /// immediately and pings run in parallel (typically during the tuning clip). A later
+    /// successful ping updates ``currentSelectedServer`` for the next stream switch; it does
+    /// not recreate an in-flight first-byte item (that would abort DNS/TLS).
     ///
     /// Adding new playback entry points? Route their first `.url` access through this helper
     /// and the original race becomes structurally impossible.
@@ -305,17 +354,20 @@ extension DirectStreamingPlayer {
     /// - Parameters:
     ///   - stream: Catalog stream whose host is rewritten from ``currentSelectedServer``.
     ///   - allowSameStreamWarmReuse: `true` only for ``PlaybackAttachContext/resume``. `false`
-    ///     (default) for cold launch, stream switch, and recovery ``play()`` — those still ping
-    ///     when the 10 s throttle has expired. Does not skip Core pins on the stream URL.
+    ///     (default) for cold launch, stream switch, and recovery ``play()`` — those still start
+    ///     a background ping when the 10 s throttle has expired. Does not skip Core pins on
+    ///     the stream URL.
     /// - Returns: HTTPS stream URL on the currently selected cluster.
     /// - SeeAlso: ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``,
+    ///   ``beginBackgroundServerSelectionIfNeeded()``,
     ///   ``PlaybackAttachContext``, DirectStreamingPlayer+PlaybackAttach.swift
     func urlWithOptimalServer(for stream: Stream, allowSameStreamWarmReuse: Bool = false) async -> URL {
         await ensureOptimalServerSelected(allowSameStreamWarmReuse: allowSameStreamWarmReuse)
 
         #if DEBUG
-        // Catches regressions of the "forgot to update lastServerSelectionTime on a completion path"
-        // or any mutation that clears the stamp without going through selectOptimalServer.
+        // A stamp is optional: first attach may use default/last-good while pings run.
+        // When a stamp exists it must still be inside the reuse window (forgot-to-stamp
+        // regressions of a *measured* completion path).
         if let t = lastServerSelectionTime {
             let age = Date().timeIntervalSince(t)
             assert(
@@ -325,8 +377,6 @@ extension DirectStreamingPlayer {
                 ),
                 "urlWithOptimalServer: ensure returned but selection stamp is \(age)s old (same-stream warm reuse=\(allowSameStreamWarmReuse))"
             )
-        } else {
-            assertionFailure("urlWithOptimalServer: ensure returned without a lastServerSelectionTime stamp")
         }
         #endif
 

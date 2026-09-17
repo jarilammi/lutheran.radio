@@ -566,7 +566,11 @@ extension SharedPlayerManager {
     ///
     /// Contract (in order):
     /// 1. Thermal refuse while device is still stressed (policy chrome stays).
-    /// 2. Idempotent no-op while Connecting (start pipeline already active).
+    /// 2. Connecting: fresh connect (inside first-byte grace, no safety-net retry) is an
+    ///    idempotent no-op so a 1 s connect does not stack ``attachAndPlay``. Stale Connecting
+    ///    (attach older than first-byte grace, or safety net already retried) nudges
+    ///    ``DirectStreamingPlayer/nudgeStaleConnectingPlay()`` on the **existing** item —
+    ///    never a second attach.
     /// 3. Idempotent no-op while already audibly playing the selected language — **before**
     ///    ``setUserIntentToPlay()`` so chrome is never forced through Connecting and the
     ///    secured item is never rebuilt (engine-truth; no wall-clock bypass).
@@ -599,6 +603,8 @@ extension SharedPlayerManager {
     /// - SeeAlso: ``play()``, ``setUserIntentToPlay()``, ``shouldNoOpPlayWhileAlreadyAudible()``,
     ///   ``clearUserPausedLockIfNeeded()``, ``currentPlaybackIntent``,
     ///   ``canProceedWithPlayback()``,
+    ///   ``DirectStreamingPlayer/nudgeStaleConnectingPlay()``,
+    ///   ``DirectStreamingPlayer/isConnectingAttachStale()``,
     ///   RadioPlayerCoordinator.completeStreamSwitch,
     ///   RadioPlayerCoordinator.switchToStreamFromWidget,
     ///   CODING_AGENT.md (Single Source of Truth Principles),
@@ -626,9 +632,20 @@ extension SharedPlayerManager {
             return
         }
 
-        // Idempotent while Connecting: a second play plan must not re-run security validation
-        // or stack another attach on an already-active start pipeline.
+        // Connecting: a second play plan must not re-run security validation or stack
+        // another attach on a fresh start pipeline. After first-byte grace (or a safety-net
+        // retry) the pipeline is stale — nudge the existing item instead of swallowing Play.
         if isConnectingPlayback {
+            #if LUTHERAN_MAIN_APP
+            let stale = await DirectStreamingPlayer.shared.isConnectingAttachStale()
+            if stale {
+                #if DEBUG
+                print("[SharedPlayerManager] userRequestedPlay() — stale Connecting, nudging existing item (no second attach)")
+                #endif
+                await DirectStreamingPlayer.shared.nudgeStaleConnectingPlay()
+                return
+            }
+            #endif
             #if DEBUG
             print("[SharedPlayerManager] userRequestedPlay() no-op — playback start pipeline already active (Connecting)")
             #endif

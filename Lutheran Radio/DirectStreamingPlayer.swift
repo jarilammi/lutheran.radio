@@ -383,6 +383,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     var test_audioSessionMutationSerializedHoldNanoseconds: UInt64 = 0
     /// Begin/end log of serialized session mutations for XCTest order assertions.
     var test_audioSessionMutationLog: [String] = []
+    /// Count of stale-Connecting Play nudges (``nudgeStaleConnectingPlay()``). Tests assert
+    /// a long Connecting Play tap is not swallowed without stacking ``attachAndPlay``.
+    var test_staleConnectingPlayNudgeCount = 0
     #endif
         
     // Single declaration (no DEBUG/release duplication) for the few members that historically
@@ -485,12 +488,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // Stored selection state stays on the façade (extensions cannot declare stored properties).
 
     var lastServerSelectionTime: Date?
-    /// Wall-clock stamp of the last measured cluster (or fallback). ``selectOptimalServer``
-    /// throttles every context for ``serverSelectionThrottleInterval``. Same-stream hard-resume
-    /// may additionally reuse this stamp for ``sameStreamWarmServerReuseInterval`` via
+    /// Wall-clock stamp of the last **measured** cluster (a valid ping RTT). Dual timeout
+    /// must not stamp — that would make ``serverSelectionThrottleInterval`` treat “we learned
+    /// nothing” as a real selection. ``selectOptimalServer`` throttles every context for
+    /// ``serverSelectionThrottleInterval``. Same-stream hard-resume may additionally reuse this
+    /// stamp for ``sameStreamWarmServerReuseInterval`` via
     /// ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``.
-    /// Network-path reconnect nils the stamp.
+    /// Network-path reconnect nils the stamp. First attach does **not** wait on this stamp;
+    /// it uses default/last-good (``servers[0]`` / EU) while pings run in the background.
     var serverSelectionWorkItem: DispatchWorkItem?
+    /// True while an EU/US ping pair is scheduled or in flight. Coalesces background
+    /// ``beginBackgroundServerSelectionIfNeeded()`` so cold-launch model-only + attach
+    /// cannot stack two DNSSEC ping pairs.
+    var serverSelectionInFlight = false
     /// Track deallocation state (stop / observer teardown).
     var isDeallocating = false
 
@@ -503,25 +513,41 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
     /// Wall-clock start of the current secured attach (item prepare / recreate).
     ///
-    /// Used only for early-window **stall** patience: progressive live MP3 often spends several
-    /// seconds at `AVPlayerItem.Status.unknown` with no tracks yet. That is normal loading, not
-    /// a reason to tear down and rebuild the secured item. Hard failures (item `.failed`,
-    /// buffer-empty with `AVFoundationErrorDomain`) bypass this grace and recover immediately.
+    /// Used for early-window patience: progressive live MP3 often spends several seconds at
+    /// `AVPlayerItem.Status.unknown` with no tracks yet. Cold DNSSEC / dual-stack first-byte
+    /// can exceed the ready-but-silent window. That is normal loading, not a reason to tear
+    /// down and rebuild the secured item. Hard failures (item `.failed`, buffer-empty with
+    /// `AVFoundationErrorDomain`) bypass grace and recover immediately.
     ///
-    /// - SeeAlso: ``earlyAttachLoadingGraceSeconds``, ``shouldAttemptEarlyAttachStallRecovery(item:rate:)``,
+    /// - SeeAlso: ``earlyAttachFirstByteGraceSeconds``, ``earlyAttachLoadingGraceSeconds``,
+    ///   ``shouldAttemptEarlyAttachStallRecovery(item:rate:)``,
     ///   ``attemptEarlyWindowTransientRecovery(reason:allowWhileDeferringFirstPlayKick:)``,
     ///   docs/cold-launch-streamplay-regression-checklist.md (§6, §8).
     @MainActor var currentAttachBeganAt: Date?
 
-    /// Minimum time after attach before "not likely to keep up + rate 0" alone may recreate.
+    /// First-byte patience for `AVPlayerItem.Status.unknown` with no error (cold DNSSEC /
+    /// dual-stack Fig resolver). The startup safety net must consult this — never a second
+    /// magic `5.0` recreate timer — so in-flight DNS/TLS is not aborted while the item is
+    /// still legitimately loading.
     ///
-    /// Long enough for first-byte / Fig ICY settle under typical cellular and post-DNS paths;
-    /// short enough that a true dead attach still recovers before multi-second dead air feels stuck.
-    /// AGENT NOTE: Single source of truth for loading patience — do not invent a second grace timer
-    /// in buffer KVO or the startup safety net.
+    /// AGENT NOTE: Single source of truth for **unknown-item** loading patience. Ready-but-silent
+    /// uses ``earlyAttachLoadingGraceSeconds``. Do not invent another grace timer in
+    /// ``scheduleStartupSafetyNet()`` or buffer KVO.
+    ///
+    /// - SeeAlso: ``shouldAttemptEarlyAttachStallRecovery(item:rate:)``,
+    ///   ``scheduleStartupSafetyNet()``, docs/cold-launch-streamplay-regression-checklist.md (§8).
+    let earlyAttachFirstByteGraceSeconds: TimeInterval = 18.0
+
+    /// Minimum time after attach before a **ready-but-silent** item ("not likely to keep up +
+    /// rate 0" at `.readyToPlay`) may recreate.
+    ///
+    /// Short enough that a true dead attach after first byte still recovers before multi-second
+    /// dead air feels stuck. Unknown + no error uses ``earlyAttachFirstByteGraceSeconds`` instead.
+    /// AGENT NOTE: Single source of truth for ready-but-silent patience — do not invent a
+    /// second grace timer in buffer KVO or the startup safety net.
     let earlyAttachLoadingGraceSeconds: TimeInterval = 4.0
 
-    /// Debounce after the loading grace (or after `.readyToPlay`) before stall recovery fires.
+    /// Debounce after the ready-but-silent grace (or after `.readyToPlay`) before stall recovery fires.
     let earlyAttachStallDebounceSeconds: TimeInterval = 1.5
 
     /// Whether the current attach is still within its initial per-stream recovery budget.

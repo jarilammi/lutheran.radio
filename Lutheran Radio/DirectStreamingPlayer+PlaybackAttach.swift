@@ -116,6 +116,12 @@ extension DirectStreamingPlayer {
             lastObservedTimeControl = nil
             lastObservedItemStatus = nil
             selectedStream = stream
+            // Kick EU/US RTT pings during the tuning clip so first attach is not serialized
+            // behind the ping pair. ``urlWithOptimalServer`` does not wait; attach uses
+            // default/last-good. Isolation: never start pings under UITestMode.
+            if !isTesting {
+                beginBackgroundServerSelectionIfNeeded()
+            }
             #if DEBUG
             print("[DirectStreamingPlayer] prepareStreamChoice(.modelOnly) for \(stream.language)")
             #endif
@@ -160,8 +166,8 @@ extension DirectStreamingPlayer {
     ///   - context: Cold launch, stream switch, or same-stream resume attach semantics.
     ///     ``PlaybackAttachContext/resume`` allows warm cluster reuse in
     ///     ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``; stream switch and cold launch
-    ///     still ping after the 10 s throttle. User pause remains Icecast hard-tear
-    ///     (``isSoftPaused`` stays false).
+    ///     start pings in the background and attach on default/last-good without waiting.
+    ///     User pause remains Icecast hard-tear (``isSoftPaused`` stays false).
     /// - SeeAlso: ``prepareStreamChoice(_:preparation:)``, ``startPlayback(context:attachGeneration:)``,
     ///   ``shouldContinueInFlightAttach(startedAt:)``, ``PlaybackAttachState``,
     ///   ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``,
@@ -226,14 +232,14 @@ extension DirectStreamingPlayer {
     ///   - allowSameStreamWarmReuse: Forwarded to ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``.
     ///     `true` only for ``PlaybackAttachContext/resume`` (same-stream hard-resume after user
     ///     pause). Stream switch and ``attachAndPlay`` (non-resume) keep the default `false` so
-    ///     language change still pings when the 10 s throttle has expired. Does not set
-    ///     ``isSoftPaused``.
+    ///     language change still starts a background ping when the 10 s throttle has expired
+    ///     — attach itself does not wait. Does not set ``isSoftPaused``.
     /// - SeeAlso: ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``,
     ///   ``DirectStreamingPlayer/shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``
     @MainActor
     func prepareSecuredPlayerItem(for stream: Stream, allowSameStreamWarmReuse: Bool = false) async {
         // UI Test isolation: prevent even model-only prepares from triggering
-        // urlWithOptimalServer (which may ping) or AVURLAsset/resourceLoader work.
+        // urlWithOptimalServer (which may start a background ping) or AVURLAsset/resourceLoader work.
         guard !isTesting else {
             selectedStream = stream
             #if DEBUG
@@ -531,7 +537,8 @@ extension DirectStreamingPlayer {
             }
         }
         
-        // Only the single lightweight safety net (below) remains as true last resort.
+        // Only the single lightweight safety net (below) remains as true last resort
+        // (first-byte grace for unknown items — not a 5 s recreate).
         
         // Startup safety net: first-play attach only (cold launch or stream switch).
         // Same-stream resume uses soft pause and must not schedule a stale recreate.
@@ -781,6 +788,52 @@ extension DirectStreamingPlayer {
         }
     }
 
+    /// Whether the current attach is a **stale** Connecting (past first-byte grace, or the
+    /// safety net already retried). Fresh connect stays a Play no-op.
+    ///
+    /// - SeeAlso: ``isConnectingAttachStale(remainingFirstByteGraceSeconds:initialPlaybackRetryCount:)``,
+    ///   ``nudgeStaleConnectingPlay()``, ``SharedPlayerManager/userRequestedPlay()``
+    @MainActor
+    func isConnectingAttachStale() -> Bool {
+        Self.isConnectingAttachStale(
+            remainingFirstByteGraceSeconds: remainingEarlyAttachFirstByteGraceSeconds(),
+            initialPlaybackRetryCount: initialPlaybackRetryCount
+        )
+    }
+
+    /// User Play while Connecting has gone stale: kick the **existing** item, never a second
+    /// ``attachAndPlay``. Kick policy still waits for `.readyToPlay` on the automatic path;
+    /// this explicit nudge then calls `player.play()` so AVPlayer continues the in-flight load.
+    ///
+    /// - Important: Does not recreate (``scheduleStartupSafetyNet`` owns last-resort recreate)
+    ///   and does not stack attach. Generation-aware: a user pause that advanced attach
+    ///   generation still wins via ``applyLiveAttachAudibleKickIfReady``.
+    /// - SeeAlso: ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``,
+    ///   ``SharedPlayerManager/userRequestedPlay()``
+    @MainActor
+    func nudgeStaleConnectingPlay() async {
+        #if DEBUG
+        test_staleConnectingPlayNudgeCount += 1
+        #endif
+        guard !isTesting else { return }
+        guard let player else { return }
+        let generation = playbackAttachGeneration
+        let item = playerItem ?? player.currentItem
+        let kicked = await applyLiveAttachAudibleKickIfReady(
+            itemIsReadyToPlay: item?.status == .readyToPlay,
+            isPlaybackLikelyToKeepUp: item?.isPlaybackLikelyToKeepUp ?? false,
+            startedAt: generation
+        )
+        if kicked { return }
+        // Explicit Play after first-byte patience: stall-wait on the existing item.
+        if player.rate < 0.1 {
+            player.play()
+        }
+        #if DEBUG
+        print("[DirectStreamingPlayer] stale Connecting Play nudge — play() on existing item (status=\(item?.status.rawValue ?? -1))")
+        #endif
+    }
+
     /// Shared gate for any path that would make the stream audible (readyToPlay / keep-up kick, head-start,
     /// recreate restart). Blocks when the captured attach generation is stale, soft-paused, teardown is
     /// active, or sticky intent forbids play.
@@ -1026,10 +1079,44 @@ extension DirectStreamingPlayer {
         currentAttachBeganAt = date
     }
 
-    /// Test seam: stall-class early recovery gate (loading grace + item status).
+    /// Test seam: stall-class early recovery gate (first-byte grace + item status).
     @MainActor
     func test_shouldAttemptEarlyAttachStallRecovery(item: AVPlayerItem, rate: Float) -> Bool {
         shouldAttemptEarlyAttachStallRecovery(item: item, rate: rate)
+    }
+
+    /// Test seam: unknown-item first-byte grace SSOT (~15–20 s).
+    @MainActor
+    var test_earlyAttachFirstByteGraceSeconds: TimeInterval { earlyAttachFirstByteGraceSeconds }
+
+    /// Test seam: remaining first-byte grace from ``currentAttachBeganAt``.
+    @MainActor
+    func test_remainingEarlyAttachFirstByteGraceSeconds() -> TimeInterval {
+        remainingEarlyAttachFirstByteGraceSeconds()
+    }
+
+    /// Test seam: safety-net delay (first-byte for unknown; loading grace for ready-but-silent).
+    @MainActor
+    func test_nextStartupSafetyNetDelaySeconds() -> TimeInterval {
+        nextStartupSafetyNetDelaySeconds()
+    }
+
+    /// Test seam: safety-net recreate admission (unknown within first-byte grace is refused).
+    @MainActor
+    func test_shouldStartupSafetyNetRecreate(item: AVPlayerItem?, rate: Float) -> Bool {
+        shouldStartupSafetyNetRecreate(item: item, rate: rate)
+    }
+
+    /// Test seam: stale-Connecting Play predicate.
+    @MainActor
+    func test_isConnectingAttachStale() -> Bool {
+        isConnectingAttachStale()
+    }
+
+    /// Test seam: reset stale-Connecting Play nudge count.
+    @MainActor
+    func test_resetStaleConnectingPlayNudgeCount() {
+        test_staleConnectingPlayNudgeCount = 0
     }
 
     /// Test seam: early-window recovery admission (increments budget when it returns true).

@@ -865,14 +865,22 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
     }
 
     /// Stall-class recovery must treat `AVPlayerItem.Status.unknown` without error as
-    /// normal progressive loading inside the attach grace window — not an immediate recreate.
+    /// normal progressive loading inside the **first-byte** grace window — not an immediate recreate.
+    ///
+    /// Protects: the 4 s ready-but-silent window must not admit unknown items; cold DNSSEC
+    /// first-byte often exceeds 5 s. Failed / error items are admitted immediately.
     ///
     /// - SeeAlso: `DirectStreamingPlayer.shouldAttemptEarlyAttachStallRecovery`,
+    ///   ``DirectStreamingPlayer/earlyAttachFirstByteGraceSeconds``,
     ///   docs/cold-launch-streamplay-regression-checklist.md (§8 loading grace).
-    func testEarlyAttachStallRecoveryRespectsLoadingGraceForUnknownItem() async {
+    func testEarlyAttachStallRecoveryRespectsFirstByteGraceForUnknownItem() async {
         let engine = DirectStreamingPlayer.shared
         engine.test_resetInitialPlaybackCountersForNewStream()
         await Task.yield()
+
+        let firstByte = engine.test_earlyAttachFirstByteGraceSeconds
+        XCTAssertGreaterThanOrEqual(firstByte, 15.0, "First-byte grace must outlast cold DNSSEC first-byte")
+        XCTAssertLessThanOrEqual(firstByte, 20.0, "First-byte grace must stay in the documented 15–20 s band")
 
         // Fresh dummy item stays at .unknown without a real network load under UITest isolation.
         let loadingItem = AVPlayerItem(url: URL(string: "https://example.invalid/stream.mp3")!)
@@ -880,13 +888,114 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         engine.test_markCurrentAttachBegan(at: Date())
         XCTAssertFalse(
             engine.test_shouldAttemptEarlyAttachStallRecovery(item: loadingItem, rate: 0),
-            "Unknown item inside loading grace must not be treated as an early stall"
+            "Unknown item inside first-byte grace must not be treated as an early stall"
+        )
+        XCTAssertFalse(
+            engine.test_shouldStartupSafetyNetRecreate(item: loadingItem, rate: 0),
+            "Startup safety net must refuse unknown-within-grace (no 5 s recreate)"
         )
 
         engine.test_markCurrentAttachBegan(at: Date().addingTimeInterval(-10))
+        XCTAssertFalse(
+            engine.test_shouldAttemptEarlyAttachStallRecovery(item: loadingItem, rate: 0),
+            "10 s is still inside first-byte grace — unknown must not recreate"
+        )
+        XCTAssertFalse(
+            engine.test_shouldStartupSafetyNetRecreate(item: loadingItem, rate: 0),
+            "Safety net must not admit unknown at 10 s"
+        )
+
+        engine.test_markCurrentAttachBegan(at: Date().addingTimeInterval(-(firstByte + 1)))
         XCTAssertTrue(
             engine.test_shouldAttemptEarlyAttachStallRecovery(item: loadingItem, rate: 0),
-            "After loading grace expires, unknown + rate 0 may enter stall recovery"
+            "After first-byte grace expires, unknown + rate 0 may enter stall recovery"
+        )
+        XCTAssertTrue(
+            engine.test_shouldStartupSafetyNetRecreate(item: loadingItem, rate: 0),
+            "After first-byte grace, safety net may last-resort recreate"
+        )
+    }
+
+    /// Pure policy: `.failed` / item error admits stall recovery immediately; ready-but-silent
+    /// is admitted; unknown inside first-byte grace is refused.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/shouldAttemptEarlyAttachStallRecovery(hasStartedPlaying:retryCount:maxRetries:rate:itemStatus:itemHasError:remainingFirstByteGraceSeconds:)``
+    func testEarlyAttachStallRecoveryPolicyAdmitsFailedAndRefusesUnknownInGrace() {
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldAttemptEarlyAttachStallRecovery(
+                hasStartedPlaying: false,
+                retryCount: 0,
+                maxRetries: 2,
+                rate: 0,
+                itemStatus: .failed,
+                itemHasError: true,
+                remainingFirstByteGraceSeconds: 18
+            ),
+            "Failed item must be admitted even while first-byte grace remains"
+        )
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldAttemptEarlyAttachStallRecovery(
+                hasStartedPlaying: false,
+                retryCount: 0,
+                maxRetries: 2,
+                rate: 0,
+                itemStatus: .readyToPlay,
+                itemHasError: false,
+                remainingFirstByteGraceSeconds: 18
+            ),
+            "Ready-but-silent uses the short loading grace (caller debounce), not first-byte"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldAttemptEarlyAttachStallRecovery(
+                hasStartedPlaying: false,
+                retryCount: 0,
+                maxRetries: 2,
+                rate: 0,
+                itemStatus: .unknown,
+                itemHasError: false,
+                remainingFirstByteGraceSeconds: 18
+            ),
+            "Unknown + no error inside first-byte grace is normal loading"
+        )
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldAttemptEarlyAttachStallRecovery(
+                hasStartedPlaying: false,
+                retryCount: 0,
+                maxRetries: 2,
+                rate: 0,
+                itemStatus: .unknown,
+                itemHasError: false,
+                remainingFirstByteGraceSeconds: 0
+            ),
+            "Unknown after first-byte grace may recreate as last resort"
+        )
+    }
+
+    /// Startup safety net delay must follow first-byte remaining time, not a magic 5 s.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/nextStartupSafetyNetDelaySeconds()``,
+    ///   ``DirectStreamingPlayer/earlyAttachFirstByteGraceSeconds``
+    func testStartupSafetyNetDelayFollowsFirstByteGrace() async {
+        let engine = DirectStreamingPlayer.shared
+        engine.test_resetInitialPlaybackCountersForNewStream()
+        await Task.yield()
+
+        engine.test_markCurrentAttachBegan(at: Date())
+        let freshDelay = engine.test_nextStartupSafetyNetDelaySeconds()
+        XCTAssertGreaterThan(
+            freshDelay,
+            14.0,
+            "Fresh unknown attach must wait first-byte grace, not 5 s"
+        )
+
+        engine.test_markCurrentAttachBegan(
+            at: Date().addingTimeInterval(-(engine.test_earlyAttachFirstByteGraceSeconds + 1))
+        )
+        let expiredDelay = engine.test_nextStartupSafetyNetDelaySeconds()
+        XCTAssertLessThan(
+            expiredDelay,
+            1.0,
+            "After first-byte grace the safety net may evaluate almost immediately"
         )
     }
 

@@ -319,9 +319,19 @@ extension DirectStreamingPlayer {
                     // early-window state (``currentAttachBeganAt`` is MainActor-isolated).
                     // Early attach: wait loading grace + short debounce before treating
                     // "not likely to keep up" as a stall. Post-stable uses a longer debounce.
-                    // Startup safety net remains a final fallback only.
+                    // Unknown + no error is first-byte loading — the startup safety net owns
+                    // that patience (do not recreate at the ready-but-silent window).
                     Task { @MainActor [weak self] in
                         guard let self else { return }
+                        if let current = self.playerItem,
+                           current === item,
+                           current.status == .unknown,
+                           current.error == nil {
+                            #if DEBUG
+                            print("[DirectStreamingPlayer] Early-window stall ignored — unknown item still in first-byte loading (safety net owns recreate)")
+                            #endif
+                            return
+                        }
                         let inEarlyWindow = !self.hasStartedPlaying
                             && self.initialPlaybackRetryCount < self.maxInitialRetries
                         let stalledDelay: TimeInterval = {

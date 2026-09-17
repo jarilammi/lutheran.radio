@@ -215,11 +215,23 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
 
     /// Second explicit play while the start pipeline is active is a no-op (no intent thrash).
     ///
-    /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``, ``SharedPlayerManager/isConnectingPlayback``
+    /// Fresh Connecting (inside first-byte grace, retry count 0) must still no-op so a 1 s
+    /// connect does not stack ``attachAndPlay``.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``, ``SharedPlayerManager/isConnectingPlayback``,
+    ///   ``DirectStreamingPlayer/isConnectingAttachStale()``
     func testUserRequestedPlayWhileConnectingIsIdempotent() async {
         await manager.stop()
         await manager.setUserIntentToPlay()
         await manager._test_setPlaybackStartPipelineActive(true)
+        await MainActor.run {
+            DirectStreamingPlayer.shared.test_resetInitialPlaybackCountersForNewStream()
+        }
+        await Task.yield()
+        await MainActor.run {
+            DirectStreamingPlayer.shared.test_markCurrentAttachBegan(at: Date())
+            DirectStreamingPlayer.shared.test_resetStaleConnectingPlayNudgeCount()
+        }
 
         await manager.userRequestedPlay()
 
@@ -229,6 +241,75 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
         XCTAssertEqual(visual, .prePlay, "Idempotent play must not leave Connecting chrome")
         XCTAssertEqual(intent, .shouldBePlaying)
         XCTAssertTrue(connecting, "Pipeline must remain active until stop or setPlaying")
+        let nudgeCount = await MainActor.run {
+            DirectStreamingPlayer.shared.test_staleConnectingPlayNudgeCount
+        }
+        XCTAssertEqual(
+            nudgeCount,
+            0,
+            "Fresh Connecting Play must not nudge the existing item"
+        )
+    }
+
+    /// Stale Connecting (past first-byte grace) must not swallow Play forever.
+    ///
+    /// Protects: after first-byte patience the user tap nudges the existing item and does
+    /// **not** stack ``attachAndPlay`` (UITest isolation would otherwise flip `.playing`).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``,
+    ///   ``DirectStreamingPlayer/nudgeStaleConnectingPlay()``,
+    ///   ``DirectStreamingPlayer/isConnectingAttachStale(remainingFirstByteGraceSeconds:initialPlaybackRetryCount:)``
+    func testUserRequestedPlayWhileStaleConnectingNudgesExistingItem() async {
+        XCTAssertTrue(
+            DirectStreamingPlayer.isConnectingAttachStale(
+                remainingFirstByteGraceSeconds: 0,
+                initialPlaybackRetryCount: 0
+            ),
+            "Elapsed first-byte grace is stale Connecting"
+        )
+        XCTAssertTrue(
+            DirectStreamingPlayer.isConnectingAttachStale(
+                remainingFirstByteGraceSeconds: 18,
+                initialPlaybackRetryCount: 1
+            ),
+            "Safety-net retry is stale Connecting even inside first-byte grace"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.isConnectingAttachStale(
+                remainingFirstByteGraceSeconds: 18,
+                initialPlaybackRetryCount: 0
+            ),
+            "Fresh connect inside first-byte grace must stay a Play no-op"
+        )
+
+        await manager.stop()
+        await manager.setUserIntentToPlay()
+        await manager._test_setPlaybackStartPipelineActive(true)
+        await MainActor.run {
+            DirectStreamingPlayer.shared.test_resetInitialPlaybackCountersForNewStream()
+        }
+        await Task.yield()
+        await MainActor.run {
+            DirectStreamingPlayer.shared.test_markCurrentAttachBegan(at: Date().addingTimeInterval(-30))
+            DirectStreamingPlayer.shared.test_resetStaleConnectingPlayNudgeCount()
+        }
+
+        await manager.userRequestedPlay()
+
+        let visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        let connecting = await manager.isConnectingPlayback
+        XCTAssertEqual(visual, .prePlay, "Stale Connecting nudge must not stack attachAndPlay (isolation .playing)")
+        XCTAssertEqual(intent, .shouldBePlaying)
+        XCTAssertTrue(connecting, "Nudge must not clear the start pipeline")
+        let nudgeCount = await MainActor.run {
+            DirectStreamingPlayer.shared.test_staleConnectingPlayNudgeCount
+        }
+        XCTAssertEqual(
+            nudgeCount,
+            1,
+            "Stale Connecting Play must nudge the existing item once"
+        )
     }
 
     /// A new stream choice must drop a superseded Connecting start so the orchestrator’s

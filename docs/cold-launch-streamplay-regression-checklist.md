@@ -6,7 +6,7 @@ Regression guard for Lutheran Radio playback startup, resume, stream switching, 
 
 **Canonical agent rules:** [`CODING_AGENT.md`](../CODING_AGENT.md) — read first.
 
-**Last updated:** 2026-09-10
+**Last updated:** 2026-09-17
 
 ---
 
@@ -83,7 +83,7 @@ End with security impact, build status, localization needed.
 
 ## 3. Architecture (single sources of truth)
 
-1. **Server selection** — `urlWithOptimalServer(for:)` in `DirectStreamingPlayer`; no ad-hoc host selection.
+1. **Server selection** — `urlWithOptimalServer(for:)` in `DirectStreamingPlayer`; no ad-hoc host selection. First attach uses default/last-good (EU / `servers[0]`) immediately; the EU/US ping pair runs in the background (typically during the tuning clip) and must not block first audible attach. Dual timeout does not stamp `lastServerSelectionTime`. Ping sessions keep `requiresDNSSECValidation`.
 2. **Playback intent** — `currentPlaybackIntent` / `PlaybackIntent` is authoritative for “user wants audio.” Includes `.cleared` (from privacy clear) as a sticky blocker (isStickyPauseOrLock) alongside `.userPaused` / `.securityLocked`. Do not conflate with grey `.userPaused` visual after stream failure.
 3. **Visual state** — `currentVisualState` / `PlayerVisualState` drives UI only; switch auto-resume gates on `playbackIntent.isActivePlaybackIntent`.
 4. **Widget snapshot** — `PersistedWidgetState` via `loadPersistedWidgetState` / `savePersistedWidgetState` only.
@@ -99,7 +99,7 @@ End with security impact, build status, localization needed.
 2. **Single secured item** — One item per cold launch; reuse via `prepareSecuredPlayerItem` / `startPlayback`.
 3. **Playing visual timing** — `.playing` is applied via deferred ``setPlaying()`` after soft-resume success or engine ready-to-play (not an early pre-`setStreamAndPlay` optimistic paint).
 4. **Play-path label** — DEBUG: `cold-launch first play, proceeding` (not resume/switch mislabels). First automatic play is gated by factory reset + sticky intent + prePlay one-shot only (no wall-clock “resurrection relaxed” window).
-5. **Startup safety net** — At most once on cold-launch first attach (`initialPlaybackRetryCount == 0`); not on resume or soft-pause resume.
+5. **Startup safety net** — At most once on cold-launch first attach (`initialPlaybackRetryCount == 0`); not on resume or soft-pause resume. Must consult `shouldAttemptEarlyAttachStallRecovery` / `earlyAttachFirstByteGraceSeconds` (~15–20 s) for unknown + no error — never a second magic 5 s recreate that aborts in-flight DNS/TLS. Ready-but-silent keeps `earlyAttachLoadingGraceSeconds` (~4 s) + debounce. Failed / `item.error` recreates immediately.
 6. **Tuning coordination** — `Tuning sound finished playing, success: true` then `Tuning sound wait completed` before attach. Factory-reset Now Playing phase 2 may still be enqueueing deactivate when presentable cold launch starts; first special-tuning clip / ``play()`` ``configureAudioSessionAsync()`` waits on ``audioSessionMutationTail``. Overlapping `setCategory` with an in-flight SessionCore deactivate returns OSStatus -50. SessionCore deactivate of a never-configured session is skipped (``shouldSkipSessionCoreDeactivate``) so the first presentable `setCategory` is not poisoned after a completed factory deactivate. That skip is instant; first presentable configure still settles SessionCore before `setCategory` (``shouldSettleSessionCoreBeforeFirstPlaybackCategory``). Engine construction does not activate the session.
 7. **DNS on launch** — Security model validation completes; failure blocks playback.
 8. **ICY arrival** — `LIVE ICY [ensured after re-attach]:` for launched language.
@@ -113,7 +113,7 @@ End with security impact, build status, localization needed.
 
 1. **Explicit pause intent** — User/widget/remote pause sets `playbackIntent = .userPaused` and sticky `.userPaused` visual.
 2. **Resume path label** — DEBUG: `resume play, proceeding`; zero `first cold-launch play call` on resume.
-3. **User pause tears down Icecast** — ``stop()`` awaits hard `stopAndWait` (resource loaders cancelled, item niled, `isSoftPaused == false`) then ``deactivateAudioSessionAsync()``. A paused keep-alive `URLSession` must not keep receiving the live body. Play after pause is full `attachAndPlay` (Connecting chrome). Same-stream resume (``PlaybackAttachContext/resume``) may reuse the last selected cluster inside ``sameStreamWarmServerReuseInterval`` without a new ping pair; language switch still pings after the 10 s throttle.
+3. **User pause tears down Icecast** — ``stop()`` awaits hard `stopAndWait` (resource loaders cancelled, item niled, `isSoftPaused == false`) then ``deactivateAudioSessionAsync()``. A paused keep-alive `URLSession` must not keep receiving the live body. Play after pause is full `attachAndPlay` (Connecting chrome). Same-stream resume (``PlaybackAttachContext/resume``) may reuse the last selected cluster inside ``sameStreamWarmServerReuseInterval`` without a new ping pair; language switch still starts a background ping after the 10 s throttle (attach does not wait).
 4. **No buffer auto-resume** — After sticky `.userPaused`: zero `timeControlStatus → 2 | rate: 1.0`; no audible restart.
 5. **Buffer observers gated** — `isPlaybackLikelyToKeepUp` / `isPlaybackBufferFull` call `play()` only when `canProceedWithPlayback()` is true.
 6. **Playing KVO enforcement** — `.playing` `timeControlStatus` while intent blocks → `pause()` + `rate = 0`.
@@ -122,6 +122,7 @@ End with security impact, build status, localization needed.
 9. **Stash cleared on language change** — `nowPlayingStreamMetadata` cleared on language switch.
 10. **Pause → switch → play** — Paused on A, model B: no retained item; switch updates model; Play reattaches B.
 11. **Attached item language** — `attachedItemLanguageCode` matches secured item; mismatch → clean reattach.
+12. **Stale Connecting Play** — Fresh Connecting (inside `earlyAttachFirstByteGraceSeconds`, retry count 0) no-ops a second `userRequestedPlay()` so a short connect does not stack `attachAndPlay`. After first-byte grace, or after a safety-net retry, Play nudges the existing item (`nudgeStaleConnectingPlay`) and must not be swallowed until a language switch.
 
 ---
 
@@ -166,9 +167,9 @@ End with security impact, build status, localization needed.
 1. **Single-flight recreate** — `recreatePlayerItem()` coalesces concurrent callers.
 2. **Secured recreate** — Every recreate uses `makeSecuredPlayerItem` (resource loader delegate); never a bare `AVURLAsset` without the streaming security path.
 3. **Early-window recovery gate** — `attemptEarlyWindowTransientRecovery` is the single pre-stable-play gate (budget + intent + teardown) for timeControl, buffer-empty, item `.failed`, resource-loader, and loading-error paths. **Each admission increments** `initialPlaybackRetryCount` up to `maxInitialRetries` (hard cap shared with the startup safety net).
-4. **Loading grace** — Progressive ICY items often stay at `status == .unknown` with no error for several seconds. Stall-class recovery uses `shouldAttemptEarlyAttachStallRecovery` + `earlyAttachLoadingGraceSeconds` (~4 s from attach / recreate) so normal first-byte loading is not treated as an immediate recreate. Hard failures (item `.failed`, buffer-empty with `AVFoundationErrorDomain`) bypass grace.
+4. **Loading grace** — Progressive ICY items often stay at `status == .unknown` with no error for several seconds; cold DNSSEC / dual-stack first-byte can exceed 5 s. Stall-class recovery and the startup safety net share `shouldAttemptEarlyAttachStallRecovery`: unknown + no error uses `earlyAttachFirstByteGraceSeconds` (~15–20 s from attach / recreate); ready-but-silent uses `earlyAttachLoadingGraceSeconds` (~4 s) + debounce. Hard failures (item `.failed`, buffer-empty with `AVFoundationErrorDomain`) bypass grace. Do not invent a second 5 s timer in `scheduleStartupSafetyNet`.
 5. **Early-ICY debounce** — 150 ms on early `.paused` KVO; cancelled on `.playing`, stop, counter reset.
-6. **Early stall delay** — Pre-stable stall waits remaining loading grace + ~1.5 s debounce (longer under Low Power Mode); post-stable stalls keep the longer debounce.
+6. **Early stall delay** — Pre-stable stall waits remaining loading grace + ~1.5 s debounce for ready-but-silent (longer under Low Power Mode); unknown + no error is ignored here (startup safety net owns first-byte patience). Post-stable stalls keep the longer debounce.
 7. **Generation-aware recreate / live-attach kick** — `recreatePlayerItem` captures `playbackAttachGeneration` and aborts if stop / stream-switch advanced it mid-flight. Deferred KVO / head-start / recreate kicks use the same token in ``shouldAllowAudiblePlaybackKick(startedAt:)`` (generation AND intent / teardown / soft-pause; re-check after the intent await). Do not gate first keep-up on ``isCurrentlyAttemptingPlayback``.
 8. **Teardown guard** — `isPlaybackTeardownActive` at `stop()` start; suppresses recreate and early-ICY until new item attached.
 9. **Guard cleared on attach** — `clearPlaybackTeardownGuard()` in `preparePlayerItem`, `createAndStartPlayer`, `startPlayback`, successful recreate; successful recreate restarts the loading-grace clock.
