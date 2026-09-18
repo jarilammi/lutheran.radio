@@ -286,6 +286,18 @@
             "value" : "Lutheran Radio"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",

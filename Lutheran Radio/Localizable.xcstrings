@@ -285,6 +285,18 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1232,6 +1244,30 @@
             }
           }
         },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld种语言"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hant" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld種語言"
+                }
+              }
+            }
+          }
+        },
         "zu" : {
           "variations" : {
             "plural" : {
@@ -1536,6 +1572,18 @@
             "value" : "Tẹ̀ lẹ́ẹ̀mejì láti yan ẹ̀rọ ìjáde ohùn"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轻点两下以选择音频输出设备"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點兩下以選擇音訊輸出裝置"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1826,6 +1874,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ó ń ṣàfihàn ìsọfúnni nípa ètò rédíò lọ́wọ́lọ́wọ́"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示当前广播节目的信息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示目前廣播節目的資訊"
           }
         },
         "zu" : {
@@ -2120,6 +2180,18 @@
             "value" : "Ó ń pààrọ̀ ìṣeré ìṣàn rédíò"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换电台流的播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換廣播串流的播放"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2410,6 +2482,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yan iye àkókò kí ìṣeré tó dáwọ́"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择多久后停止播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇多久後停止播放"
           }
         },
         "zu" : {
@@ -2704,6 +2788,18 @@
             "value" : "Ó ń ṣàtúnṣe ìwọ̀n ohùn ìṣeré"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调节播放音量"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "調整播放音量"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2991,6 +3087,18 @@
           }
         },
         "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -3289,6 +3397,18 @@
             "value" : "Àmì Lutheran Radio"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio 标志"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio 標誌"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3579,6 +3699,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dádúró"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暫停"
           }
         },
         "zu" : {
@@ -3874,6 +4006,18 @@
             "value" : "Àwòrán %@"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@的照片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@的照片"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4164,6 +4308,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ṣeré"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放"
           }
         },
         "zu" : {
@@ -4458,6 +4614,18 @@
             "value" : "Aago ìsùn"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "睡眠定时器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "睡眠計時器"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4748,6 +4916,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ohùn"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音量"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音量"
           }
         },
         "zu" : {
@@ -5697,6 +5877,30 @@
             }
           }
         },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "百分之%lld"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hant" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "百分之%lld"
+                }
+              }
+            }
+          }
+        },
         "zu" : {
           "variations" : {
             "plural" : {
@@ -6001,6 +6205,18 @@
             "value" : "Tẹ̀síwájú"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "继续"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "繼續"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6291,6 +6507,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tún gbìyànjú"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重試"
           }
         },
         "zu" : {
@@ -6585,6 +6813,18 @@
             "value" : "Fàyè gba fún àkókò yìí"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅本次允许"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅限這次允許"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6875,6 +7115,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fàyè gba nígbà gbogbo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "始终允许"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一律允許"
           }
         },
         "zu" : {
@@ -7169,6 +7421,18 @@
             "value" : "Kìí ṣe nísinsìnyìí"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以后"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "稍後"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7459,6 +7723,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Paarẹ́"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除"
           }
         },
         "zu" : {
@@ -7753,6 +8029,18 @@
             "value" : "A ti paarẹ́"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已清除"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已清除"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8043,6 +8331,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Èyí yóò dáwọ́ ìṣeré, yóò yọ dátà wíjẹ́ẹ̀tì àti Live Activity kúrò, yóò sì paarẹ́ ipò ìgbọ́ àìpẹ́ lórí ẹ̀rọ yìí. A kò lè dá ìṣe yìí padà."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这将停止播放，移除小组件和实时活动数据，并清除此设备上的最近收听状态。此操作无法撤销。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這將停止播放、移除小工具和即時動態資料，並清除此裝置上的最近收聽狀態。此操作無法復原。"
           }
         },
         "zu" : {
@@ -8337,6 +8637,18 @@
             "value" : "Paarẹ́ ipò ìṣeré ìbílẹ̀"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除本地播放状态"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除本機播放狀態"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8627,6 +8939,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ìṣètò fún wíjẹ́ẹ̀tì Lutheran Radio."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio 小组件的配置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio 小工具的設定。"
           }
         },
         "zu" : {
@@ -8922,6 +9246,18 @@
             "value" : "Àṣìṣe ìsopọ̀"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接错误"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連線錯誤"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9215,6 +9551,18 @@
             "value" : "Ṣàkóso ìṣeré Lutheran Radio kí o sì wo ibùdó lọ́wọ́lọ́wọ́."
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "控制 Lutheran Radio 的播放并查看当前电台。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "控制 Lutheran Radio 的播放並查看目前電台。"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9505,6 +9853,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ṣàkóso ìṣeré kí o sì yí láàrin àwọn ìṣàn èdè."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "控制播放并在语言流之间切换。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "控制播放並在語言串流之間切換。"
           }
         },
         "zu" : {
@@ -9800,6 +10160,18 @@
             "value" : "Dín ohùn kù"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "降低音量"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "降低音量"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10093,6 +10465,18 @@
             "value" : "Mú ohùn pọ̀ si"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提高音量"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提高音量"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10383,6 +10767,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ń ṣeré"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放中"
           }
         },
         "zu" : {
@@ -10678,6 +11074,18 @@
             "value" : "Èdè"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语言"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語言"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10968,6 +11376,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Àmì èdè"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语言代码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語言代碼"
           }
         },
         "zu" : {
@@ -11263,6 +11683,18 @@
             "value" : "Gẹ̀ẹ́sì"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "英语"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "英語"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11554,6 +11986,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estóníà"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "爱沙尼亚语"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "愛沙尼亞語"
           }
         },
         "zu" : {
@@ -11849,6 +12293,18 @@
             "value" : "Fínlándì"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "芬兰语"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "芬蘭語"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12140,6 +12596,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Jámánì"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "德语"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "德語"
           }
         },
         "zu" : {
@@ -12435,6 +12903,18 @@
             "value" : "Súwídìn"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "瑞典语"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "瑞典語"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12726,6 +13206,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Ìtànkálẹ̀ lẹ́sẹ̀kẹsẹ̀"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 直播"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 直播"
           }
         },
         "zu" : {
@@ -13021,6 +13513,18 @@
             "value" : "Ìbílẹ̀ nìkan"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅本地"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅限本機"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13309,6 +13813,18 @@
           }
         },
         "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -13607,6 +14123,18 @@
             "value" : "Èdè tó kàn"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一种语言"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一種語言"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13898,6 +14426,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ṣeré/Dádúró"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放/暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放/暫停"
           }
         },
         "zu" : {
@@ -14193,6 +14733,18 @@
             "value" : "Ìṣeré"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14484,6 +15036,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Èdè tẹ́lẹ̀"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一种语言"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一種語言"
           }
         },
         "zu" : {
@@ -14778,6 +15342,18 @@
             "value" : "Áàpù ń lo dátà alágbèéká, èyí tí ó lè fa ináwó gẹ́gẹ́ bí ètò dátà rẹ."
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此应用正在使用移动数据，可能产生费用，具体取决于您的套餐。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 App 正在使用行動數據，可能產生費用，取決於你的費率方案。"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15068,6 +15644,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lílo dátà alágbèéká"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动数据用量"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "行動數據用量"
           }
         },
         "zu" : {
@@ -15362,6 +15950,18 @@
             "value" : "Kò sí ìsọfúnni orin"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无曲目信息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有曲目資訊"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15654,6 +16254,18 @@
             "value" : "Ń ṣeré nísinsìnyìí"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現正播放"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15941,6 +16553,18 @@
           }
         },
         "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -16239,6 +16863,18 @@
             "value" : "Kọ́kọ́ ṣí áàpù"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先打开应用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請先打開 App"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16531,6 +17167,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dádúró Lutheran Radio"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂停 Lutheran Radio"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暫停 Lutheran Radio"
           }
         },
         "zu" : {
@@ -16826,6 +17474,18 @@
             "value" : "Dádúró ìṣeré Lutheran Radio."
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂停 Lutheran Radio 播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暫停 Lutheran Radio 播放。"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17116,6 +17776,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ṣeré"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放"
           }
         },
         "zu" : {
@@ -17411,6 +18083,18 @@
             "value" : "Ṣeré Lutheran Radio"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放 Lutheran Radio"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放 Lutheran Radio"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17701,6 +18385,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ṣeré tàbí dádúró Lutheran Radio."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放或暂停 Lutheran Radio。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放或暫停 Lutheran Radio。"
           }
         },
         "zu" : {
@@ -17996,6 +18692,18 @@
             "value" : "Ṣeré tàbí tẹ̀síwájú Lutheran Radio."
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放或继续播放 Lutheran Radio。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放或繼續播放 Lutheran Radio。"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18286,6 +18994,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A kò lè bẹ̀rẹ̀ ìṣeré nítorí ìkùnà ìfidájú ààbò. Jọ̀wọ́ yẹ̀wò ìsopọ̀ ayélujára rẹ kí o sì rí i dájú pé áàpù ti wà ní ìmúdójúìwọ̀n. Tí ìṣòro náà bá tẹ̀síwájú, tún áàpù bẹ̀rẹ̀ kí o sì gbìyànjú lẹ́ẹ̀kan si."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由于安全验证失败，无法开始播放。请检查您的互联网连接，并确保应用为最新版本。如果问题仍然存在，请重启应用后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "因為安全性驗證失敗，無法開始播放。請檢查你的網際網路連線，並確保 App 為最新版本。如果問題仍然存在，請重新啟動 App 後再試一次。"
           }
         },
         "zu" : {
@@ -18580,6 +19300,18 @@
             "value" : "Ìfidájú ààbò kùnà"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安全验证失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安全性驗證失敗"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18871,6 +19603,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yan %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇%@"
           }
         },
         "zu" : {
@@ -19820,6 +20564,30 @@
             }
           }
         },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "还剩%lld分钟"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hant" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "還剩%lld分鐘"
+                }
+              }
+            }
+          }
+        },
         "zu" : {
           "variations" : {
             "plural" : {
@@ -20124,6 +20892,18 @@
             "value" : "Fagilé aago"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消定时器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消計時器"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20414,6 +21194,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 ìṣẹ́jú"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 分钟"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 分鐘"
           }
         },
         "zu" : {
@@ -20708,6 +21500,18 @@
             "value" : "30 ìṣẹ́jú"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 分钟"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 分鐘"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20998,6 +21802,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 ìṣẹ́jú"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 分钟"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 分鐘"
           }
         },
         "zu" : {
@@ -21292,6 +22108,18 @@
             "value" : "60 ìṣẹ́jú"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 分钟"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 分鐘"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21582,6 +22410,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aago ìsùn"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "睡眠定时器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "睡眠計時器"
           }
         },
         "zu" : {
@@ -21876,6 +22716,18 @@
             "value" : "Àwọn olùpín ìtànkálẹ̀ ti tún àwọn ìwé ẹ̀rí SSL wọn ṣe. Áàpù ń ṣiṣẹ́ ní ipò ìbámu. Jọ̀wọ́ ṣe ìmúdójúìwọ̀n sí ẹ̀yà tuntun nígbà tí ó bá wà fún ààbò tó dára jù."
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "流媒体服务器已更新 SSL 证书。应用正在以兼容模式运行。请在有新版本时更新，以获得最佳安全性。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "串流伺服器已更新 SSL 憑證。App 正以相容模式執行。請在有新版本時更新，以獲得最佳安全性。"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22166,6 +23018,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A ti ṣe ìmúdójúìwọ̀n ìwé ẹ̀rí"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "证书已更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "憑證已更新"
           }
         },
         "zu" : {
@@ -22461,6 +23325,18 @@
             "value" : "Bẹ̀rẹ̀ tàbí tẹ̀síwájú ìṣeré Lutheran Radio."
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始或继续播放 Lutheran Radio。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始或繼續播放 Lutheran Radio。"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22751,6 +23627,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bẹ̀rẹ̀ tàbí dáwọ́ ìṣeré Lutheran Radio."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始或停止播放 Lutheran Radio。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始或停止播放 Lutheran Radio。"
           }
         },
         "zu" : {
@@ -23045,6 +23933,18 @@
             "value" : "Ìkójọ"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缓冲"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "緩衝"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23335,6 +24235,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sopọ̀"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連線"
           }
         },
         "zu" : {
@@ -23629,6 +24541,18 @@
             "value" : "Kùnà"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失敗"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23921,6 +24845,18 @@
             "value" : "Àìsí ìsopọ̀"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "离线"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "離線"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24211,6 +25147,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dádúró"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暫停"
           }
         },
         "zu" : {
@@ -24506,6 +25454,18 @@
             "value" : "Dádúró – Ìpè ń lọ"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已暂停 – 通话中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已暫停 – 通話中"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24797,6 +25757,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ìṣeré kùnà: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放失败：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放失敗：%@"
           }
         },
         "zu" : {
@@ -25092,6 +26064,18 @@
             "value" : "Ṣeré"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25382,6 +26366,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ààbò"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安全"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安全性"
           }
         },
         "zu" : {
@@ -25676,6 +26672,18 @@
             "value" : "A ti tún ìwé ẹ̀rí SSL ṣe - ṣe ìmúdójúìwọ̀n áàpù láìpẹ́"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL 证书已更新 - 请尽快更新应用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL 憑證已更新 - 請盡快更新 App"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25966,6 +26974,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ti dáwọ́"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已停止"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已停止"
           }
         },
         "zu" : {
@@ -26260,6 +27280,18 @@
             "value" : "Kò sí"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26550,6 +27582,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ẹ̀rọ gbóná"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设备过热"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "裝置過熱"
           }
         },
         "zu" : {
@@ -26844,6 +27888,18 @@
             "value" : "Ìtànkálẹ̀ kò sí fún ìgbà díẹ̀. Jọ̀wọ́ gbìyànjú lẹ́ẹ̀kan si lẹ́yìn."
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "广播暂时不可用。请稍后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "廣播暫時無法使用。請稍後再試。"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27134,6 +28190,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ìtànkálẹ̀ kò sí"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "广播不可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "廣播無法使用"
           }
         },
         "zu" : {
@@ -27429,6 +28497,18 @@
             "value" : "Yí ìṣàn èdè Lutheran Radio padà."
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换 Lutheran Radio 语言流。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換 Lutheran Radio 語言串流。"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27719,6 +28799,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yí ìṣàn padà"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换流"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換串流"
           }
         },
         "zu" : {
@@ -28014,6 +29106,18 @@
             "value" : "Yí sí %@"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换到%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換到%@"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28304,6 +29408,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yí sí ìṣàn èdè míì láti Live Activity."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从实时活动切换到其他语言流。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從即時動態切換到其他語言串流。"
           }
         },
         "zu" : {
@@ -28598,6 +29714,18 @@
             "value" : "Yí sí ìṣàn èdè míì."
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换到其他语言流。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換到其他語言串流。"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28889,6 +30017,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A ti yí sí %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已切换到%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已切換到%@"
           }
         },
         "zu" : {
@@ -29185,6 +30325,18 @@
             "value" : "Tẹ̀ láti ṣí i"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轻点打开"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點一下以打開"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29476,6 +30628,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pààrọ̀ Lutheran Radio"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换 Lutheran Radio"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換 Lutheran Radio"
           }
         },
         "zu" : {
@@ -29770,6 +30934,18 @@
             "value" : "Pààrọ̀ ìṣeré Lutheran Radio"
           }
         },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换 Lutheran Radio 播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換 Lutheran Radio 播放"
+          }
+        },
         "zu" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30060,6 +31236,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pààrọ̀ ṣeré/dádúró láti Live Activity."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从实时活动切换播放/暂停。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從即時動態切換播放/暫停。"
           }
         },
         "zu" : {
@@ -30353,6 +31541,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pààrọ̀ ìṣeré"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換播放"
           }
         },
         "zu" : {
@@ -31302,6 +32502,30 @@
             }
           }
         },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "音量已设为百分之%lld"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hant" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "音量已設為百分之%lld"
+                }
+              }
+            }
+          }
+        },
         "zu" : {
           "variations" : {
             "plural" : {
@@ -31604,6 +32828,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ìṣètò wíjẹ́ẹ̀tì"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "小组件配置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "小工具設定"
           }
         },
         "zu" : {

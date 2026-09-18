@@ -58,7 +58,7 @@ This document defines the **required security invariants** of the Lutheran Radio
 
 All of the following values exist **only** inside ``SecurityConfiguration`` and are never hard-coded elsewhere:
 
-- `expectedSecurityModel` ("dallas")
+- `expectedSecurityModel` ("montereypark")
 - `pinnedLeafFingerprintDigest` (sole production 32-byte pin — live `*.siikkari.net`; ``CertificateFingerprint``)
 - `pinnedSiikkariLeafFingerprintDigest` (alias of the sole live preferred-apex pin)
 - `pinnedFingerprintDigests` (acceptable digests for ``CertificateValidator`` — sole live siikkari leaf; append only during deliberate rotation overlap)

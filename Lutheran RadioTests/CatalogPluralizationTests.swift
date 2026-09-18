@@ -9,7 +9,7 @@
 //  interpolation so Foundation can select the CLDR category.
 //
 //  Coverage is both catalog structure and compiled runtime for every README
-//  Localizations language (48 codes), not a 10-locale subset. A missing or
+//  Localizations language (50 codes), not a 10-locale subset. A missing or
 //  wrong Slovak `few` string, a dropped Northern Sami `two`, or a missing
 //  Latvian `zero` must fail CI. Integer-unreachable `many` (cs, sk, lt) and
 //  decimal-only `other` (pl, ru, uk) are catalog-gated; integer probes skip them.
@@ -36,13 +36,14 @@ final class CatalogPluralizationTests: XCTestCase {
     /// a Polish `.lproj` without `locale: "pl"` still applies Finnish one/other rules.
     private let appBundle = Bundle(for: PlayerViewModel.self)
 
-    /// UI catalog languages: README Localizations / Localizable coverage (the 48
+    /// UI catalog languages: README Localizations / Localizable coverage (the 50
     /// language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "af", "am", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "ha", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
         "lv", "mg", "nb", "ng", "nl", "nn", "om", "pl", "pt", "pt-BR", "ro", "ru",
         "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "ti", "uk", "yo", "zu",
+        "zh-Hans", "zh-Hant",
     ]
 
     private let pluralKeys: [String] = [
@@ -108,6 +109,8 @@ final class CatalogPluralizationTests: XCTestCase {
         "uk": ["one", "few", "many", "other"],
         "yo": ["other"],
         "zu": ["one", "other"],
+        "zh-Hans": ["other"],
+        "zh-Hant": ["other"],
     ]
 
     /// Locales whose CLDR `many` is decimals only — runtime `%lld` probes cannot hit it.
@@ -127,7 +130,7 @@ final class CatalogPluralizationTests: XCTestCase {
         XCTAssertEqual(
             Set(requiredCatalogCategories.keys),
             Set(supportedLanguages),
-            "requiredCatalogCategories must list exactly the 48 UI catalog languages"
+            "requiredCatalogCategories must list exactly the 50 UI catalog languages"
         )
 
         let catalog = try loadLocalizableCatalog()
@@ -377,7 +380,8 @@ final class CatalogPluralizationTests: XCTestCase {
     /// AGENT NOTE: A new UI language must append integer-reachable cases to all
     /// four tables. `testRuntimeProbesCoverEveryLocaleAndIntegerReachableCategory`
     /// is the completeness gate — listing the code in `supportedLanguages` alone
-    /// is not enough. Yoruba (`yo`) is `other` only, same slot as `id` and `ng`.
+    /// is not enough. Yoruba (`yo`), Chinese Simplified (`zh-Hans`), and Chinese
+    /// Traditional (`zh-Hant`) are `other` only, same slot as `id` and `ng`.
     private struct PluralCase {
         let locale: String
         let count: Int
@@ -509,6 +513,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("yo", 2, "other", "2 ìṣẹ́jú ló kù"),
         .init("zu", 1, "one", "Kusele umzuzu ongu-1"),
         .init("zu", 2, "other", "Kusele imizuzu engu-2"),
+        .init("zh-Hans", 2, "other", "还剩2分钟"),
+        .init("zh-Hant", 2, "other", "還剩2分鐘"),
     ]
 
     private let languageCountCases: [PluralCase] = [
@@ -628,6 +634,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("yo", 2, "other", "2 èdè"),
         .init("zu", 1, "one", "1 ulimi"),
         .init("zu", 2, "other", "2 izilimi"),
+        .init("zh-Hans", 2, "other", "2种语言"),
+        .init("zh-Hant", 2, "other", "2種語言"),
     ]
 
     private let volumePercentCases: [PluralCase] = [
@@ -747,6 +755,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("yo", 2, "other", "2 ìdá ọgọ́rùn-ún"),
         .init("zu", 1, "one", "iphesenti elingu-1"),
         .init("zu", 2, "other", "amaphesenti angu-2"),
+        .init("zh-Hans", 2, "other", "百分之2"),
+        .init("zh-Hant", 2, "other", "百分之2"),
     ]
 
     private let volumeSetToCases: [PluralCase] = [
@@ -866,5 +876,7 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("yo", 2, "other", "A ti ṣètò ohùn sí 2 ìdá ọgọ́rùn-ún"),
         .init("zu", 1, "one", "Ivolumu ibekwe ku-iphesenti elingu-1"),
         .init("zu", 2, "other", "Ivolumu ibekwe kumaphesenti angu-2"),
+        .init("zh-Hans", 2, "other", "音量已设为百分之2"),
+        .init("zh-Hant", 2, "other", "音量已設為百分之2"),
     ]
 }

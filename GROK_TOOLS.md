@@ -163,7 +163,7 @@ Do **not** call them as ordinary coding tools. Use them only to enhance the fina
 
 ## Environment Notes for Lutheran Radio
 - Working directory is the root of this repository.
-- Recommended toolchain: **Xcode 27 or later** (language mode `SWIFT_VERSION = 6`) with an **iOS 27.0** simulator. Canonical example: `platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro`. Discover with `xcrun simctl list devices available` / `-showdestinations`; never invent a destination. If `OS=27.0,name=…` is ambiguous, use the `id=` from `-showdestinations`. Minimum deployment target is **iOS 26.2**. Accepted fallback until Xcode 27 is available locally and on CI: Xcode 26.6+ / iOS 26.5 / iPhone 17-class (see README.md).
+- Required toolchain: **Xcode 27 or later** (language mode `SWIFT_VERSION = 6`) with an **iOS 27.0** simulator. Canonical example: `platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro`. Discover with `xcrun simctl list devices available` / `-showdestinations`; never invent a destination. If `OS=27.0,name=…` is ambiguous, use the `id=` from `-showdestinations`. Minimum deployment target is **iOS 26.2**. Do not use Xcode 26.6 / iOS 26.5 as a contributor, agent, or App Store gate. GitHub CodeQL remains on Xcode 26.6 and is not that gate.
 - On macOS hosts you have full access to Xcode command-line tools (`xcodebuild`, `xcrun`, `swift`, `agvtool`, etc.).
 - Strict Swift 6 + memory safety build settings are enforced project-wide. Clean builds must emit **zero warnings** (unless the PR is scoped to warning cleanup per `CODING_AGENT.md`).
 - Security work **must** follow the mandatory reading order and verification commands documented in `README.md` and `CODING_AGENT.md`. Never duplicate DNS/cert logic outside `Core/`.

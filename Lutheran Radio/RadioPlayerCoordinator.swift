@@ -776,7 +776,7 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
                 self.playHapticFeedback(style: .heavy)
 
                 // Post clear_local_state_done as a VoiceOver announcement so the entry stays
-                // active in the catalog for all 48 languages and non-sighted users receive
+                // active in the catalog for all 50 languages and non-sighted users receive
                 // confirmation. Sighted users see the .cleared status pill.
                 // SAFETY: UIAccessibility.post is the established announcement mechanism (same
                 // usage and @preconcurrency handling as announceSwitchedToLanguage).

@@ -8,7 +8,7 @@
 //
 //  Invariant: every phrase in `LutheranRadioShortcuts` is extracted as
 //  `Play ${applicationName}` (etc.) and `AppShortcuts.xcstrings` ships a
-//  translated value for every UI language in README Localizations (the 48
+//  translated value for every UI language in README Localizations (the 50
 //  language codes). Every value keeps
 //  `${applicationName}`; parameterized phrases also keep `${language}`.
 //  Xcode binds only the first phrase of each `AppShortcut` initializer, so
@@ -28,12 +28,13 @@ import XCTest
 final class AppShortcutsLocalizationTests: XCTestCase {
 
     /// UI catalog languages: README Localizations / Localizable + AppShortcuts coverage
-    /// (the 48 language codes). Playback catalog remains the five radio streams.
+    /// (the 50 language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "af", "am", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "ha", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
         "lv", "mg", "nb", "ng", "nl", "nn", "om", "pl", "pt", "pt-BR", "ro", "ru",
         "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "ti", "uk", "yo", "zu",
+        "zh-Hans", "zh-Hant",
     ]
 
     private let requiredPhraseKeys: [String] = [

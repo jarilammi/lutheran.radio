@@ -65,7 +65,7 @@ End with security impact, build status, localization needed.
 1. **DNS TXT validation** — `SecurityModelValidator` queries ordered `securityModelDomains` (`securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk`); playback blocked on permanent failure. One `validateSecurityModel() started` per session. No duplicate validation outside `Core/Actors/`.
 2. **Certificate pinning** — Full DER SHA-256 digest pinning in `CertificateValidator` against `pinnedFingerprintDigests` (sole live `*.siikkari.net` leaf; retired pre-cutover digests are not accepted); SPKI pinning in `Info.plist` for apex `siikkari.net`. Runtime never compares colon-hex strings. Streaming hosts use sole media apex `preferredStreamingDomainSuffixes` (`siikkari.net`).
 3. **Time skew** — Device vs server skew > 5 minutes denies transition-window leniency.
-4. **Security model** — `expectedSecurityModel` is `"dallas"` in `SecurityConfiguration.swift`; stream URLs include the security model query parameter.
+4. **Security model** — `expectedSecurityModel` is `"montereypark"` in `SecurityConfiguration.swift`; stream URLs include the security model query parameter.
 5. **MIE/EMTE** — Hardened runtime entitlements present; minimum deployment target iOS 26.2+.
 6. **Core isolation** — No security logic duplicated in app or widget; cert/DNS/policy flow through `Core/` only.
 
@@ -76,7 +76,7 @@ End with security impact, build status, localization needed.
 1. **Clean build** — `xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build` succeeds. Discover first (`xcrun simctl list devices available` / `-showdestinations`); substitute a listed destination; never invent a destination.
 2. **Clean test** — Same destination with `clean test` succeeds. Run build then test sequentially.
 3. **Swift 6 strictness** — All targets: `SWIFT_VERSION = 6`, `SWIFT_STRICT_CONCURRENCY = complete`, `SWIFT_APPROACHABLE_CONCURRENCY = NO`, `SWIFT_STRICT_MEMORY_SAFETY = YES`.
-4. **Localization** — User-visible strings use `String(localized:)` / `NSLocalizedString`, table `"Localizable"`; all 48 languages if keys added.
+4. **Localization** — User-visible strings use `String(localized:)` / `NSLocalizedString`, table `"Localizable"`; all 50 languages if keys added.
 5. **Mechanical-refactor exception** — Warning-only work may use `CODE_SIGNING_ALLOWED=NO` build + mandatory full test per `CODING_AGENT.md`; behavior-touching PRs require full signed build.
 
 ---

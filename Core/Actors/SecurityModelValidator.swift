@@ -1,29 +1,165 @@
 //
 //  SecurityModelValidator.swift
-//  Lutheran Radio
+//  Core
+//
+//  DNS TXT security-model validation (``<doc:Security-Invariants>`` Invariant 1).
+//  The actor owns cache, `validationState`, and in-flight coalescing. The DNS-SD
+//  C callback and 5 s watchdog are outside the actor: `QueryContext` uses
+//  `Mutex` claim-once teardown so they cannot both `DNSServiceRefDeallocate`,
+//  `continuation.resume`, or parse `rdata` after the service is gone.
 //
 //  Created by Jari Lammi on 19.3.2026.
 //
 
 import Foundation
+import Synchronization
 import dnssd
 
-/// Low-level context for the DNS-SD TXT query callback.
+/// Result of a claim-once finish attempt on a DNS-SD TXT query session.
 ///
-/// `@unchecked Sendable` is **necessary and explicitly justified** (and the *only* place it is used):
-/// - The instance is passed as an opaque `UnsafeMutableRawPointer` to the C API (`DNSServiceQueryRecord`).
-/// - The callback executes on an arbitrary background thread managed by the dns_sd library.
-/// - Lifetime is strictly manual (Unmanaged.passRetained + takeRetainedValue) with a one-shot callback + watchdog flag.
-/// - No actor state or other types are involved; this is the standard, minimal pattern for Bonjour C callbacks in Swift 6.
-/// - Marked `@safe` because `DNSServiceRef` lifetime is confined to this type (retain/release, one-shot callback, watchdog).
+/// `serviceRefBits` is the opaque `DNSServiceRef` identifier (or `nil` if none
+/// was stored). The winner deallocates outside the mutex.
+private enum SessionFinishClaim: Sendable {
+    case alreadyFinished
+    case won(serviceRefBits: UInt?)
+}
+
+/// SAFETY: `DispatchWorkItem` is not `Sendable`. This wrapper is shared between
+/// the setup path (`asyncAfter`) and the claim-once mutex; the only cross-thread
+/// operation is thread-safe `cancel()`.
+private struct SendableWatchdog: @unchecked Sendable {
+    let item: DispatchWorkItem
+    func cancel() { item.cancel() }
+}
+
+/// Mutable DNS-SD session state. `~Copyable` so it can live inside `Mutex` as
+/// the unique owner of “who may finish this query”.
+///
+/// `serviceRefBits` stores the `DNSServiceRef` (`OpaquePointer`) bit pattern as
+/// a `Sendable` identifier — not a Swift-owned object. The claim-once winner is
+/// the only caller that may reconstruct the pointer and `DNSServiceRefDeallocate`.
+private struct DNSQuerySession: ~Copyable {
+    var didFinish = false
+    var serviceRefBits: UInt?
+    var watchdog: SendableWatchdog?
+}
+
+/// Low-level context for the DNS-SD TXT query callback and timeout watchdog.
+///
+/// The validator is an `actor`, but this session cannot be actor-isolated: the
+/// dns_sd callback runs on `radio.lutheran.dnssd` and the 5 s watchdog runs on
+/// a global queue. `Mutex` serializes who may finish the session (claim-once).
+///
+/// Mutable fields live in ``DNSQuerySession`` inside `session`. `completion` is
+/// `@Sendable` and `processingQueue` is immutable after init, so this class is
+/// `Sendable` without `@unchecked`.
+///
+/// - Important: `DNSServiceRefDeallocate` and `completion` / `continuation.resume`
+///   run **outside** `Mutex.withLock`. The mutex is not recursive; deallocate may
+///   deliver work on the dns_sd queue, which would deadlock if the callback
+///   tried the same mutex while it was still held.
+/// - Important: Parse `rdata` only after winning the claim and **before**
+///   deallocating the service. `Span` cannot keep `rdata` alive.
+/// - Note: `passRetained` at query start is balanced **exactly once**: callback
+///   win consumes via `takeRetainedValue`, timeout-win `release`s on
+///   `processingQueue` (so a queued callback can still `takeUnretainedValue`),
+///   setup-failure `release`s on the setup thread.
+/// - SeeAlso: ``<doc:Security-Invariants>`` (Invariant 1), ``SecurityModelValidator``
 @safe
-private final class QueryContext: @unchecked Sendable {
+private final class QueryContext: Sendable {
     let completion: @Sendable (Result<Set<String>, Error>) -> Void
-    var serviceRef: DNSServiceRef?
-    var isDone = false
+    let session: Mutex<DNSQuerySession>
+    let processingQueue: DispatchQueue
 
     init(completion: @escaping @Sendable (Result<Set<String>, Error>) -> Void) {
         self.completion = completion
+        self.session = Mutex(DNSQuerySession())
+        self.processingQueue = DispatchQueue(label: "radio.lutheran.dnssd", qos: .userInitiated)
+    }
+
+    /// First caller wins the session; later callers are no-ops.
+    ///
+    /// The winner receives the stored `DNSServiceRef` bit pattern (if any) and
+    /// the watchdog is cancelled under the lock (`cancel()` only sets a flag).
+    ///
+    /// - Returns: ``SessionFinishClaim/won(serviceRefBits:)`` exactly once per
+    ///   instance; thereafter ``SessionFinishClaim/alreadyFinished``.
+    func claimFinish() -> SessionFinishClaim {
+        session.withLock { state in
+            if state.didFinish {
+                return SessionFinishClaim.alreadyFinished
+            }
+            state.didFinish = true
+            state.watchdog?.cancel()
+            state.watchdog = nil
+            let bits = state.serviceRefBits
+            state.serviceRefBits = nil
+            return SessionFinishClaim.won(serviceRefBits: bits)
+        }
+    }
+
+    func storeWatchdog(_ watchdog: SendableWatchdog) {
+        session.withLock { state in
+            if !state.didFinish {
+                state.watchdog = watchdog
+            }
+        }
+    }
+
+    /// Stores the service ref for later claim-once teardown.
+    ///
+    /// - Returns: `false` if the session already finished (caller must deallocate
+    ///   `ref` itself). `true` if this instance now owns deallocate duty.
+    func storeServiceRef(_ ref: DNSServiceRef) -> Bool {
+        // SAFETY: `DNSServiceRef` is an opaque C pointer identifier. Storing the
+        // bit pattern keeps `DNSQuerySession` `Sendable` inside `Mutex` without
+        // wrapping `OpaquePointer`. Reconstruct only to `DNSServiceRefDeallocate`.
+        let bits = unsafe UInt(bitPattern: UnsafeRawPointer(ref))
+        return session.withLock { state in
+            if state.didFinish { return false }
+            state.serviceRefBits = bits
+            return true
+        }
+    }
+
+    /// Timeout-win path: claim, deallocate, resume as transient `dnssd` / `-999`,
+    /// then balance `Unmanaged` on `processingQueue`.
+    func handleTimeout() {
+        switch claimFinish() {
+        case .alreadyFinished:
+            return
+        case .won(let bits):
+            deallocateDNSServiceRef(bits: bits)
+            completion(.failure(
+                NSError(domain: "dnssd", code: -999, userInfo: [NSLocalizedDescriptionKey: "DNS query timeout"])
+            ))
+            // Hop `Unmanaged.release` onto the dns_sd queue so a callback already
+            // queued there can still `takeUnretainedValue` and observe alreadyFinished.
+            processingQueue.async { [self] in
+                unsafe Unmanaged.passUnretained(self).release()
+            }
+        }
+    }
+}
+
+/// Reconstructs a `DNSServiceRef` from the mutex-stored bit pattern and deallocates it.
+///
+/// When `bits` is non-nil it is the stored identifier (do not also deallocate `extra`).
+/// When `bits` is nil, `extra` is a locally created ref that was never stored.
+///
+/// - Parameters:
+///   - bits: Claimed `DNSServiceRef` bit pattern, or `nil`.
+///   - extra: Setup-path ref not yet stored in the session, or `nil`.
+private func deallocateDNSServiceRef(bits: UInt?, extra: DNSServiceRef? = nil) {
+    // SAFETY: `DNSServiceRef` is an opaque C pointer (`OpaquePointer`). Stored
+    // sessions reconstruct from the bit pattern; setup-path `extra` is a ref
+    // that was never stored. Never deallocate both (bits take precedence).
+    if let bits, let ref = unsafe OpaquePointer(bitPattern: bits) {
+        unsafe DNSServiceRefDeallocate(ref)
+        return
+    }
+    if let extra = unsafe extra {
+        unsafe DNSServiceRefDeallocate(extra)
     }
 }
 
@@ -54,7 +190,8 @@ private final class QueryContext: @unchecked Sendable {
 /// - Permanent failure → streaming is permanently disabled for the process lifetime.
 ///
 /// The actor uses strict Swift 6 isolation. All public API is `async` where mutation
-/// or cross-actor access is involved.
+/// or cross-actor access is involved. DNS-SD callback vs watchdog teardown is
+/// serialized by `QueryContext` `Mutex` claim-once — not by replacing this actor.
 ///
 /// - SeeAlso: ``<doc:Security-Invariants>`` (Invariant 1 ordered host walk), ``<doc:Architecture>``, ``SecurityConfiguration``
 public actor SecurityModelValidator {
@@ -307,10 +444,15 @@ public actor SecurityModelValidator {
 
     /// Performs the low-level DNS-SD TXT query using `DNSServiceQueryRecord`.
     ///
+    /// Sets up `QueryContext` (Mutex claim-once session), a 5 s watchdog, and
+    /// `DNSServiceSetDispatchQueue` on `radio.lutheran.dnssd`. Watchdog, callback,
+    /// and setup-failure paths finish through `QueryContext.claimFinish()`.
+    ///
     /// - Important: The call passes `kDNSServiceFlagsValidate` and the callback enforces
     ///   the bit before trusting rdata. Failures (including lack of DNSSEC validation)
     ///   are thrown and treated as transient by the caller.
-    /// - SeeAlso: ``<doc:Security-Invariants>``, dnsQueryCallback
+    /// - Important: Do not parse on the watchdog path. Timeout is transient (`dnssd` / `-999`).
+    /// - SeeAlso: ``<doc:Security-Invariants>`` (Invariant 1)
     private func queryTXTRecord(for domain: String) async throws -> Set<String> {
         try await withCheckedThrowingContinuation { continuation in
             let complete: @Sendable (Result<Set<String>, Error>) -> Void = { result in
@@ -320,27 +462,38 @@ public actor SecurityModelValidator {
             let context = QueryContext(completion: complete)
             let contextPtr = unsafe Unmanaged.passRetained(context).toOpaque()
 
-            // Correct watchdog using DispatchTime
-            let watchdog = DispatchWorkItem { [weak context] in
-                guard let context, !context.isDone else { return }
-                if let ref = unsafe context.serviceRef {
-                    unsafe DNSServiceRefDeallocate(ref)
-                    unsafe context.serviceRef = nil
-                }
-                context.completion(.failure(
-                    NSError(domain: "dnssd", code: -999, userInfo: [NSLocalizedDescriptionKey: "DNS query timeout"])
-                ))
+            let watchdog = DispatchWorkItem { [context] in
+                context.handleTimeout()
             }
-
+            context.storeWatchdog(SendableWatchdog(item: watchdog))
             DispatchQueue.global(qos: .userInitiated).asyncAfter(
-                deadline: .now() + 5.0,   // ← Correct: DispatchTime
+                deadline: .now() + 5.0,
                 execute: watchdog
             )
 
+            /// Setup-path failure: claim-once so a racing timeout cannot also resume.
+            /// `createdRef` is a local `DNSServiceRef` that may or may not already
+            /// be stored in the session (`refWasStored`).
+            func failSetup(_ error: Error, createdRef: DNSServiceRef? = nil, refWasStored: Bool = false) {
+                switch context.claimFinish() {
+                case .alreadyFinished:
+                    // SAFETY: Local `DNSServiceRef` never stored in the session.
+                    if let createdRef = unsafe createdRef, !refWasStored {
+                        unsafe DNSServiceRefDeallocate(createdRef)
+                    }
+                    return
+                case .won(let bits):
+                    // SAFETY: May pass a setup-path `DNSServiceRef` that was never
+                    // stored (`extra`); `deallocateDNSServiceRef` is implicitly
+                    // `@unsafe` because of that C pointer parameter.
+                    unsafe deallocateDNSServiceRef(bits: bits, extra: createdRef)
+                    unsafe Self.releaseContextPointer(contextPtr)
+                    context.completion(.failure(error))
+                }
+            }
+
             guard let domainCStr = domain.cString(using: .utf8) else {
-                watchdog.cancel()
-                unsafe Self.releaseContextPointer(contextPtr)
-                complete(.failure(NSError(domain: "radio.lutheran", code: -998, userInfo: nil)))
+                failSetup(NSError(domain: "radio.lutheran", code: -998, userInfo: nil))
                 return
             }
 
@@ -362,90 +515,119 @@ public actor SecurityModelValidator {
                 contextPtr
             )
 
-            guard err == kDNSServiceErr_NoError, let serviceRef = unsafe serviceRef else {
-                watchdog.cancel()
-                unsafe Self.releaseContextPointer(contextPtr)
-                complete(.failure(NSError(domain: "dnssd", code: Int(err), userInfo: nil)))
+            guard err == kDNSServiceErr_NoError, let created = unsafe serviceRef else {
+                failSetup(NSError(domain: "dnssd", code: Int(err), userInfo: nil))
                 return
             }
 
-            unsafe context.serviceRef = unsafe serviceRef
+            // SAFETY: `storeServiceRef` takes a `DNSServiceRef` (opaque C pointer)
+            // and immediately stores only its bit pattern.
+            if unsafe !context.storeServiceRef(created) {
+                // Timeout already claimed (no stored ref). Do not resume again.
+                unsafe DNSServiceRefDeallocate(created)
+                return
+            }
 
             // Let dnssd drive the socket and deliver results via our existing C callback.
             // This is the Apple-recommended pattern (DNSServiceSetDispatchQueue);
             // no manual polling, no capture of non-Sendable DNSServiceRef into @Sendable closures.
-            let processingQueue = DispatchQueue(label: "radio.lutheran.dnssd", qos: .userInitiated)
-            let setQErr = unsafe DNSServiceSetDispatchQueue(serviceRef, processingQueue)
+            let setQErr = unsafe DNSServiceSetDispatchQueue(created, context.processingQueue)
             guard setQErr == kDNSServiceErr_NoError else {
-                watchdog.cancel()
-                unsafe DNSServiceRefDeallocate(serviceRef)
-                unsafe context.serviceRef = nil
-                unsafe Self.releaseContextPointer(contextPtr)
-                complete(.failure(NSError(domain: "dnssd", code: Int(setQErr), userInfo: nil)))
+                // SAFETY: `failSetup` is implicitly `@unsafe` (`DNSServiceRef?` parameter).
+                unsafe failSetup(
+                    NSError(domain: "dnssd", code: Int(setQErr), userInfo: nil),
+                    createdRef: created,
+                    refWasStored: true
+                )
                 return
             }
         }
     }
 
-    // New static non-capturing callback — marked @convention(c) explicitly
+    // Static non-capturing callback — marked @convention(c) explicitly
     //
     // SECURITY: This is the enforcement point for DNSSEC validation. The `flags` bit check
     // must succeed before any rdata is parsed via parseInlineTXTRecord. All test hooks
     // bypass this path via `_test_txtFetcher`.
+    //
+    // Claim-once: `takeUnretainedValue` does not consume `passRetained`. Only the
+    // winner `takeRetainedValue`s; a loser returns without parsing, completing, or
+    // deallocating. Parse happens only after win and before `DNSServiceRefDeallocate`.
     private static let dnsQueryCallback: DNSServiceQueryRecordReply = {
         sdRef, flags, interfaceIdx, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, ctx in
-        
+
         guard let ctx = unsafe ctx else { return }
 
-        let queryCtx = unsafe Unmanaged<QueryContext>.fromOpaque(ctx).takeRetainedValue()
+        // SAFETY: `QueryContext` stays alive while Unmanaged's `passRetained` is
+        // outstanding and/or the watchdog / processing-queue release hop holds it.
+        // `fromOpaque` / `takeUnretainedValue` / `takeRetainedValue` are `Unmanaged`
+        // (unsafe C-interop retain). `takeUnretainedValue` does not consume that
+        // retain; `claimFinish` decides who balances it.
+        let unmanaged = unsafe Unmanaged<QueryContext>.fromOpaque(ctx)
+        let queryCtx = unsafe unmanaged.takeUnretainedValue()
 
-        defer {
-            queryCtx.isDone = true
-            if let ref = unsafe queryCtx.serviceRef {
-                unsafe DNSServiceRefDeallocate(ref)
-                unsafe queryCtx.serviceRef = nil
+        switch queryCtx.claimFinish() {
+        case .alreadyFinished:
+            return
+        case .won(let bits):
+            // Consume `passRetained`. Timeout-win must not also release.
+            _ = unsafe unmanaged.takeRetainedValue()
+
+            func deallocateClaimed() {
+                deallocateDNSServiceRef(bits: bits)
             }
-        }
 
-        guard errorCode == kDNSServiceErr_NoError, let rdata = unsafe rdata else {
-            queryCtx.completion(.failure(
-                NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)
-            ))
-            return
-        }
+            guard errorCode == kDNSServiceErr_NoError else {
+                deallocateClaimed()
+                queryCtx.completion(.failure(
+                    NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)
+                ))
+                return
+            }
 
-        // SECURITY: Require that the response was DNSSEC-validated by the system.
-        // When kDNSServiceFlagsValidate was passed to DNSServiceQueryRecord, the returned
-        // `flags` will contain the bit only if validation succeeded. Unvalidated responses
-        // are treated as transient failures (performFreshValidation falls back to backup
-        // domain or marks .failedTransient). Never silently accept unvalidated data here.
-        let wasValidated = (flags & UInt32(kDNSServiceFlagsValidate)) != 0
-        #if DEBUG
-        print("[SecurityModelValidator] DNS response: validated=\(wasValidated) flags=0x\(String(flags, radix: 16)) errorCode=\(errorCode)")
-        #endif
-        guard wasValidated else {
-            queryCtx.completion(.failure(
-                NSError(domain: "dnssec", code: -1, userInfo: [
-                    NSLocalizedDescriptionKey: "DNSSEC validation failed or not available"
-                ])
-            ))
-            return
-        }
+            // SECURITY: Require that the response was DNSSEC-validated by the system.
+            // When kDNSServiceFlagsValidate was passed to DNSServiceQueryRecord, the returned
+            // `flags` will contain the bit only if validation succeeded. Unvalidated responses
+            // are treated as transient failures (performFreshValidation falls back to backup
+            // domain or marks .failedTransient). Never silently accept unvalidated data here.
+            let wasValidated = (flags & UInt32(kDNSServiceFlagsValidate)) != 0
+            #if DEBUG
+            print("[SecurityModelValidator] DNS response: validated=\(wasValidated) flags=0x\(String(flags, radix: 16)) errorCode=\(errorCode)")
+            #endif
+            guard wasValidated else {
+                deallocateClaimed()
+                queryCtx.completion(.failure(
+                    NSError(domain: "dnssec", code: -1, userInfo: [
+                        NSLocalizedDescriptionKey: "DNSSEC validation failed or not available"
+                    ])
+                ))
+                return
+            }
 
-        let byteCount = Int(rdlen)
-        let models: Set<String>
-        if byteCount == 0 {
-            models = []
-        } else {
-            // SAFETY: `rdata` is valid for `byteCount` bytes only for this callback (dns_sd contract).
-            // `Span` borrows the pointer and must not escape; parsing completes before completion runs.
-            let rdataStart = unsafe rdata.assumingMemoryBound(to: UInt8.self)
-            models = SecurityModelValidator.parseInlineTXTRecord(
-                span: unsafe Span(_unsafeStart: rdataStart, count: byteCount)
-            )
-        }
+            let byteCount = Int(rdlen)
+            let models: Set<String>
+            if byteCount == 0 {
+                models = []
+            } else if let rdata = unsafe rdata {
+                // SAFETY: `rdata` is valid for `byteCount` bytes only for this callback
+                // (dns_sd contract), and only because this callback won the claim before
+                // anyone deallocated the service. `Span` borrows the pointer and must
+                // not escape; parsing completes before deallocate and completion.
+                let rdataStart = unsafe rdata.assumingMemoryBound(to: UInt8.self)
+                models = SecurityModelValidator.parseInlineTXTRecord(
+                    span: unsafe Span(_unsafeStart: rdataStart, count: byteCount)
+                )
+            } else {
+                deallocateClaimed()
+                queryCtx.completion(.failure(
+                    NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)
+                ))
+                return
+            }
 
-        queryCtx.completion(.success(models))
+            deallocateClaimed()
+            queryCtx.completion(.success(models))
+        }
     }
 
     /// Pure parsing logic – `static` (implicitly nonisolated on an actor) so it can be called
@@ -556,6 +738,48 @@ public actor SecurityModelValidator {
     /// cache guard short-circuiting to .success.
     public static func _test_setCurrentDate(_ provider: @Sendable @escaping () -> Date) async {
         await shared._installCurrentDateProvider(provider)
+    }
+
+    /// Sequential claim-once: first `claimFinish` wins, the second is already finished.
+    ///
+    /// No `DNSServiceRef` or live DNS. Protects the Mutex session invariant that
+    /// watchdog and callback cannot both finish the same `QueryContext`.
+    ///
+    /// - Returns: `(firstWon: true, secondAlreadyFinished: true)` on a correct session.
+    /// - SeeAlso: ``<doc:Security-Invariants>`` Invariant 1
+    public static func _test_queryContextClaimFinishIsOnce() -> (firstWon: Bool, secondAlreadyFinished: Bool) {
+        let context = QueryContext(completion: { _ in })
+        let firstWon: Bool
+        if case .won = context.claimFinish() {
+            firstWon = true
+        } else {
+            firstWon = false
+        }
+        let secondAlreadyFinished: Bool
+        if case .alreadyFinished = context.claimFinish() {
+            secondAlreadyFinished = true
+        } else {
+            secondAlreadyFinished = false
+        }
+        return (firstWon, secondAlreadyFinished)
+    }
+
+    /// Concurrent claim-once: exactly one winner among racing callers.
+    ///
+    /// - Parameter iterations: Number of concurrent `claimFinish` attempts.
+    /// - Returns: Count of `.won` results (must be `1`).
+    /// - SeeAlso: ``<doc:Security-Invariants>`` Invariant 1
+    public static func _test_queryContextConcurrentClaimWinnerCount(iterations: Int = 32) -> Int {
+        let context = QueryContext(completion: { _ in })
+        let winnerCount = Mutex(0)
+        DispatchQueue.concurrentPerform(iterations: iterations) { _ in
+            if case .won = context.claimFinish() {
+                winnerCount.withLock { count in
+                    count += 1
+                }
+            }
+        }
+        return winnerCount.withLock { $0 }
     }
 
     private func _installCurrentDateProvider(_ provider: @Sendable @escaping () -> Date) {
