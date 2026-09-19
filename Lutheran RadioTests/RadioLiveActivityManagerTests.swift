@@ -4511,6 +4511,104 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
+    /// Ineligible playing-chip optimistic switch keeps owned `.playing` with dest language
+    /// and cleared metadata. Eligible playing-chip still Connecting. Paused chips stay
+    /// paused. Same-stream ineligible resume Connecting skip is unchanged.
+    ///
+    /// Why this pattern is required: optimistic Connecting over owned playing is a
+    /// visual-differing apply Apple accepts under lock; later `.playing` over that
+    /// Connecting does not apply, so the pause control lags. Language-only dest keeps
+    /// the glyph. Pure helper + last-pushed / ContentState candidate — no ActivityKit
+    /// waits, not lock-screen paint.
+    func testIneligiblePlayingChipOptimisticStreamSwitchKeepsOwnedPlayingVisual() {
+        XCTAssertEqual(
+            manager._test_optimisticLiveActivityVisualForStreamSwitchContent(
+                surfaceVisual: .playing,
+                isRequestEligible: false,
+                ownedVisual: .playing
+            ),
+            .playing,
+            "Ineligible playing-chip must keep owned playing, not optimistic Connecting"
+        )
+        XCTAssertEqual(
+            manager._test_optimisticLiveActivityVisualForStreamSwitchContent(
+                surfaceVisual: .playing,
+                isRequestEligible: true,
+                ownedVisual: .playing
+            ),
+            .prePlay,
+            "Eligible / presentable playing-chip still uses Connecting"
+        )
+        XCTAssertEqual(
+            manager._test_optimisticLiveActivityVisualForStreamSwitchContent(
+                surfaceVisual: .userPaused,
+                isRequestEligible: false,
+                ownedVisual: .userPaused
+            ),
+            .userPaused,
+            "Paused chip must stay paused while ineligible"
+        )
+        XCTAssertEqual(
+            manager._test_optimisticLiveActivityVisualForStreamSwitchContent(
+                surfaceVisual: .userPaused,
+                isRequestEligible: true,
+                ownedVisual: .userPaused
+            ),
+            .userPaused,
+            "Paused chip must stay paused when eligible"
+        )
+        XCTAssertEqual(
+            manager._test_optimisticLiveActivityVisualForStreamSwitchContent(
+                surfaceVisual: .prePlay,
+                isRequestEligible: false,
+                ownedVisual: .prePlay
+            ),
+            .prePlay,
+            "Owned already Connecting has nothing better to keep"
+        )
+
+        // Same-stream ineligible resume Connecting skip is unchanged (not this helper).
+        XCTAssertTrue(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .playing,
+                candidateVisual: .prePlay
+            ),
+            "Same-stream ineligible resume still skips Connecting over owned playing"
+        )
+
+        let priorICY = StreamProgramMetadata(programTitle: "Prior stream title", speaker: "Speaker")
+        let ownedPlaying = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: priorICY,
+            currentLanguage: "sv"
+        )
+        let ineligibleVisual = manager._test_optimisticLiveActivityVisualForStreamSwitchContent(
+            surfaceVisual: .playing,
+            isRequestEligible: false,
+            ownedVisual: .playing
+        )
+        let candidate = ownedPlaying.replacingStreamSwitchDestination(
+            language: "et",
+            visualState: ineligibleVisual,
+            clearStreamMetadata: true
+        )
+        XCTAssertEqual(candidate.visualState, .playing)
+        XCTAssertEqual(candidate.currentLanguage, "et")
+        XCTAssertNil(
+            candidate.streamMetadata,
+            "Playing-chip dest apply must clear prior-stream ICY"
+        )
+
+        manager.recordOptimisticStreamSwitchContent(language: "et", visualState: ineligibleVisual)
+        XCTAssertEqual(manager.lastPushedContent?.visualState, .playing)
+        XCTAssertEqual(manager.lastPushedContent?.currentLanguage, "et")
+        XCTAssertNil(
+            manager.lastPushedContent?.streamMetadata,
+            "Optimistic last-pushed must clear metadata with dest language"
+        )
+    }
+
     /// After dest language has landed on owned pause/playing while request is ineligible,
     /// stream-switch Connecting must not `Activity.update` ``.prePlay`` over that glyph.
     /// Dest-lag remains language-only (candidate visual equals owned; Connecting skip

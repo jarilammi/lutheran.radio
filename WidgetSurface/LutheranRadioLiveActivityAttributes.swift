@@ -152,13 +152,15 @@ public struct LutheranRadioLiveActivityAttributes: ActivityAttributes {
         /// Language chips publish this so flag, language name, and alt-stream “current”
         /// exclusion advance immediately in ActivityKit, without waiting for the main app
         /// to drain the pending switch and re-push. Visual policy is supplied by the caller
-        /// (typically Connecting ``.prePlay`` when leaving active play, or preserved
-        /// ``.userPaused`` when sticky-paused — never invent audible `.playing` for a
-        /// destination stream that is not yet attached).
+        /// (typically Connecting ``.prePlay`` when leaving active play, preserved
+        /// ``.userPaused`` when sticky-paused, or owned ``.playing`` when a request-ineligible
+        /// playing-chip switch keeps the committed glyph — never invent audible `.playing`
+        /// for a destination stream that is not yet attached).
         ///
         /// - Parameters:
         ///   - language: Destination stream language code for language chrome.
-        ///   - visualState: Control visual for the switch (Connecting or preserved pause).
+        ///   - visualState: Control visual for the switch (Connecting, preserved pause, or
+        ///     owned playing while request-ineligible).
         ///   - clearStreamMetadata: When `true` (default), drops prior-stream program
         ///     title/speaker so old ICY text does not ride under the new flag.
         /// - Returns: A new ``ContentState`` with destination language and the supplied visual.

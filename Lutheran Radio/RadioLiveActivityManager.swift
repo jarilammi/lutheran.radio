@@ -111,6 +111,19 @@ import WidgetSurface
 /// mirrors + in-app chrome may still be Connecting / dest language. Does **not**
 /// invent `.playing`. Does **not** end while ineligible.
 ///
+/// ## Ineligible playing-chip optimistic switch keeps owned playing
+/// Main-app ``WidgetIntentExecution/publishOptimisticStreamSwitchLanguageChrome``
+/// must not optimistic-push Connecting over owned ``.playing`` while request is
+/// ineligible. Apple applies dest+Connecting; later `.playing` over that Connecting
+/// does not apply under lock, so the pause control lags on yellow Connecting.
+/// ``optimisticLiveActivityVisualForStreamSwitchContent`` keeps owned `.playing`
+/// (language-only dest, clear ICY) — same honesty as
+/// ``shouldPreserveOwnedVisualOnIneligibleLanguageMutation``. Eligible / presentable
+/// still uses Connecting via ``optimisticLiveActivityVisualForStreamSwitch``. Sticky
+/// pause still preserves pause. Home first-paint Connecting is a different surface.
+/// Does **not** invent `.playing`. Does **not** end while ineligible. Does **not**
+/// add a metadata ensure rail.
+///
 /// ## Ineligible stream-switch Connecting after dest language landed
 /// While request is ineligible, dest language already matches owned
 /// `content.state.currentLanguage`, and owned visual is already ``.userPaused`` /
@@ -429,6 +442,11 @@ class RadioLiveActivityManager: ObservableObject {
     /// Chip tests assert destination is already stamped on the actor (not still the
     /// prior ``selectedStream``) before language ensure runs. Not lock-screen paint.
     var languageForContentPushAtOptimisticStreamSwitch: String?
+
+    /// XCTest seam: pin interactive request eligibility for optimistic stream-switch
+    /// last-pushed contracts. `nil` uses ``areActivitiesEnabledOnThisHost`` +
+    /// `UIApplication` active. Not lock-screen paint.
+    var _test_interactiveLiveActivityRequestEligibleOverride: Bool?
     #endif
 
     /// Consecutive **committed** stalled observations where system-held content still
@@ -4375,6 +4393,69 @@ class RadioLiveActivityManager: ObservableObject {
         }
     }
 
+    /// Optimistic Live Activity visual for a main-app stream-switch ContentState push.
+    ///
+    /// Eligible / presentable uses ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``
+    /// (actively playing → Connecting). While request is ineligible and owned
+    /// ContentState visual is already ``.playing``, keep that glyph so dest language
+    /// rides the committed playing control (clear ICY on the switch destination builder).
+    /// Optimistic Connecting over owned playing is a visual-differing apply Apple
+    /// accepts; later `.playing` over that Connecting does not apply under lock.
+    /// Same honesty as ``shouldPreserveOwnedVisualOnIneligibleLanguageMutation`` —
+    /// this does **not** invent `.playing`, does **not** put request eligibility into
+    /// WidgetSurface, and does **not** skip Connecting on an eligible switch. Sticky
+    /// pause still preserves pause via the WidgetSurface mapping. Home first-paint
+    /// Connecting remains a different surface.
+    ///
+    /// - Parameters:
+    ///   - surfaceVisual: ContentState or session-snapshot visual before the switch.
+    ///   - isRequestEligible: Interactive `Activity.request` eligibility (presentable).
+    ///   - ownedVisual: Owned `content.state.visualState` (or snapshot when ActivityKit
+    ///     is empty in this process).
+    /// - Returns: Visual to pair with destination language on the optimistic Live
+    ///   Activity push and durable toggle mirror.
+    /// - Important: Does **not** invent `.playing` during hold. Engine attach still
+    ///   uses Connecting hold; this only avoids overwriting an already-owned playing
+    ///   glyph while ineligible.
+    /// - SeeAlso: ``shouldPreserveOwnedVisualOnIneligibleLanguageMutation(isRequestEligible:destinationLanguage:ownedLanguage:ownedVisual:)``,
+    ///   ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``,
+    ///   ``WidgetIntentExecution/publishOptimisticStreamSwitchLanguageChrome(languageCode:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func optimisticLiveActivityVisualForStreamSwitchContent(
+        surfaceVisual: PlayerVisualState,
+        isRequestEligible: Bool,
+        ownedVisual: PlayerVisualState
+    ) -> PlayerVisualState {
+        if !isRequestEligible, ownedVisual == .playing {
+            return .playing
+        }
+        return WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(
+            from: surfaceVisual
+        )
+    }
+
+    /// Interactive request eligibility for optimistic Live Activity stream-switch chrome.
+    ///
+    /// DEBUG tests may pin this via ``_test_interactiveLiveActivityRequestEligibleOverride``
+    /// so last-pushed contracts do not depend on simulator ActivityKit authorization.
+    /// Production uses ``areActivitiesEnabledOnThisHost`` and whether the app is active.
+    ///
+    /// - Returns: `true` when a replacement interactive `Activity.request` would be
+    ///   presentable (eligible).
+    /// - SeeAlso: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``,
+    ///   ``optimisticLiveActivityVisualForStreamSwitchContent(surfaceVisual:isRequestEligible:ownedVisual:)``.
+    func currentInteractiveLiveActivityRequestEligible() -> Bool {
+        #if DEBUG
+        if let override = _test_interactiveLiveActivityRequestEligibleOverride {
+            return override
+        }
+        #endif
+        return Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+    }
+
     /// Whether both ContentState axes lag while the actor is authoritative `.playing` without hold.
     ///
     /// Long-horizon fires use this to clear **both** quiet flags and run dual soft ensure so
@@ -7700,7 +7781,8 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// - Parameters:
     ///   - language: Destination stream language code for language chrome.
-    ///   - visualState: Optimistic control visual (typically `.prePlay` or `.userPaused`).
+    ///   - visualState: Optimistic control visual (Connecting, preserved pause, or
+    ///     owned `.playing` when request-ineligible playing-chip switch keeps the glyph).
     /// - Postcondition: ``lastPushedContent`` holds `visualState`, `nil` stream metadata, and
     ///   `language` (in-process only — not proof of system acceptance). Quiet language ensure
     ///   is cleared when the destination differs from the prior quiet destination; playing
@@ -9571,6 +9653,7 @@ class RadioLiveActivityManager: ObservableObject {
         lastPushedContent = nil
         lastSystemHeldContent = nil
         languageForContentPushAtOptimisticStreamSwitch = nil
+        _test_interactiveLiveActivityRequestEligibleOverride = nil
         clearUncommittedMetadataFollowThrough()
     }
 
@@ -9804,6 +9887,24 @@ class RadioLiveActivityManager: ObservableObject {
             ownedLanguage: ownedLanguage,
             ownedVisual: ownedVisual
         )
+    }
+
+    /// White-box seam: ineligible playing-chip optimistic switch keeps owned `.playing`.
+    func _test_optimisticLiveActivityVisualForStreamSwitchContent(
+        surfaceVisual: PlayerVisualState,
+        isRequestEligible: Bool,
+        ownedVisual: PlayerVisualState
+    ) -> PlayerVisualState {
+        Self.optimisticLiveActivityVisualForStreamSwitchContent(
+            surfaceVisual: surfaceVisual,
+            isRequestEligible: isRequestEligible,
+            ownedVisual: ownedVisual
+        )
+    }
+
+    /// White-box seam: pin interactive request eligibility for optimistic switch tests.
+    func _test_setInteractiveLiveActivityRequestEligibleOverride(_ value: Bool?) {
+        _test_interactiveLiveActivityRequestEligibleOverride = value
     }
 
     /// White-box seam: ineligible freeze must not push visual-differing `.playing`.

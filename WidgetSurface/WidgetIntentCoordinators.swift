@@ -473,8 +473,13 @@ public enum WidgetIntentCoordinators {
     /// language chrome can advance without claiming audible playback on the new stream (main-app
     /// hold honesty). Sticky pause and other non-playing chrome are preserved as-is.
     ///
+    /// This helper is **pure** — it has no request-eligibility. The main-app ineligible
+    /// playing-chip Live Activity path keeps owned ``.playing`` (language-only dest)
+    /// instead of this Connecting mapping. Eligible / presentable Live Activity chips,
+    /// home first-paint, and the extension still use this helper.
+    ///
     /// Shared by:
-    /// - Live Activity optimistic ContentState (``executeLiveActivityStreamSwitch``)
+    /// - Live Activity optimistic ContentState when request-eligible (``executeLiveActivityStreamSwitch``)
     /// - Home-widget optimistic session snapshot + first timeline refresh
     ///   (``executeHomeWidgetStreamSwitch`` / widget-path ``switchToStream``)
     ///

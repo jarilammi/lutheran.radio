@@ -440,11 +440,15 @@ enum WidgetIntentExecution {
     /// Publishes optimistic Live Activity language chrome for lock-screen stream-language chips.
     ///
     /// Updates every interactive activity whose content would change under destination
-    /// language + switch visual (Connecting when leaving play, preserved pause when sticky).
+    /// language + switch visual. Eligible / presentable playing chips use Connecting;
+    /// sticky pause is preserved. While request is ineligible and owned ContentState
+    /// visual is already ``.playing``, the main-app path keeps that glyph (language-only
+    /// dest, clear ICY) so optimistic Connecting cannot overwrite the pause control.
     /// Clears prior-stream program metadata by default so an old title does not ride under
     /// the new flag. Warms the durable language mirror and, on the main app, aligns
     /// ``RadioLiveActivityManager/lastPushedContent`` so engine-complete pushes can suppress
     /// when they match the optimistic destination **and** owned `content.state` language.
+    /// The durable toggle mirror matches the pushed visual (playing stays playing).
     ///
     /// After each ActivityKit update, re-reads `content.state.currentLanguage`. DEBUG logs do
     /// not claim success when the surface still holds the prior language. On the main app,
@@ -456,7 +460,10 @@ enum WidgetIntentExecution {
     /// - Parameters:
     ///   - languageCode: Destination stream language code (flag / name / alt-current).
     ///   - visualState: Optimistic control visual from
-    ///     ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``.
+    ///     ``RadioLiveActivityManager/optimisticLiveActivityVisualForStreamSwitchContent(surfaceVisual:isRequestEligible:ownedVisual:)``
+    ///     on the main app, or
+    ///     ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``
+    ///     in the extension.
     /// - Note: Skips ActivityKit IPC under ``SharedPlayerManager/isRunningInUITestMode``
     ///   and ``SharedPlayerManager/isRunningAsIOSAppOnMac``;
     ///   mirror + main-app last-pushed alignment still run for white-box contracts.
@@ -589,8 +596,8 @@ enum WidgetIntentExecution {
     ///    (engine + in-app chrome; no pendingAction / Darwin)
     ///
     /// Home-widget snapshot visual may still preserve `.playing` across the optimistic
-    /// App Group write; Live Activity ContentState uses Connecting when leaving active play
-    /// so language chrome never claims audible playback on the destination stream.
+    /// App Group write. Live Activity ContentState uses Connecting when leaving active play
+    /// **and** request is eligible; while ineligible, owned `.playing` stays playing.
     ///
     /// - Parameter languageCode: Target stream code.
     /// - Returns: `true` when a matching stream was found and the switch was invoked.
@@ -857,12 +864,14 @@ enum WidgetIntentExecution {
     /// Live Activity stream switch: optimistic language ContentState, then engine work.
     ///
     /// Stamps destination language on ``SharedPlayerManager`` then publishes destination
-    /// ``ContentState/currentLanguage`` (and Connecting / preserved pause visual) **before**
-    /// engine work so lock-screen flag/name track the chip tap immediately and language
-    /// ensure cannot reverse to the previous stream. Extension hosts keep pending + Darwin.
-    /// Main-app ``LiveActivityIntent`` hosts run silent in-process orchestration (same
-    /// pause-preserving rules as ``RadioPlayerCoordinator`` widget reconciliation, including
-    /// in-app language chrome) — never invent `.playing`.
+    /// ``ContentState/currentLanguage`` **before** engine work so lock-screen flag/name
+    /// track the chip tap immediately and language ensure cannot reverse to the previous
+    /// stream. Eligible / presentable playing chips use Connecting; ineligible owned
+    /// `.playing` stays playing (language-only dest). Sticky pause is preserved.
+    /// Extension hosts keep pending + Darwin. Main-app ``LiveActivityIntent`` hosts run
+    /// silent in-process orchestration (same pause-preserving rules as
+    /// ``RadioPlayerCoordinator`` widget reconciliation, including in-app language chrome)
+    /// — never invent `.playing`.
     ///
     /// - Parameter languageCode: Target stream code from ``LiveActivitySwitchStreamIntent``.
     /// - Returns: `true` when a matching stream was found and the switch was invoked.
@@ -967,13 +976,21 @@ enum WidgetIntentExecution {
     ///
     /// On the main app, stamps ``streamSwitchConnectingLanguageCode`` **before** the
     /// optimistic ActivityKit push so ``liveActivityLanguageCodeForContentPush()`` already
-    /// names dest when ``ensureAuthoritativeLanguageContentIfNeeded()`` runs. Does **not**
-    /// call ``resetToPrePlayForNewStream`` (attaching chips still reset once in
-    /// ``executeInProcessStreamSwitch``). Does **not** write `pendingAction*` / Darwin.
+    /// names dest when ``ensureAuthoritativeLanguageContentIfNeeded()`` runs. While request
+    /// is ineligible and owned visual is already ``.playing``, keeps that glyph
+    /// (language-only dest, clear ICY) instead of optimistic Connecting — same honesty as
+    /// ``RadioLiveActivityManager/shouldPreserveOwnedVisualOnIneligibleLanguageMutation``.
+    /// Eligible / presentable still uses Connecting via
+    /// ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``.
+    /// WidgetSurface stays eligibility-free. Does **not** call ``resetToPrePlayForNewStream``
+    /// (attaching chips still reset once in ``executeInProcessStreamSwitch``). Does **not**
+    /// write `pendingAction*` / Darwin. Does **not** invent `.playing`.
     ///
     /// - Parameter languageCode: Destination stream language code.
     /// - SeeAlso: ``SharedPlayerManager/stampStreamSwitchDestinationLanguage(_:)``,
-    ///   ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``.
+    ///   ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``,
+    ///   ``RadioLiveActivityManager/optimisticLiveActivityVisualForStreamSwitchContent(surfaceVisual:isRequestEligible:ownedVisual:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private static func publishOptimisticStreamSwitchLanguageChrome(languageCode: String) async {
         #if LUTHERAN_MAIN_APP
         await SharedPlayerManager.shared.stampStreamSwitchDestinationLanguage(languageCode)
@@ -981,9 +998,32 @@ enum WidgetIntentExecution {
         let contentVisual = currentLiveActivityContentVisualState()
         let snapshotVisual = SharedPlayerManager.loadPersistedVisualStateDirect()
         let baseVisual = contentVisual ?? snapshotVisual
-        let optimisticVisual = WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(
+        let optimisticVisual: PlayerVisualState
+        #if LUTHERAN_MAIN_APP
+        let ownedVisual = contentVisual ?? snapshotVisual
+        optimisticVisual = await MainActor.run {
+            let requestEligible = RadioLiveActivityManager.shared
+                .currentInteractiveLiveActivityRequestEligible()
+            let visual = RadioLiveActivityManager.optimisticLiveActivityVisualForStreamSwitchContent(
+                surfaceVisual: baseVisual,
+                isRequestEligible: requestEligible,
+                ownedVisual: ownedVisual
+            )
+            #if DEBUG
+            if !requestEligible, ownedVisual == .playing, visual == .playing {
+                print(
+                    "[WidgetIntentExecution] Ineligible playing-chip stream switch keeps owned playing " +
+                    "(language-only dest=\(languageCode); not optimistic Connecting)"
+                )
+            }
+            #endif
+            return visual
+        }
+        #else
+        optimisticVisual = WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(
             from: baseVisual
         )
+        #endif
         await pushOptimisticLiveActivityStreamSwitchContent(
             languageCode: languageCode,
             visualState: optimisticVisual

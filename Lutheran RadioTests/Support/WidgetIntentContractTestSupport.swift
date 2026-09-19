@@ -31,6 +31,8 @@ func prepareWidgetIntentContractTestIsolation() {
     la.stopLocalUpdateTimer()
     la.activityObservationTask?.cancel()
     la.currentActivity = nil
+    la._test_setInteractiveLiveActivityRequestEligibleOverride(nil)
+    la._test_clearLastPushedContent()
     WidgetRefreshManager.setHasActiveLutheranWidgets(true)
     SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
     ViewController._test_setBypassUITestModeForPendingActionProcessing(false)
@@ -132,6 +134,8 @@ func assertNoPendingDarwinSwitchNote(
 /// Symmetric tear-down for ``prepareWidgetIntentContractTestIsolation()``.
 @MainActor
 func tearDownWidgetIntentContractTestIsolation() {
+    RadioLiveActivityManager.shared._test_setInteractiveLiveActivityRequestEligibleOverride(nil)
+    RadioLiveActivityManager.shared._test_clearLastPushedContent()
     SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
     SharedPlayerManager._test_resetDarwinNotifyAccounting()
     ViewController._test_setBypassUITestModeForPendingActionProcessing(false)

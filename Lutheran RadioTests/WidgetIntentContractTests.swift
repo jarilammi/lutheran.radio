@@ -866,6 +866,165 @@ final class WidgetIntentContractTests: XCTestCase {
         )
     }
 
+    /// Ineligible playing-chip optimistic last-pushed keeps owned `.playing` with dest
+    /// language and cleared metadata. Durable toggle mirror matches playing (not Connecting).
+    ///
+    /// Protects: ``publishOptimisticStreamSwitchLanguageChrome`` used to map playing →
+    /// Connecting even while request-ineligible. Apple applied dest+Connecting; later
+    /// `.playing` over that Connecting did not apply under lock. Does **not** invent
+    /// `.playing`. Does **not** write Darwin. XCTest is not lock-screen paint.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/optimisticLiveActivityVisualForStreamSwitchContent(surfaceVisual:isRequestEligible:ownedVisual:)``,
+    ///   ``testInProcessChipSwitchStampsDestinationLanguageBeforeOptimisticLastPushed``.
+    @MainActor
+    func testIneligiblePlayingChipOptimisticLastPushedKeepsOwnedPlayingVisual() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Catalog must include ≥2 streams")
+            return
+        }
+
+        let source = streams[0]
+        let target = streams[1]
+        await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: source)
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: source.languageCode
+        )
+        manager.persistOptimisticWidgetSnapshot(.playing, language: source.languageCode)
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
+        RadioLiveActivityManager.shared._test_setInteractiveLiveActivityRequestEligibleOverride(false)
+        defer {
+            RadioLiveActivityManager.shared._test_setInteractiveLiveActivityRequestEligibleOverride(nil)
+        }
+
+        SharedPlayerManager._test_resetDarwinNotifyAccounting()
+        let switched = await WidgetIntentExecution.executeLiveActivityStreamSwitch(
+            languageCode: target.languageCode
+        )
+        XCTAssertTrue(switched)
+
+        assertNoPendingDarwinSwitchNote(manager: manager)
+        XCTAssertEqual(
+            RadioLiveActivityManager.shared.lastPushedContent?.visualState,
+            .playing,
+            "Ineligible playing-chip last-pushed must keep owned playing"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.shared.lastPushedContent?.currentLanguage,
+            target.languageCode,
+            "Dest language must still land on last-pushed"
+        )
+        XCTAssertNil(
+            RadioLiveActivityManager.shared.lastPushedContent?.streamMetadata,
+            "Playing-chip dest apply must clear prior-stream ICY"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            .playing,
+            "Durable toggle mirror must match the kept playing glyph, not Connecting"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.shared.languageForContentPushAtOptimisticStreamSwitch,
+            target.languageCode
+        )
+    }
+
+    /// Eligible playing-chip optimistic last-pushed still uses Connecting.
+    ///
+    /// Presentable honesty: destination language advances without claiming audible
+    /// playback on a stream that has not attached. Does **not** invent `.playing`.
+    @MainActor
+    func testEligiblePlayingChipOptimisticLastPushedUsesConnecting() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Catalog must include ≥2 streams")
+            return
+        }
+
+        let source = streams[0]
+        let target = streams[1]
+        await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: source)
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: source.languageCode
+        )
+        manager.persistOptimisticWidgetSnapshot(.playing, language: source.languageCode)
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
+        RadioLiveActivityManager.shared._test_setInteractiveLiveActivityRequestEligibleOverride(true)
+        defer {
+            RadioLiveActivityManager.shared._test_setInteractiveLiveActivityRequestEligibleOverride(nil)
+        }
+
+        SharedPlayerManager._test_resetDarwinNotifyAccounting()
+        let switched = await WidgetIntentExecution.executeLiveActivityStreamSwitch(
+            languageCode: target.languageCode
+        )
+        XCTAssertTrue(switched)
+
+        assertNoPendingDarwinSwitchNote(manager: manager)
+        XCTAssertEqual(
+            RadioLiveActivityManager.shared.lastPushedContent?.visualState,
+            .prePlay,
+            "Eligible playing-chip last-pushed must stay Connecting"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.shared.lastPushedContent?.currentLanguage,
+            target.languageCode
+        )
+        XCTAssertNil(RadioLiveActivityManager.shared.lastPushedContent?.streamMetadata)
+        XCTAssertEqual(
+            SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            .prePlay,
+            "Eligible playing-chip toggle mirror must match Connecting"
+        )
+    }
+
+    /// Paused-chip optimistic last-pushed stays paused regardless of request eligibility.
+    @MainActor
+    func testPausedChipOptimisticLastPushedStaysPausedWhileIneligible() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Catalog must include ≥2 streams")
+            return
+        }
+
+        let source = streams[0]
+        let target = streams[1]
+        await manager.setUserPaused()
+        await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: source)
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .userPaused,
+            language: source.languageCode
+        )
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.userPaused)
+        RadioLiveActivityManager.shared._test_setInteractiveLiveActivityRequestEligibleOverride(false)
+        defer {
+            RadioLiveActivityManager.shared._test_setInteractiveLiveActivityRequestEligibleOverride(nil)
+        }
+
+        SharedPlayerManager._test_resetDarwinNotifyAccounting()
+        let switched = await WidgetIntentExecution.executeLiveActivityStreamSwitch(
+            languageCode: target.languageCode
+        )
+        XCTAssertTrue(switched)
+
+        assertNoPendingDarwinSwitchNote(manager: manager)
+        XCTAssertEqual(
+            RadioLiveActivityManager.shared.lastPushedContent?.visualState,
+            .userPaused,
+            "Paused chip must not invent Connecting or playing"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.shared.lastPushedContent?.currentLanguage,
+            target.languageCode
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            .userPaused
+        )
+    }
+
     /// Home-widget in-process chip switch is the same no-note path as Live Activity chips.
     ///
     /// Protects: ``SwitchStreamIntent`` hosted as ``AudioPlaybackIntent`` must not write
