@@ -448,9 +448,10 @@ enum WidgetIntentExecution {
     ///
     /// After each ActivityKit update, re-reads `content.state.currentLanguage`. DEBUG logs do
     /// not claim success when the surface still holds the prior language. On the main app,
-    /// ``ensureAuthoritativeLanguageContentIfNeeded()`` forces a non-suppressed reconcile
-    /// when owned content language still differs from the destination (owned language beats
-    /// optimistic suppress memory).
+    /// destination language is stamped on ``SharedPlayerManager`` **before** this push so
+    /// ``liveActivityLanguageCodeForContentPush()`` already names dest when
+    /// ``ensureAuthoritativeLanguageContentIfNeeded()`` runs (owned language beats
+    /// optimistic suppress memory; ensure must not reverse to the previous stream).
     ///
     /// - Parameters:
     ///   - languageCode: Destination stream language code (flag / name / alt-current).
@@ -526,11 +527,16 @@ enum WidgetIntentExecution {
         }
 
         #if LUTHERAN_MAIN_APP
+        let contentPushLanguage = await SharedPlayerManager.shared.liveActivityLanguageCodeForContentPush()
         await MainActor.run {
             RadioLiveActivityManager.shared.recordOptimisticStreamSwitchContent(
                 language: languageCode,
                 visualState: visualState
             )
+            #if DEBUG
+            RadioLiveActivityManager.shared.languageForContentPushAtOptimisticStreamSwitch =
+                contentPushLanguage
+            #endif
         }
         // Owned content language beats optimistic lastPushedContent for suppress; reconcile
         // when the surface still holds the prior stream after the intent-path push.
@@ -850,16 +856,18 @@ enum WidgetIntentExecution {
 
     /// Live Activity stream switch: optimistic language ContentState, then engine work.
     ///
-    /// Publishes destination ``ContentState/currentLanguage`` (and Connecting / preserved
-    /// pause visual) **before** engine work so lock-screen flag/name track the chip tap
-    /// immediately. Extension hosts keep pending + Darwin. Main-app ``LiveActivityIntent``
-    /// hosts run silent in-process orchestration (same pause-preserving rules as
-    /// ``RadioPlayerCoordinator`` widget reconciliation, including in-app language chrome)
-    /// — never invent `.playing`.
+    /// Stamps destination language on ``SharedPlayerManager`` then publishes destination
+    /// ``ContentState/currentLanguage`` (and Connecting / preserved pause visual) **before**
+    /// engine work so lock-screen flag/name track the chip tap immediately and language
+    /// ensure cannot reverse to the previous stream. Extension hosts keep pending + Darwin.
+    /// Main-app ``LiveActivityIntent`` hosts run silent in-process orchestration (same
+    /// pause-preserving rules as ``RadioPlayerCoordinator`` widget reconciliation, including
+    /// in-app language chrome) — never invent `.playing`.
     ///
     /// - Parameter languageCode: Target stream code from ``LiveActivitySwitchStreamIntent``.
     /// - Returns: `true` when a matching stream was found and the switch was invoked.
     /// - SeeAlso: ``pushOptimisticLiveActivityStreamSwitchContent(languageCode:visualState:)``,
+    ///   ``SharedPlayerManager/stampStreamSwitchDestinationLanguage(_:)``,
     ///   ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @discardableResult
@@ -957,8 +965,19 @@ enum WidgetIntentExecution {
     /// session snapshot. Destination language always warms the durable mirror even when no
     /// activity is visible in this process.
     ///
+    /// On the main app, stamps ``streamSwitchConnectingLanguageCode`` **before** the
+    /// optimistic ActivityKit push so ``liveActivityLanguageCodeForContentPush()`` already
+    /// names dest when ``ensureAuthoritativeLanguageContentIfNeeded()`` runs. Does **not**
+    /// call ``resetToPrePlayForNewStream`` (attaching chips still reset once in
+    /// ``executeInProcessStreamSwitch``). Does **not** write `pendingAction*` / Darwin.
+    ///
     /// - Parameter languageCode: Destination stream language code.
+    /// - SeeAlso: ``SharedPlayerManager/stampStreamSwitchDestinationLanguage(_:)``,
+    ///   ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``.
     private static func publishOptimisticStreamSwitchLanguageChrome(languageCode: String) async {
+        #if LUTHERAN_MAIN_APP
+        await SharedPlayerManager.shared.stampStreamSwitchDestinationLanguage(languageCode)
+        #endif
         let contentVisual = currentLiveActivityContentVisualState()
         let snapshotVisual = SharedPlayerManager.loadPersistedVisualStateDirect()
         let baseVisual = contentVisual ?? snapshotVisual

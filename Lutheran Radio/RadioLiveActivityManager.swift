@@ -422,6 +422,15 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ``handleActivityContentUpdate(_:)``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     internal private(set) var lastPushedContent: LutheranRadioLiveActivityAttributes.ContentState?
 
+    #if DEBUG
+    /// ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()`` sampled when
+    /// optimistic stream-switch last-pushed is recorded.
+    ///
+    /// Chip tests assert destination is already stamped on the actor (not still the
+    /// prior ``selectedStream``) before language ensure runs. Not lock-screen paint.
+    var languageForContentPushAtOptimisticStreamSwitch: String?
+    #endif
+
     /// Consecutive **committed** stalled observations where system-held content still
     /// mismatches the submitted candidate (language and/or stuck pause / Connecting visual).
     ///
@@ -462,12 +471,27 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ``commitContentPushObservation(candidate:observed:kind:isStreamSwitchHoldActive:isConnectingPlayback:)``.
     private var lastContentPushObservationKind: LiveActivityContentPushObservationKind?
 
-    /// Latest visual-differing candidate remembered while ``inFlightContentPushCandidate``
-    /// is unconfirmed. Replace, do not queue. Flushed once after delayed re-read,
-    /// `contentUpdates`, or an immediate post-await match. Language-only same-visual
-    /// updates are not stored here — they still issue `Activity.update`.
-    /// - SeeAlso: ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:)``.
+    /// Latest visual-differing **or** uncommitted ICY candidate remembered while
+    /// ``inFlightContentPushCandidate`` is unconfirmed. Replace, do not queue. Flushed
+    /// once after delayed re-read, `contentUpdates`, or an immediate post-await match.
+    /// Language-only same-visual updates still issue `Activity.update` immediately;
+    /// metadata-only uncommitted apply stores the same candidate here for **one**
+    /// delayed re-push. - SeeAlso: ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:)``,
+    ///   ``shouldTreatMetadataContentPushAsUncommittedApply(candidate:accepted:)``.
     private var pendingCoalescedContentPushCandidate: LutheranRadioLiveActivityAttributes.ContentState?
+
+    /// True after one delayed same-candidate re-push was scheduled for lagging ICY.
+    ///
+    /// Language + visual already matched so stall oracles treated the first
+    /// `Activity.update` as committed while owned ``streamMetadata`` still lagged.
+    /// One follow-through via in-flight confirmation / coalesced flush; do not loop.
+    /// Cleared on optimistic mutation, sanitization, or when owned metadata matches.
+    /// - SeeAlso: ``shouldScheduleUncommittedMetadataFollowThrough(metadataUncommitted:alreadyFollowedThroughForThisMetadata:)``.
+    private var uncommittedMetadataFollowThroughIssued = false
+
+    /// ``streamMetadata`` of the ICY candidate that already received one follow-through.
+    /// A later distinct ICY title may schedule one follow-through again.
+    private var uncommittedMetadataFollowThroughMetadata: StreamProgramMetadata?
 
     /// True while ``updateCurrentActivity()`` is inside `await Activity.update` (and the
     /// immediate post-await bookkeeping). Flush of a coalesced candidate waits until this
@@ -1445,6 +1469,14 @@ class RadioLiveActivityManager: ObservableObject {
     /// candidates still update. After committed observation, ``flushCoalescedContentPushIfNeeded``
     /// pushes once when the coalesced candidate still differs from observed.
     ///
+    /// **ICY-only follow-through:** ``didUpdateStreamMetadata`` already issues
+    /// ``updateCurrentActivity()``. Stall oracles compare language + visual, so an ICY
+    /// update whose owned ``streamMetadata`` still lags looks committed. When language
+    /// and visual already match, ``shouldTreatMetadataContentPushAsUncommittedApply``
+    /// schedules **one** delayed same-candidate re-push via in-flight confirmation /
+    /// coalesced flush. Do not add a metadata ensure rail. Do not flip visual to force
+    /// Apple apply. Pause/play still preserve metadata via ``replacingVisualState(_:)``.
+    ///
     /// **Stalled system-held chrome recreation:** When a **committed** stall streak of
     /// language (or non-handshake visual) mismatch remains, recreation is considered.
     /// End + request runs **only when** interactive `Activity.request` is eligible
@@ -1951,12 +1983,38 @@ class RadioLiveActivityManager: ObservableObject {
             isHandshakeLag: handshakeLag
         )
         isAwaitingLiveActivityContentPushApply = false
+        let metadataUncommitted = Self.shouldTreatMetadataContentPushAsUncommittedApply(
+            candidate: candidate,
+            accepted: accepted
+        )
+        if !metadataUncommitted {
+            clearUncommittedMetadataFollowThrough()
+        }
+        let alreadyFollowedThroughThisICY = hasIssuedUncommittedMetadataFollowThrough(
+            for: candidate.streamMetadata
+        )
         if shouldCommitStall {
             consecutiveStalledContentPushes += 1
             cancelInFlightContentPushConfirmation()
             Task { @MainActor [weak self] in
                 await self?.flushCoalescedContentPushIfNeeded(observed: accepted)
             }
+        } else if Self.shouldScheduleUncommittedMetadataFollowThrough(
+            metadataUncommitted: metadataUncommitted,
+            alreadyFollowedThroughForThisMetadata: alreadyFollowedThroughThisICY
+        ) {
+            // Language + visual already match; owned title still lags. Not a stall, not a
+            // new ensure rail — one delayed same-candidate re-push via coalesced flush.
+            pendingCoalescedContentPushCandidate = candidate
+            markUncommittedMetadataFollowThroughIssued(metadata: candidate.streamMetadata)
+            #if DEBUG
+            print(
+                "🔴 Live Activity metadata apply uncommitted " +
+                "(language+visual match; owned title still lags; " +
+                "one delayed same-candidate re-push)"
+            )
+            #endif
+            scheduleInFlightContentPushConfirmation(candidate: candidate)
         } else if Self.shouldResetStalledContentStreak(candidate: candidate, accepted: accepted) {
             // Healthy surface — clear recreation budget so a later freeze can recreate again.
             consecutiveStalledContentPushes = 0
@@ -2032,7 +2090,31 @@ class RadioLiveActivityManager: ObservableObject {
         if clearCoalesced {
             pendingCoalescedContentPushCandidate = nil
             lastContentPushObservationKind = nil
+            clearUncommittedMetadataFollowThrough()
         }
+    }
+
+    /// Drops the ICY follow-through latch (optimistic mutation, sanitization,
+    /// or owned metadata that now matches the candidate).
+    private func clearUncommittedMetadataFollowThrough() {
+        uncommittedMetadataFollowThroughIssued = false
+        uncommittedMetadataFollowThroughMetadata = nil
+    }
+
+    /// Whether this ICY title already received one delayed same-candidate re-push.
+    private func hasIssuedUncommittedMetadataFollowThrough(
+        for metadata: StreamProgramMetadata?
+    ) -> Bool {
+        uncommittedMetadataFollowThroughIssued
+            && uncommittedMetadataFollowThroughMetadata == metadata
+    }
+
+    /// Records that this ICY title consumed the one delayed re-push.
+    private func markUncommittedMetadataFollowThroughIssued(
+        metadata: StreamProgramMetadata?
+    ) {
+        uncommittedMetadataFollowThroughIssued = true
+        uncommittedMetadataFollowThroughMetadata = metadata
     }
 
     /// Issues one ``updateCurrentActivity()`` when a remembered visual-differing candidate
@@ -2651,22 +2733,75 @@ class RadioLiveActivityManager: ObservableObject {
     /// Whether a remembered coalesced candidate should issue one `Activity.update` after
     /// the in-flight apply is committed.
     ///
-    /// Compares language and visual only — ICY metadata is not an outstanding visual
-    /// mutation. Rebuild on flush uses current actor SSOT (latest pause/play wins).
+    /// Flushes when language, visual, **or** program metadata still disagrees with
+    /// observed. Metadata-only lag is not a language/visual stall (no recreation) and
+    /// is not a new ensure rail — it is the one delayed same-candidate re-push after
+    /// an ICY `Activity.update` Apple did not apply. Rebuild on flush uses current
+    /// actor SSOT (latest pause/play / ICY wins). Does **not** flip visual to force apply.
     ///
     /// - Parameters:
     ///   - coalesced: ``pendingCoalescedContentPushCandidate``.
     ///   - observed: Committed system-held `content.state`.
-    /// - Returns: `true` when language or visual still disagrees with observed.
+    /// - Returns: `true` when language, visual, or stream metadata still disagrees.
     /// - SeeAlso: ``flushCoalescedContentPushIfNeeded(observed:)``,
-    ///   ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:)``.
+    ///   ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:)``,
+    ///   ``shouldTreatMetadataContentPushAsUncommittedApply(candidate:accepted:)``.
     static func shouldFlushCoalescedContentPushAfterObservation(
         coalesced: LutheranRadioLiveActivityAttributes.ContentState?,
         observed: LutheranRadioLiveActivityAttributes.ContentState
     ) -> Bool {
         guard let coalesced else { return false }
-        return coalesced.visualState != observed.visualState
-            || coalesced.currentLanguage != observed.currentLanguage
+        if coalesced.visualState != observed.visualState
+            || coalesced.currentLanguage != observed.currentLanguage {
+            return true
+        }
+        return coalesced.streamMetadata != observed.streamMetadata
+    }
+
+    /// Whether an ICY-bearing `Activity.update` is uncommitted apply.
+    ///
+    /// Stall oracles compare language + visual only, so a metadata-only lag looks
+    /// committed and would skip delayed confirmation. When language and visual already
+    /// match and owned ``streamMetadata`` still differs, treat as uncommitted (peer to
+    /// ``shouldTreatLanguageEnsureObservationAsUncommittedApply``). Does **not** count
+    /// as a language/visual stall. Does **not** invent `.playing`. Does **not** raise
+    /// language/playing ensure budgets.
+    ///
+    /// - Parameters:
+    ///   - candidate: Content submitted to ActivityKit (includes new ICY).
+    ///   - accepted: Immediate post-await or delayed `content.state`.
+    /// - Returns: `true` when language + visual match and program metadata still lags.
+    /// - SeeAlso: ``shouldScheduleUncommittedMetadataFollowThrough(metadataUncommitted:alreadyFollowedThroughForThisMetadata:)``,
+    ///   ``shouldFlushCoalescedContentPushAfterObservation(coalesced:observed:)``,
+    ///   ``updateCurrentActivity()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldTreatMetadataContentPushAsUncommittedApply(
+        candidate: LutheranRadioLiveActivityAttributes.ContentState,
+        accepted: LutheranRadioLiveActivityAttributes.ContentState
+    ) -> Bool {
+        guard candidate.currentLanguage == accepted.currentLanguage else { return false }
+        guard candidate.visualState == accepted.visualState else { return false }
+        return candidate.streamMetadata != accepted.streamMetadata
+    }
+
+    /// Whether to schedule **one** delayed same-candidate re-push after uncommitted ICY apply.
+    ///
+    /// Uses the existing in-flight confirmation / coalesced flush. Do not add
+    /// `ensureAuthoritativeMetadataContentIfNeeded`. Do not loop after the first
+    /// follow-through for this title. Do not flip visual or set `alertConfiguration`.
+    ///
+    /// - Parameters:
+    ///   - metadataUncommitted: ``shouldTreatMetadataContentPushAsUncommittedApply(candidate:accepted:)``.
+    ///   - alreadyFollowedThroughForThisMetadata: This ICY already received one follow-through.
+    /// - Returns: `true` when delayed confirmation + coalesced flush should run once.
+    /// - SeeAlso: ``shouldTreatMetadataContentPushAsUncommittedApply(candidate:accepted:)``,
+    ///   ``scheduleInFlightContentPushConfirmation(candidate:)``,
+    ///   ``flushCoalescedContentPushIfNeeded(observed:)``.
+    static func shouldScheduleUncommittedMetadataFollowThrough(
+        metadataUncommitted: Bool,
+        alreadyFollowedThroughForThisMetadata: Bool
+    ) -> Bool {
+        metadataUncommitted && !alreadyFollowedThroughForThisMetadata
     }
 
     /// Start / request disposition for ``startActivity()`` and ``refreshAllMediaSurfaces``
@@ -7528,6 +7663,7 @@ class RadioLiveActivityManager: ObservableObject {
             streamMetadata: metadata,
             currentLanguage: language
         )
+        clearUncommittedMetadataFollowThrough()
         #if DEBUG
         print("🔴 Live Activity lastPushedContent aligned to optimistic visual=\(visualState) language=\(language)")
         #endif
@@ -7613,6 +7749,7 @@ class RadioLiveActivityManager: ObservableObject {
             streamMetadata: nil,
             currentLanguage: language
         )
+        clearUncommittedMetadataFollowThrough()
         #if DEBUG
         let owned = currentActivity?.content.state.currentLanguage
         if let owned, owned != language {
@@ -9433,6 +9570,8 @@ class RadioLiveActivityManager: ObservableObject {
         cancelInFlightContentPushConfirmation(clearCoalesced: true)
         lastPushedContent = nil
         lastSystemHeldContent = nil
+        languageForContentPushAtOptimisticStreamSwitch = nil
+        clearUncommittedMetadataFollowThrough()
     }
 
     /// White-box seam for post-update suppress-memory policy (no ActivityKit).
@@ -9720,6 +9859,28 @@ class RadioLiveActivityManager: ObservableObject {
         Self.shouldFlushCoalescedContentPushAfterObservation(
             coalesced: coalesced,
             observed: observed
+        )
+    }
+
+    /// White-box seam: ICY-only lag is uncommitted apply (not a language/visual stall).
+    func _test_shouldTreatMetadataContentPushAsUncommittedApply(
+        candidate: LutheranRadioLiveActivityAttributes.ContentState,
+        accepted: LutheranRadioLiveActivityAttributes.ContentState
+    ) -> Bool {
+        Self.shouldTreatMetadataContentPushAsUncommittedApply(
+            candidate: candidate,
+            accepted: accepted
+        )
+    }
+
+    /// White-box seam: one delayed same-candidate ICY re-push.
+    func _test_shouldScheduleUncommittedMetadataFollowThrough(
+        metadataUncommitted: Bool,
+        alreadyFollowedThroughForThisMetadata: Bool
+    ) -> Bool {
+        Self.shouldScheduleUncommittedMetadataFollowThrough(
+            metadataUncommitted: metadataUncommitted,
+            alreadyFollowedThroughForThisMetadata: alreadyFollowedThroughForThisMetadata
         )
     }
 

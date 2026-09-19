@@ -4161,6 +4161,126 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
+    /// ICY-only ContentState is not suppressed; metadata lag with matching language +
+    /// visual is uncommitted apply, not a stall, and is eligible for one coalesced
+    /// re-push. Delayed re-read on that path does not consume language-ensure budget
+    /// or enter quiet. Does **not** invent `.playing`. Does **not** claim lock-screen paint.
+    ///
+    /// Why this pattern is required: ``didUpdateStreamMetadata`` already issues
+    /// ``updateCurrentActivity()``. Stall oracles compare language + visual, so an
+    /// ICY-only update looks committed while the card still shows the prior title.
+    /// One delayed same-candidate re-push uses in-flight confirmation / coalesced
+    /// flush — not a metadata ensure rail and not a visual flip.
+    func testMetadataOnlyContentPushFollowThroughIsUncommittedAndDoesNotConsumeLanguageEnsure() {
+        let priorTitle = StreamProgramMetadata(programTitle: "Morning Prayer", speaker: "Reader")
+        let newTitle = StreamProgramMetadata(programTitle: "Evening Hymn", speaker: "Choir")
+        let owned = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: priorTitle,
+            currentLanguage: "fi"
+        )
+        let icyCandidate = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: newTitle,
+            currentLanguage: "fi"
+        )
+
+        XCTAssertFalse(
+            manager._test_wouldSuppressLiveActivityUpdate(
+                visualState: .playing,
+                streamMetadata: newTitle,
+                currentLanguage: "fi",
+                ownedContentLanguage: "fi",
+                ownedContentVisual: .playing
+            ),
+            "Metadata-only candidate must not suppress (Hashable includes streamMetadata)"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldSuppressLiveActivityContentPush(
+                lastPushed: owned,
+                candidate: icyCandidate,
+                ownedContentLanguage: "fi",
+                ownedContentVisual: .playing
+            ),
+            "Owned language+visual match must still push when program metadata differs"
+        )
+        XCTAssertFalse(
+            manager._test_isStalledLiveActivityContentPush(
+                candidate: icyCandidate,
+                accepted: owned
+            ),
+            "Metadata-only lag is not a language/visual stall (no recreation)"
+        )
+        XCTAssertTrue(
+            manager._test_shouldTreatMetadataContentPushAsUncommittedApply(
+                candidate: icyCandidate,
+                accepted: owned
+            ),
+            "Matching language+visual with lagging streamMetadata is uncommitted apply"
+        )
+        XCTAssertFalse(
+            manager._test_shouldTreatMetadataContentPushAsUncommittedApply(
+                candidate: icyCandidate,
+                accepted: icyCandidate
+            ),
+            "Matching metadata is committed"
+        )
+        XCTAssertTrue(
+            manager._test_shouldFlushCoalescedContentPushAfterObservation(
+                coalesced: icyCandidate,
+                observed: owned
+            ),
+            "One coalesced metadata re-push is eligible when owned title still lags"
+        )
+        XCTAssertFalse(
+            manager._test_shouldFlushCoalescedContentPushAfterObservation(
+                coalesced: icyCandidate,
+                observed: icyCandidate
+            ),
+            "Matching metadata must not flush again"
+        )
+        XCTAssertTrue(
+            manager._test_shouldScheduleUncommittedMetadataFollowThrough(
+                metadataUncommitted: true,
+                alreadyFollowedThroughForThisMetadata: false
+            ),
+            "First uncommitted ICY apply may schedule one delayed re-push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldScheduleUncommittedMetadataFollowThrough(
+                metadataUncommitted: true,
+                alreadyFollowedThroughForThisMetadata: true
+            ),
+            "Do not loop a second metadata follow-through for the same title"
+        )
+        XCTAssertFalse(
+            manager._test_shouldScheduleUncommittedMetadataFollowThrough(
+                metadataUncommitted: false,
+                alreadyFollowedThroughForThisMetadata: false
+            ),
+            "Committed metadata apply must not schedule follow-through"
+        )
+
+        XCTAssertFalse(
+            manager._test_shouldConsumeLanguageEnsureAttempt(
+                ownedLanguageMatchesDestination: true,
+                inFlightContentPushUnconfirmed: false,
+                observationKind: .delayedReread,
+                ownedLanguageStillPrePush: false
+            ),
+            "Delayed re-read with matching language must not consume language-ensure budget"
+        )
+        XCTAssertNil(
+            manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
+                languageStillMismatches: false,
+                isRequestEligible: false,
+                destinationLanguage: "fi",
+                committedAttemptsExhausted: true
+            ),
+            "Matching language with lagging metadata must not enter language-ensure quiet"
+        )
+    }
+
     /// Ineligible Connecting must not spend an ActivityKit visual apply over committed
     /// ``.userPaused`` / ``.playing`` — same-stream resume **and** stream-switch hold
     /// after dest language has landed. Eligible switch still publishes Connecting.

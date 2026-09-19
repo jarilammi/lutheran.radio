@@ -743,11 +743,13 @@ struct WidgetSurfaceTests {
         #expect(resumed.currentLanguage == "fi")
     }
 
-    /// Language-only ContentState replace preserves control visual and program metadata.
+    /// Language-only ContentState replace preserves control visual and clears program metadata.
     ///
     /// Post-quiet language long-horizon after freeze must not force `.playing` into the
-    /// sparse slot; dest language rides the owned glyph.
-    @Test func contentStateReplacingCurrentLanguagePreservesVisualAndMetadata() {
+    /// sparse slot; dest language rides the owned glyph. Prior-stream ICY must not stay
+    /// under the new flag (same honesty as ``replacingStreamSwitchDestination``).
+    /// Same-language replace is a no-op. Visual-only flips still preserve metadata.
+    @Test func contentStateReplacingCurrentLanguagePreservesVisualAndClearsMetadata() {
         let metadata = StreamProgramMetadata(programTitle: "Psaltaren 34", speaker: "Lutheran Radio på svenska")
         let connecting = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: .prePlay,
@@ -756,9 +758,25 @@ struct WidgetSurfaceTests {
         )
         let dest = connecting.replacingCurrentLanguage("en")
         #expect(dest.visualState == .prePlay)
-        #expect(dest.streamMetadata == metadata)
+        #expect(dest.streamMetadata == nil)
         #expect(dest.currentLanguage == "en")
         #expect(dest != connecting)
+
+        let sameLanguage = dest.replacingCurrentLanguage("en")
+        #expect(sameLanguage.visualState == .prePlay)
+        #expect(sameLanguage.streamMetadata == nil)
+        #expect(sameLanguage.currentLanguage == "en")
+        #expect(sameLanguage == dest)
+
+        let pausedWithTitle = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .userPaused,
+            streamMetadata: metadata,
+            currentLanguage: "fi"
+        )
+        let sameLanguageKeepsTitle = pausedWithTitle.replacingCurrentLanguage("fi")
+        #expect(sameLanguageKeepsTitle.streamMetadata == metadata)
+        #expect(sameLanguageKeepsTitle.visualState == .userPaused)
+        #expect(sameLanguageKeepsTitle == pausedWithTitle)
     }
 
     /// Optimistic stream-switch ContentState advances language and clears prior program metadata.

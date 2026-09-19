@@ -689,8 +689,12 @@ actor SharedPlayerManager {
     ///
     /// Sticky-paused widget / in-app language switches must call this **before** engine
     /// ``switchToStream`` so concurrent ``saveCurrentState()`` and early media-surface pushes
-    /// cannot re-publish the prior language. Does **not** set ``holdPrePlayVisualUntilPlayback``
-    /// and does **not** apply `.prePlay` — paused chrome stays `.userPaused`.
+    /// cannot re-publish the prior language. In-process lock-screen / home chips also stamp
+    /// here **before** optimistic Live Activity push + ``ensureAuthoritativeLanguageContentIfNeeded()``
+    /// so ensure cannot reverse to the previous stream while ``selectedStream`` still names it.
+    /// Does **not** set ``holdPrePlayVisualUntilPlayback`` and does **not** apply `.prePlay` —
+    /// paused chrome stays `.userPaused`. Attaching chips still call
+    /// ``resetToPrePlayForNewStream(connectingLanguageCode:)`` once after the optimistic push.
     ///
     /// - Parameter languageCode: Destination stream language code (non-empty).
     /// - Postcondition: ``streamSwitchConnectingLanguageCode`` and the durable LA language mirror
@@ -698,6 +702,7 @@ actor SharedPlayerManager {
     /// - SeeAlso: ``clearStreamSwitchDestinationLanguageIfNotHolding()``,
     ///   ``liveActivityLanguageCodeForContentPush()``,
     ///   ``PersistedLanguageResolution/resolve``,
+    ///   ``WidgetIntentExecution/executeLiveActivityStreamSwitch(languageCode:)``,
     ///   ``RadioPlayerCoordinator`` stream-switch paused branches,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     func stampStreamSwitchDestinationLanguage(_ languageCode: String) {

@@ -42,7 +42,8 @@
 // ``ContentState/replacingStreamSwitchDestination(language:visualState:clearStreamMetadata:)``
 // so flag/name/“current” chrome advances before main-app attach drains.
 // Post-quiet language long-horizon after freeze publishes dest language via
-// ``ContentState/replacingCurrentLanguage(_:)`` so the owned glyph is preserved.
+// ``ContentState/replacingCurrentLanguage(_:)`` so the owned glyph is preserved;
+// a language change clears prior-stream program metadata.
 // When ActivityKit does not expose activities in the intent host, a durable App
 // Group mirror of the visual (and language) is used — see
 // ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState`` and
@@ -117,25 +118,31 @@ public struct LutheranRadioLiveActivityAttributes: ActivityAttributes {
             )
         }
 
-        /// Builds content with a new stream language while keeping control visual and
-        /// program metadata unchanged.
+        /// Builds content with a new stream language while keeping the control visual.
         ///
-        /// Post-quiet language long-horizon after freeze uses this so dest-language chrome
-        /// can still land as a same-visual update. Bundling `.playing` into that sparse
-        /// slot delays language and still fails the glyph. Stream-switch hold still uses
-        /// ``replacingStreamSwitchDestination(language:visualState:clearStreamMetadata:)``
-        /// (Connecting honesty). Does **not** invent `.playing`.
+        /// When `currentLanguage` **changes**, prior-stream program metadata is cleared
+        /// (same honesty as ``replacingStreamSwitchDestination(language:visualState:clearStreamMetadata:)``)
+        /// so a language-only dest apply cannot keep the previous title under the new flag.
+        /// Same-language replace is a no-op. Visual-only flips still use
+        /// ``replacingVisualState(_:)``, which preserves metadata (pause/play must keep
+        /// the current title). Post-quiet language long-horizon after freeze uses this so
+        /// dest-language chrome can still land as a same-visual update. Bundling `.playing`
+        /// into that sparse slot delays language and still fails the glyph. Stream-switch
+        /// hold still uses ``replacingStreamSwitchDestination(language:visualState:clearStreamMetadata:)``
+        /// (Connecting honesty). Does **not** invent `.playing`. Does **not** invent catalog
+        /// titles to fill empty ICY.
         ///
         /// - Parameter currentLanguage: Destination stream language code for language chrome.
-        /// - Returns: A new ``ContentState`` sharing this instance's ``visualState`` and
-        ///   ``streamMetadata``.
+        /// - Returns: `self` when the language is unchanged; otherwise a new ``ContentState``
+        ///   sharing this instance's ``visualState`` with ``streamMetadata`` cleared.
         /// - SeeAlso: ``replacingVisualState(_:)``,
         ///   ``replacingStreamSwitchDestination(language:visualState:clearStreamMetadata:)``,
         ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
         public func replacingCurrentLanguage(_ currentLanguage: String) -> ContentState {
-            ContentState(
+            guard currentLanguage != self.currentLanguage else { return self }
+            return ContentState(
                 visualState: visualState,
-                streamMetadata: streamMetadata,
+                streamMetadata: nil,
                 currentLanguage: currentLanguage
             )
         }

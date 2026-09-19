@@ -90,6 +90,15 @@ extension SharedPlayerManager {
         unsafe _test_lastDarwinNotifyAction = nil
     }
 
+    /// Destination language stamped for Live Activity / snapshot chrome, if any.
+    ///
+    /// - Returns: ``streamSwitchConnectingLanguageCode`` (Connecting hold or paused-path stamp).
+    /// - SeeAlso: ``stampStreamSwitchDestinationLanguage(_:)``,
+    ///   ``liveActivityLanguageCodeForContentPush()``.
+    func _test_streamSwitchConnectingLanguageCode() -> String? {
+        streamSwitchConnectingLanguageCode
+    }
+
     /// Unit-test seam: force or clear the play start pipeline for Connecting-cancel / idempotent-play gates.
     ///
     /// - Parameter active: When `true`, ``isConnectingPlayback`` is true until visual is `.playing`

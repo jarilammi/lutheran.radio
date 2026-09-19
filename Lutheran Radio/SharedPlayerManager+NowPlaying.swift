@@ -409,6 +409,8 @@ extension SharedPlayerManager {
     ///   `StreamProgramMetadata.from(rawICYMetadata:)`, ``persistStreamMetadataForWidgets()``,
     ///   ``persistHomeWidgetStreamMetadataMirror(_:)``,
     ///   ``restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()``,
+    ///   ``RadioLiveActivityManager/updateCurrentActivity()``,
+    ///   ``RadioLiveActivityManager/shouldTreatMetadataContentPushAsUncommittedApply(candidate:accepted:)``,
     ///   CODING_AGENT.md, docs/Event-Driven-Refactor-Roadmap.md (Tier 1 metadata emission),
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (ICY single-owner + home mirror).
     ///
@@ -424,6 +426,10 @@ extension SharedPlayerManager {
     ///   Privacy→write handoff re-stamps in-memory metadata when home widgets appear later
     ///   (``restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()``) because this
     ///   no-op would otherwise leave the privacy-gated App Group mirror empty forever.
+    ///   The Live Activity push is metadata-only when language and visual already match;
+    ///   ``RadioLiveActivityManager/updateCurrentActivity()`` may issue one delayed
+    ///   same-candidate re-push when owned `content.state.streamMetadata` still lags
+    ///   (not a metadata ensure rail; pause/play already carry the title as a passenger).
     func didUpdateStreamMetadata(_ metadata: String?) async {
         guard !isRunningInWidget() else { return }
         guard !WidgetRefreshManager.isSessionTeardownInProgress else { return }
@@ -442,7 +448,10 @@ extension SharedPlayerManager {
 
         // Event-driven LA update (decoupled in-memory path).
         // The comparison inside RadioLiveActivityManager ensures we only cross the
-        // ActivityKit boundary when title/speaker actually changed.
+        // ActivityKit boundary when title/speaker actually changed. Language + visual
+        // stall oracles can treat that ICY-only update as committed while the lock-screen
+        // card still shows the prior or empty title; ``updateCurrentActivity()`` then
+        // schedules one delayed same-candidate re-push (not a metadata ensure rail).
         await RadioLiveActivityManager.shared.updateCurrentActivity()
 
         await updateNowPlayingInfo()

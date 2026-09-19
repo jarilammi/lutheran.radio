@@ -772,6 +772,100 @@ final class WidgetIntentContractTests: XCTestCase {
         _ = coordinator
     }
 
+    /// Paused in-process chip stamps destination language before optimistic last-pushed.
+    ///
+    /// Protects: ``executeLiveActivityStreamSwitch`` used to publish optimistic ContentState
+    /// then call ``ensureAuthoritativeLanguageContentIfNeeded()`` while
+    /// ``liveActivityLanguageCodeForContentPush()`` still named the prior stream (actor
+    /// stamp happened later in ``executeInProcessStreamSwitch``). Language ensure then
+    /// reversed to the previous station. Dest must already be stamped when last-pushed
+    /// is recorded. Does **not** write Darwin. Does **not** invent `.playing`.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/executeLiveActivityStreamSwitch(languageCode:)``,
+    ///   ``SharedPlayerManager/stampStreamSwitchDestinationLanguage(_:)``,
+    ///   ``testInProcessStreamSwitchSyncsMainAppLanguageChromeWithoutPendingDarwin``.
+    @MainActor
+    func testInProcessChipSwitchStampsDestinationLanguageBeforeOptimisticLastPushed() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Catalog must include ≥2 streams")
+            return
+        }
+
+        let source = streams[0]
+        let target = streams[1]
+
+        await manager.setUserPaused()
+        await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: source)
+
+        XCTAssertNotEqual(
+            source.languageCode,
+            target.languageCode,
+            "Precondition: chip destination must differ from the selected stream"
+        )
+        XCTAssertEqual(
+            DirectStreamingPlayer.shared.selectedStream.languageCode,
+            source.languageCode
+        )
+
+        SharedPlayerManager._test_resetDarwinNotifyAccounting()
+        let switched = await WidgetIntentExecution.executeLiveActivityStreamSwitch(
+            languageCode: target.languageCode
+        )
+        XCTAssertTrue(switched)
+
+        assertNoPendingDarwinSwitchNote(manager: manager)
+        XCTAssertEqual(
+            RadioLiveActivityManager.shared.lastPushedContent?.currentLanguage,
+            target.languageCode,
+            "Optimistic last-pushed must record the chip destination"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.shared.languageForContentPushAtOptimisticStreamSwitch,
+            target.languageCode,
+            "Dest must already be stamped when optimistic last-pushed is recorded so language ensure cannot reverse to \(source.languageCode)"
+        )
+    }
+
+    /// Attaching in-process chip stamps destination language before optimistic last-pushed.
+    ///
+    /// Same dest-before-ensure contract as the paused chip; Connecting hold still lands
+    /// once in ``executeInProcessStreamSwitch`` (not a second
+    /// ``resetToPrePlayForNewStream``). Does **not** invent `.playing`.
+    ///
+    /// - SeeAlso: ``testInProcessChipSwitchStampsDestinationLanguageBeforeOptimisticLastPushed``.
+    @MainActor
+    func testInProcessChipSwitchWhileAttachingStampsDestinationLanguageBeforeOptimisticLastPushed() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Catalog must include ≥2 streams")
+            return
+        }
+
+        let source = streams[0]
+        let target = streams[1]
+
+        await manager.setUserIntentToPlay()
+        await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: source)
+
+        SharedPlayerManager._test_resetDarwinNotifyAccounting()
+        let switched = await WidgetIntentExecution.executeLiveActivityStreamSwitch(
+            languageCode: target.languageCode
+        )
+        XCTAssertTrue(switched)
+
+        assertNoPendingDarwinSwitchNote(manager: manager)
+        XCTAssertEqual(
+            RadioLiveActivityManager.shared.lastPushedContent?.currentLanguage,
+            target.languageCode
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.shared.languageForContentPushAtOptimisticStreamSwitch,
+            target.languageCode,
+            "Attaching chip must stamp dest before optimistic last-pushed / language ensure"
+        )
+    }
+
     /// Home-widget in-process chip switch is the same no-note path as Live Activity chips.
     ///
     /// Protects: ``SwitchStreamIntent`` hosted as ``AudioPlaybackIntent`` must not write
