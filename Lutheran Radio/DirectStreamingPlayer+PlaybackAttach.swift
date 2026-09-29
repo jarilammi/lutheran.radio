@@ -907,7 +907,9 @@ extension DirectStreamingPlayer {
     /// visual via ``RadioLiveActivityManager/pushSettledPlayingAcceptanceContentIfNeeded()``
     /// (plus soft playing ensure when quiet is not engaged) so soft-resume (or a no-op publish
     /// after an earlier setPlaying) cannot leave the lock-screen card on a prior stream language
-    /// or Connecting while audio is live.
+    /// or Connecting while audio is live. While the first ``.playing`` apply is unconfirmed and
+    /// owned visual is still ``.prePlay``, that reconcile is skipped. In-app chrome stays green.
+    /// The spaced long-horizon playing retry is the next Live Activity visual push.
     ///
     /// - Important: Never call from the start of ``SharedPlayerManager/play()`` or from
     ///   ``startPlayback(context:attachGeneration:)`` while still awaiting `isPlaybackLikelyToKeepUp`.
@@ -915,6 +917,7 @@ extension DirectStreamingPlayer {
     ///   ``RadioLiveActivityManager/pushSettledLanguageAcceptanceContentIfNeeded()``,
     ///   ``RadioLiveActivityManager/pushSettledPlayingAcceptanceContentIfNeeded()``,
     ///   ``RadioLiveActivityManager/ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   ``RadioLiveActivityManager/shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(inFlightVisual:ownedVisual:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (connecting chrome vs audible start),
     ///   ``MediaTransportLatencyTimeline`` (DEBUG first-audio milestone).
     @MainActor
@@ -931,6 +934,23 @@ extension DirectStreamingPlayer {
         }
         let visual = await SharedPlayerManager.shared.currentVisualState
         guard visual != .playing else {
+            // In-app chrome is already green. Do not publish a second Live Activity
+            // visual push while the first .playing apply is unconfirmed and the owned
+            // card is still Connecting. The spaced long-horizon retry is that push
+            // after the observation clears in-flight.
+            if RadioLiveActivityManager.shared.shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush() {
+                #if DEBUG
+                print(
+                    "[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded skipped " +
+                    "duplicate Live Activity playing push — unconfirmed Connecting apply"
+                )
+                MediaTransportLatencyTimeline.mark(
+                    .authoritativePlayingSkipped,
+                    detail: "reason=unconfirmedPlayingApply"
+                )
+                #endif
+                return
+            }
             #if DEBUG
             print("[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded no-op — already .playing")
             MediaTransportLatencyTimeline.mark(
@@ -943,6 +963,7 @@ extension DirectStreamingPlayer {
             // hold clear; consume-once while ineligible; delayed language soft ensure if still
             // lagging) so owned ContentState language/visual cannot stick on a prior stream /
             // `.prePlay` while audio continues — without end+request or soft-resume thrash.
+            // Skipped above while the first playing apply is still unconfirmed.
             await RadioLiveActivityManager.shared.pushSettledLanguageAcceptanceContentIfNeeded()
             await RadioLiveActivityManager.shared.pushSettledPlayingAcceptanceContentIfNeeded()
             await RadioLiveActivityManager.shared.ensureAuthoritativePlayingContentIfNeeded()

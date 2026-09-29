@@ -78,13 +78,21 @@ import WidgetSurface
 /// can still land). While ``inFlightContentPushCandidate`` is non-nil, a candidate
 /// whose visual differs — or a duplicate unconfirmed visual — is remembered as
 /// ``pendingCoalescedContentPushCandidate`` (replace, do not queue) and does **not**
-/// call `Activity.update`. After delayed re-read, `contentUpdates`, or an immediate
-/// post-await match, if the coalesced candidate still differs from observed, push
-/// **once**. Pause (``.userPaused``) replacing playing-ensure in-flight is a true
-/// visual mutation: latest wins so pause remains the outstanding candidate. Language-only
-/// candidates (visual matches in-flight **and** owned visual) still update. Soft-ensure
-/// attempt counters still bound the loop; this is IPC coalesce, not a new ensure rail.
-/// Does **not** invent `.playing`. Does **not** end while ineligible.
+/// call `Activity.update`. A later ``.playing`` candidate while that in-flight visual
+/// is ``.playing`` and owned visual is still ``.prePlay`` is the same Connecting→playing
+/// pair: remember it, do not call `Activity.update` again. Pause (``.userPaused``) is
+/// a different visual and is **not** held behind that unconfirmed playing apply.
+/// Language-only candidates (visual matches in-flight **and** owned visual) still update.
+/// When a delayed re-read or `contentUpdates` yield still shows ``.prePlay`` for that
+/// playing candidate, clear the in-flight playing candidate and do **not** flush another
+/// identical ``.playing`` update. That immediate flush is the burst ActivityKit does not
+/// accept. The existing post-quiet long-horizon playing retry can then call
+/// `Activity.update` once per retry, because the observation closed the apply.
+/// ``publishAuthoritativePlayingIfNeeded()`` does not publish a second Live Activity
+/// visual push while that first playing apply is unconfirmed. In-app playing chrome
+/// may still update. Soft-ensure attempt counters still bound the loop; this is IPC
+/// coalesce, not a new ensure rail. Does **not** invent `.playing`. Does **not** end
+/// while ineligible.
 ///
 /// ## Explicit Play after hard teardown while ineligible
 /// Optimistic Live Activity ``.playing`` is only for a retained same-stream soft-resume
@@ -521,6 +529,21 @@ class RadioLiveActivityManager: ObservableObject {
     /// ``streamMetadata`` of the ICY candidate that already received one follow-through.
     /// A later distinct ICY title may schedule one follow-through again.
     private var uncommittedMetadataFollowThroughMetadata: StreamProgramMetadata?
+
+    /// Language, visual, and title of the last metadata-only `Activity.update` submitted
+    /// while those axes already equaled owned content.
+    ///
+    /// Further status callbacks for that same tuple must not call `Activity.update`
+    /// again. This is the title we submitted, not a claim that ActivityKit accepted it:
+    /// ``suppressMemoryAfterActivityUpdate(candidate:acceptedSystemContent:)`` still stores
+    /// system-held content, so ``lastPushedContent`` can keep the previous title.
+    /// A visual or language change still pushes. Cleared with the follow-through latch
+    /// on optimistic mutation, ownership end, or when owned metadata matches.
+    /// - SeeAlso: ``shouldSuppressDuplicateImmediateMetadataOnlyContentPush(candidateLanguage:candidateVisual:candidateMetadata:ownedLanguage:ownedVisual:submittedLanguage:submittedVisual:submittedMetadata:isDelayedMetadataFollowThrough:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    private var submittedImmediateMetadataOnlyLanguage: String?
+    private var submittedImmediateMetadataOnlyVisual: PlayerVisualState?
+    private var submittedImmediateMetadataOnlyMetadata: StreamProgramMetadata?
 
     /// True while ``updateCurrentActivity()`` is inside `await Activity.update` (and the
     /// immediate post-await bookkeeping). Flush of a coalesced candidate waits until this
@@ -1509,17 +1532,26 @@ class RadioLiveActivityManager: ObservableObject {
     /// **One outstanding visual mutation:** While ``inFlightContentPushCandidate`` is
     /// unconfirmed, ``shouldCoalesceVisualDifferingContentPushWhileInFlight`` skips a second
     /// visual-differing `Activity.update` and remembers ``pendingCoalescedContentPushCandidate``
-    /// (latest wins, including pause replacing playing-ensure). Language-only same-visual
-    /// candidates still update. After committed observation, ``flushCoalescedContentPushIfNeeded``
-    /// pushes once when the coalesced candidate still differs from observed.
+    /// (latest wins). A later ``.playing`` candidate while in-flight is ``.playing`` and
+    /// owned visual is still ``.prePlay`` is remembered and not pushed again. Pause
+    /// (``.userPaused``) is not held behind that unconfirmed playing apply. Language-only
+    /// same-visual candidates still update. After a committed observation that still shows
+    /// ``.prePlay`` for that playing candidate, clear in-flight and do not flush another
+    /// identical ``.playing`` update. The post-quiet long-horizon playing retry is the
+    /// next `Activity.update` for that pair. Other coalesced candidates still flush once
+    /// when they differ from observed.
     ///
     /// **ICY-only follow-through:** ``didUpdateStreamMetadata`` already issues
     /// ``updateCurrentActivity()``. Stall oracles compare language + visual, so an ICY
     /// update whose owned ``streamMetadata`` still lags looks committed. When language
     /// and visual already match, ``shouldTreatMetadataContentPushAsUncommittedApply``
     /// schedules **one** delayed same-candidate re-push via in-flight confirmation /
-    /// coalesced flush. Do not add a metadata ensure rail. Do not flip visual to force
-    /// Apple apply. Pause/play still preserve metadata via ``replacingVisualState(_:)``.
+    /// coalesced flush. After that first metadata-only `Activity.update` for a title,
+    /// further status callbacks with the same language, visual, and title do not call
+    /// `Activity.update` again. The latch stores the submitted title, not acceptance.
+    /// Do not add a metadata ensure rail. Do not flip visual to force Apple apply.
+    /// A visual or language change still pushes and may carry the current title.
+    /// Pause/play still preserve metadata via ``replacingVisualState(_:)``.
     ///
     /// **Stalled system-held chrome recreation:** When a **committed** stall streak of
     /// language (or non-handshake visual) mismatch remains, recreation is considered.
@@ -1536,6 +1568,10 @@ class RadioLiveActivityManager: ObservableObject {
     ///     on this freeze path. Independently, ineligible dest-language mutations over a
     ///     committed pause/play glyph also preserve owned visual (including during hold).
     ///     Durable App Group mirrors still warm actor visual + dest language.
+    ///   - isDelayedMetadataFollowThrough: When `true`, this call is the single delayed
+    ///     same-candidate re-push after an uncommitted metadata-only apply. It bypasses
+    ///     ``shouldSuppressDuplicateImmediateMetadataOnlyContentPush`` so that follow-through
+    ///     still runs. Status callbacks pass `false`.
     /// - Precondition: Must be called on the main actor (the method is `@MainActor`).
     /// - Postcondition: If an update is sent, `lastPushedContent` reflects the
     ///   system-observed `content.state` after the await. Durable visual + language App Group
@@ -1559,6 +1595,8 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ``shouldPreserveOwnedVisualOnIneligibleLanguageMutation(isRequestEligible:destinationLanguage:ownedLanguage:ownedVisual:)``,
     ///   ``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(isRequestEligible:freezeSoftBudgetExhausted:ownedVisual:candidateVisual:)``,
     ///   ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:languageOnlyPreservingOwnedVisual:)``,
+    ///   ``shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(observationKind:candidateVisual:observedVisual:)``,
+    ///   ``shouldSuppressDuplicateImmediateMetadataOnlyContentPush(candidateLanguage:candidateVisual:candidateMetadata:ownedLanguage:ownedVisual:submittedLanguage:submittedVisual:submittedMetadata:isDelayedMetadataFollowThrough:)``,
     ///   ``shouldKeepOwnedVisualOnPostQuietLanguageLongHorizon(freezeSoftBudgetExhausted:playingQuietPending:isRequestEligible:)``,
     ///   ``isRunningUnderTest``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
@@ -1567,7 +1605,10 @@ class RadioLiveActivityManager: ObservableObject {
     ///   docs/cold-launch-streamplay-regression-checklist.md (§6),
     ///   RadioLiveActivityManagerTests
     @MainActor
-    func updateCurrentActivity(preservingOwnedVisual: Bool = false) async {
+    func updateCurrentActivity(
+        preservingOwnedVisual: Bool = false,
+        isDelayedMetadataFollowThrough: Bool = false
+    ) async {
         // Defense-in-depth UI test isolation (SSOT). Even if a stale currentActivity reference
         // existed, we must not call Activity.update during test runs.
         if SharedPlayerManager.isRunningInUITestMode {
@@ -1850,9 +1891,34 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
+        // Same language, visual, and title already submitted as a metadata-only update.
+        // Suppress memory still holds system content, so a later status callback would
+        // otherwise look new. The delayed follow-through passes the bypass flag.
+        // A visual or language change does not take this return.
+        if Self.shouldSuppressDuplicateImmediateMetadataOnlyContentPush(
+            candidateLanguage: candidate.currentLanguage,
+            candidateVisual: candidate.visualState,
+            candidateMetadata: candidate.streamMetadata,
+            ownedLanguage: ownedLanguage,
+            ownedVisual: ownedVisual,
+            submittedLanguage: submittedImmediateMetadataOnlyLanguage,
+            submittedVisual: submittedImmediateMetadataOnlyVisual,
+            submittedMetadata: submittedImmediateMetadataOnlyMetadata,
+            isDelayedMetadataFollowThrough: isDelayedMetadataFollowThrough
+        ) {
+            #if DEBUG
+            print(
+                "🔴 Live Activity metadata-only push suppressed (same title already submitted; " +
+                "language and visual unchanged; delayed follow-through still allowed once)"
+            )
+            #endif
+            return
+        }
+
         // One outstanding visual mutation: while an Activity.update apply is unconfirmed,
-        // do not issue a second visual-differing IPC. Remember the latest candidate
-        // (pause replaces playing-ensure). Language-only same-visual still updates.
+        // do not issue a second visual-differing IPC. Remember the latest candidate.
+        // Pause is not held behind an unconfirmed playing apply over owned Connecting.
+        // Language-only same-visual still updates.
         if Self.shouldCoalesceVisualDifferingContentPushWhileInFlight(
             inFlightVisual: inFlightContentPushCandidate?.visualState,
             candidateVisual: candidate.visualState,
@@ -1887,6 +1953,26 @@ class RadioLiveActivityManager: ObservableObject {
         // SDK; capture a local strong reference on the main actor, then read content/id only
         // under explicit `unsafe` (same capture pattern as end paths).
         nonisolated(unsafe) let safeActivity = activity
+        // Record the submitted title before the await so a re-entrant status callback
+        // during this update does not issue another immediate metadata-only push.
+        // Not acceptance: suppress memory below still stores system-held content.
+        if Self.shouldRecordImmediateMetadataOnlySubmission(
+            candidateLanguage: candidate.currentLanguage,
+            candidateVisual: candidate.visualState,
+            candidateMetadata: candidate.streamMetadata,
+            ownedLanguage: ownedLanguage,
+            ownedVisual: ownedVisual,
+            ownedMetadata: activity.content.state.streamMetadata
+        ) {
+            submittedImmediateMetadataOnlyLanguage = candidate.currentLanguage
+            submittedImmediateMetadataOnlyVisual = candidate.visualState
+            submittedImmediateMetadataOnlyMetadata = candidate.streamMetadata
+        }
+        // Pause is not held behind an unconfirmed playing apply. Drop a remembered
+        // playing candidate so the later observation does not flush playing over pause.
+        if candidate.visualState == .userPaused {
+            pendingCoalescedContentPushCandidate = nil
+        }
         // Mark in-flight before the await so MainActor re-entry (playing ensure / dual-axis
         // during this suspension) coalesces instead of issuing a second visual IPC.
         inFlightContentPushCandidate = candidate
@@ -2145,6 +2231,9 @@ class RadioLiveActivityManager: ObservableObject {
     private func clearUncommittedMetadataFollowThrough() {
         uncommittedMetadataFollowThroughIssued = false
         uncommittedMetadataFollowThroughMetadata = nil
+        submittedImmediateMetadataOnlyLanguage = nil
+        submittedImmediateMetadataOnlyVisual = nil
+        submittedImmediateMetadataOnlyMetadata = nil
     }
 
     /// Whether this ICY title already received one delayed same-candidate re-push.
@@ -2181,15 +2270,22 @@ class RadioLiveActivityManager: ObservableObject {
     ) async {
         guard inFlightContentPushCandidate == nil else { return }
         guard !isAwaitingLiveActivityContentPushApply else { return }
+        let coalesced = pendingCoalescedContentPushCandidate
+        let metadataFollowThrough = coalesced.map {
+            Self.shouldTreatMetadataContentPushAsUncommittedApply(
+                candidate: $0,
+                accepted: observed
+            )
+        } ?? false
         guard Self.shouldFlushCoalescedContentPushAfterObservation(
-            coalesced: pendingCoalescedContentPushCandidate,
+            coalesced: coalesced,
             observed: observed
         ) else {
             pendingCoalescedContentPushCandidate = nil
             return
         }
         pendingCoalescedContentPushCandidate = nil
-        await updateCurrentActivity()
+        await updateCurrentActivity(isDelayedMetadataFollowThrough: metadataFollowThrough)
     }
 
     /// End+request or deferred pending ensure after a **committed** stall observation.
@@ -2365,10 +2461,18 @@ class RadioLiveActivityManager: ObservableObject {
                 isStreamSwitchHoldActive: hold,
                 isConnectingPlayback: connecting
             )
-            // Apply is committed: clear in-flight, flush the latest coalesced visual once,
-            // then axis-heal (heal may re-arm playing ensure; coalesce will hold further IPC).
+            // Apply is committed: clear in-flight. A playing candidate whose re-read is
+            // still Connecting must not flush another identical playing update. Pause
+            // and other differing candidates still flush once. Then axis-heal.
             self.inFlightContentPushConfirmationTask = nil
             self.inFlightContentPushCandidate = nil
+            if Self.shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
+                observationKind: .delayedReread,
+                candidateVisual: candidate.visualState,
+                observedVisual: observed.visualState
+            ), self.pendingCoalescedContentPushCandidate?.visualState == .playing {
+                self.pendingCoalescedContentPushCandidate = nil
+            }
             await self.flushCoalescedContentPushIfNeeded(observed: observed)
             if Self.shouldApplySystemContentUpdateHealAfterObservation(kind: .delayedReread) {
                 await self.applySystemContentUpdateHeal(
@@ -2762,13 +2866,16 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// One outstanding visual mutation: while apply is unconfirmed, later visual-differing
     /// candidates (and duplicate unconfirmed visuals such as playing-ensure 2/3) are
-    /// remembered and do not call `Activity.update`. Pause (``.userPaused``) replacing
-    /// playing-ensure in-flight coalesces — latest wins so pause is the outstanding
-    /// candidate after commit. Language-only candidates (candidate visual equals in-flight
-    /// visual **and** owned visual) still update — those applies still land under lock.
-    /// After freeze, language-only preserving owned visual also still updates even when
-    /// in-flight visual differs (playing-ensure in-flight vs owned Connecting): same-visual
-    /// language is the apply that still lands; do not bury it behind a visual coalesced flush.
+    /// remembered and do not call `Activity.update`. A later ``.playing`` candidate while
+    /// in-flight is ``.playing`` and owned visual is still ``.prePlay`` is that duplicate.
+    /// Pause (``.userPaused``) is not held behind that unconfirmed playing apply — it is
+    /// a different visual and must still call `Activity.update`. Pause behind a different
+    /// in-flight visual still coalesces so the latest candidate is the outstanding flush.
+    /// Language-only candidates (candidate visual equals in-flight visual **and** owned
+    /// visual) still update — those applies still land under lock. After freeze,
+    /// language-only preserving owned visual also still updates even when in-flight visual
+    /// differs (playing-ensure in-flight vs owned Connecting): same-visual language is the
+    /// apply that still lands; do not bury it behind a visual coalesced flush.
     ///
     /// - Parameters:
     ///   - inFlightVisual: Visual of ``inFlightContentPushCandidate``; `nil` when no apply
@@ -2778,7 +2885,8 @@ class RadioLiveActivityManager: ObservableObject {
     ///   - languageOnlyPreservingOwnedVisual: ``shouldPreserveOwnedVisualOnLanguageOnlyContentPush(keepOwnedVisualAfterFreeze:isStreamSwitchHoldActive:)``
     ///     decided this candidate keeps the owned glyph.
     /// - Returns: `true` when IPC must be skipped and the caller should remember the latest
-    ///   candidate.
+    ///   candidate. `false` for pause while an unconfirmed ``.playing`` apply still shows
+    ///   owned ``.prePlay``, and whenever nothing is in flight.
     /// - SeeAlso: ``updateCurrentActivity()``,
     ///   ``shouldFlushCoalescedContentPushAfterObservation(coalesced:observed:)``,
     ///   ``flushCoalescedContentPushIfNeeded(observed:)``,
@@ -2797,6 +2905,12 @@ class RadioLiveActivityManager: ObservableObject {
         if candidateVisual == inFlightVisual, ownedVisual == candidateVisual {
             return false
         }
+        // Unconfirmed Connecting → playing: remember another .playing, but let pause through.
+        if inFlightVisual == .playing,
+           ownedVisual == .prePlay,
+           candidateVisual == .userPaused {
+            return false
+        }
         return true
     }
 
@@ -2804,16 +2918,23 @@ class RadioLiveActivityManager: ObservableObject {
     /// the in-flight apply is committed.
     ///
     /// Flushes when language, visual, **or** program metadata still disagrees with
-    /// observed. Metadata-only lag is not a language/visual stall (no recreation) and
-    /// is not a new ensure rail — it is the one delayed same-candidate re-push after
-    /// an ICY `Activity.update` Apple did not apply. Rebuild on flush uses current
+    /// observed, except an identical ``.playing`` candidate whose observed visual is
+    /// still ``.prePlay``. That pair is
+    /// ``shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush``: the
+    /// committed observation already closed the apply, and an immediate flush is the
+    /// burst ActivityKit does not accept. The spaced long-horizon playing retry is
+    /// the next push. Metadata-only lag is not a language/visual stall (no recreation)
+    /// and is not a new ensure rail — it is the one delayed same-candidate re-push
+    /// after an ICY `Activity.update` Apple did not apply. Rebuild on flush uses current
     /// actor SSOT (latest pause/play / ICY wins). Does **not** flip visual to force apply.
     ///
     /// - Parameters:
     ///   - coalesced: ``pendingCoalescedContentPushCandidate``.
     ///   - observed: Committed system-held `content.state`.
-    /// - Returns: `true` when language, visual, or stream metadata still disagrees.
+    /// - Returns: `true` when language, visual, or stream metadata still disagrees,
+    ///   and the candidate is not an identical ``.playing`` update over observed ``.prePlay``.
     /// - SeeAlso: ``flushCoalescedContentPushIfNeeded(observed:)``,
+    ///   ``shouldSkipImmediateIdenticalPlayingFlush(coalescedVisual:observedVisual:)``,
     ///   ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:)``,
     ///   ``shouldTreatMetadataContentPushAsUncommittedApply(candidate:accepted:)``.
     static func shouldFlushCoalescedContentPushAfterObservation(
@@ -2821,11 +2942,179 @@ class RadioLiveActivityManager: ObservableObject {
         observed: LutheranRadioLiveActivityAttributes.ContentState
     ) -> Bool {
         guard let coalesced else { return false }
+        if shouldSkipImmediateIdenticalPlayingFlush(
+            coalescedVisual: coalesced.visualState,
+            observedVisual: observed.visualState
+        ) {
+            return false
+        }
         if coalesced.visualState != observed.visualState
             || coalesced.currentLanguage != observed.currentLanguage {
             return true
         }
         return coalesced.streamMetadata != observed.streamMetadata
+    }
+
+    /// Whether a committed observation of ``.playing`` that still shows ``.prePlay``
+    /// must clear the in-flight playing candidate and must not schedule an immediate
+    /// identical playing flush.
+    ///
+    /// Immediate post-await `content.state` is not this observation. Delayed re-read
+    /// and `contentUpdates` are. Clearing in-flight lets the existing post-quiet
+    /// long-horizon playing retry call `Activity.update` once per retry instead of
+    /// coalescing against an apply the observation already closed.
+    ///
+    /// - Parameters:
+    ///   - observationKind: When the system-held visual was read.
+    ///   - candidateVisual: Visual submitted on the in-flight `Activity.update`.
+    ///   - observedVisual: System-held visual at that observation.
+    /// - Returns: `true` when in-flight playing must be cleared and the identical
+    ///   playing flush must not run.
+    /// - SeeAlso: ``shouldSkipImmediateIdenticalPlayingFlush(coalescedVisual:observedVisual:)``,
+    ///   ``shouldFlushCoalescedContentPushAfterObservation(coalesced:observed:)``,
+    ///   ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:languageOnlyPreservingOwnedVisual:)``,
+    ///   ``scheduleInFlightContentPushConfirmation(candidate:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
+        observationKind: LiveActivityContentPushObservationKind,
+        candidateVisual: PlayerVisualState,
+        observedVisual: PlayerVisualState
+    ) -> Bool {
+        guard observationKind != .immediatePostAwait else { return false }
+        return shouldSkipImmediateIdenticalPlayingFlush(
+            coalescedVisual: candidateVisual,
+            observedVisual: observedVisual
+        )
+    }
+
+    /// Whether a remembered ``.playing`` candidate must not be flushed while observed
+    /// visual is still Connecting.
+    ///
+    /// - Parameters:
+    ///   - coalescedVisual: Visual of ``pendingCoalescedContentPushCandidate``.
+    ///   - observedVisual: System-held visual after a committed observation.
+    /// - Returns: `true` when the flush would be another identical Connecting→playing push.
+    /// - SeeAlso: ``shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(observationKind:candidateVisual:observedVisual:)``,
+    ///   ``shouldFlushCoalescedContentPushAfterObservation(coalesced:observed:)``.
+    static func shouldSkipImmediateIdenticalPlayingFlush(
+        coalescedVisual: PlayerVisualState,
+        observedVisual: PlayerVisualState
+    ) -> Bool {
+        coalescedVisual == .playing && observedVisual == .prePlay
+    }
+
+    /// Whether ``publishAuthoritativePlayingIfNeeded()`` must skip a second Live Activity
+    /// visual push while the first ``.playing`` apply is unconfirmed and owned visual is
+    /// still Connecting.
+    ///
+    /// In-app chrome may already be ``.playing``. This gate does not change that. It
+    /// only withholds another `Activity.update` for the same visual pair until the
+    /// in-flight apply is cleared. After a committed observation clears in-flight, the
+    /// spaced long-horizon playing retry is the push that runs.
+    ///
+    /// - Parameters:
+    ///   - inFlightVisual: Visual of ``inFlightContentPushCandidate``, if any.
+    ///   - ownedVisual: Owned `content.state.visualState`, if any.
+    /// - Returns: `true` when the duplicate playing push must be skipped.
+    /// - SeeAlso: ``publishAuthoritativePlayingIfNeeded()``,
+    ///   ``shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:languageOnlyPreservingOwnedVisual:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(
+        inFlightVisual: PlayerVisualState?,
+        ownedVisual: PlayerVisualState?
+    ) -> Bool {
+        inFlightVisual == .playing && ownedVisual == .prePlay
+    }
+
+    /// Instance gate for ``DirectStreamingPlayer/publishAuthoritativePlayingIfNeeded()``.
+    ///
+    /// - Returns: ``shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(inFlightVisual:ownedVisual:)``
+    ///   for the current in-flight candidate and owned surface.
+    /// - SeeAlso: ``shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(inFlightVisual:ownedVisual:)``.
+    func shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush() -> Bool {
+        Self.shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(
+            inFlightVisual: inFlightContentPushCandidate?.visualState,
+            ownedVisual: currentActivity?.content.state.visualState
+        )
+    }
+
+    /// Whether this status callback is a repeat metadata-only push for a title we
+    /// already submitted with the same language and visual.
+    ///
+    /// The first metadata-only `Activity.update` for a title is allowed, including on
+    /// a paused card. Further callbacks for that same tuple are not. A different visual
+    /// or language returns `false` so that push still runs and may carry the title.
+    /// The delayed follow-through passes `isDelayedMetadataFollowThrough` so the single
+    /// re-push is not suppressed. Does not store acceptance: the submitted tuple is
+    /// what we sent, and suppress memory still stores system-held content.
+    ///
+    /// - Parameters:
+    ///   - candidateLanguage: Language on the candidate.
+    ///   - candidateVisual: Visual on the candidate.
+    ///   - candidateMetadata: Program metadata on the candidate.
+    ///   - ownedLanguage: Owned `content.state.currentLanguage`.
+    ///   - ownedVisual: Owned `content.state.visualState`.
+    ///   - submittedLanguage: Language of the last metadata-only submission, if any.
+    ///   - submittedVisual: Visual of that submission, if any.
+    ///   - submittedMetadata: Title of that submission, if any.
+    ///   - isDelayedMetadataFollowThrough: The single delayed same-candidate re-push.
+    /// - Returns: `true` when this immediate push must be skipped.
+    /// - SeeAlso: ``shouldRecordImmediateMetadataOnlySubmission(candidateLanguage:candidateVisual:candidateMetadata:ownedLanguage:ownedVisual:ownedMetadata:)``,
+    ///   ``shouldScheduleUncommittedMetadataFollowThrough(metadataUncommitted:alreadyFollowedThroughForThisMetadata:)``,
+    ///   ``updateCurrentActivity(preservingOwnedVisual:isDelayedMetadataFollowThrough:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldSuppressDuplicateImmediateMetadataOnlyContentPush(
+        candidateLanguage: String,
+        candidateVisual: PlayerVisualState,
+        candidateMetadata: StreamProgramMetadata?,
+        ownedLanguage: String,
+        ownedVisual: PlayerVisualState,
+        submittedLanguage: String?,
+        submittedVisual: PlayerVisualState?,
+        submittedMetadata: StreamProgramMetadata?,
+        isDelayedMetadataFollowThrough: Bool
+    ) -> Bool {
+        if isDelayedMetadataFollowThrough { return false }
+        guard candidateLanguage == ownedLanguage else { return false }
+        guard candidateVisual == ownedVisual else { return false }
+        guard let candidateMetadata,
+              let submittedLanguage,
+              let submittedVisual,
+              let submittedMetadata else {
+            return false
+        }
+        return candidateLanguage == submittedLanguage
+            && candidateVisual == submittedVisual
+            && candidateMetadata == submittedMetadata
+    }
+
+    /// Whether this `Activity.update` is the metadata-only submission to remember.
+    ///
+    /// Language and visual already equal owned, and program metadata differs. Remember
+    /// the submitted title so the next status callback for that tuple does not push
+    /// again. Does not mean ActivityKit accepted the title.
+    ///
+    /// - Parameters:
+    ///   - candidateLanguage: Language submitted.
+    ///   - candidateVisual: Visual submitted.
+    ///   - candidateMetadata: Program metadata submitted.
+    ///   - ownedLanguage: Owned language before the update.
+    ///   - ownedVisual: Owned visual before the update.
+    ///   - ownedMetadata: Owned program metadata before the update.
+    /// - Returns: `true` when the submitted metadata-only tuple should be stored.
+    /// - SeeAlso: ``shouldSuppressDuplicateImmediateMetadataOnlyContentPush(candidateLanguage:candidateVisual:candidateMetadata:ownedLanguage:ownedVisual:submittedLanguage:submittedVisual:submittedMetadata:isDelayedMetadataFollowThrough:)``.
+    static func shouldRecordImmediateMetadataOnlySubmission(
+        candidateLanguage: String,
+        candidateVisual: PlayerVisualState,
+        candidateMetadata: StreamProgramMetadata?,
+        ownedLanguage: String,
+        ownedVisual: PlayerVisualState,
+        ownedMetadata: StreamProgramMetadata?
+    ) -> Bool {
+        guard candidateLanguage == ownedLanguage else { return false }
+        guard candidateVisual == ownedVisual else { return false }
+        guard let candidateMetadata else { return false }
+        return candidateMetadata != ownedMetadata
     }
 
     /// Whether an ICY-bearing `Activity.update` is uncommitted apply.
@@ -6229,6 +6518,34 @@ class RadioLiveActivityManager: ObservableObject {
         schedulePostQuietLongHorizonDualAxisEnsure()
     }
 
+    /// Drops a ``.playing`` apply a committed observation already closed, so the spaced
+    /// playing retry can call `Activity.update`.
+    ///
+    /// No-op while an apply await or confirmation task is still outstanding — that
+    /// unconfirmed update must stay the one outstanding visual mutation. Does not end
+    /// the activity. Does not invent `.playing`.
+    ///
+    /// - SeeAlso: ``shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(observationKind:candidateVisual:observedVisual:)``,
+    ///   ``schedulePostQuietLongHorizonPlayingEnsure()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    private func clearClosedUnconfirmedPlayingApplyBeforeLongHorizonRetry() {
+        guard !isAwaitingLiveActivityContentPushApply else { return }
+        guard inFlightContentPushConfirmationTask == nil else { return }
+        guard let inFlight = inFlightContentPushCandidate else { return }
+        guard let ownedVisual = currentActivity?.content.state.visualState else { return }
+        guard let kind = lastContentPushObservationKind else { return }
+        guard Self.shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
+            observationKind: kind,
+            candidateVisual: inFlight.visualState,
+            observedVisual: ownedVisual
+        ) else { return }
+        inFlightContentPushCandidate = nil
+        if pendingCoalescedContentPushCandidate?.visualState == .playing {
+            pendingCoalescedContentPushCandidate = nil
+        }
+    }
+
     /// Schedules sparse delayed playing soft-ensure fires after quiet / settle still lags.
     ///
     /// Each fire clears playing quiet once, optionally dual-axis language quiet when both lag,
@@ -6312,6 +6629,8 @@ class RadioLiveActivityManager: ObservableObject {
                 )
                 // Both axes lag → one dual-axis co-push before freeze (not language then playing).
                 // After freeze, playing long-horizon stays the visual rail.
+                // A committed prePlay observation must not leave this retry coalesced.
+                self.clearClosedUnconfirmedPlayingApplyBeforeLongHorizonRetry()
                 if Self.shouldRunPostQuietLongHorizonDualAxisEnsure(
                     languageStillLags: languageLags,
                     visualStillLags: visualLags,
@@ -6360,6 +6679,7 @@ class RadioLiveActivityManager: ObservableObject {
                 )
                 #endif
 
+                self.clearClosedUnconfirmedPlayingApplyBeforeLongHorizonRetry()
                 await self.ensureAuthoritativePlayingContentIfNeeded()
 
                 let accepted = self.currentActivity?.content.state.visualState
@@ -8609,7 +8929,17 @@ class RadioLiveActivityManager: ObservableObject {
                     isConnectingPlayback: connecting
                 )
             }
-            // Apply committed via contentUpdates: flush coalesced visual once, then axis-heal.
+            // Apply committed via contentUpdates. Playing over a yield that is still
+            // Connecting must not flush another identical playing update.
+            if let inFlightCandidate,
+               Self.shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
+                   observationKind: .contentUpdates,
+                   candidateVisual: inFlightCandidate.visualState,
+                   observedVisual: content.state.visualState
+               ),
+               self.pendingCoalescedContentPushCandidate?.visualState == .playing {
+                self.pendingCoalescedContentPushCandidate = nil
+            }
             await self.flushCoalescedContentPushIfNeeded(observed: content.state)
             if Self.shouldApplySystemContentUpdateHealAfterObservation(kind: .contentUpdates) {
                 await self.applySystemContentUpdateHeal(
@@ -10031,6 +10361,56 @@ class RadioLiveActivityManager: ObservableObject {
         Self.shouldFlushCoalescedContentPushAfterObservation(
             coalesced: coalesced,
             observed: observed
+        )
+    }
+
+    /// White-box seam: committed prePlay observation clears in-flight playing and
+    /// does not schedule an immediate identical playing flush.
+    func _test_shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
+        observationKind: LiveActivityContentPushObservationKind,
+        candidateVisual: PlayerVisualState,
+        observedVisual: PlayerVisualState
+    ) -> Bool {
+        Self.shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
+            observationKind: observationKind,
+            candidateVisual: candidateVisual,
+            observedVisual: observedVisual
+        )
+    }
+
+    /// White-box seam: second Live Activity playing push while the first apply is unconfirmed.
+    func _test_shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(
+        inFlightVisual: PlayerVisualState?,
+        ownedVisual: PlayerVisualState?
+    ) -> Bool {
+        Self.shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(
+            inFlightVisual: inFlightVisual,
+            ownedVisual: ownedVisual
+        )
+    }
+
+    /// White-box seam: repeat metadata-only push for a title already submitted.
+    func _test_shouldSuppressDuplicateImmediateMetadataOnlyContentPush(
+        candidateLanguage: String,
+        candidateVisual: PlayerVisualState,
+        candidateMetadata: StreamProgramMetadata?,
+        ownedLanguage: String,
+        ownedVisual: PlayerVisualState,
+        submittedLanguage: String?,
+        submittedVisual: PlayerVisualState?,
+        submittedMetadata: StreamProgramMetadata?,
+        isDelayedMetadataFollowThrough: Bool
+    ) -> Bool {
+        Self.shouldSuppressDuplicateImmediateMetadataOnlyContentPush(
+            candidateLanguage: candidateLanguage,
+            candidateVisual: candidateVisual,
+            candidateMetadata: candidateMetadata,
+            ownedLanguage: ownedLanguage,
+            ownedVisual: ownedVisual,
+            submittedLanguage: submittedLanguage,
+            submittedVisual: submittedVisual,
+            submittedMetadata: submittedMetadata,
+            isDelayedMetadataFollowThrough: isDelayedMetadataFollowThrough
         )
     }
 

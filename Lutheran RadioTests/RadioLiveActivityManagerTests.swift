@@ -4062,9 +4062,11 @@ class RadioLiveActivityManagerTests: XCTestCase {
 
     /// One outstanding visual mutation: while `Activity.update` apply is unconfirmed,
     /// visual-differing candidates coalesce (latest wins) instead of issuing a second IPC.
-    /// Language-only same-visual candidates still update. Pause replacing playing-ensure
-    /// in-flight must remain the outstanding candidate. Duplicate unconfirmed playing
-    /// pushes also coalesce. Does **not** invent `.playing`; does **not** end while ineligible.
+    /// Language-only same-visual candidates still update. Pause is not held behind an
+    /// unconfirmed playing apply while owned visual is still Connecting. Duplicate
+    /// unconfirmed playing pushes coalesce. An identical playing flush after a committed
+    /// Connecting observation does not run. Does **not** invent `.playing`; does **not**
+    /// end while ineligible.
     ///
     /// Why this pattern is required: MainActor re-entry during `await Activity.update` and
     /// playing-ensure / dual-axis loops would otherwise burn the lock-stretch apply budget
@@ -4086,13 +4088,13 @@ class RadioLiveActivityManagerTests: XCTestCase {
             ),
             "Playing while Connecting apply is in-flight must coalesce (not a second visual IPC)"
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
                 inFlightVisual: .playing,
                 candidateVisual: .userPaused,
                 ownedVisual: .prePlay
             ),
-            "Pause replacing playing-ensure in-flight must coalesce (latest wins; pause remains outstanding)"
+            "Pause is not held behind an unconfirmed playing apply while owned visual is still Connecting"
         )
         XCTAssertTrue(
             manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
@@ -4131,12 +4133,12 @@ class RadioLiveActivityManagerTests: XCTestCase {
             streamMetadata: nil,
             currentLanguage: "sv"
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             manager._test_shouldFlushCoalescedContentPushAfterObservation(
                 coalesced: coalescedPlaying,
                 observed: observedConnecting
             ),
-            "Committed Connecting with coalesced playing must flush once"
+            "Committed Connecting must not flush another identical playing update"
         )
         XCTAssertTrue(
             manager._test_shouldFlushCoalescedContentPushAfterObservation(
@@ -4161,6 +4163,174 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
+    /// Unconfirmed Connecting → playing must not stack, and the spaced playing retry
+    /// is a real push once that observation settles.
+    ///
+    /// A committed delayed re-read (and a `contentUpdates` yield) whose candidate is
+    /// ``.playing`` and whose observed visual is still ``.prePlay`` clears the in-flight
+    /// playing candidate and does not schedule an immediate identical playing flush.
+    /// The next long-horizon playing retry is not coalesced once in-flight is nil.
+    /// A second ``.playing`` candidate during the still-unconfirmed await is coalesced.
+    /// ``.userPaused`` is not held behind that apply. Ineligible explicit Play may still
+    /// move pause → Connecting → authoritative playing. Ineligible playing-chip switch
+    /// stays language-only on owned playing. Paused chip switch stays paused. Connecting
+    /// is still skipped over owned playing. Does **not** invent `.playing`. Does **not**
+    /// end while ineligible. Does **not** claim lock-screen paint.
+    ///
+    /// Why this pattern is required: a second playing push during the unconfirmed await,
+    /// flushed again when the re-read is still Connecting, keeps an apply outstanding so
+    /// the spaced retry coalesces and the card stays on Connecting after audio is audible.
+    /// Pure `should*` — no ActivityKit waits.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(observationKind:candidateVisual:observedVisual:)``,
+    ///   ``RadioLiveActivityManager/shouldCoalesceVisualDifferingContentPushWhileInFlight(inFlightVisual:candidateVisual:ownedVisual:languageOnlyPreservingOwnedVisual:)``,
+    ///   ``RadioLiveActivityManager/shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(inFlightVisual:ownedVisual:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testUnconfirmedPlayingOverConnectingDoesNotStackAndSpacedRetryPushes() {
+        XCTAssertTrue(
+            manager._test_shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
+                observationKind: .delayedReread,
+                candidateVisual: .playing,
+                observedVisual: .prePlay
+            ),
+            "Committed delayed re-read of playing over Connecting clears in-flight and skips the identical flush"
+        )
+        XCTAssertTrue(
+            manager._test_shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
+                observationKind: .contentUpdates,
+                candidateVisual: .playing,
+                observedVisual: .prePlay
+            ),
+            "contentUpdates yield that is still Connecting clears the in-flight playing candidate the same way"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
+                observationKind: .immediatePostAwait,
+                candidateVisual: .playing,
+                observedVisual: .prePlay
+            ),
+            "Immediate post-await read is not the committed observation that closes the apply"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
+                observationKind: .delayedReread,
+                candidateVisual: .playing,
+                observedVisual: .playing
+            ),
+            "Observed playing is acceptance, not a closed Connecting apply"
+        )
+
+        let coalescedPlaying = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: nil,
+            currentLanguage: "et"
+        )
+        let observedConnecting = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .prePlay,
+            streamMetadata: nil,
+            currentLanguage: "et"
+        )
+        XCTAssertFalse(
+            manager._test_shouldFlushCoalescedContentPushAfterObservation(
+                coalesced: coalescedPlaying,
+                observed: observedConnecting
+            ),
+            "The committed observation must not schedule an immediate identical playing flush"
+        )
+        XCTAssertFalse(
+            manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: nil,
+                candidateVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "After the observation clears in-flight, the spaced playing retry is not coalesced"
+        )
+        XCTAssertTrue(
+            manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .playing,
+                candidateVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "A second playing candidate during the still-unconfirmed await is coalesced"
+        )
+        XCTAssertFalse(
+            manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .playing,
+                candidateVisual: .userPaused,
+                ownedVisual: .prePlay
+            ),
+            "userPaused is not held behind the unconfirmed playing apply"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(
+                inFlightVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "Authoritative playing publish must not issue a second Live Activity visual push while unconfirmed"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(
+                inFlightVisual: nil,
+                ownedVisual: .prePlay
+            ),
+            "Once in-flight is cleared, a later playing push is not suppressed by this gate"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(
+                inFlightVisual: .playing,
+                ownedVisual: .playing
+            ),
+            "Owned playing is not the unconfirmed Connecting apply"
+        )
+
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .prePlay,
+                explicitFreshAttachPlay: true
+            ),
+            "Ineligible explicit Play may still move userPaused to Connecting"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: true,
+                ownedVisual: .prePlay,
+                candidateVisual: .playing,
+                explicitFreshAttachPlay: true
+            ),
+            "Ineligible explicit Play may still replace that Connecting with authoritative playing"
+        )
+        XCTAssertEqual(
+            manager._test_optimisticLiveActivityVisualForStreamSwitchContent(
+                surfaceVisual: .playing,
+                isRequestEligible: false,
+                ownedVisual: .playing
+            ),
+            .playing,
+            "Ineligible playing-chip switch stays language-only on owned playing"
+        )
+        XCTAssertEqual(
+            manager._test_optimisticLiveActivityVisualForStreamSwitchContent(
+                surfaceVisual: .userPaused,
+                isRequestEligible: false,
+                ownedVisual: .userPaused
+            ),
+            .userPaused,
+            "Paused chip switch stays userPaused"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .playing,
+                candidateVisual: .prePlay,
+                explicitFreshAttachPlay: true
+            ),
+            "Connecting is still skipped over owned playing"
+        )
+    }
+
     /// ICY-only ContentState is not suppressed; metadata lag with matching language +
     /// visual is uncommitted apply, not a stall, and is eligible for one coalesced
     /// re-push. Delayed re-read on that path does not consume language-ensure budget
@@ -4170,7 +4340,10 @@ class RadioLiveActivityManagerTests: XCTestCase {
     /// ``updateCurrentActivity()``. Stall oracles compare language + visual, so an
     /// ICY-only update looks committed while the card still shows the prior title.
     /// One delayed same-candidate re-push uses in-flight confirmation / coalesced
-    /// flush — not a metadata ensure rail and not a visual flip.
+    /// flush — not a metadata ensure rail and not a visual flip. A second immediate
+    /// push for the same language, visual, and title is suppressed. A different
+    /// visual or language still pushes. The first same-visual update, including on
+    /// a paused card, is still allowed.
     func testMetadataOnlyContentPushFollowThroughIsUncommittedAndDoesNotConsumeLanguageEnsure() {
         let priorTitle = StreamProgramMetadata(programTitle: "Morning Prayer", speaker: "Reader")
         let newTitle = StreamProgramMetadata(programTitle: "Evening Hymn", speaker: "Choir")
@@ -4278,6 +4451,107 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 committedAttemptsExhausted: true
             ),
             "Matching language with lagging metadata must not enter language-ensure quiet"
+        )
+
+        let title = StreamProgramMetadata(programTitle: "Psalm 23", speaker: "Choir")
+        let otherTitle = StreamProgramMetadata(programTitle: "Psalm 91", speaker: "Choir")
+        XCTAssertFalse(
+            manager._test_shouldSuppressDuplicateImmediateMetadataOnlyContentPush(
+                candidateLanguage: "de",
+                candidateVisual: .playing,
+                candidateMetadata: title,
+                ownedLanguage: "de",
+                ownedVisual: .playing,
+                submittedLanguage: nil,
+                submittedVisual: nil,
+                submittedMetadata: nil,
+                isDelayedMetadataFollowThrough: false
+            ),
+            "The first metadata-only push for a title is allowed"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSuppressDuplicateImmediateMetadataOnlyContentPush(
+                candidateLanguage: "de",
+                candidateVisual: .playing,
+                candidateMetadata: title,
+                ownedLanguage: "de",
+                ownedVisual: .playing,
+                submittedLanguage: "de",
+                submittedVisual: .playing,
+                submittedMetadata: title,
+                isDelayedMetadataFollowThrough: false
+            ),
+            "A second immediate push with the same language, visual, and title must not run"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressDuplicateImmediateMetadataOnlyContentPush(
+                candidateLanguage: "de",
+                candidateVisual: .playing,
+                candidateMetadata: title,
+                ownedLanguage: "de",
+                ownedVisual: .playing,
+                submittedLanguage: "de",
+                submittedVisual: .playing,
+                submittedMetadata: title,
+                isDelayedMetadataFollowThrough: true
+            ),
+            "The single delayed follow-through for that title still pushes"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressDuplicateImmediateMetadataOnlyContentPush(
+                candidateLanguage: "de",
+                candidateVisual: .userPaused,
+                candidateMetadata: title,
+                ownedLanguage: "de",
+                ownedVisual: .playing,
+                submittedLanguage: "de",
+                submittedVisual: .playing,
+                submittedMetadata: title,
+                isDelayedMetadataFollowThrough: false
+            ),
+            "A different visual still pushes and may carry the current title"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressDuplicateImmediateMetadataOnlyContentPush(
+                candidateLanguage: "en",
+                candidateVisual: .playing,
+                candidateMetadata: title,
+                ownedLanguage: "de",
+                ownedVisual: .playing,
+                submittedLanguage: "de",
+                submittedVisual: .playing,
+                submittedMetadata: title,
+                isDelayedMetadataFollowThrough: false
+            ),
+            "A different language still pushes"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressDuplicateImmediateMetadataOnlyContentPush(
+                candidateLanguage: "de",
+                candidateVisual: .userPaused,
+                candidateMetadata: title,
+                ownedLanguage: "de",
+                ownedVisual: .userPaused,
+                submittedLanguage: nil,
+                submittedVisual: nil,
+                submittedMetadata: nil,
+                isDelayedMetadataFollowThrough: false
+            ),
+            "A paused card's first same-visual metadata update is still allowed once"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressDuplicateImmediateMetadataOnlyContentPush(
+                candidateLanguage: "de",
+                candidateVisual: .playing,
+                candidateMetadata: otherTitle,
+                ownedLanguage: "de",
+                ownedVisual: .playing,
+                submittedLanguage: "de",
+                submittedVisual: .playing,
+                submittedMetadata: title,
+                isDelayedMetadataFollowThrough: false
+            ),
+            "A different title is a new metadata-only submission"
         )
     }
 
