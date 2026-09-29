@@ -4811,6 +4811,70 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
+    /// Explicit Play after hard teardown, while request is ineligible, may replace owned
+    /// ``.userPaused`` with Connecting and then replace that Connecting with authoritative
+    /// ``.playing`` — including after freeze. It must not cover owned ``.playing`` with
+    /// Connecting, and it must not jump owned pause straight to ``.playing``. Default
+    /// (flag false) keeps the committed-glyph skips. Does **not** invent `.playing`.
+    ///
+    /// Why this pattern is required: a pause glyph for a stream that has never been
+    /// audible is a false control, and the later audible push must still be allowed on
+    /// the same activity while locked. Playing-chip and paused-chip paths do not set
+    /// the flag. Pure `should*` — no ActivityKit waits.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
+    ///   ``RadioLiveActivityManager/shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(isRequestEligible:freezeSoftBudgetExhausted:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual).
+    func testExplicitFreshAttachPlayMayMovePauseToConnectingThenAuthoritativePlaying() {
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .prePlay,
+                explicitFreshAttachPlay: true
+            ),
+            "Explicit Play may replace owned pause with Connecting while ineligible"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: true,
+                ownedVisual: .prePlay,
+                candidateVisual: .playing,
+                explicitFreshAttachPlay: true
+            ),
+            "Authoritative playing may replace the Connecting this Play published, even after freeze"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .playing,
+                candidateVisual: .prePlay,
+                explicitFreshAttachPlay: true
+            ),
+            "Explicit Play must not cover an already-audible card with Connecting"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .playing,
+                explicitFreshAttachPlay: true
+            ),
+            "Explicit Play must not jump owned pause straight to playing"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .prePlay,
+                explicitFreshAttachPlay: false
+            ),
+            "Without the explicit-Play flag, ineligible Connecting over pause still skips"
+        )
+    }
+
     /// After freeze (soft budget exhausted or playing quiet) while request is ineligible,
     /// post-quiet language long-horizon stays language-only: dest language rides the owned
     /// glyph (candidate visual == owned visual). Dual-axis long-horizon does not arm or

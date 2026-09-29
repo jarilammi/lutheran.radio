@@ -166,28 +166,48 @@ import UIKit
         self == .thermalPaused
     }
 
-    /// Optimistic control visual after a **play** plan, before engine-complete ``setPlaying()``.
+    /// Optimistic Live Activity visual after a **play** plan, before engine-complete ``setPlaying()``.
     ///
-    /// - ``securityLocked`` → ``prePlay`` (connecting chrome) so recovery re-validation does
-    ///   not flash green / pause-glyph while DNS/cert work is still in flight.
-    /// - All other play-eligible states → ``playing`` so a rapid second **lock-screen / Live Activity**
-    ///   tap can re-plan pause from optimistic ContentState (dual-tap contract).
+    /// ``.playing`` is only for a real soft-resume (retained secured item, same language,
+    /// ``canSoftResumeSameStream``). Gapless audio is already starting, so the lock-screen
+    /// control may show pause immediately. Every other play — including Play after a hard
+    /// teardown with no retained item — stays Connecting (``.prePlay``) until
+    /// ``publishAuthoritativePlayingIfNeeded()``. A pause glyph for a stream that has never
+    /// become audible is a false control.
     ///
-    /// **Home widgets do not use this for optimistic paint.** Home uses
-    /// ``optimisticHomeWidgetVisualAfterPlayPlan`` so the control glyph never claims audible
-    /// pause-affordance before engine ``setPlaying()`` (soft-resume hold + Connecting honesty).
+    /// - ``securityLocked`` → ``prePlay`` even when `canSoftResumeSameStream` is true, so
+    ///   recovery re-validation does not flash green while DNS/cert work is still in flight.
     ///
-    /// - Returns: Target visual for durable LA mirror / optimistic ContentState after a play plan.
-    /// - SeeAlso: ``optimisticHomeWidgetVisualAfterPlayPlan``, ``blocksPlannedPlay``,
+    /// **Home widgets do not use this.** Home uses ``optimisticHomeWidgetVisualAfterPlayPlan``.
+    ///
+    /// - Parameter canSoftResumeSameStream: ``DirectStreamingPlayer/PlaybackAttachState/canSoftResumeSameStream``.
+    /// - Returns: Target visual for the durable Live Activity mirror and optimistic ContentState.
+    /// - SeeAlso: ``optimisticVisualAfterPlayPlan``, ``optimisticHomeWidgetVisualAfterPlayPlan``,
     ///   ``WidgetIntentExecution/performLiveActivityToggle()``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
-    public var optimisticVisualAfterPlayPlan: PlayerVisualState {
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual)
+    public func optimisticLiveActivityVisualAfterPlayPlan(
+        canSoftResumeSameStream: Bool
+    ) -> PlayerVisualState {
         switch self {
         case .securityLocked:
             return .prePlay
         default:
-            return .playing
+            return canSoftResumeSameStream ? .playing : .prePlay
         }
+    }
+
+    /// Optimistic Live Activity visual when this play is **not** a same-stream soft-resume.
+    ///
+    /// Equivalent to ``optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``
+    /// with `false`: Connecting, never a pause glyph, until the engine publishes playing.
+    /// Callers that know a retained soft-paused item exists must use the method.
+    ///
+    /// - Returns: Always ``.prePlay``. Soft-resume callers must pass `canSoftResumeSameStream: true`
+    ///   to ``optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``.
+    /// - SeeAlso: ``optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual)
+    public var optimisticVisualAfterPlayPlan: PlayerVisualState {
+        optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream: false)
     }
 
     /// Optimistic **home-widget** visual after a play plan — never invents audible ``.playing``.
@@ -199,10 +219,11 @@ import UIKit
     ///   (Connecting; play glyph + Yhdistää, not Toistaa / pause glyph).
     /// - ``playing`` → ``playing`` (play plan should not run while already playing).
     ///
-    /// **Why not ``optimisticVisualAfterPlayPlan``:** that helper returns ``.playing`` for dual-tap
-    /// Live Activity ContentState. Stamping ``.playing`` on the home widget before audio starts
-    /// paints pause glyph + Toistaa while still silent — looks inverted and, with residual LIVE
-    /// lag, makes a single toggle intent plan the opposite of the visible button.
+    /// **Why a separate helper:** Live Activity soft-resume may stamp ``.playing`` via
+    /// ``optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``. Stamping
+    /// ``.playing`` on the home widget before audio starts paints a pause glyph while still
+    /// silent — looks inverted and, with residual LIVE lag, makes a single toggle intent
+    /// plan the opposite of the visible button.
     ///
     /// - Returns: Target visual for home session + ``homeWidgetLiveChrome`` after a home play plan.
     /// - SeeAlso: ``optimisticVisualAfterPlayPlan``,

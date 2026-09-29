@@ -87,6 +87,76 @@ extension DirectStreamingPlayer {
         return max(0.05, remainingEarlyAttachFirstByteGraceSeconds())
     }
 
+    /// Whether a fresh attach used a cluster chosen before this mount.
+    ///
+    /// True only for ``PlaybackAttachContext/freshAttachAfterHardTeardown`` when a prior
+    /// ``lastServerSelectionTime`` exists. That stamp is an earlier mount’s ping (still
+    /// inside the 10 s throttle, inside the warm window, or last-good while a new ping
+    /// runs). Cold launch and stream switch stay false so a small ping margin does not
+    /// move those attaches. The first URL is still built immediately — this flag does
+    /// not wait on the ping pair.
+    ///
+    /// - Parameters:
+    ///   - context: Attach context for the URL that was just selected.
+    ///   - hadPriorServerSelection: `lastServerSelectionTime != nil` at URL build.
+    /// - Returns: `true` when the safety net may later leave this cluster if the item
+    ///   is still unknown with no error and playback has not started.
+    /// - SeeAlso: ``shouldLeaveInheritedClusterOnFirstByteSafetyNet(hasStartedPlaying:itemStatusUnknown:itemHasError:inheritedClusterFromEarlierMount:)``,
+    ///   ``PlaybackAttachContext/freshAttachAfterHardTeardown``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§4.5).
+    static func attachInheritedClusterFromEarlierMount(
+        context: PlaybackAttachContext,
+        hadPriorServerSelection: Bool
+    ) -> Bool {
+        context == .freshAttachAfterHardTeardown && hadPriorServerSelection
+    }
+
+    /// Whether first-byte safety-net recreate may attach the other production host.
+    ///
+    /// Admitted only when this mount reused an earlier cluster, the item is still
+    /// ``.unknown`` with no error, and audio has not started. A cluster that already
+    /// started audio stays put. Soft-pause resume never sets the inherited flag and
+    /// never schedules this net. An item error or a ready item uses the same-URL
+    /// secured recreate instead of a host change.
+    ///
+    /// - Parameters:
+    ///   - hasStartedPlaying: Engine has published audible playback for this mount.
+    ///   - itemStatusUnknown: `AVPlayerItem.status == .unknown` (or no item yet).
+    ///   - itemHasError: `AVPlayerItem.error != nil`.
+    ///   - inheritedClusterFromEarlierMount: ``currentAttachInheritedClusterWithoutFirstByte``.
+    /// - Returns: `true` when recreate should call ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``
+    ///   on the other production cluster, then ``makeSecuredPlayerItem(for:)``.
+    /// - SeeAlso: ``attachInheritedClusterFromEarlierMount(context:hadPriorServerSelection:)``,
+    ///   ``alternateProductionClusterSubdomain(currentSubdomain:productionSubdomains:)``,
+    ///   ``scheduleStartupSafetyNet()``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§8).
+    static func shouldLeaveInheritedClusterOnFirstByteSafetyNet(
+        hasStartedPlaying: Bool,
+        itemStatusUnknown: Bool,
+        itemHasError: Bool,
+        inheritedClusterFromEarlierMount: Bool
+    ) -> Bool {
+        guard inheritedClusterFromEarlierMount else { return false }
+        guard !hasStartedPlaying else { return false }
+        guard itemStatusUnknown, !itemHasError else { return false }
+        return true
+    }
+
+    /// The other production cluster subdomain (`eu` / `us`), when one exists.
+    ///
+    /// - Parameters:
+    ///   - currentSubdomain: Subdomain of the cluster that never delivered this mount’s first byte.
+    ///   - productionSubdomains: ``servers`` subdomains, preferred order.
+    /// - Returns: The first subdomain that differs, or `nil` when the list has no other host.
+    /// - SeeAlso: ``shouldLeaveInheritedClusterOnFirstByteSafetyNet(hasStartedPlaying:itemStatusUnknown:itemHasError:inheritedClusterFromEarlierMount:)``,
+    ///   ``SecurityConfiguration/preferredStreamingDomainSuffixes``
+    static func alternateProductionClusterSubdomain(
+        currentSubdomain: String,
+        productionSubdomains: [String]
+    ) -> String? {
+        productionSubdomains.first { $0 != currentSubdomain }
+    }
+
     /// Whether the startup safety net may ``recreatePlayerItem()`` right now.
     ///
     /// Reuses ``shouldAttemptEarlyAttachStallRecovery(item:rate:)`` so unknown + no error
@@ -106,7 +176,10 @@ extension DirectStreamingPlayer {
         return shouldAttemptEarlyAttachStallRecovery(item: item, rate: rate)
     }
 
-    /// Last-resort recreate for cold-launch / stream-switch first attach.
+    /// Last-resort recreate for cold-launch, stream-switch, and fresh-attach first play.
+    ///
+    /// ``PlaybackAttachContext/freshAttachAfterHardTeardown`` schedules this net.
+    /// ``PlaybackAttachContext/resume`` and soft-pause resume do not.
     ///
     /// Delay comes from ``nextStartupSafetyNetDelaySeconds()`` (first-byte grace for unknown
     /// items, loading grace for ready-but-silent). When the work item fires, admission is
@@ -173,7 +246,7 @@ extension DirectStreamingPlayer {
                         #if DEBUG
                         print("[DirectStreamingPlayer] [Playback] Transient give-up: performing FINAL recreatePlayerItem() then suppressing severe status. No red popup. elapsed=\(elapsedText)s status=\(statusRaw) error=\(errorDesc) host=\(host)")
                         #endif
-                        self.recreatePlayerItem()
+                        await self.recreateFromStartupSafetyNet()
                     }
                     return
                 }
@@ -193,11 +266,53 @@ extension DirectStreamingPlayer {
                 #if DEBUG
                 print("[DirectStreamingPlayer] [Playback] Startup safety net: recreate — retry \(self.initialPlaybackRetryCount)/\(self.maxInitialRetries) elapsed=\(elapsedText)s status=\(statusRaw) error=\(errorDesc) host=\(host) hasStartedPlaying=\(self.hasStartedPlaying) rate=\(rate)")
                 #endif
-                self.recreatePlayerItem()
+                await self.recreateFromStartupSafetyNet()
             }
         }
         startupSafetyNetWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    /// Secured recreate for the startup safety net.
+    ///
+    /// When ``shouldLeaveInheritedClusterOnFirstByteSafetyNet(hasStartedPlaying:itemStatusUnknown:itemHasError:inheritedClusterFromEarlierMount:)``
+    /// is true, points ``currentSelectedServer`` at the other production host and
+    /// rebuilds the URL through ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``
+    /// (no warm reuse, no wait for a new ping pair) before ``makeSecuredPlayerItem(for:)``.
+    /// Does not stamp ``lastServerSelectionTime`` — leaving a silent cluster is not a
+    /// measured ping. Otherwise recreates the same URL. Soft-pause resume does not
+    /// call this.
+    ///
+    /// - SeeAlso: ``scheduleStartupSafetyNet()``, ``recreatePlayerItem(securedURL:)``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§8).
+    @MainActor
+    func recreateFromStartupSafetyNet() async {
+        let item = playerItem
+        let status = item?.status ?? currentItemStatus
+        let shouldLeave = Self.shouldLeaveInheritedClusterOnFirstByteSafetyNet(
+            hasStartedPlaying: hasStartedPlaying,
+            itemStatusUnknown: item == nil || status == .unknown,
+            itemHasError: item?.error != nil,
+            inheritedClusterFromEarlierMount: currentAttachInheritedClusterWithoutFirstByte
+        )
+        guard shouldLeave,
+              let alternateSubdomain = Self.alternateProductionClusterSubdomain(
+                currentSubdomain: currentSelectedServer.subdomain,
+                productionSubdomains: Self.servers.map(\.subdomain)
+              ),
+              let alternate = Self.servers.first(where: { $0.subdomain == alternateSubdomain })
+        else {
+            recreatePlayerItem()
+            return
+        }
+
+        currentAttachInheritedClusterWithoutFirstByte = false
+        currentSelectedServer = alternate
+        #if DEBUG
+        print("[DirectStreamingPlayer] [Playback] Startup safety net: leaving inherited cluster for \(alternate.name) (this mount has no first byte)")
+        #endif
+        let url = await urlWithOptimalServer(for: selectedStream, allowSameStreamWarmReuse: false)
+        recreatePlayerItem(securedURL: url)
     }
     @MainActor
     func activatePlaybackTeardownGuard() {
@@ -436,11 +551,17 @@ extension DirectStreamingPlayer {
     /// not ``isCurrentlyAttemptingPlayback``). Recreate uses the same keep-up kick policy as
     /// cold launch / stream switch (not `playImmediately` at `.readyToPlay`).
     ///
+    /// - Parameters:
+    ///   - securedURL: Replacement stream URL. `nil` rebuilds the current item’s URL
+    ///     (mid-session stall, ready-but-silent, item error). The startup safety net
+    ///     passes the other production host only when this mount inherited a cluster
+    ///     and still has no first byte. Either URL goes through ``makeSecuredPlayerItem(for:)``.
     /// - SeeAlso: `attemptEarlyWindowTransientRecovery(reason:allowWhileDeferringFirstPlayKick:)`,
     ///   `makeSecuredPlayerItem(for:)`, `setupPlaybackObservers()`,
+    ///   ``recreateFromStartupSafetyNet()``,
     ///   ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``,
     ///   docs/cold-launch-streamplay-regression-checklist.md (§8).
-    func recreatePlayerItem() {
+    func recreatePlayerItem(securedURL: URL? = nil) {
         Task { @MainActor [weak self] in
             guard let self else { return }
             guard !self.isPlaybackTeardownActive else {
@@ -463,14 +584,17 @@ extension DirectStreamingPlayer {
             print("[DirectStreamingPlayer] Recreating secured player item (transient recovery)")
             #endif
             
-            guard let urlAsset = self.playerItem?.asset as? AVURLAsset else {
+            let currentURL: URL
+            if let securedURL {
+                currentURL = securedURL
+            } else if let urlAsset = self.playerItem?.asset as? AVURLAsset {
+                currentURL = urlAsset.url
+            } else {
                 #if DEBUG
                 print("[DirectStreamingPlayer] [Playback] Cannot recreate: no valid URL asset | hasStartedPlaying=\(self.hasStartedPlaying) | initialPlaybackRetryCount=\(self.initialPlaybackRetryCount) | playerItem=\(self.playerItem != nil) | this often happens during stream switch races")
                 #endif
                 return
             }
-            
-            let currentURL = urlAsset.url
             self.cancelEarlyICYDropRecreate()
             
             // Clear item-level observations before replacing the item.

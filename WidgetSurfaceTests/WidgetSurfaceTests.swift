@@ -594,7 +594,22 @@ struct WidgetSurfaceTests {
         #expect(PlayerVisualState.thermalPaused.blocksPlannedPlay)
         #expect(!PlayerVisualState.securityLocked.blocksPlannedPlay)
         #expect(PlayerVisualState.securityLocked.optimisticVisualAfterPlayPlan == .prePlay)
-        #expect(PlayerVisualState.userPaused.optimisticVisualAfterPlayPlan == .playing)
+        #expect(
+            PlayerVisualState.userPaused.optimisticLiveActivityVisualAfterPlayPlan(
+                canSoftResumeSameStream: true
+            ) == .playing
+        )
+        #expect(
+            PlayerVisualState.userPaused.optimisticLiveActivityVisualAfterPlayPlan(
+                canSoftResumeSameStream: false
+            ) == .prePlay
+        )
+        #expect(PlayerVisualState.userPaused.optimisticVisualAfterPlayPlan == .prePlay)
+        #expect(
+            PlayerVisualState.securityLocked.optimisticLiveActivityVisualAfterPlayPlan(
+                canSoftResumeSameStream: true
+            ) == .prePlay
+        )
         #expect(PlayerVisualState.userPaused.optimisticHomeWidgetVisualAfterPlayPlan == .userPaused)
         #expect(PlayerVisualState.prePlay.optimisticHomeWidgetVisualAfterPlayPlan == .prePlay)
         #expect(PlayerVisualState.securityLocked.optimisticHomeWidgetVisualAfterPlayPlan == .prePlay)

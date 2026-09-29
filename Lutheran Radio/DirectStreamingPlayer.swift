@@ -511,6 +511,20 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// while progressive ICY items are still loading toward `.readyToPlay`.
     let maxInitialRetries = 2
 
+    /// True when this fresh attach built its URL from an earlier mount’s cluster
+    /// (10 s throttle, warm window, or last-good while a new ping runs) and this
+    /// mount has not yet produced a first byte.
+    ///
+    /// The startup safety net may leave that cluster for the other production host.
+    /// Cleared once audio starts, on soft-pause resume, and after a leave so the
+    /// next retry does not bounce back. Cold launch and stream switch do not set
+    /// this — a small ping margin must not fail those attaches over.
+    ///
+    /// - SeeAlso: ``shouldLeaveInheritedClusterOnFirstByteSafetyNet(hasStartedPlaying:itemStatusUnknown:itemHasError:inheritedClusterFromEarlierMount:)``,
+    ///   ``PlaybackAttachContext/freshAttachAfterHardTeardown``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§4.5, §8).
+    @MainActor var currentAttachInheritedClusterWithoutFirstByte = false
+
     /// Wall-clock start of the current secured attach (item prepare / recreate).
     ///
     /// Used for early-window patience: progressive live MP3 often spends several seconds at

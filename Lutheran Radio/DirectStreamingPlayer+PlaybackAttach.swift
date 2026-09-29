@@ -192,7 +192,7 @@ extension DirectStreamingPlayer {
         let attachGeneration = beginInFlightPlaybackAttach()
         await prepareSecuredPlayerItem(
             for: stream,
-            allowSameStreamWarmReuse: context == .resume
+            allowSameStreamWarmReuse: context.allowsSameStreamWarmClusterReuse
         )
 
         guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
@@ -343,6 +343,8 @@ extension DirectStreamingPlayer {
 
         isSoftPaused = false
         cancelStartupSafetyNet()
+        // Retained item stays on the host that already secured it. Do not leave the cluster.
+        currentAttachInheritedClusterWithoutFirstByte = false
 
         guard let player else { return false }
         // Same-stream soft-resume: the secured item is already buffered. Immediate kick is
@@ -368,6 +370,7 @@ extension DirectStreamingPlayer {
         case .coldLaunch: return "cold launch"
         case .streamSwitch: return "stream switch"
         case .resume: return "resume"
+        case .freshAttachAfterHardTeardown: return "fresh attach after hard teardown"
         @unknown default: return "attach"
         }
     }
@@ -430,7 +433,15 @@ extension DirectStreamingPlayer {
         // issues under the widget extension's compilation context.
         let streamURL = await urlWithOptimalServer(
             for: selectedStream,
-            allowSameStreamWarmReuse: context == .resume
+            allowSameStreamWarmReuse: context.allowsSameStreamWarmClusterReuse
+        )
+        // Capture before the MainActor item bind. A prior stamp means this URL is an
+        // earlier mount’s cluster (throttle, warm window, or last-good while a ping
+        // runs). Fresh attach may leave it only after first-byte grace, and only if
+        // this mount never produced a first byte. Do not wait for the ping pair here.
+        let inheritedCluster = Self.attachInheritedClusterFromEarlierMount(
+            context: context,
+            hadPriorServerSelection: lastServerSelectionTime != nil
         )
         guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
             await enforceSilenceAfterDiscardedAttach()
@@ -446,6 +457,7 @@ extension DirectStreamingPlayer {
         }
 
         await MainActor.run {
+            self.currentAttachInheritedClusterWithoutFirstByte = inheritedCluster
             ensurePlayerExists()
             
             guard let player = self.player else {
@@ -501,8 +513,9 @@ extension DirectStreamingPlayer {
             #endif
         }
         
-        // Optional ICY head-start retry — only when the first kick has not achieved playback.
-        if context != .resume {
+        // Optional ICY head-start retry — cold launch, stream switch, and fresh attach
+        // after hard teardown. Same-stream ``.resume`` (retained secured item path) skips it.
+        if context.schedulesFirstAttachRecovery {
             try? await Task.sleep(for: .milliseconds(400))
             
             let headStartGeneration = attachGeneration
@@ -540,9 +553,9 @@ extension DirectStreamingPlayer {
         // Only the single lightweight safety net (below) remains as true last resort
         // (first-byte grace for unknown items — not a 5 s recreate).
         
-        // Startup safety net: first-play attach only (cold launch or stream switch).
-        // Same-stream resume uses soft pause and must not schedule a stale recreate.
-        if (context == .coldLaunch || context == .streamSwitch) && initialPlaybackRetryCount == 0 {
+        // Startup safety net: cold launch, stream switch, and fresh attach after hard
+        // teardown. ``.resume`` and soft-pause resume must not schedule a stale recreate.
+        if context.schedulesFirstAttachRecovery && initialPlaybackRetryCount == 0 {
             Task { @MainActor in
                 #if DEBUG
                 print("[DirectStreamingPlayer] scheduling startup safety net (single last resort)")
@@ -764,6 +777,7 @@ extension DirectStreamingPlayer {
             isDeferringFirstPlayKick = false
             initialPlaybackRetryCount = 0
             cancelEarlyICYDropRecreate()
+            currentAttachInheritedClusterWithoutFirstByte = false
             if (player?.rate ?? 0) < 0.1 {
                 player?.play()
             }

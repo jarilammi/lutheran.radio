@@ -971,6 +971,83 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         )
     }
 
+    /// Safety-net recreate may leave a cluster that never delivered this mount’s first
+    /// byte. It must not leave a cluster that already started audio, a ready or failed
+    /// item, or a mount that did not inherit an earlier cluster. Soft-pause resume does
+    /// not set the inherited flag, so it cannot take this path.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/shouldLeaveInheritedClusterOnFirstByteSafetyNet(hasStartedPlaying:itemStatusUnknown:itemHasError:inheritedClusterFromEarlierMount:)``,
+    ///   ``DirectStreamingPlayer/alternateProductionClusterSubdomain(currentSubdomain:productionSubdomains:)``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§8).
+    func testSafetyNetMayLeaveInheritedClusterThatNeverDeliveredFirstByte() {
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldLeaveInheritedClusterOnFirstByteSafetyNet(
+                hasStartedPlaying: false,
+                itemStatusUnknown: true,
+                itemHasError: false,
+                inheritedClusterFromEarlierMount: true
+            )
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldLeaveInheritedClusterOnFirstByteSafetyNet(
+                hasStartedPlaying: true,
+                itemStatusUnknown: true,
+                itemHasError: false,
+                inheritedClusterFromEarlierMount: true
+            ),
+            "A cluster that already started audio must stay"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldLeaveInheritedClusterOnFirstByteSafetyNet(
+                hasStartedPlaying: false,
+                itemStatusUnknown: true,
+                itemHasError: false,
+                inheritedClusterFromEarlierMount: false
+            ),
+            "Soft-pause resume and measured mounts must not change host"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldLeaveInheritedClusterOnFirstByteSafetyNet(
+                hasStartedPlaying: false,
+                itemStatusUnknown: false,
+                itemHasError: false,
+                inheritedClusterFromEarlierMount: true
+            ),
+            "Ready items recreate on the same URL"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldLeaveInheritedClusterOnFirstByteSafetyNet(
+                hasStartedPlaying: false,
+                itemStatusUnknown: true,
+                itemHasError: true,
+                inheritedClusterFromEarlierMount: true
+            ),
+            "Item errors stay on the secured same-URL recreate"
+        )
+        XCTAssertEqual(
+            DirectStreamingPlayer.alternateProductionClusterSubdomain(
+                currentSubdomain: "us",
+                productionSubdomains: ["eu", "us"]
+            ),
+            "eu"
+        )
+        XCTAssertEqual(
+            DirectStreamingPlayer.alternateProductionClusterSubdomain(
+                currentSubdomain: "eu",
+                productionSubdomains: ["eu", "us"]
+            ),
+            "us"
+        )
+        XCTAssertNil(
+            DirectStreamingPlayer.alternateProductionClusterSubdomain(
+                currentSubdomain: "eu",
+                productionSubdomains: ["eu"]
+            )
+        )
+        XCTAssertFalse(PlaybackAttachContext.resume.schedulesFirstAttachRecovery)
+        XCTAssertTrue(PlaybackAttachContext.freshAttachAfterHardTeardown.schedulesFirstAttachRecovery)
+    }
+
     /// Startup safety net delay must follow first-byte remaining time, not a magic 5 s.
     ///
     /// - SeeAlso: ``DirectStreamingPlayer/nextStartupSafetyNetDelaySeconds()``,

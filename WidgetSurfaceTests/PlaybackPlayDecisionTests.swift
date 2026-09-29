@@ -76,6 +76,45 @@ struct PlaybackPlayDecisionTests {
         )
     }
 
+    /// Play classified `.resume` with no retained soft-paused item is a fresh attach.
+    /// It schedules first-attach recovery. Soft-pause same-language resume stays `.resume`
+    /// and does not. A language mismatch stays stream switch (hold path), not fresh attach.
+    ///
+    /// - SeeAlso: ``PlaybackAttachContext/freshAttachAfterHardTeardown``,
+    ///   ``PlaybackAttachContext/schedulesFirstAttachRecovery``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§4.5, §5).
+    @Test func freshAttachAfterHardTeardownSchedulesFirstAttachRecovery() {
+        let fresh = PlaybackPlayDecision.attachContext(
+            classification: .resume,
+            declinedSoftPauseForLanguageChange: false,
+            freshAttachAfterHardTeardown: true
+        )
+        #expect(fresh == .freshAttachAfterHardTeardown)
+        #expect(fresh.schedulesFirstAttachRecovery)
+        #expect(!fresh.allowsSameStreamWarmClusterReuse)
+
+        let softResume = PlaybackPlayDecision.attachContext(
+            classification: .resume,
+            declinedSoftPauseForLanguageChange: false,
+            freshAttachAfterHardTeardown: false
+        )
+        #expect(softResume == .resume)
+        #expect(!softResume.schedulesFirstAttachRecovery)
+        #expect(softResume.allowsSameStreamWarmClusterReuse)
+
+        let languageChange = PlaybackPlayDecision.attachContext(
+            classification: .resume,
+            declinedSoftPauseForLanguageChange: true,
+            freshAttachAfterHardTeardown: true
+        )
+        #expect(languageChange == .streamSwitch)
+        #expect(languageChange.schedulesFirstAttachRecovery)
+
+        #expect(PlaybackAttachContext.coldLaunch.schedulesFirstAttachRecovery)
+        #expect(PlaybackAttachContext.streamSwitch.schedulesFirstAttachRecovery)
+        #expect(!PlaybackAttachContext.resume.schedulesFirstAttachRecovery)
+    }
+
     // MARK: - Early gates (table)
 
     private func baseInputs(

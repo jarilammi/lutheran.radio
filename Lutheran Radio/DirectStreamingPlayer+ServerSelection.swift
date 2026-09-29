@@ -125,11 +125,13 @@ extension DirectStreamingPlayer {
     /// Same-stream hard-resume (``PlaybackAttachContext/resume``) may reuse the last measured
     /// cluster without a new EU/US ping pair while the last success is this young.
     ///
-    /// Longer than ``serverSelectionThrottleInterval`` so pause-then-play does not wait on RTT
-    /// after the 10 s throttle expires. Shorter than a routing epoch; ``lastServerSelectionTime``
-    /// is still niled on network-path reconnect. Cold launch, stream switch, and recovery
-    /// ``play()`` do not use this window. User pause still hard-tears Icecast
-    /// (``isSoftPaused`` stays false).
+    /// Longer than ``serverSelectionThrottleInterval`` so a retained ``.resume`` attach does
+    /// not wait on RTT after the 10 s throttle expires. Shorter than a routing epoch;
+    /// ``lastServerSelectionTime`` is still niled on network-path reconnect. Cold launch,
+    /// stream switch, recovery ``play()``, and
+    /// ``PlaybackAttachContext/freshAttachAfterHardTeardown`` do not use this window.
+    /// User pause still hard-tears Icecast (``isSoftPaused`` stays false); Play with no
+    /// retained item is that fresh attach, not warm ``.resume``.
     ///
     /// - SeeAlso: ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``,
     ///   ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``,
@@ -143,8 +145,8 @@ extension DirectStreamingPlayer {
     ///   - lastSelectionAge: Seconds since ``lastServerSelectionTime``, or `nil` if never selected
     ///     (or niled on reconnect). Negative ages do not reuse.
     ///   - allowSameStreamWarmReuse: `true` only for same-stream hard-resume
-    ///     (``PlaybackAttachContext/resume``). `false` for cold launch, stream switch, and
-    ///     recovery ``play()``.
+    ///     (``PlaybackAttachContext/resume``). `false` for cold launch, stream switch,
+    ///     ``PlaybackAttachContext/freshAttachAfterHardTeardown``, and recovery ``play()``.
     /// - Returns: `true` when a new ping pair must not run.
     /// - Important: Missing stamp never reuses. The 10 s throttle applies to every context.
     ///   The longer warm window applies only when `allowSameStreamWarmReuse` is true.
@@ -300,8 +302,9 @@ extension DirectStreamingPlayer {
     /// ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``.
     ///
     /// - Parameter allowSameStreamWarmReuse: Pass `true` only from ``PlaybackAttachContext/resume``
-    ///   attach (same-stream hard-resume after user pause). Default `false` keeps the 10 s
-    ///   throttle only — required for stream switch, cold launch, and recovery ``play()``.
+    ///   attach (retained same-stream path). Default `false` keeps the 10 s throttle only —
+    ///   required for stream switch, cold launch, fresh attach after hard teardown, and
+    ///   recovery ``play()``.
     /// - SeeAlso: ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``,
     ///   ``beginBackgroundServerSelectionIfNeeded()``
     func ensureOptimalServerSelected(allowSameStreamWarmReuse: Bool = false) async {
@@ -354,10 +357,15 @@ extension DirectStreamingPlayer {
     /// - Parameters:
     ///   - stream: Catalog stream whose host is rewritten from ``currentSelectedServer``.
     ///   - allowSameStreamWarmReuse: `true` only for ``PlaybackAttachContext/resume``. `false`
-    ///     (default) for cold launch, stream switch, and recovery ``play()`` — those still start
-    ///     a background ping when the 10 s throttle has expired. Does not skip Core pins on
-    ///     the stream URL.
+    ///     (default) for cold launch, stream switch, fresh attach after hard teardown, and
+    ///     recovery ``play()`` — those still start a background ping when the 10 s throttle
+    ///     has expired. Does not skip Core pins on the stream URL.
     /// - Returns: HTTPS stream URL on the currently selected cluster.
+    /// - Note: A stamp older than the 10 s throttle is a valid last-good attach when warm
+    ///   reuse is false. ``ensureOptimalServerSelected(allowSameStreamWarmReuse:)`` returns
+    ///   immediately and kicks a background ping; it does not re-stamp until that pair
+    ///   completes. Debug checks that a *reused* stamp is inside the window this call asked
+    ///   for. It does not require a deliberate last-good stamp to be fresh.
     /// - SeeAlso: ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``,
     ///   ``beginBackgroundServerSelectionIfNeeded()``,
     ///   ``PlaybackAttachContext``, DirectStreamingPlayer+PlaybackAttach.swift
@@ -365,18 +373,34 @@ extension DirectStreamingPlayer {
         await ensureOptimalServerSelected(allowSameStreamWarmReuse: allowSameStreamWarmReuse)
 
         #if DEBUG
-        // A stamp is optional: first attach may use default/last-good while pings run.
-        // When a stamp exists it must still be inside the reuse window (forgot-to-stamp
-        // regressions of a *measured* completion path).
+        // Stamp is optional (first attach, or dual timeout that must not stamp).
+        // When this call reused the stamp, the age must actually sit inside the window
+        // ``shouldReuseCachedServerSelection`` claimed — that catches a reuse predicate
+        // that returns true for a stamp outside 10 s / the warm window.
+        // A stale stamp on the last-good path (warm reuse false, age past the throttle)
+        // is expected: attach already returned on the previous cluster and the background
+        // ping owns the next stamp. Do not treat that age as a failed reuse.
         if let t = lastServerSelectionTime {
             let age = Date().timeIntervalSince(t)
-            assert(
-                Self.shouldReuseCachedServerSelection(
-                    lastSelectionAge: age,
-                    allowSameStreamWarmReuse: allowSameStreamWarmReuse
-                ),
-                "urlWithOptimalServer: ensure returned but selection stamp is \(age)s old (same-stream warm reuse=\(allowSameStreamWarmReuse))"
-            )
+            if Self.shouldReuseCachedServerSelection(
+                lastSelectionAge: age,
+                allowSameStreamWarmReuse: allowSameStreamWarmReuse
+            ) {
+                let insideThrottle = age >= 0 && age <= Self.serverSelectionThrottleInterval
+                let insideWarmWindow = allowSameStreamWarmReuse
+                    && age <= Self.sameStreamWarmServerReuseInterval
+                assert(
+                    insideThrottle || insideWarmWindow,
+                    "urlWithOptimalServer: reused selection stamp is \(age)s old outside the requested window (same-stream warm reuse=\(allowSameStreamWarmReuse))"
+                )
+            } else {
+                let ageText = age.formatted(
+                    .number
+                        .precision(.fractionLength(1))
+                        .locale(Locale(identifier: "en_US_POSIX"))
+                )
+                print("[DirectStreamingPlayer] urlWithOptimalServer: last-good attach with selection stamp age \(ageText)s (same-stream warm reuse=\(allowSameStreamWarmReuse)); background ping owns the next stamp")
+            }
         }
         #endif
 

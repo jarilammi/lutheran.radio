@@ -180,15 +180,29 @@ public enum PlaybackPlayDecision {
         return .resume
     }
 
-    /// Maps play classification (+ soft-pause language reattach decline) to engine attach context.
+    /// Maps play classification (+ soft-pause facts) to engine attach context.
+    ///
+    /// A paused station switch hard-tears the previous item, then Play is still
+    /// classified ``.resume`` because cold launch already completed and stream-switch
+    /// hold is clear. That Play is not a gapless soft-resume. Pass
+    /// `freshAttachAfterHardTeardown` so the engine schedules first-attach recovery
+    /// instead of the warm ``.resume`` path.
     ///
     /// - Parameters:
     ///   - classification: From ``classify(holdPrePlayVisualUntilPlayback:hasCompletedTrueColdLaunchPlay:)``.
     ///   - declinedSoftPauseForLanguageChange: Soft-resume declined because attached language ≠ selected.
+    ///     Wins over fresh-attach: the language change is ``streamSwitch``.
+    ///   - freshAttachAfterHardTeardown: ``resumeFromSoftPauseIfAvailable()`` returned false
+    ///     because no soft-paused item remains (attached language nil, `isSoftPaused == false`).
+    ///     Does not mean the play should set stream-switch hold or clear ICY again.
     /// - Returns: ``PlaybackAttachContext`` for ``DirectStreamingPlayer`` `attachAndPlay`.
+    /// - SeeAlso: ``PlaybackAttachContext/freshAttachAfterHardTeardown``,
+    ///   ``PlaybackAttachContext/schedulesFirstAttachRecovery``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§5.10).
     public static func attachContext(
         classification: PlaybackPlayClassification,
-        declinedSoftPauseForLanguageChange: Bool
+        declinedSoftPauseForLanguageChange: Bool,
+        freshAttachAfterHardTeardown: Bool = false
     ) -> PlaybackAttachContext {
         if classification == .streamSwitch || declinedSoftPauseForLanguageChange {
             return .streamSwitch
@@ -197,6 +211,9 @@ public enum PlaybackPlayDecision {
         case .streamSwitch:
             return .streamSwitch
         case .resume:
+            if freshAttachAfterHardTeardown {
+                return .freshAttachAfterHardTeardown
+            }
             return .resume
         case .trueColdLaunch:
             return .coldLaunch

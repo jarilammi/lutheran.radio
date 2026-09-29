@@ -152,6 +152,40 @@ final class DirectStreamingPlayerServerSelectionTests: XCTestCase {
                 ) == .resume
             )
         )
+        let fresh = PlaybackPlayDecision.attachContext(
+            classification: .resume,
+            declinedSoftPauseForLanguageChange: false,
+            freshAttachAfterHardTeardown: true
+        )
+        XCTAssertEqual(fresh, .freshAttachAfterHardTeardown)
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldReuseCachedServerSelection(
+                lastSelectionAge: pastThrottle,
+                allowSameStreamWarmReuse: fresh.allowsSameStreamWarmClusterReuse
+            ),
+            "Fresh attach after hard teardown must not use the warm window"
+        )
+        XCTAssertTrue(
+            DirectStreamingPlayer.attachInheritedClusterFromEarlierMount(
+                context: fresh,
+                hadPriorServerSelection: true
+            ),
+            "A prior ping stamp on fresh attach is an earlier mount’s cluster"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.attachInheritedClusterFromEarlierMount(
+                context: .resume,
+                hadPriorServerSelection: true
+            ),
+            "Soft-pause resume must not mark the cluster as inherited"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.attachInheritedClusterFromEarlierMount(
+                context: .streamSwitch,
+                hadPriorServerSelection: true
+            ),
+            "Stream switch must not leave a cluster because a ping margin was small"
+        )
     }
 
     /// Protects: dual timeout must not stamp ``lastServerSelectionTime``, so the 10 s

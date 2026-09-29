@@ -94,16 +94,53 @@ public enum StopReason: Sendable {
 
 /// How `DirectStreamingPlayer` should attach or resume the secured `AVPlayerItem`.
 ///
-/// ``resume`` is same-stream hard-resume after user pause (Icecast already torn down).
-/// The engine may reuse a warm selected cluster for that case; ``streamSwitch``
-/// and ``coldLaunch`` still ping after the 10 s throttle.
+/// ``resume`` is a same-stream attach that still holds a secured item path the caller
+/// chose not to treat as a fresh mount (warm cluster reuse, no startup safety net).
+/// ``freshAttachAfterHardTeardown`` is Play after user pause or a paused station
+/// switch already cleared the item (`isSoftPaused == false`, attached language nil).
+/// That mount schedules the same first-attach recovery as ``coldLaunch`` and
+/// ``streamSwitch`` (startup safety net + head-start kick) and does **not** use the
+/// same-stream warm window. It is not a stream-switch hold: it does not set
+/// `holdPrePlayVisualUntilPlayback` and does not clear ICY again.
 ///
-/// - SeeAlso: ``PlaybackPlayDecision/attachContext(classification:declinedSoftPauseForLanguageChange:)``,
-///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause / play-after-pause attach)
+/// - SeeAlso: ``PlaybackPlayDecision/attachContext(classification:declinedSoftPauseForLanguageChange:freshAttachAfterHardTeardown:)``,
+///   ``schedulesFirstAttachRecovery``,
+///   docs/cold-launch-streamplay-regression-checklist.md (§4, §5),
+///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual)
 @frozen public enum PlaybackAttachContext: Sendable, Equatable {
     case coldLaunch
     case streamSwitch
     case resume
+    /// Play classified as resume, but no retained soft-paused item survived the teardown.
+    case freshAttachAfterHardTeardown
+
+    /// Startup safety net and the post-head-start kick run for this attach.
+    ///
+    /// Soft-pause resume never reaches ``DirectStreamingPlayer/attachAndPlay(to:context:)``.
+    /// ``resume`` must not schedule a stale recreate of an item that is already secured.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/scheduleStartupSafetyNet()``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§4.5, §11.3).
+    public var schedulesFirstAttachRecovery: Bool {
+        switch self {
+        case .coldLaunch, .streamSwitch, .freshAttachAfterHardTeardown:
+            return true
+        case .resume:
+            return false
+        }
+    }
+
+    /// Same-process warm cluster reuse (beyond the 10 s throttle) is only for ``resume``.
+    ///
+    /// Fresh attach, cold launch, and stream switch still attach immediately on
+    /// default/last-good and may start a background ping. They do not block the first
+    /// byte on a new ping pair.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§5).
+    public var allowsSameStreamWarmClusterReuse: Bool {
+        self == .resume
+    }
 }
 
 /// How `DirectStreamingPlayer` prepares a stream choice **without** starting audible attach.

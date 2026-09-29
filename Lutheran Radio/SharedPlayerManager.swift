@@ -1681,7 +1681,10 @@ actor SharedPlayerManager {
         // Extension optimistic toggle: session RAM + privacy-gated live chrome (widget-process
         // bypass). The writer stores the caller’s visual; it does not choose a plan.
         // Home stamps pass ``optimisticHomeWidgetVisualAfterPlayPlan`` (never invent home
-        // ``.playing``). LA / media dual-tap uses ``optimisticVisualAfterPlayPlan``.
+        // ``.playing``). Live Activity play uses
+        // ``optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``
+        // (``.playing`` only for a retained soft-resume; otherwise Connecting).
+        // ``optimisticVisualAfterPlayPlan`` is that helper with soft-resume false.
         // - SeeAlso: ``stampHomeWidgetLiveChromeFromSession``,
         //   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``,
         //   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).

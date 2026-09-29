@@ -243,7 +243,7 @@ postHomeWidgetInteractivePaintAdvancedWake()  // local NC + Darwin
 |--------|-------------|----------|-------|
 | Home/Control toggle → pause | `.userPaused` | current | Mirror + session optimistic + pending. Instant-feedback language is this **current** stream (``languageForPlayPauseOptimisticWrite(resolutionLanguage:)`` / ``languageForLiveActivityOrWidgetOptimistic()`` propose ``settledLanguageForInstantFeedback()``; ``executeOptimisticToggle(plan:language:)`` / ``languageForInstantFeedbackWrite(_:)`` still coerce). Leftover in-process session is not proposed when chrome is strictly fresher. Empty extension RAM + locale fallback still coerce. ``loadSharedState()`` still ignores a leftover disagreeing key. |
 | Home/Control toggle → play (connect) | `.prePlay` (or plan’s optimistic visual) | current | Do not invent playing if plan says Connecting. Same instant-feedback write rule as pause — play/pause of a settled stream is not a language switch. |
-| Soft-resume path after pause (same stream) | Prefer plan’s non-lying optimistic; if plan is playing, stamp `.playing` only when product policy already does for optimistic UI | current | Align with `optimisticVisualAfterPlayPlan` — no new invention |
+| Soft-resume path after pause (same stream) | Home holds residual pause via ``optimisticHomeWidgetVisualAfterPlayPlan`` | current | Live Activity soft-resume may stamp `.playing` only through ``optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)`` when a retained item exists. ``optimisticVisualAfterPlayPlan`` stays Connecting. |
 | Stream switch while playing | `.prePlay` | destination | Same as `optimisticLiveActivityVisualForStreamSwitch` |
 | Stream switch while paused | `.userPaused` | destination | Preserve sticky pause |
 

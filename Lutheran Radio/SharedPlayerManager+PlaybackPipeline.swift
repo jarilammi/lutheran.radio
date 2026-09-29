@@ -449,6 +449,7 @@ extension SharedPlayerManager {
         }
 
         var declinedSoftPauseForLanguageChange = false
+        var freshAttachAfterHardTeardown = false
         if context.isResume {
             let resumed = await DirectStreamingPlayer.shared.resumeFromSoftPauseIfAvailable()
             if resumed {
@@ -457,6 +458,7 @@ extension SharedPlayerManager {
                 print("[SharedPlayerManager] Resumed from soft pause — skipped attachAndPlay")
                 #endif
                 // Soft-resume publishes authoritative playing (clears pipeline in setPlaying).
+                // It does not schedule the startup safety net and does not change host.
                 return
             }
             // Soft-resume may await; re-check sticky pause before full reattach.
@@ -466,13 +468,29 @@ extension SharedPlayerManager {
             declinedSoftPauseForLanguageChange = await DirectStreamingPlayer.shared.softPauseResumeRequiresStreamReattach()
             if declinedSoftPauseForLanguageChange {
                 DirectStreamingPlayer.shared.resetInitialPlaybackCountersForNewStream()
+            } else {
+                // User pause and paused station switch hard-tear the item. Classification
+                // stays `.resume` (cold launch already completed, hold is clear) but there
+                // is nothing to gapless-resume. First-attach recovery must run. Do not set
+                // stream-switch hold and do not clear ICY again.
+                let attachState = await MainActor.run {
+                    DirectStreamingPlayer.shared.currentPlaybackAttachState()
+                }
+                freshAttachAfterHardTeardown =
+                    !attachState.isSoftPaused && attachState.attachedItemLanguageCode == nil
             }
         }
 
         let attachContext = PlaybackPlayDecision.attachContext(
             classification: context.classification,
-            declinedSoftPauseForLanguageChange: declinedSoftPauseForLanguageChange
+            declinedSoftPauseForLanguageChange: declinedSoftPauseForLanguageChange,
+            freshAttachAfterHardTeardown: freshAttachAfterHardTeardown
         )
+        #if DEBUG
+        if attachContext == .freshAttachAfterHardTeardown {
+            print("[SharedPlayerManager] play() — fresh attach after hard teardown (first-attach recovery; not stream-switch hold)")
+        }
+        #endif
         #else
         let attachContext = PlaybackPlayDecision.attachContext(
             classification: context.classification,
@@ -1560,14 +1578,15 @@ extension SharedPlayerManager {
     /// Whether the engine holds a soft-paused secured item for the selected language
     /// (gapless same-stream resume candidate).
     ///
-    /// Used only for Connecting-chrome decisions on the main app. Widget extension and
-    /// UITest without an attached item always report `false` so recovery paths still get
-    /// honest Connecting chrome.
+    /// Used for Connecting-chrome decisions and for the Live Activity optimistic play
+    /// visual. Widget extension and UITest without an attached item always report `false`,
+    /// so those surfaces stay on Connecting instead of a pause glyph.
     ///
     /// - Returns: ``DirectStreamingPlayer/PlaybackAttachState/canSoftResumeSameStream``.
     /// - SeeAlso: ``setUserIntentToPlay()``, ``clearUserPausedLockIfNeeded()``,
-    ///   ``runPlayPostSecuritySurfacesPhase()``.
-    private func canSoftResumeSameStreamForPlayChrome() async -> Bool {
+    ///   ``runPlayPostSecuritySurfacesPhase()``,
+    ///   ``PlayerVisualState/optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``.
+    func canSoftResumeSameStreamForPlayChrome() async -> Bool {
         #if LUTHERAN_MAIN_APP
         await MainActor.run {
             DirectStreamingPlayer.shared.currentPlaybackAttachState().canSoftResumeSameStream

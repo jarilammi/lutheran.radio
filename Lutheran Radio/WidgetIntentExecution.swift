@@ -266,6 +266,9 @@ enum WidgetIntentExecution {
     /// (``SharedPlayerManager/isConnectingPlayback``), plan pause to cancel connect.
     /// Thermal refuses play while the hardware gate is authoritative. Security recovery
     /// may plan play but optimistic chrome uses connecting (``.prePlay``), not `.playing`.
+    /// Soft-resume play may stamp ``.playing`` via
+    /// ``PlayerVisualState/optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``.
+    /// Fresh attach after hard teardown stays ``.prePlay`` until the engine publishes playing.
     ///
     /// - SeeAlso: ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``,
     ///   ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:isConnectingPlayback:)``,
@@ -273,7 +276,8 @@ enum WidgetIntentExecution {
     ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``,
     ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
     ///   ``SharedPlayerManager/isConnectingPlayback``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   ``PlayerVisualState/optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual),
     ///   ``MediaTransportLatencyTimeline`` (DEBUG latency milestones).
     static func performLiveActivityToggle() async {
         #if DEBUG
@@ -319,7 +323,12 @@ enum WidgetIntentExecution {
         case .pause:
             optimisticTarget = .userPaused
         case .play:
-            optimisticTarget = resolution.visualState.optimisticVisualAfterPlayPlan
+            // Soft-resume may show pause immediately. Fresh attach after hard teardown
+            // stays Connecting until publishAuthoritativePlayingIfNeeded().
+            let canSoftResume = await SharedPlayerManager.shared.canSoftResumeSameStreamForPlayChrome()
+            optimisticTarget = resolution.visualState.optimisticLiveActivityVisualAfterPlayPlan(
+                canSoftResumeSameStream: canSoftResume
+            )
         case .refuse:
             return
         @unknown default:

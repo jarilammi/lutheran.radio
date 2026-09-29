@@ -537,8 +537,10 @@ extension SharedPlayerManager {
     /// - Parameters:
     ///   - visualState: Target from the caller’s pure plan (``.userPaused`` on pause;
     ///     home play uses ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan`` —
-    ///     never invent home ``.playing``. LA / media dual-tap uses
-    ///     ``optimisticVisualAfterPlayPlan``).
+    ///     never invent home ``.playing``. Live Activity play uses
+    ///     ``optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``
+    ///     (``.playing`` only when a retained soft-resume exists;
+    ///     ``optimisticVisualAfterPlayPlan`` is that helper with soft-resume false)).
     ///   - action: "play" or "pause".
     ///   - language: Language code to pair with the snapshot (strongly recommended from widget).
     ///     If omitted, falls back inside ``persistOptimisticWidgetSnapshot``. Always pass the language the widget

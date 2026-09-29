@@ -1023,8 +1023,10 @@ extension SharedPlayerManager {
     /// Product soft-resume retains sticky ``.userPaused`` until ``setPlaying()``; do not invent
     /// intermediate ``.prePlay`` on the main settle path. Extension optimistic **home** play
     /// stamps ``optimisticHomeWidgetVisualAfterPlayPlan`` (sticky pause or Connecting — never
-    /// invent home ``.playing``). ``optimisticVisualAfterPlayPlan`` is the LA / media dual-tap
-    /// helper and is not this home-chrome writer’s play plan.
+    /// invent home ``.playing``). Live Activity play uses
+    /// ``optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``
+    /// (``.playing`` only for a retained soft-resume). ``optimisticVisualAfterPlayPlan``
+    /// is that helper with soft-resume false and is not this home-chrome writer’s play plan.
     ///
     /// - Parameters:
     ///   - visualState: Presentation visual to project (never invent mid-hold ``.playing`` beyond
