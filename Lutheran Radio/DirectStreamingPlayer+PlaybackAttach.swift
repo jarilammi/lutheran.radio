@@ -907,9 +907,10 @@ extension DirectStreamingPlayer {
     /// visual via ``RadioLiveActivityManager/pushSettledPlayingAcceptanceContentIfNeeded()``
     /// (plus soft playing ensure when quiet is not engaged) so soft-resume (or a no-op publish
     /// after an earlier setPlaying) cannot leave the lock-screen card on a prior stream language
-    /// or Connecting while audio is live. While the first ``.playing`` apply is unconfirmed and
-    /// owned visual is still ``.prePlay``, that reconcile is skipped. In-app chrome stays green.
-    /// The spaced long-horizon playing retry is the next Live Activity visual push.
+    /// or Connecting while audio is live. While the first ``.playing`` apply is unconfirmed,
+    /// or a committed observation closed it and the spaced retry has not yet pushed,
+    /// and owned visual is still ``.prePlay``, that reconcile is skipped. In-app chrome
+    /// stays green. The spaced long-horizon playing retry is the next Live Activity visual push.
     ///
     /// - Important: Never call from the start of ``SharedPlayerManager/play()`` or from
     ///   ``startPlayback(context:attachGeneration:)`` while still awaiting `isPlaybackLikelyToKeepUp`.
@@ -935,9 +936,9 @@ extension DirectStreamingPlayer {
         let visual = await SharedPlayerManager.shared.currentVisualState
         guard visual != .playing else {
             // In-app chrome is already green. Do not publish a second Live Activity
-            // visual push while the first .playing apply is unconfirmed and the owned
-            // card is still Connecting. The spaced long-horizon retry is that push
-            // after the observation clears in-flight.
+            // visual push while the first .playing apply is unconfirmed, or while a
+            // committed Connecting observation is waiting for the spaced retry.
+            // The spaced long-horizon retry is that next push.
             if RadioLiveActivityManager.shared.shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush() {
                 #if DEBUG
                 print(

@@ -4331,6 +4331,247 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
+    /// A committed Connecting observation closes the playing apply. Later soft-ensure
+    /// attempts must not call `Activity.update` for that pair. The spaced retry is one
+    /// push per interval, not the 3-attempt soft-ensure loop. Pause is not held behind
+    /// the closed apply. Does **not** invent `.playing`. Does **not** claim lock-screen paint.
+    ///
+    /// Why this pattern is required: clearing in-flight on the delayed re-read is not
+    /// enough. The next 200 ms attempt is a new `Activity.update` unless the closed
+    /// observation still suppresses that pair until the existing 5/15/45 s retry.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/shouldSuppressPlayingContentPushAfterClosedConnectingObservation(closedUntilSpacedRetry:candidateVisual:ownedVisual:)``,
+    ///   ``RadioLiveActivityManager/shouldSuppressAuthoritativePlayingLiveActivityPush(closedUntilSpacedRetry:inFlightVisual:ownedVisual:)``,
+    ///   ``RadioLiveActivityManager/postQuietLongHorizonPlayingRetryContentPushesPerInterval``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testClosedConnectingObservationBlocksBurstPlayingPushUntilSpacedRetry() {
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldSuppressPlayingContentPushAfterClosedConnectingObservation(
+                closedUntilSpacedRetry: true,
+                candidateVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "After the committed observation, a later playing attempt must not call Activity.update"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldSuppressPlayingContentPushAfterClosedConnectingObservation(
+                closedUntilSpacedRetry: true,
+                candidateVisual: .userPaused,
+                ownedVisual: .prePlay
+            ),
+            "userPaused is not held behind the closed Connecting apply"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldSuppressPlayingContentPushAfterClosedConnectingObservation(
+                closedUntilSpacedRetry: false,
+                candidateVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "The first playing update is allowed before the observation closes the apply"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldSuppressPlayingContentPushAfterClosedConnectingObservation(
+                closedUntilSpacedRetry: true,
+                candidateVisual: .playing,
+                ownedVisual: .playing
+            ),
+            "Owned playing is not the closed Connecting apply"
+        )
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldSuppressAuthoritativePlayingLiveActivityPush(
+                closedUntilSpacedRetry: true,
+                inFlightVisual: nil,
+                ownedVisual: .prePlay
+            ),
+            "publishAuthoritativePlayingIfNeeded stays skipped after in-flight is cleared until the spaced retry"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(
+                inFlightVisual: nil,
+                ownedVisual: .prePlay
+            ),
+            "The in-flight-only gate stays false once in-flight is nil; the closed latch is the other gate"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.postQuietLongHorizonPlayingRetryContentPushesPerInterval,
+            1,
+            "Each spaced playing retry interval is one Activity.update"
+        )
+        XCTAssertLessThan(
+            RadioLiveActivityManager.postQuietLongHorizonPlayingRetryContentPushesPerInterval,
+            RadioLiveActivityManager.authoritativePlayingContentEnsureMaxAttempts,
+            "The spaced retry must not enter the 3-attempt soft-ensure loop"
+        )
+        XCTAssertTrue(
+            manager._test_shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .playing,
+                candidateVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "A second playing candidate during the still-unconfirmed await stays coalesced"
+        )
+    }
+
+    /// An attaching switch with owned Connecting must make the hold visible before
+    /// axis-heal can publish the previous station's playing visual. A paused switch
+    /// does not take the hold. An owned playing card stays language-only.
+    /// Does **not** invent `.playing`. Does **not** claim lock-screen paint.
+    ///
+    /// Why this pattern is required: ``isStreamSwitchPrePlayHoldActive`` is actor
+    /// ``.prePlay`` and the hold flag. While the actor is still ``.playing`` and the
+    /// hold is inactive, a new language on owned Connecting follows through to playing.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/shouldBeginAttachingStreamSwitchPrePlayHold(isActivePlaybackIntent:ownedVisual:)``,
+    ///   ``SharedPlayerManager/beginAttachingStreamSwitchPrePlayHold(languageCode:)``,
+    ///   ``RadioLiveActivityManager/contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:priorObservedLanguage:priorObservedVisual:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testAttachingSwitchHoldBlocksPreviousStationPlayingHeal() {
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldBeginAttachingStreamSwitchPrePlayHold(
+                isActivePlaybackIntent: PlaybackIntent.shouldBePlaying.isActivePlaybackIntent,
+                ownedVisual: .prePlay
+            ),
+            "Active intent and owned Connecting must begin the hold before the optimistic update"
+        )
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldBeginAttachingStreamSwitchPrePlayHold(
+                isActivePlaybackIntent: PlaybackIntent.sleepTimer.isActivePlaybackIntent,
+                ownedVisual: .prePlay
+            ),
+            "Sleep-timer playback is still an attaching switch"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldBeginAttachingStreamSwitchPrePlayHold(
+                isActivePlaybackIntent: PlaybackIntent.userPaused.isActivePlaybackIntent,
+                ownedVisual: .prePlay
+            ),
+            "A paused switch must not take the Connecting hold"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldBeginAttachingStreamSwitchPrePlayHold(
+                isActivePlaybackIntent: PlaybackIntent.userPaused.isActivePlaybackIntent,
+                ownedVisual: .userPaused
+            ),
+            "Paused owned visual stays paused"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldBeginAttachingStreamSwitchPrePlayHold(
+                isActivePlaybackIntent: true,
+                ownedVisual: .playing
+            ),
+            "Owned playing stays language-only; do not begin Connecting hold over that glyph"
+        )
+
+        let gap = manager._test_contentUpdateAxisHealPolicy(
+            systemLanguage: "fi",
+            systemVisual: .prePlay,
+            destinationLanguage: "fi",
+            actorVisual: .playing,
+            isStreamSwitchHoldActive: false,
+            isConnectingPlayback: false,
+            priorObservedLanguage: "et",
+            priorObservedVisual: .prePlay
+        )
+        XCTAssertTrue(
+            gap.shouldFollowThroughPlayingEnsure,
+            "Without the hold, axis-heal pushes the previous station's playing visual"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.resolveContentPushVisual(
+                visualState: .playing,
+                streamSwitchHold: false,
+                isConnectingPlayback: false
+            ),
+            .playing,
+            "Actor playing with the hold inactive still resolves to playing"
+        )
+
+        let held = manager._test_contentUpdateAxisHealPolicy(
+            systemLanguage: "fi",
+            systemVisual: .prePlay,
+            destinationLanguage: "fi",
+            actorVisual: .prePlay,
+            isStreamSwitchHoldActive: true,
+            isConnectingPlayback: false,
+            priorObservedLanguage: "et",
+            priorObservedVisual: .prePlay
+        )
+        XCTAssertFalse(
+            held.shouldFollowThroughPlayingEnsure,
+            "Axis-heal must not push playing while the attaching hold is active"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldEnsureAuthoritativePlayingContent(
+                actorVisual: .prePlay,
+                streamSwitchHold: true,
+                isConnectingPlayback: false,
+                lastPushedVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "Hold plus actor Connecting does not publish playing"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldEnsureAuthoritativePlayingContent(
+                actorVisual: .playing,
+                streamSwitchHold: true,
+                isConnectingPlayback: false,
+                lastPushedVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "A playing-ensure attempt already inside its loop must not publish once the hold is active"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.resolveContentPushVisual(
+                visualState: .prePlay,
+                streamSwitchHold: true,
+                isConnectingPlayback: false
+            ),
+            .prePlay,
+            "Hold plus actor Connecting stays Connecting"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.resolveContentPushVisual(
+                visualState: .playing,
+                streamSwitchHold: true,
+                isConnectingPlayback: false
+            ),
+            .prePlay,
+            "Hold keeps Connecting when the actor sample is still the previous station's playing"
+        )
+        let heldWhileActorStillPlaying = manager._test_contentUpdateAxisHealPolicy(
+            systemLanguage: "fi",
+            systemVisual: .prePlay,
+            destinationLanguage: "fi",
+            actorVisual: .playing,
+            isStreamSwitchHoldActive: true,
+            isConnectingPlayback: false,
+            priorObservedLanguage: "et",
+            priorObservedVisual: .prePlay
+        )
+        XCTAssertFalse(
+            heldWhileActorStillPlaying.shouldFollowThroughPlayingEnsure,
+            "Axis-heal must not push playing while the attaching hold is active"
+        )
+        XCTAssertEqual(
+            manager._test_optimisticLiveActivityVisualForStreamSwitchContent(
+                surfaceVisual: .playing,
+                isRequestEligible: false,
+                ownedVisual: .playing
+            ),
+            .playing,
+            "Ineligible owned playing stays language-only on playing"
+        )
+        XCTAssertEqual(
+            manager._test_optimisticLiveActivityVisualForStreamSwitchContent(
+                surfaceVisual: .userPaused,
+                isRequestEligible: false,
+                ownedVisual: .userPaused
+            ),
+            .userPaused,
+            "A paused switch stays userPaused"
+        )
+    }
+
     /// ICY-only ContentState is not suppressed; metadata lag with matching language +
     /// visual is uncommitted apply, not a stall, and is eligible for one coalesced
     /// re-push. Delayed re-read on that path does not consume language-ensure budget
@@ -4553,6 +4794,142 @@ class RadioLiveActivityManagerTests: XCTestCase {
             ),
             "A different title is a new metadata-only submission"
         )
+
+        let sameTitle = StreamProgramMetadata(programTitle: "Evening Hymn", speaker: "Choir")
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .playing,
+                candidateVisual: .playing,
+                ownedVisual: .playing,
+                candidateLanguage: "fi",
+                inFlightLanguage: "fi",
+                candidateMetadata: sameTitle,
+                inFlightMetadata: sameTitle
+            ),
+            "Two immediate candidates with the same language, visual, and title must not both call Activity.update"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .playing,
+                candidateVisual: .playing,
+                ownedVisual: .playing,
+                candidateLanguage: "fi",
+                inFlightLanguage: "fi",
+                candidateMetadata: otherTitle,
+                inFlightMetadata: sameTitle
+            ),
+            "A different title still updates"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .playing,
+                candidateVisual: .userPaused,
+                ownedVisual: .prePlay,
+                candidateLanguage: "fi",
+                inFlightLanguage: "fi",
+                candidateMetadata: sameTitle,
+                inFlightMetadata: sameTitle
+            ),
+            "Pause is a different visual and still pushes during an unconfirmed playing apply"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: nil,
+                candidateVisual: .playing,
+                ownedVisual: .playing,
+                candidateLanguage: "fi",
+                inFlightLanguage: "fi",
+                candidateMetadata: sameTitle,
+                inFlightMetadata: sameTitle
+            ),
+            "The delayed follow-through runs after in-flight is cleared, so this exemption does not block it"
+        )
+    }
+
+    /// Same-language optimistic pause carries the actor's current program title.
+    /// A language-changing switch still clears the previous title.
+    /// Does **not** add a metadata ensure rail. Does **not** claim lock-screen paint.
+    ///
+    /// Why this pattern is required: the optimistic ContentState is the update
+    /// ActivityKit accepts on pause. Copying only system-held metadata leaves the
+    /// title the player already has off that update.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/streamMetadataForOptimisticSameLanguageToggle(actorMetadata:actorLanguage:systemHeldMetadata:resolvedLanguage:)``,
+    ///   ``RadioLiveActivityManager/recordOptimisticToggleContent(visualState:actorProgramMetadata:actorLanguage:)``,
+    ///   ``RadioLiveActivityManager/recordOptimisticStreamSwitchContent(language:visualState:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testOptimisticPauseCarriesActorProgramTitleForSameLanguage() async {
+        let systemHeld = StreamProgramMetadata(programTitle: "Prior Title", speaker: "Reader")
+        let actorTitle = StreamProgramMetadata(programTitle: "Current Program", speaker: "Choir")
+        XCTAssertEqual(
+            RadioLiveActivityManager.streamMetadataForOptimisticSameLanguageToggle(
+                actorMetadata: actorTitle,
+                actorLanguage: "fi",
+                systemHeldMetadata: systemHeld,
+                resolvedLanguage: "fi"
+            ),
+            actorTitle,
+            "Same-language displayable actor title replaces system-held metadata"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.streamMetadataForOptimisticSameLanguageToggle(
+                actorMetadata: actorTitle,
+                actorLanguage: "et",
+                systemHeldMetadata: systemHeld,
+                resolvedLanguage: "fi"
+            ),
+            systemHeld,
+            "A different actor language keeps the system-held title"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.streamMetadataForOptimisticSameLanguageToggle(
+                actorMetadata: nil,
+                actorLanguage: "fi",
+                systemHeldMetadata: systemHeld,
+                resolvedLanguage: "fi"
+            ),
+            systemHeld,
+            "Missing actor metadata keeps the system-held title"
+        )
+
+        let playing = makeActivityContent(visualState: .playing, metadata: systemHeld, currentLanguage: "fi")
+        let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { continuation in
+            continuation.yield(playing)
+            continuation.finish()
+        }
+        manager._test_beginObservingSyntheticContentUpdates(stream)
+        let seeded = await waitUntil({ self.manager.lastPushedContent == playing.state })
+        XCTAssertTrue(seeded, "Precondition: lastPushedContent carries the system-held title")
+
+        let expectedLanguage: String = {
+            let resolved = manager._test_languageForOptimisticToggleContentAlignment(
+                lastPushedLanguage: "fi",
+                ownedContentLanguage: nil,
+                selectedStreamLanguage: DirectStreamingPlayer.shared.selectedStream.languageCode,
+                durableLanguageMirror: SharedPlayerManager.loadLiveActivityLanguageMirror()
+            )
+            return resolved.isEmpty ? SharedPlayerManager.mainAppLiveActivityLanguageCode() : resolved
+        }()
+        manager.recordOptimisticToggleContent(
+            visualState: .userPaused,
+            actorProgramMetadata: actorTitle,
+            actorLanguage: expectedLanguage
+        )
+        XCTAssertEqual(manager.lastPushedContent?.visualState, .userPaused)
+        XCTAssertEqual(
+            manager.lastPushedContent?.streamMetadata,
+            actorTitle,
+            "Optimistic pause must store the actor title, not only the system-held title"
+        )
+        XCTAssertEqual(manager.lastPushedContent?.currentLanguage, expectedLanguage)
+
+        manager.recordOptimisticStreamSwitchContent(language: "et", visualState: .prePlay)
+        XCTAssertNil(
+            manager.lastPushedContent?.streamMetadata,
+            "A language-changing switch still clears the previous program title"
+        )
+        XCTAssertEqual(manager.lastPushedContent?.currentLanguage, "et")
+        XCTAssertEqual(manager.lastPushedContent?.visualState, .prePlay)
     }
 
     /// Ineligible Connecting must not spend an ActivityKit visual apply over committed

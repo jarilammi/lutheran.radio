@@ -829,9 +829,11 @@ final class WidgetIntentContractTests: XCTestCase {
 
     /// Attaching in-process chip stamps destination language before optimistic last-pushed.
     ///
-    /// Same dest-before-ensure contract as the paused chip; Connecting hold still lands
-    /// once in ``executeInProcessStreamSwitch`` (not a second
-    /// ``resetToPrePlayForNewStream``). Does **not** invent `.playing`.
+    /// Same dest-before-ensure contract as the paused chip. When owned visual is still
+    /// Connecting, ``beginAttachingStreamSwitchPrePlayHold(languageCode:)`` makes the hold
+    /// visible before the optimistic update. ``executeInProcessStreamSwitch`` still runs
+    /// ``resetToPrePlayForNewStream`` once for the start pipeline and prior metadata.
+    /// Does **not** invent `.playing`.
     ///
     /// - SeeAlso: ``testInProcessChipSwitchStampsDestinationLanguageBeforeOptimisticLastPushed``.
     @MainActor

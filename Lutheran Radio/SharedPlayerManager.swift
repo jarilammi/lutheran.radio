@@ -693,13 +693,17 @@ actor SharedPlayerManager {
     /// here **before** optimistic Live Activity push + ``ensureAuthoritativeLanguageContentIfNeeded()``
     /// so ensure cannot reverse to the previous stream while ``selectedStream`` still names it.
     /// Does **not** set ``holdPrePlayVisualUntilPlayback`` and does **not** apply `.prePlay` —
-    /// paused chrome stays `.userPaused`. Attaching chips still call
-    /// ``resetToPrePlayForNewStream(connectingLanguageCode:)`` once after the optimistic push.
+    /// paused chrome stays `.userPaused`. An attaching chip whose owned Live Activity
+    /// visual is still ``.prePlay`` calls ``beginAttachingStreamSwitchPrePlayHold(languageCode:)``
+    /// before the optimistic update returns. ``resetToPrePlayForNewStream(connectingLanguageCode:)``
+    /// still runs once after that push and clears the superseded start pipeline and
+    /// prior-language metadata.
     ///
     /// - Parameter languageCode: Destination stream language code (non-empty).
     /// - Postcondition: ``streamSwitchConnectingLanguageCode`` and the durable LA language mirror
     ///   hold `languageCode` when non-empty.
-    /// - SeeAlso: ``clearStreamSwitchDestinationLanguageIfNotHolding()``,
+    /// - SeeAlso: ``beginAttachingStreamSwitchPrePlayHold(languageCode:)``,
+    ///   ``clearStreamSwitchDestinationLanguageIfNotHolding()``,
     ///   ``liveActivityLanguageCodeForContentPush()``,
     ///   ``PersistedLanguageResolution/resolve``,
     ///   ``WidgetIntentExecution/executeLiveActivityStreamSwitch(languageCode:)``,
@@ -709,6 +713,38 @@ actor SharedPlayerManager {
         guard !languageCode.isEmpty else { return }
         streamSwitchConnectingLanguageCode = languageCode
         Self.persistLiveActivityLanguageMirror(languageCode)
+    }
+
+    /// Makes Connecting hold visible before an attaching switch's optimistic Live Activity update.
+    ///
+    /// ``isStreamSwitchPrePlayHoldActive`` is actor ``.prePlay`` **and**
+    /// ``holdPrePlayVisualUntilPlayback``. Setting only the flag while the actor is
+    /// still ``.playing`` does not block axis-heal or ``resolveContentPushVisual``.
+    /// The flag is set first, then visual moves to ``.prePlay``, so both are visible
+    /// before this method returns. Does not refresh media surfaces, does not clear
+    /// program metadata, does not clear the start pipeline, and does not invent
+    /// ``.playing``. A paused switch must not call this.
+    /// ``resetToPrePlayForNewStream(connectingLanguageCode:)`` still runs later.
+    ///
+    /// - Parameter languageCode: Destination stream language already known to the caller.
+    /// - Precondition: ``RadioLiveActivityManager/shouldBeginAttachingStreamSwitchPrePlayHold(isActivePlaybackIntent:ownedVisual:)``
+    ///   is true (active playback intent and owned visual ``.prePlay``).
+    /// - Postcondition: ``holdPrePlayVisualUntilPlayback`` is true, ``currentVisualState``
+    ///   is ``.prePlay``, and ``isStreamSwitchPrePlayHoldActive`` is true. When
+    ///   `languageCode` is non-empty, ``streamSwitchConnectingLanguageCode`` and the
+    ///   durable language mirror hold that code.
+    /// - SeeAlso: ``stampStreamSwitchDestinationLanguage(_:)``,
+    ///   ``resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
+    ///   ``RadioLiveActivityManager/shouldBeginAttachingStreamSwitchPrePlayHold(isActivePlaybackIntent:ownedVisual:)``,
+    ///   ``RadioLiveActivityManager/contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:priorObservedLanguage:priorObservedVisual:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func beginAttachingStreamSwitchPrePlayHold(languageCode: String) {
+        holdPrePlayVisualUntilPlayback = true
+        applyVisualState(.prePlay)
+        if !languageCode.isEmpty {
+            streamSwitchConnectingLanguageCode = languageCode
+            Self.persistLiveActivityLanguageMirror(languageCode)
+        }
     }
 
     /// Clears a paused-path destination-language stamp when Connecting hold is **not** active.

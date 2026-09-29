@@ -174,6 +174,63 @@ final class SharedPlayerManagerEventStreamSwitchTests: XCTestCase {
         )
     }
 
+    /// Attaching switch makes Connecting hold visible before ``resetToPrePlayForNewStream``.
+    ///
+    /// ``stampStreamSwitchDestinationLanguage(_:)`` does not set the hold. The begin-hold
+    /// path sets the flag and actor ``.prePlay`` together, leaves prior metadata in place,
+    /// and does not start teardown. A later paused stamp does not take the hold.
+    /// Does **not** invent `.playing`.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/beginAttachingStreamSwitchPrePlayHold(languageCode:)``,
+    ///   ``RadioLiveActivityManager/shouldBeginAttachingStreamSwitchPrePlayHold(isActivePlaybackIntent:ownedVisual:)``,
+    ///   ``resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testBeginAttachingStreamSwitchPrePlayHoldIsVisibleWithoutReset() async {
+        await manager.setVisualState(.playing)
+        await manager.didUpdateStreamMetadata("Prior Language Program")
+        let holdBefore = await manager.isStreamSwitchPrePlayHoldActive
+        let pipelineBefore = await manager.isPlaybackStartPipelineActive
+        XCTAssertFalse(holdBefore)
+        XCTAssertFalse(pipelineBefore)
+
+        await manager.beginAttachingStreamSwitchPrePlayHold(languageCode: "fi")
+
+        let holdAfter = await manager.isStreamSwitchPrePlayHoldActive
+        let visualAfter = await manager.currentVisualState
+        let stamp = await manager.streamSwitchConnectingLanguageCode
+        let contentLanguage = await manager.liveActivityLanguageCodeForContentPush()
+        let metadata = await manager.currentStreamMetadata
+        let pipelineAfter = await manager.isPlaybackStartPipelineActive
+        XCTAssertTrue(
+            holdAfter,
+            "Hold and actor Connecting must both be visible before the optimistic update returns"
+        )
+        XCTAssertEqual(visualAfter, .prePlay)
+        XCTAssertEqual(stamp, "fi")
+        XCTAssertEqual(contentLanguage, "fi")
+        XCTAssertNotNil(
+            metadata,
+            "Prior title stays until resetToPrePlayForNewStream"
+        )
+        XCTAssertFalse(
+            pipelineAfter,
+            "Begin-hold does not arm or clear the start pipeline"
+        )
+
+        await manager.clearStreamSwitchPrePlayHold()
+        await manager.setVisualState(.userPaused)
+        await manager.stampStreamSwitchDestinationLanguage("et")
+        let holdPaused = await manager.isStreamSwitchPrePlayHoldActive
+        let visualPaused = await manager.currentVisualState
+        let stampPaused = await manager.streamSwitchConnectingLanguageCode
+        XCTAssertFalse(
+            holdPaused,
+            "A paused stamp must not set the Connecting hold"
+        )
+        XCTAssertEqual(visualPaused, .userPaused)
+        XCTAssertEqual(stampPaused, "et")
+    }
+
     /// Stream-switch Connecting hold must publish the **destination** language for Live Activity
     /// content **before** ``selectedStream`` updates, so Lock Screen chrome does not show
     /// `.prePlay` with the prior stream’s flag/name for one content push.

@@ -383,11 +383,15 @@ enum WidgetIntentExecution {
 
     /// Publishes an optimistic Live Activity control visual for lock-screen toggle intents.
     ///
-    /// Updates every active/stale `Activity` whose content visual differs from `visualState`,
-    /// preserving each activity's existing ``streamMetadata`` and ``currentLanguage`` (no
-    /// title/speaker/language invent or clear). On the main app, aligns
-    /// ``RadioLiveActivityManager/lastPushedContent`` so subsequent ``updateCurrentActivity()``
-    /// calls do not regress the glyph while the actor catches up.
+    /// Updates every active/stale `Activity` whose content visual differs from `visualState`.
+    /// On the main app, a same-language pause or Play copies the actor's current program
+    /// title onto that ContentState when it is displayable
+    /// (``RadioLiveActivityManager/streamMetadataForOptimisticSameLanguageToggle(actorMetadata:actorLanguage:systemHeldMetadata:resolvedLanguage:)``).
+    /// A language co-heal (selected stream language differs from owned content language)
+    /// still keeps the activity's existing ``streamMetadata``. Extension hosts keep
+    /// visual-only replace. On the main app, aligns
+    /// ``RadioLiveActivityManager/lastPushedContent`` to the same title and glyph so
+    /// subsequent ``updateCurrentActivity()`` calls do not regress while the actor catches up.
     ///
     /// - Parameter visualState: Target control visual (`.userPaused` after pause plan, `.playing` after play).
     /// - Note: Skips ActivityKit IPC under ``SharedPlayerManager/isRunningInUITestMode`` and
@@ -407,13 +411,20 @@ enum WidgetIntentExecution {
         let skipActivityKitIPC = SharedPlayerManager.isRunningInUITestMode
             || SharedPlayerManager.isRunningAsIOSAppOnMac
 
+        #if LUTHERAN_MAIN_APP
+        // Read before ActivityKit IPC. ``stop()`` is already suspended on this await,
+        // so the actor hop is re-entrant and sees the title the player already has.
+        let actorMetadata = await SharedPlayerManager.shared.currentStreamMetadata
+        let actorLanguage = await SharedPlayerManager.shared.liveActivityLanguageCodeForContentPush()
+        #endif
+
         if !skipActivityKitIPC {
             for activity in interactiveLiveActivities() {
                 let current = activity.content.state
                 // Main-app: co-heal language chrome when stream attach already advanced but
                 // system-held ContentState language still lags (pause/play after switch must
-                // not re-stamp prior-language via replacingVisualState alone). Extension keeps
-                // visual-only replace — ContentState is the extension language chrome SSOT.
+                // not re-stamp prior-language via replacingVisualState alone). Same-language
+                // pause/play carries the actor title. Extension keeps visual-only replace.
                 #if LUTHERAN_MAIN_APP
                 let selectedLanguage = DirectStreamingPlayer.shared.selectedStream.languageCode
                 let candidate: LutheranRadioLiveActivityAttributes.ContentState
@@ -424,7 +435,17 @@ enum WidgetIntentExecution {
                         currentLanguage: selectedLanguage
                     )
                 } else {
-                    candidate = current.replacingVisualState(visualState)
+                    let metadata = RadioLiveActivityManager.streamMetadataForOptimisticSameLanguageToggle(
+                        actorMetadata: actorMetadata,
+                        actorLanguage: actorLanguage,
+                        systemHeldMetadata: current.streamMetadata,
+                        resolvedLanguage: current.currentLanguage
+                    )
+                    candidate = LutheranRadioLiveActivityAttributes.ContentState(
+                        visualState: visualState,
+                        streamMetadata: metadata,
+                        currentLanguage: current.currentLanguage
+                    )
                 }
                 #else
                 let candidate = current.replacingVisualState(visualState)
@@ -441,7 +462,11 @@ enum WidgetIntentExecution {
 
         #if LUTHERAN_MAIN_APP
         await MainActor.run {
-            RadioLiveActivityManager.shared.recordOptimisticToggleContent(visualState: visualState)
+            RadioLiveActivityManager.shared.recordOptimisticToggleContent(
+                visualState: visualState,
+                actorProgramMetadata: actorMetadata,
+                actorLanguage: actorLanguage
+            )
         }
         #endif
     }
@@ -991,13 +1016,19 @@ enum WidgetIntentExecution {
     /// ``RadioLiveActivityManager/shouldPreserveOwnedVisualOnIneligibleLanguageMutation``.
     /// Eligible / presentable still uses Connecting via
     /// ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``.
-    /// WidgetSurface stays eligibility-free. Does **not** call ``resetToPrePlayForNewStream``
-    /// (attaching chips still reset once in ``executeInProcessStreamSwitch``). Does **not**
-    /// write `pendingAction*` / Darwin. Does **not** invent `.playing`.
+    /// WidgetSurface stays eligibility-free. When playback intent is already active and
+    /// owned visual is still ``.prePlay``, ``beginAttachingStreamSwitchPrePlayHold(languageCode:)``
+    /// makes Connecting hold visible before this update returns, and an in-flight
+    /// previous-station playing apply is waited out so Connecting is published after it.
+    /// ``resetToPrePlayForNewStream`` still runs once in ``executeInProcessStreamSwitch``.
+    /// A paused switch does not take the hold. An owned ``.playing`` card stays
+    /// language-only. Does **not** write `pendingAction*` / Darwin. Does **not** invent `.playing`.
     ///
     /// - Parameter languageCode: Destination stream language code.
     /// - SeeAlso: ``SharedPlayerManager/stampStreamSwitchDestinationLanguage(_:)``,
+    ///   ``SharedPlayerManager/beginAttachingStreamSwitchPrePlayHold(languageCode:)``,
     ///   ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``,
+    ///   ``RadioLiveActivityManager/shouldBeginAttachingStreamSwitchPrePlayHold(isActivePlaybackIntent:ownedVisual:)``,
     ///   ``RadioLiveActivityManager/optimisticLiveActivityVisualForStreamSwitchContent(surfaceVisual:isRequestEligible:ownedVisual:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private static func publishOptimisticStreamSwitchLanguageChrome(languageCode: String) async {
@@ -1027,6 +1058,17 @@ enum WidgetIntentExecution {
             }
             #endif
             return visual
+        }
+        let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
+        if RadioLiveActivityManager.shouldBeginAttachingStreamSwitchPrePlayHold(
+            isActivePlaybackIntent: playbackIntent.isActivePlaybackIntent,
+            ownedVisual: ownedVisual
+        ) {
+            await SharedPlayerManager.shared.beginAttachingStreamSwitchPrePlayHold(
+                languageCode: languageCode
+            )
+            await RadioLiveActivityManager.shared.discardPreviousStationPlayingContentPushForAttachingSwitch()
+            await RadioLiveActivityManager.shared.waitUntilInFlightContentPushApplyFinishes()
         }
         #else
         optimisticVisual = WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(

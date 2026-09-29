@@ -85,14 +85,16 @@ import WidgetSurface
 /// Language-only candidates (visual matches in-flight **and** owned visual) still update.
 /// When a delayed re-read or `contentUpdates` yield still shows ``.prePlay`` for that
 /// playing candidate, clear the in-flight playing candidate and do **not** flush another
-/// identical ``.playing`` update. That immediate flush is the burst ActivityKit does not
-/// accept. The existing post-quiet long-horizon playing retry can then call
-/// `Activity.update` once per retry, because the observation closed the apply.
-/// ``publishAuthoritativePlayingIfNeeded()`` does not publish a second Live Activity
-/// visual push while that first playing apply is unconfirmed. In-app playing chrome
-/// may still update. Soft-ensure attempt counters still bound the loop; this is IPC
-/// coalesce, not a new ensure rail. Does **not** invent `.playing`. Does **not** end
-/// while ineligible.
+/// identical ``.playing`` update. That observation also closes the apply: dual-axis and
+/// playing-ensure attempts must not call `Activity.update` again for the same
+/// Connecting→playing pair. Pause (``.userPaused``) still updates. The existing
+/// post-quiet long-horizon playing retry (5 s / 15 s / 45 s) is the next push, and it
+/// is **one** `Activity.update` per interval — it does not enter the 3-attempt
+/// soft-ensure loop. ``publishAuthoritativePlayingIfNeeded()`` does not publish a
+/// second Live Activity visual push while that first playing apply is unconfirmed or
+/// while the closed apply is still waiting for the spaced retry. In-app playing chrome
+/// may still update. This is not a new ensure rail. Does **not** invent `.playing`.
+/// Does **not** end while ineligible.
 ///
 /// ## Explicit Play after hard teardown while ineligible
 /// Optimistic Live Activity ``.playing`` is only for a retained same-stream soft-resume
@@ -550,6 +552,29 @@ class RadioLiveActivityManager: ObservableObject {
     /// is false so a language-only / first visual await is not followed by a nested visual IPC.
     private var isAwaitingLiveActivityContentPushApply = false
 
+    /// A committed observation closed a Connecting→playing apply that ActivityKit did not accept.
+    ///
+    /// Dual-axis and playing-ensure must not call `Activity.update` again for that pair.
+    /// Pause still updates. Cleared when the spaced playing retry issues its one push,
+    /// when owned visual becomes ``.playing``, or when a pause / play / stream-switch
+    /// mutation starts a new cycle. Does not end the activity. Does not invent `.playing`.
+    ///
+    /// - SeeAlso: ``shouldSuppressPlayingContentPushAfterClosedConnectingObservation(closedUntilSpacedRetry:candidateVisual:ownedVisual:)``,
+    ///   ``clearClosedUnconfirmedPlayingApplyBeforeLongHorizonRetry()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    private var playingOverConnectingApplyClosedUntilSpacedRetry = false
+
+    /// The spaced playing retry may issue the one `Activity.update` the closed apply is waiting for.
+    ///
+    /// Set by ``clearClosedUnconfirmedPlayingApplyBeforeLongHorizonRetry()`` and consumed
+    /// at the start of ``updateCurrentActivity()`` before any await, so a concurrent
+    /// soft-ensure cannot use the gap. The closed-apply latch stays set until that push
+    /// passes the visual gate and ``inFlightContentPushCandidate`` is set.
+    ///
+    /// - SeeAlso: ``playingOverConnectingApplyClosedUntilSpacedRetry``,
+    ///   ``schedulePostQuietLongHorizonPlayingEnsure()``.
+    private var spacedPlayingRetryAllowsClosedApplyPush = false
+
     /// Delayed apply-confirmation after an in-flight mismatch. Cancelled on a new push,
     /// matching `contentUpdates`, ownership end, or test sanitization.
     private var inFlightContentPushConfirmationTask: Task<Void, Never>?
@@ -874,6 +899,16 @@ class RadioLiveActivityManager: ObservableObject {
     static let postQuietLongHorizonEnsureDelayedIntervalsMilliseconds: [UInt64] = [
         5_000, 15_000, 45_000
     ]
+
+    /// `Activity.update` calls one post-quiet playing retry interval may issue.
+    ///
+    /// The soft-ensure loop stays ``authoritativePlayingContentEnsureMaxAttempts``.
+    /// This retry does not enter that loop. Pause is not counted here.
+    ///
+    /// - SeeAlso: ``schedulePostQuietLongHorizonPlayingEnsure()``,
+    ///   ``authoritativePlayingContentEnsureMaxAttempts``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static let postQuietLongHorizonPlayingRetryContentPushesPerInterval = 1
 
     /// Delayed sparse long-horizon **playing** soft-ensure after quiet / settle still lags.
     ///
@@ -1632,7 +1667,13 @@ class RadioLiveActivityManager: ObservableObject {
         }
 
         guard let activity = currentActivity else { return }
-        
+
+        // Consume before any await so a concurrent soft-ensure cannot treat this
+        // retry's allowance as its own push. The closed-apply latch stays set until
+        // this call passes the visual gate below.
+        let allowsClosedPlayingOverConnectingPush = spacedPlayingRetryAllowsClosedApplyPush
+        spacedPlayingRetryAllowsClosedApplyPush = false
+
         let manager = SharedPlayerManager.shared
         
         // Prefer the live in-memory values (decoupled path). Persisted is only fallback
@@ -1919,11 +1960,42 @@ class RadioLiveActivityManager: ObservableObject {
         // do not issue a second visual-differing IPC. Remember the latest candidate.
         // Pause is not held behind an unconfirmed playing apply over owned Connecting.
         // Language-only same-visual still updates.
+        if !allowsClosedPlayingOverConnectingPush,
+           Self.shouldSuppressPlayingContentPushAfterClosedConnectingObservation(
+               closedUntilSpacedRetry: playingOverConnectingApplyClosedUntilSpacedRetry,
+               candidateVisual: candidate.visualState,
+               ownedVisual: ownedVisual
+           ) {
+            #if DEBUG
+            let closedSig = Self.stalledContentDiagnosticsSignature(
+                candidateLanguage: candidate.currentLanguage,
+                acceptedLanguage: ownedLanguage,
+                candidateVisual: candidate.visualState,
+                acceptedVisual: ownedVisual
+            )
+            if Self.shouldLogStalledContentDiagnostics(
+                signature: "playing-closed|" + closedSig,
+                lastLoggedSignature: lastLoggedStalledContentDiagnosticsSignature
+            ) {
+                lastLoggedStalledContentDiagnosticsSignature = "playing-closed|" + closedSig
+                print(
+                    "🔴 Live Activity playing push skipped (closed Connecting apply; " +
+                    "spaced retry is the next update; pause still updates)"
+                )
+            }
+            #endif
+            return
+        }
+
         if Self.shouldCoalesceVisualDifferingContentPushWhileInFlight(
             inFlightVisual: inFlightContentPushCandidate?.visualState,
             candidateVisual: candidate.visualState,
             ownedVisual: ownedVisual,
-            languageOnlyPreservingOwnedVisual: preserveOwnedVisual
+            languageOnlyPreservingOwnedVisual: preserveOwnedVisual,
+            candidateLanguage: candidate.currentLanguage,
+            inFlightLanguage: inFlightContentPushCandidate?.currentLanguage,
+            candidateMetadata: candidate.streamMetadata,
+            inFlightMetadata: inFlightContentPushCandidate?.streamMetadata
         ) {
             pendingCoalescedContentPushCandidate = candidate
             #if DEBUG
@@ -1975,6 +2047,13 @@ class RadioLiveActivityManager: ObservableObject {
         }
         // Mark in-flight before the await so MainActor re-entry (playing ensure / dual-axis
         // during this suspension) coalesces instead of issuing a second visual IPC.
+        // The spaced retry clears the closed Connecting apply only once this push is
+        // the outstanding mutation — not during the earlier awaits.
+        if allowsClosedPlayingOverConnectingPush,
+           candidate.visualState == .playing,
+           ownedVisual == .prePlay {
+            playingOverConnectingApplyClosedUntilSpacedRetry = false
+        }
         inFlightContentPushCandidate = candidate
         isAwaitingLiveActivityContentPushApply = true
         unsafe await safeActivity.update(.init(state: candidate, staleDate: nil))
@@ -2466,6 +2545,11 @@ class RadioLiveActivityManager: ObservableObject {
             // and other differing candidates still flush once. Then axis-heal.
             self.inFlightContentPushConfirmationTask = nil
             self.inFlightContentPushCandidate = nil
+            self.noteCommittedPlayingOverConnectingObservation(
+                observationKind: .delayedReread,
+                candidateVisual: candidate.visualState,
+                observedVisual: observed.visualState
+            )
             if Self.shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
                 observationKind: .delayedReread,
                 candidateVisual: candidate.visualState,
@@ -2884,9 +2968,15 @@ class RadioLiveActivityManager: ObservableObject {
     ///   - ownedVisual: Owned `content.state.visualState`.
     ///   - languageOnlyPreservingOwnedVisual: ``shouldPreserveOwnedVisualOnLanguageOnlyContentPush(keepOwnedVisualAfterFreeze:isStreamSwitchHoldActive:)``
     ///     decided this candidate keeps the owned glyph.
+    ///   - candidateLanguage: Language on the new candidate. Together with metadata, a
+    ///     same-visual duplicate title coalesces. Omitted by callers that are not metadata.
+    ///   - inFlightLanguage: Language on ``inFlightContentPushCandidate``.
+    ///   - candidateMetadata: Program metadata on the new candidate.
+    ///   - inFlightMetadata: Program metadata on the in-flight candidate.
     /// - Returns: `true` when IPC must be skipped and the caller should remember the latest
     ///   candidate. `false` for pause while an unconfirmed ``.playing`` apply still shows
-    ///   owned ``.prePlay``, and whenever nothing is in flight.
+    ///   owned ``.prePlay``, for language-only same-visual updates, and whenever nothing
+    ///   is in flight.
     /// - SeeAlso: ``updateCurrentActivity()``,
     ///   ``shouldFlushCoalescedContentPushAfterObservation(coalesced:observed:)``,
     ///   ``flushCoalescedContentPushIfNeeded(observed:)``,
@@ -2895,14 +2985,29 @@ class RadioLiveActivityManager: ObservableObject {
         inFlightVisual: PlayerVisualState?,
         candidateVisual: PlayerVisualState,
         ownedVisual: PlayerVisualState,
-        languageOnlyPreservingOwnedVisual: Bool = false
+        languageOnlyPreservingOwnedVisual: Bool = false,
+        candidateLanguage: String? = nil,
+        inFlightLanguage: String? = nil,
+        candidateMetadata: StreamProgramMetadata? = nil,
+        inFlightMetadata: StreamProgramMetadata? = nil
     ) -> Bool {
         guard let inFlightVisual else { return false }
         if languageOnlyPreservingOwnedVisual, candidateVisual == ownedVisual {
             return false
         }
-        // Language-only: same visual as in-flight and already on the owned surface.
+        // Same visual as in-flight and already on the owned surface: language-only
+        // still updates. A second immediate metadata candidate with the same language
+        // and the same title does not — that exemption was a second `Activity.update`
+        // for a title the first update already submitted. The delayed follow-through
+        // runs only after in-flight is cleared, so it does not take this branch.
         if candidateVisual == inFlightVisual, ownedVisual == candidateVisual {
+            if let candidateLanguage,
+               let inFlightLanguage,
+               candidateLanguage == inFlightLanguage,
+               let candidateMetadata,
+               candidateMetadata == inFlightMetadata {
+                return true
+            }
             return false
         }
         // Unconfirmed Connecting → playing: remember another .playing, but let pause through.
@@ -3003,6 +3108,97 @@ class RadioLiveActivityManager: ObservableObject {
         coalescedVisual == .playing && observedVisual == .prePlay
     }
 
+    /// Whether a soft-ensure or dual-axis attempt must not call `Activity.update` for a
+    /// Connecting→playing pair a committed observation already closed.
+    ///
+    /// The first ``.playing`` update is the one outstanding apply. After delayed re-read
+    /// or `contentUpdates` still shows ``.prePlay``, further 200/400/800 ms attempts are
+    /// the burst ActivityKit does not accept. Pause (``.userPaused``) returns `false`.
+    /// The spaced playing retry clears the latch and then pushes once.
+    ///
+    /// - Parameters:
+    ///   - closedUntilSpacedRetry: ``playingOverConnectingApplyClosedUntilSpacedRetry``.
+    ///   - candidateVisual: Visual the caller would submit.
+    ///   - ownedVisual: Owned `content.state.visualState`.
+    /// - Returns: `true` when this ``.playing`` push must be skipped.
+    /// - SeeAlso: ``shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(observationKind:candidateVisual:observedVisual:)``,
+    ///   ``postQuietLongHorizonPlayingRetryContentPushesPerInterval``,
+    ///   ``clearClosedUnconfirmedPlayingApplyBeforeLongHorizonRetry()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldSuppressPlayingContentPushAfterClosedConnectingObservation(
+        closedUntilSpacedRetry: Bool,
+        candidateVisual: PlayerVisualState,
+        ownedVisual: PlayerVisualState
+    ) -> Bool {
+        closedUntilSpacedRetry
+            && candidateVisual == .playing
+            && ownedVisual == .prePlay
+    }
+
+    /// Whether an attaching station switch must make Connecting hold visible before the
+    /// optimistic Live Activity update returns.
+    ///
+    /// Active playback intent and an owned Connecting card: the previous station can
+    /// still be ``.playing`` on the actor until ``resetToPrePlayForNewStream``. Without
+    /// the hold, axis-heal publishes that ``.playing`` into the silent gap, and
+    /// Connecting skip then keeps the pause glyph. A paused switch is not an active
+    /// intent and must not take the hold. An owned ``.playing`` card stays language-only
+    /// on that glyph. Does not invent ``.playing``.
+    ///
+    /// - Parameters:
+    ///   - isActivePlaybackIntent: ``PlaybackIntent/isActivePlaybackIntent``.
+    ///   - ownedVisual: Owned `content.state.visualState` before the optimistic push.
+    /// - Returns: `true` when ``holdPrePlayVisualUntilPlayback`` and actor ``.prePlay``
+    ///   must be visible before the optimistic update can be healed.
+    /// - SeeAlso: ``SharedPlayerManager/beginAttachingStreamSwitchPrePlayHold(languageCode:)``,
+    ///   ``contentUpdateAxisHealPolicy(systemLanguage:systemVisual:destinationLanguage:actorVisual:isStreamSwitchHoldActive:isConnectingPlayback:priorObservedLanguage:priorObservedVisual:)``,
+    ///   ``shouldEnsureAuthoritativePlayingContent(actorVisual:streamSwitchHold:isConnectingPlayback:lastPushedVisual:ownedVisual:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    /// - Note: `nonisolated` so the intent path can decide before the optimistic
+    ///   update without hopping onto this manager. The function reads no actor state.
+    nonisolated static func shouldBeginAttachingStreamSwitchPrePlayHold(
+        isActivePlaybackIntent: Bool,
+        ownedVisual: PlayerVisualState
+    ) -> Bool {
+        isActivePlaybackIntent && ownedVisual == .prePlay
+    }
+
+    /// Program title for a same-language optimistic pause or Play.
+    ///
+    /// The optimistic ContentState is the update ActivityKit accepts on pause. Copying
+    /// only system-held metadata leaves the actor's current title off that update.
+    /// When the actor already has a displayable title and its language matches the
+    /// toggle language, that title wins. A different language keeps the system-held
+    /// value; language-changing stream switch still clears metadata on
+    /// ``recordOptimisticStreamSwitchContent(language:visualState:)``.
+    ///
+    /// - Parameters:
+    ///   - actorMetadata: ``SharedPlayerManager/currentStreamMetadata``.
+    ///   - actorLanguage: Language the actor title belongs to.
+    ///   - systemHeldMetadata: ``lastPushedContent`` or owned `content.state` metadata.
+    ///   - resolvedLanguage: Language the optimistic toggle will publish.
+    /// - Returns: Actor metadata when it is displayable and the language matches;
+    ///   otherwise `systemHeldMetadata`.
+    /// - SeeAlso: ``recordOptimisticToggleContent(visualState:actorProgramMetadata:actorLanguage:)``,
+    ///   ``WidgetIntentExecution/pushOptimisticLiveActivityToggleContent(visualState:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    /// - Note: `nonisolated` so the optimistic pause/Play path can copy the title
+    ///   without hopping onto this manager. The function reads no actor state.
+    nonisolated static func streamMetadataForOptimisticSameLanguageToggle(
+        actorMetadata: StreamProgramMetadata?,
+        actorLanguage: String,
+        systemHeldMetadata: StreamProgramMetadata?,
+        resolvedLanguage: String
+    ) -> StreamProgramMetadata? {
+        if let actorMetadata,
+           actorMetadata.hasDisplayableContent,
+           !actorLanguage.isEmpty,
+           actorLanguage == resolvedLanguage {
+            return actorMetadata
+        }
+        return systemHeldMetadata
+    }
+
     /// Whether ``publishAuthoritativePlayingIfNeeded()`` must skip a second Live Activity
     /// visual push while the first ``.playing`` apply is unconfirmed and owned visual is
     /// still Connecting.
@@ -3026,13 +3222,48 @@ class RadioLiveActivityManager: ObservableObject {
         inFlightVisual == .playing && ownedVisual == .prePlay
     }
 
+    /// Whether ``publishAuthoritativePlayingIfNeeded()`` must skip a Live Activity
+    /// playing push: the apply is still in flight, or a committed observation closed
+    /// it and the spaced retry has not yet issued its one update.
+    ///
+    /// In-app chrome may already be ``.playing``. Pause is not this gate.
+    ///
+    /// - Parameters:
+    ///   - closedUntilSpacedRetry: ``playingOverConnectingApplyClosedUntilSpacedRetry``.
+    ///   - inFlightVisual: Visual of ``inFlightContentPushCandidate``, if any.
+    ///   - ownedVisual: Owned `content.state.visualState`, if any.
+    /// - Returns: `true` when the duplicate playing push must be skipped.
+    /// - SeeAlso: ``shouldSuppressPlayingContentPushAfterClosedConnectingObservation(closedUntilSpacedRetry:candidateVisual:ownedVisual:)``,
+    ///   ``shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(inFlightVisual:ownedVisual:)``,
+    ///   ``publishAuthoritativePlayingIfNeeded()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldSuppressAuthoritativePlayingLiveActivityPush(
+        closedUntilSpacedRetry: Bool,
+        inFlightVisual: PlayerVisualState?,
+        ownedVisual: PlayerVisualState?
+    ) -> Bool {
+        if let ownedVisual,
+           shouldSuppressPlayingContentPushAfterClosedConnectingObservation(
+               closedUntilSpacedRetry: closedUntilSpacedRetry,
+               candidateVisual: .playing,
+               ownedVisual: ownedVisual
+           ) {
+            return true
+        }
+        return shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(
+            inFlightVisual: inFlightVisual,
+            ownedVisual: ownedVisual
+        )
+    }
+
     /// Instance gate for ``DirectStreamingPlayer/publishAuthoritativePlayingIfNeeded()``.
     ///
-    /// - Returns: ``shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(inFlightVisual:ownedVisual:)``
-    ///   for the current in-flight candidate and owned surface.
-    /// - SeeAlso: ``shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(inFlightVisual:ownedVisual:)``.
+    /// - Returns: ``shouldSuppressAuthoritativePlayingLiveActivityPush(closedUntilSpacedRetry:inFlightVisual:ownedVisual:)``
+    ///   for the closed-apply latch, the in-flight candidate, and the owned surface.
+    /// - SeeAlso: ``shouldSuppressAuthoritativePlayingLiveActivityPush(closedUntilSpacedRetry:inFlightVisual:ownedVisual:)``.
     func shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush() -> Bool {
-        Self.shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(
+        Self.shouldSuppressAuthoritativePlayingLiveActivityPush(
+            closedUntilSpacedRetry: playingOverConnectingApplyClosedUntilSpacedRetry,
             inFlightVisual: inFlightContentPushCandidate?.visualState,
             ownedVisual: currentActivity?.content.state.visualState
         )
@@ -6518,20 +6749,137 @@ class RadioLiveActivityManager: ObservableObject {
         schedulePostQuietLongHorizonDualAxisEnsure()
     }
 
-    /// Drops a ``.playing`` apply a committed observation already closed, so the spaced
-    /// playing retry can call `Activity.update`.
+    /// Records that a committed observation closed a Connecting→playing apply, or that
+    /// owned visual accepted ``.playing``.
+    ///
+    /// Closing the apply blocks later soft-ensure `Activity.update` calls for that pair
+    /// until the spaced playing retry. Acceptance clears the block. Does not call
+    /// `Activity.update`. Does not end the activity.
+    ///
+    /// - Parameters:
+    ///   - observationKind: Delayed re-read or `contentUpdates`. Immediate post-await is ignored.
+    ///   - candidateVisual: Visual submitted on the in-flight update.
+    ///   - observedVisual: System-held visual at the committed observation.
+    /// - SeeAlso: ``shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(observationKind:candidateVisual:observedVisual:)``,
+    ///   ``shouldSuppressPlayingContentPushAfterClosedConnectingObservation(closedUntilSpacedRetry:candidateVisual:ownedVisual:)``.
+    @MainActor
+    private func noteCommittedPlayingOverConnectingObservation(
+        observationKind: LiveActivityContentPushObservationKind,
+        candidateVisual: PlayerVisualState,
+        observedVisual: PlayerVisualState
+    ) {
+        if observedVisual == .playing {
+            playingOverConnectingApplyClosedUntilSpacedRetry = false
+            return
+        }
+        guard Self.shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
+            observationKind: observationKind,
+            candidateVisual: candidateVisual,
+            observedVisual: observedVisual
+        ) else { return }
+        playingOverConnectingApplyClosedUntilSpacedRetry = true
+    }
+
+    /// Drops a closed Connecting→playing apply so a new pause, Play, or station
+    /// switch can publish its own update.
+    ///
+    /// Call after Connecting hold is already visible on an attaching switch, and
+    /// at the start of optimistic pause / Play. Does not end the activity. Does
+    /// not invent `.playing`.
+    ///
+    /// - SeeAlso: ``playingOverConnectingApplyClosedUntilSpacedRetry``,
+    ///   ``recordOptimisticToggleContent(visualState:actorProgramMetadata:actorLanguage:)``,
+    ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``.
+    @MainActor
+    private func clearClosedPlayingOverConnectingApplyForNewMutation() {
+        playingOverConnectingApplyClosedUntilSpacedRetry = false
+        spacedPlayingRetryAllowsClosedApplyPush = false
+    }
+
+    /// Drops a remembered previous-station ``.playing`` candidate before an attaching
+    /// switch publishes Connecting.
+    ///
+    /// Call only after ``SharedPlayerManager/beginAttachingStreamSwitchPrePlayHold(languageCode:)``
+    /// so axis-heal and ``resolveContentPushVisual(visualState:streamSwitchHold:isConnectingPlayback:)``
+    /// already see the hold. Does not cancel an `Activity.update` that is already
+    /// awaiting — the caller waits for that apply, then publishes Connecting last.
+    /// Does not end the activity.
+    ///
+    /// - SeeAlso: ``waitUntilInFlightContentPushApplyFinishes()``,
+    ///   ``shouldBeginAttachingStreamSwitchPrePlayHold(isActivePlaybackIntent:ownedVisual:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    func discardPreviousStationPlayingContentPushForAttachingSwitch() {
+        if pendingCoalescedContentPushCandidate?.visualState == .playing {
+            pendingCoalescedContentPushCandidate = nil
+        }
+        if !isAwaitingLiveActivityContentPushApply,
+           inFlightContentPushCandidate?.visualState == .playing {
+            inFlightContentPushCandidate = nil
+        }
+    }
+
+    /// Yields until an in-flight `Activity.update` apply returns, so an attaching
+    /// switch can publish Connecting after that apply.
+    ///
+    /// This waits out an apply that is already in flight. It is not a new ensure
+    /// cadence. A ceiling keeps a stuck apply from holding the chip. Under
+    /// UITestMode and the test host this returns immediately.
+    ///
+    /// - SeeAlso: ``discardPreviousStationPlayingContentPushForAttachingSwitch()``,
+    ///   ``WidgetIntentExecution/publishOptimisticStreamSwitchLanguageChrome(languageCode:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    func waitUntilInFlightContentPushApplyFinishes() async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        let sliceMs: UInt64 = 25
+        let ceilingMs: UInt64 = 2_000
+        var waitedMs: UInt64 = 0
+        while isAwaitingLiveActivityContentPushApply, waitedMs < ceilingMs {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(sliceMs))
+            waitedMs += sliceMs
+        }
+        #if DEBUG
+        if isAwaitingLiveActivityContentPushApply {
+            print(
+                "🔴 Live Activity attaching switch proceeded while a content push was still awaiting"
+            )
+        }
+        #endif
+    }
+
+    /// Lets the spaced playing retry issue the one `Activity.update` a closed
+    /// Connecting→playing apply is waiting for.
     ///
     /// No-op while an apply await or confirmation task is still outstanding — that
-    /// unconfirmed update must stay the one outstanding visual mutation. Does not end
-    /// the activity. Does not invent `.playing`.
+    /// unconfirmed update must stay the one outstanding visual mutation. Does not
+    /// clear the closed-apply latch here: ``updateCurrentActivity()`` clears it only
+    /// when this retry's push passes the visual gate, so a concurrent soft-ensure
+    /// cannot publish during the metadata await. Does not end the activity. Does not
+    /// invent `.playing`.
     ///
     /// - SeeAlso: ``shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(observationKind:candidateVisual:observedVisual:)``,
+    ///   ``shouldSuppressPlayingContentPushAfterClosedConnectingObservation(closedUntilSpacedRetry:candidateVisual:ownedVisual:)``,
     ///   ``schedulePostQuietLongHorizonPlayingEnsure()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @MainActor
     private func clearClosedUnconfirmedPlayingApplyBeforeLongHorizonRetry() {
         guard !isAwaitingLiveActivityContentPushApply else { return }
         guard inFlightContentPushConfirmationTask == nil else { return }
+        if playingOverConnectingApplyClosedUntilSpacedRetry {
+            spacedPlayingRetryAllowsClosedApplyPush = true
+            if pendingCoalescedContentPushCandidate?.visualState == .playing {
+                pendingCoalescedContentPushCandidate = nil
+            }
+            if inFlightContentPushCandidate?.visualState == .playing {
+                inFlightContentPushCandidate = nil
+            }
+            return
+        }
         guard let inFlight = inFlightContentPushCandidate else { return }
         guard let ownedVisual = currentActivity?.content.state.visualState else { return }
         guard let kind = lastContentPushObservationKind else { return }
@@ -6544,15 +6892,25 @@ class RadioLiveActivityManager: ObservableObject {
         if pendingCoalescedContentPushCandidate?.visualState == .playing {
             pendingCoalescedContentPushCandidate = nil
         }
+        spacedPlayingRetryAllowsClosedApplyPush = true
     }
 
-    /// Schedules sparse delayed playing soft-ensure fires after quiet / settle still lags.
+    /// Schedules the spaced playing retry after quiet / settle still lags.
     ///
-    /// Each fire clears playing quiet once, optionally dual-axis language quiet when both lag,
-    /// runs soft ensure, then re-engages quiet between fires while ineligible.
+    /// Each interval clears playing quiet once, allows one `Activity.update`
+    /// (``postQuietLongHorizonPlayingRetryContentPushesPerInterval``) after
+    /// ``clearClosedUnconfirmedPlayingApplyBeforeLongHorizonRetry()``, then
+    /// re-engages quiet between intervals while ineligible. It does not enter
+    /// ``ensureAuthoritativePlayingContentIfNeeded()`` or
+    /// ``ensureAuthoritativeDualAxisContentIfNeeded()``. When destination language
+    /// still lags, language quiet is cleared before that one push so the candidate
+    /// can carry both axes. Does not end the activity. Does not invent `.playing`.
     ///
     /// - SeeAlso: ``postQuietLongHorizonEnsureDelayedIntervalsMilliseconds``,
-    ///   ``armPostQuietLongHorizonPlayingEnsureIfNeeded()``.
+    ///   ``postQuietLongHorizonPlayingRetryContentPushesPerInterval``,
+    ///   ``clearClosedUnconfirmedPlayingApplyBeforeLongHorizonRetry()``,
+    ///   ``armPostQuietLongHorizonPlayingEnsureIfNeeded()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @MainActor
     private func schedulePostQuietLongHorizonPlayingEnsure() {
         cancelPostQuietLongHorizonPlayingEnsure()
@@ -6611,7 +6969,7 @@ class RadioLiveActivityManager: ObservableObject {
                     return
                 }
 
-                // One quiet clear per fire — status thrash stays protected between fires.
+                // One quiet clear per interval — status thrash stays protected between intervals.
                 self.playingEnsureQuietPending = false
                 self.playingEnsureQuietSkipLogged = false
 
@@ -6622,65 +6980,23 @@ class RadioLiveActivityManager: ObservableObject {
                     ownedContentLanguage: ownedLanguage,
                     lastPushedLanguage: self.lastPushedContent?.currentLanguage
                 )
-                let visualLags = true
-                let fireEligible = Self.isInteractiveLiveActivityRequestEligible(
-                    areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
-                    isApplicationActive: UIApplication.shared.applicationState == .active
-                )
-                // Both axes lag → one dual-axis co-push before freeze (not language then playing).
-                // After freeze, playing long-horizon stays the visual rail.
-                // A committed prePlay observation must not leave this retry coalesced.
+                // One push per interval. A committed prePlay observation must not
+                // leave this retry inside the 3-attempt soft-ensure loop.
                 self.clearClosedUnconfirmedPlayingApplyBeforeLongHorizonRetry()
-                if Self.shouldRunPostQuietLongHorizonDualAxisEnsure(
-                    languageStillLags: languageLags,
-                    visualStillLags: visualLags,
-                    actorVisual: actorVisual,
-                    isStreamSwitchHoldActive: hold,
-                    isConnectingPlayback: connecting,
-                    freezeSoftBudgetExhausted: self.contentEnsureFreezeSoftBudgetExhausted,
-                    playingQuietPending: self.playingEnsureQuietPending,
-                    isRequestEligible: fireEligible
-                ) {
+                if languageLags {
                     self.languageEnsureQuietPendingDestination = nil
                     self.languageEnsureQuietSkipLogged = false
-                    #if DEBUG
-                    print(
-                        "🔴 Live Activity post-quiet long-horizon dual-axis ensure retry " +
-                        "\(attempt)/\(maxAttempts) (via playing rail) owned=\(String(describing: ownedVisual))"
-                    )
-                    #endif
-                    await self.ensureAuthoritativeDualAxisContentIfNeeded()
-                    let acceptedAfterDual = self.currentActivity?.content.state.visualState
-                    if acceptedAfterDual == .playing {
-                        self.playingEnsureQuietPending = false
-                        self.playingEnsureQuietSkipLogged = false
-                        self.playingSettledAcceptanceConsumed = false
-                        self.dualAxisSettledAcceptanceConsumed = false
-                        self.postQuietLongHorizonDualAxisExhausted = false
-                        self.postQuietLongHorizonPlayingEnsureTask = nil
-                        return
-                    }
-                    let eligibleAfterDual = Self.isInteractiveLiveActivityRequestEligible(
-                        areActivitiesEnabled: Self.areActivitiesEnabledOnThisHost,
-                        isApplicationActive: UIApplication.shared.applicationState == .active
-                    )
-                    if !eligibleAfterDual {
-                        self.playingEnsureQuietPending = true
-                        self.playingEnsureQuietSkipLogged = false
-                        self.pendingInteractiveLiveActivityEnsure = true
-                    }
-                    continue
                 }
 
                 #if DEBUG
                 print(
                     "🔴 Live Activity post-quiet long-horizon playing ensure retry " +
-                    "\(attempt)/\(maxAttempts) owned=\(String(describing: ownedVisual))"
+                    "\(attempt)/\(maxAttempts) owned=\(String(describing: ownedVisual))" +
+                    (languageLags ? " languageStillLags=true" : "")
                 )
                 #endif
 
-                self.clearClosedUnconfirmedPlayingApplyBeforeLongHorizonRetry()
-                await self.ensureAuthoritativePlayingContentIfNeeded()
+                await self.updateCurrentActivity()
 
                 let accepted = self.currentActivity?.content.state.visualState
                 if accepted == .playing {
@@ -8015,9 +8331,15 @@ class RadioLiveActivityManager: ObservableObject {
     /// system-held visual also matches (owned-visual suppress gate). Pause from stale Connecting
     /// does **not** require prior owned ``.playing``; language and program metadata are preserved.
     ///
-    /// - Parameter visualState: Optimistic control visual (`.userPaused` or `.playing`).
-    /// - Postcondition: ``lastPushedContent`` reflects `visualState` with preserved metadata
-    ///   and language when any source is available; durable toggle mirrors stay the caller's
+    /// - Parameters:
+    ///   - visualState: Optimistic control visual (`.userPaused`, `.playing`, or Connecting).
+    ///   - actorProgramMetadata: ``SharedPlayerManager/currentStreamMetadata`` when the
+    ///     caller has it. Default `nil` keeps system-held metadata.
+    ///   - actorLanguage: Language that title belongs to. Default `nil` keeps system-held
+    ///     metadata so existing callers do not change alignment.
+    /// - Postcondition: ``lastPushedContent`` reflects `visualState` and language when any
+    ///   source is available. Same-language displayable `actorProgramMetadata` replaces
+    ///   system-held metadata; otherwise metadata is preserved. Durable toggle mirrors stay the caller's
     ///   job (already written before this alignment); ``playingEnsureQuietPending`` cleared
     ///   so a **later eligible** cycle can heal. Clearing playing quiet does **not** authorize
     ///   ineligible visual-differing `.playing` IPC
@@ -8039,11 +8361,19 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ``shouldApplyExplicitPauseDestinationLanguageUpdate(explicitPauseNeedsDestinationLanguageUpdate:candidateVisual:candidateLanguage:ownedContentLanguage:)``,
     ///   ``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(isRequestEligible:freezeSoftBudgetExhausted:ownedVisual:candidateVisual:)``,
     ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
+    ///   ``streamMetadataForOptimisticSameLanguageToggle(actorMetadata:actorLanguage:systemHeldMetadata:resolvedLanguage:)``,
     ///   ``WidgetIntentExecution/performLiveActivityToggle()``,
     ///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @MainActor
-    func recordOptimisticToggleContent(visualState: PlayerVisualState) {
+    func recordOptimisticToggleContent(
+        visualState: PlayerVisualState,
+        actorProgramMetadata: StreamProgramMetadata? = nil,
+        actorLanguage: String? = nil
+    ) {
+        // A new pause or Play owns the next playing update. The previous station's
+        // closed Connecting apply must not hold that update until the spaced retry.
+        clearClosedPlayingOverConnectingApplyForNewMutation()
         // Control mutation re-arms playing ensure quiet and re-opens settled playing acceptance
         // so pause honesty and later soft-resume get a full post-hold settle window even after
         // prior lock-stretch playing thrash. Cancel delayed post-settled playing retries for the
@@ -8060,7 +8390,7 @@ class RadioLiveActivityManager: ObservableObject {
         cancelPostQuietLongHorizonPlayingEnsure()
         cancelPostQuietLongHorizonDualAxisEnsure()
         clearContentPushDiagnosticsSignatures()
-        let metadata =
+        let systemHeldMetadata =
             lastPushedContent?.streamMetadata
             ?? currentActivity?.content.state.streamMetadata
             ?? SharedPlayerManager.loadPersistedStreamMetadata()
@@ -8076,6 +8406,14 @@ class RadioLiveActivityManager: ObservableObject {
         let language = resolved.isEmpty
             ? SharedPlayerManager.mainAppLiveActivityLanguageCode()
             : resolved
+        // Same-language actor title is what the accepted pause/play update must carry.
+        // Callers that omit actorLanguage keep system-held metadata.
+        let metadata = Self.streamMetadataForOptimisticSameLanguageToggle(
+            actorMetadata: actorLanguage == nil ? nil : actorProgramMetadata,
+            actorLanguage: actorLanguage ?? "",
+            systemHeldMetadata: systemHeldMetadata,
+            resolvedLanguage: language
+        )
         let ownedLanguage = currentActivity?.content.state.currentLanguage
         if visualState != .userPaused {
             explicitPauseNeedsDestinationLanguageUpdate = false
@@ -8183,6 +8521,11 @@ class RadioLiveActivityManager: ObservableObject {
     @MainActor
     func recordOptimisticStreamSwitchContent(language: String, visualState: PlayerVisualState) {
         guard !language.isEmpty else { return }
+        // New station. Drop the previous Connecting→playing apply and any remembered
+        // playing candidate so it cannot land after this switch's Connecting update.
+        // Metadata stays nil (language change clears the previous program title).
+        clearClosedPlayingOverConnectingApplyForNewMutation()
+        discardPreviousStationPlayingContentPushForAttachingSwitch()
         // Chip switch is not explicit Play. Do not let a prior fresh-attach allowance
         // replace owned pause or playing on this language update.
         explicitFreshAttachPlayAllowsIneligibleVisual = false
@@ -8889,6 +9232,9 @@ class RadioLiveActivityManager: ObservableObject {
         lastContentPushObservationKind = .contentUpdates
         lastSystemHeldContent = content.state
         lastPushedContent = content.state
+        if content.state.visualState == .playing {
+            playingOverConnectingApplyClosedUntilSpacedRetry = false
+        }
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(content.state.visualState)
         SharedPlayerManager.persistLiveActivityLanguageMirror(content.state.currentLanguage)
         #if DEBUG
@@ -8930,7 +9276,15 @@ class RadioLiveActivityManager: ObservableObject {
                 )
             }
             // Apply committed via contentUpdates. Playing over a yield that is still
-            // Connecting must not flush another identical playing update.
+            // Connecting must not flush another identical playing update, and must not
+            // let a later soft-ensure attempt issue another playing update.
+            if let inFlightCandidate {
+                self.noteCommittedPlayingOverConnectingObservation(
+                    observationKind: .contentUpdates,
+                    candidateVisual: inFlightCandidate.visualState,
+                    observedVisual: content.state.visualState
+                )
+            }
             if let inFlightCandidate,
                Self.shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
                    observationKind: .contentUpdates,
