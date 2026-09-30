@@ -4416,17 +4416,27 @@ class RadioLiveActivityManagerTests: XCTestCase {
     /// 3-attempt playing or dual-axis loop, and each long-horizon interval for that
     /// pair is one ``updateCurrentActivity()``.
     ///
-    /// ``.userPaused`` is not held behind the closed apply. A second ``.playing``
-    /// candidate during the still-unconfirmed await stays coalesced. Does **not**
-    /// invent `.playing`. Does **not** claim lock-screen paint.
+    /// While the dual-axis long-horizon is already scheduled, closing the observation
+    /// does not schedule the playing retry, even when the playing task is nil.
+    /// When neither task exists, the same observation still schedules the playing
+    /// retry. ``.userPaused`` is not held behind the closed apply. Immediate
+    /// post-await does not schedule the playing retry.
+    /// ``scheduleSpacedPlayingRetryIfUnarmed()`` uses the same decision: it refuses
+    /// while the dual-axis task exists and still allows the schedule when both
+    /// tasks are nil. A second ``.playing`` candidate during the still-unconfirmed
+    /// await stays coalesced. Does **not** invent `.playing`. Does **not** claim
+    /// lock-screen paint.
     ///
     /// Why this pattern is required: ``setPlaying()`` still reached the 3-attempt
     /// loops after the closed observation, and those loops cancelled the spaced retry.
-    /// The dual-axis long-horizon used the same loop.
+    /// The dual-axis long-horizon used the same loop. After that loop left for the
+    /// spaced retry, both long-horizon tasks could be scheduled, so each interval
+    /// sent two updates.
     ///
     /// - SeeAlso: ``RadioLiveActivityManager/shouldEnterPlayingOrDualAxisSoftEnsureLoop(closedUntilSpacedRetry:inFlightVisual:ownedVisual:)``,
     ///   ``RadioLiveActivityManager/shouldCancelSpacedPlayingRetry(ownedVisual:)``,
-    ///   ``RadioLiveActivityManager/shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(observationKind:candidateVisual:observedVisual:spacedPlayingRetryAlreadyArmed:)``,
+    ///   ``RadioLiveActivityManager/shouldScheduleSpacedPlayingRetry(playingLongHorizonAlreadyScheduled:dualAxisLongHorizonAlreadyScheduled:)``,
+    ///   ``RadioLiveActivityManager/shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(observationKind:candidateVisual:observedVisual:spacedPlayingRetryAlreadyArmed:dualAxisLongHorizonAlreadyScheduled:)``,
     ///   ``RadioLiveActivityManager/shouldUseSingleActivityUpdateForClosedPlayingOverConnecting(closedUntilSpacedRetry:ownedVisual:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     func testClosedConnectingPairSkipsSoftEnsureLoopAndUsesOneLongHorizonUpdate() {
@@ -4474,25 +4484,48 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 observationKind: .delayedReread,
                 candidateVisual: .playing,
                 observedVisual: .prePlay,
-                spacedPlayingRetryAlreadyArmed: false
+                spacedPlayingRetryAlreadyArmed: false,
+                dualAxisLongHorizonAlreadyScheduled: false
             ),
-            "Closing the apply schedules the spaced playing retry"
+            "Closing the apply schedules the spaced playing retry when neither long-horizon task exists"
         )
         XCTAssertTrue(
             RadioLiveActivityManager.shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(
                 observationKind: .contentUpdates,
                 candidateVisual: .playing,
                 observedVisual: .prePlay,
-                spacedPlayingRetryAlreadyArmed: false
+                spacedPlayingRetryAlreadyArmed: false,
+                dualAxisLongHorizonAlreadyScheduled: false
             ),
-            "A contentUpdates yield that is still Connecting schedules the same retry"
+            "A contentUpdates yield that is still Connecting schedules the same retry when neither task exists"
         )
         XCTAssertFalse(
             RadioLiveActivityManager.shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(
                 observationKind: .delayedReread,
                 candidateVisual: .playing,
                 observedVisual: .prePlay,
-                spacedPlayingRetryAlreadyArmed: true
+                spacedPlayingRetryAlreadyArmed: false,
+                dualAxisLongHorizonAlreadyScheduled: true
+            ),
+            "Closing the apply does not schedule the playing retry while the dual-axis long-horizon is already scheduled"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(
+                observationKind: .contentUpdates,
+                candidateVisual: .playing,
+                observedVisual: .prePlay,
+                spacedPlayingRetryAlreadyArmed: false,
+                dualAxisLongHorizonAlreadyScheduled: true
+            ),
+            "A contentUpdates yield does not schedule the playing retry while the dual-axis long-horizon is already scheduled"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(
+                observationKind: .delayedReread,
+                candidateVisual: .playing,
+                observedVisual: .prePlay,
+                spacedPlayingRetryAlreadyArmed: true,
+                dualAxisLongHorizonAlreadyScheduled: false
             ),
             "An already scheduled spaced retry is not restarted"
         )
@@ -4501,7 +4534,8 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 observationKind: .delayedReread,
                 candidateVisual: .userPaused,
                 observedVisual: .prePlay,
-                spacedPlayingRetryAlreadyArmed: false
+                spacedPlayingRetryAlreadyArmed: false,
+                dualAxisLongHorizonAlreadyScheduled: false
             ),
             "userPaused is not held behind the closed Connecting apply"
         )
@@ -4510,9 +4544,31 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 observationKind: .immediatePostAwait,
                 candidateVisual: .playing,
                 observedVisual: .prePlay,
-                spacedPlayingRetryAlreadyArmed: false
+                spacedPlayingRetryAlreadyArmed: false,
+                dualAxisLongHorizonAlreadyScheduled: false
             ),
             "Immediate post-await does not schedule the spaced retry"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldScheduleSpacedPlayingRetry(
+                playingLongHorizonAlreadyScheduled: false,
+                dualAxisLongHorizonAlreadyScheduled: true
+            ),
+            "scheduleSpacedPlayingRetryIfUnarmed refuses while the dual-axis long-horizon is already scheduled"
+        )
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldScheduleSpacedPlayingRetry(
+                playingLongHorizonAlreadyScheduled: false,
+                dualAxisLongHorizonAlreadyScheduled: false
+            ),
+            "scheduleSpacedPlayingRetryIfUnarmed still schedules when both long-horizon tasks are nil"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldScheduleSpacedPlayingRetry(
+                playingLongHorizonAlreadyScheduled: true,
+                dualAxisLongHorizonAlreadyScheduled: false
+            ),
+            "scheduleSpacedPlayingRetryIfUnarmed does not restart a playing retry that is already scheduled"
         )
         XCTAssertFalse(
             RadioLiveActivityManager.shouldCancelSpacedPlayingRetry(ownedVisual: .prePlay),

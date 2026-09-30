@@ -95,11 +95,16 @@ import WidgetSurface
 /// the apply is unconfirmed or closed and owned visual is still ``.prePlay``.
 /// Settled dual-axis, settled playing, and a false
 /// ``shouldEnsureAuthoritativePlayingContent`` return do not cancel the spaced playing
-/// retry unless owned visual is actually ``.playing``. Closing the observation
-/// schedules that retry when it is not already scheduled. The dual-axis long-horizon
-/// and the language long-horizon branch that would otherwise run the dual-axis loop
-/// send one ``updateCurrentActivity()`` per interval for this closed pair. That update
-/// may carry the destination language and ``.playing``.
+/// retry unless owned visual is actually ``.playing``. While the dual-axis
+/// long-horizon is already scheduled for this closed pair, the playing long-horizon
+/// stays unscheduled (``shouldScheduleSpacedPlayingRetry``), and each interval still
+/// sends one ``updateCurrentActivity()``. Closing the observation schedules the
+/// playing retry only when neither long-horizon task exists. Same-language Play,
+/// with the dual-axis task nil, still schedules the playing retry. The dual-axis
+/// long-horizon and the language long-horizon branch that would otherwise run the
+/// dual-axis loop send that one update per interval. That update may carry the
+/// destination language and ``.playing``. A later single-axis handoff still calls
+/// ``schedulePostQuietLongHorizonPlayingEnsure()`` directly.
 /// ``publishAuthoritativePlayingIfNeeded()`` does not publish a
 /// second Live Activity visual push while that first playing apply is unconfirmed or
 /// while the closed apply is still waiting for the spaced retry, and that skip leaves
@@ -3313,29 +3318,61 @@ class RadioLiveActivityManager: ObservableObject {
         ownedVisual == .playing
     }
 
+    /// Whether the spaced playing retry may be scheduled.
+    ///
+    /// Returns `false` when the playing long-horizon task is already scheduled, and
+    /// `false` when the dual-axis long-horizon task is already scheduled. While the
+    /// dual-axis task exists it is the one 5 s / 15 s / 45 s update for this closed
+    /// Connecting→playing pair, including destination language and ``.playing``.
+    /// When both tasks are nil, same-language Play may still schedule the playing
+    /// retry. Does not cancel the dual-axis task. Callers that hand a single lagging
+    /// axis from the dual-axis scheduler to playing call
+    /// ``schedulePostQuietLongHorizonPlayingEnsure()`` directly and do not use this gate.
+    ///
+    /// - Parameters:
+    ///   - playingLongHorizonAlreadyScheduled: ``postQuietLongHorizonPlayingEnsureTask`` is non-nil.
+    ///   - dualAxisLongHorizonAlreadyScheduled: ``postQuietLongHorizonDualAxisEnsureTask`` is non-nil.
+    /// - Returns: `true` when ``schedulePostQuietLongHorizonPlayingEnsure()`` may run.
+    /// - SeeAlso: ``scheduleSpacedPlayingRetryIfUnarmed()``,
+    ///   ``shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(observationKind:candidateVisual:observedVisual:spacedPlayingRetryAlreadyArmed:dualAxisLongHorizonAlreadyScheduled:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldScheduleSpacedPlayingRetry(
+        playingLongHorizonAlreadyScheduled: Bool,
+        dualAxisLongHorizonAlreadyScheduled: Bool
+    ) -> Bool {
+        !playingLongHorizonAlreadyScheduled && !dualAxisLongHorizonAlreadyScheduled
+    }
+
     /// Whether closing a Connecting→playing observation schedules the spaced playing retry.
     ///
     /// A committed delayed re-read or `contentUpdates` yield whose candidate is
     /// ``.playing`` and whose observed visual is still ``.prePlay`` schedules the
-    /// existing 5 s / 15 s / 45 s retry when that retry is not already scheduled.
-    /// ``.userPaused`` does not. Immediate post-await does not.
+    /// existing 5 s / 15 s / 45 s retry when neither long-horizon task is already
+    /// scheduled. ``.userPaused`` does not. Immediate post-await does not. A dual-axis
+    /// task that is already scheduled keeps the playing retry unscheduled.
     ///
     /// - Parameters:
     ///   - observationKind: Delayed re-read or `contentUpdates`.
     ///   - candidateVisual: Visual submitted on the in-flight update.
     ///   - observedVisual: System-held visual at the committed observation.
     ///   - spacedPlayingRetryAlreadyArmed: Whether the playing long-horizon task exists.
+    ///   - dualAxisLongHorizonAlreadyScheduled: Whether the dual-axis long-horizon task exists.
     /// - Returns: `true` when ``schedulePostQuietLongHorizonPlayingEnsure()`` should run.
-    /// - SeeAlso: ``shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(observationKind:candidateVisual:observedVisual:)``,
+    /// - SeeAlso: ``shouldScheduleSpacedPlayingRetry(playingLongHorizonAlreadyScheduled:dualAxisLongHorizonAlreadyScheduled:)``,
+    ///   ``shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(observationKind:candidateVisual:observedVisual:)``,
     ///   ``schedulePostQuietLongHorizonPlayingEnsure()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(
         observationKind: LiveActivityContentPushObservationKind,
         candidateVisual: PlayerVisualState,
         observedVisual: PlayerVisualState,
-        spacedPlayingRetryAlreadyArmed: Bool
+        spacedPlayingRetryAlreadyArmed: Bool,
+        dualAxisLongHorizonAlreadyScheduled: Bool
     ) -> Bool {
-        guard !spacedPlayingRetryAlreadyArmed else { return false }
+        guard shouldScheduleSpacedPlayingRetry(
+            playingLongHorizonAlreadyScheduled: spacedPlayingRetryAlreadyArmed,
+            dualAxisLongHorizonAlreadyScheduled: dualAxisLongHorizonAlreadyScheduled
+        ) else { return false }
         guard observedVisual == .prePlay else { return false }
         return shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
             observationKind: observationKind,
@@ -3385,12 +3422,14 @@ class RadioLiveActivityManager: ObservableObject {
     }
 
     /// Schedules the spaced playing retry when a duplicate playing push is skipped
-    /// and that retry is not already scheduled.
+    /// and neither long-horizon task is already scheduled.
     ///
     /// In-app chrome may already be ``.playing``. This does not call `Activity.update`
-    /// and does not restart a retry that is already scheduled.
+    /// and does not cancel the dual-axis task. While that task is scheduled, the
+    /// playing retry stays unscheduled.
     ///
     /// - SeeAlso: ``shouldSuppressAuthoritativePlayingLiveActivityPush(closedUntilSpacedRetry:inFlightVisual:ownedVisual:)``,
+    ///   ``shouldScheduleSpacedPlayingRetry(playingLongHorizonAlreadyScheduled:dualAxisLongHorizonAlreadyScheduled:)``,
     ///   ``schedulePostQuietLongHorizonPlayingEnsure()``,
     ///   ``DirectStreamingPlayer/publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
@@ -3400,13 +3439,21 @@ class RadioLiveActivityManager: ObservableObject {
         scheduleSpacedPlayingRetryIfUnarmed()
     }
 
-    /// Schedules ``schedulePostQuietLongHorizonPlayingEnsure()`` when no playing
-    /// long-horizon task exists.
+    /// Schedules ``schedulePostQuietLongHorizonPlayingEnsure()`` when neither the
+    /// playing long-horizon nor the dual-axis long-horizon is already scheduled.
     ///
-    /// Does not restart an existing retry. UITestMode and the test host do not schedule.
+    /// Does not restart an existing playing retry. Does not cancel the dual-axis
+    /// task: while that task is scheduled it is the one update for this closed
+    /// Connecting→playing pair, including destination language and ``.playing``.
+    /// When the dual-axis task is nil, same-language Play still schedules the
+    /// playing retry. A later single-axis handoff calls
+    /// ``schedulePostQuietLongHorizonPlayingEnsure()`` directly and is not gated
+    /// here. UITestMode and the test host do not schedule.
     ///
-    /// - SeeAlso: ``shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(observationKind:candidateVisual:observedVisual:spacedPlayingRetryAlreadyArmed:)``,
-    ///   ``leaveSpacedPlayingRetryArmedForClosedConnectingApply()``.
+    /// - SeeAlso: ``shouldScheduleSpacedPlayingRetry(playingLongHorizonAlreadyScheduled:dualAxisLongHorizonAlreadyScheduled:)``,
+    ///   ``shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(observationKind:candidateVisual:observedVisual:spacedPlayingRetryAlreadyArmed:dualAxisLongHorizonAlreadyScheduled:)``,
+    ///   ``leaveSpacedPlayingRetryArmedForClosedConnectingApply()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @MainActor
     private func scheduleSpacedPlayingRetryIfUnarmed() {
         if SharedPlayerManager.isRunningInUITestMode { return }
@@ -3414,16 +3461,21 @@ class RadioLiveActivityManager: ObservableObject {
         if isRunningUnderTest { return }
         #endif
         guard currentActivity != nil else { return }
-        guard postQuietLongHorizonPlayingEnsureTask == nil else { return }
+        guard Self.shouldScheduleSpacedPlayingRetry(
+            playingLongHorizonAlreadyScheduled: postQuietLongHorizonPlayingEnsureTask != nil,
+            dualAxisLongHorizonAlreadyScheduled: postQuietLongHorizonDualAxisEnsureTask != nil
+        ) else { return }
         schedulePostQuietLongHorizonPlayingEnsure()
     }
 
     /// `true` when this attempt must leave the 3-attempt playing or dual-axis loop.
     ///
-    /// When it returns `true`, the spaced playing retry is scheduled if it is not
-    /// already scheduled. Does not call `Activity.update`.
+    /// When it returns `true`, the spaced playing retry is scheduled only when
+    /// neither long-horizon task is already scheduled. Does not call `Activity.update`.
+    /// Does not cancel the dual-axis task.
     ///
-    /// - SeeAlso: ``shouldEnterPlayingOrDualAxisSoftEnsureLoop(closedUntilSpacedRetry:inFlightVisual:ownedVisual:)``.
+    /// - SeeAlso: ``shouldEnterPlayingOrDualAxisSoftEnsureLoop(closedUntilSpacedRetry:inFlightVisual:ownedVisual:)``,
+    ///   ``shouldScheduleSpacedPlayingRetry(playingLongHorizonAlreadyScheduled:dualAxisLongHorizonAlreadyScheduled:)``.
     @MainActor
     private func shouldLeavePlayingSoftEnsureLoopToSpacedRetry() -> Bool {
         let enter = Self.shouldEnterPlayingOrDualAxisSoftEnsureLoop(
@@ -6982,7 +7034,8 @@ class RadioLiveActivityManager: ObservableObject {
             observationKind: observationKind,
             candidateVisual: candidateVisual,
             observedVisual: observedVisual,
-            spacedPlayingRetryAlreadyArmed: postQuietLongHorizonPlayingEnsureTask != nil
+            spacedPlayingRetryAlreadyArmed: postQuietLongHorizonPlayingEnsureTask != nil,
+            dualAxisLongHorizonAlreadyScheduled: postQuietLongHorizonDualAxisEnsureTask != nil
         ) {
             scheduleSpacedPlayingRetryIfUnarmed()
         }
