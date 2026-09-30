@@ -4412,6 +4412,144 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
+    /// A committed delayed re-read of playing over Connecting does not enter the
+    /// 3-attempt playing or dual-axis loop, and each long-horizon interval for that
+    /// pair is one ``updateCurrentActivity()``.
+    ///
+    /// ``.userPaused`` is not held behind the closed apply. A second ``.playing``
+    /// candidate during the still-unconfirmed await stays coalesced. Does **not**
+    /// invent `.playing`. Does **not** claim lock-screen paint.
+    ///
+    /// Why this pattern is required: ``setPlaying()`` still reached the 3-attempt
+    /// loops after the closed observation, and those loops cancelled the spaced retry.
+    /// The dual-axis long-horizon used the same loop.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/shouldEnterPlayingOrDualAxisSoftEnsureLoop(closedUntilSpacedRetry:inFlightVisual:ownedVisual:)``,
+    ///   ``RadioLiveActivityManager/shouldCancelSpacedPlayingRetry(ownedVisual:)``,
+    ///   ``RadioLiveActivityManager/shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(observationKind:candidateVisual:observedVisual:spacedPlayingRetryAlreadyArmed:)``,
+    ///   ``RadioLiveActivityManager/shouldUseSingleActivityUpdateForClosedPlayingOverConnecting(closedUntilSpacedRetry:ownedVisual:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testClosedConnectingPairSkipsSoftEnsureLoopAndUsesOneLongHorizonUpdate() {
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
+                observationKind: .delayedReread,
+                candidateVisual: .playing,
+                observedVisual: .prePlay
+            ),
+            "Committed delayed re-read clears the in-flight playing candidate"
+        )
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldSkipImmediateIdenticalPlayingFlush(
+                coalescedVisual: .playing,
+                observedVisual: .prePlay
+            ),
+            "That re-read does not schedule an immediate identical playing flush"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldEnterPlayingOrDualAxisSoftEnsureLoop(
+                closedUntilSpacedRetry: true,
+                inFlightVisual: nil,
+                ownedVisual: .prePlay
+            ),
+            "A closed Connecting observation does not enter the 3-attempt playing or dual-axis loop"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldEnterPlayingOrDualAxisSoftEnsureLoop(
+                closedUntilSpacedRetry: false,
+                inFlightVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "An unconfirmed playing apply does not enter another 3-attempt loop"
+        )
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldEnterPlayingOrDualAxisSoftEnsureLoop(
+                closedUntilSpacedRetry: false,
+                inFlightVisual: nil,
+                ownedVisual: .prePlay
+            ),
+            "The first playing update is still allowed before the apply is unconfirmed or closed"
+        )
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(
+                observationKind: .delayedReread,
+                candidateVisual: .playing,
+                observedVisual: .prePlay,
+                spacedPlayingRetryAlreadyArmed: false
+            ),
+            "Closing the apply schedules the spaced playing retry"
+        )
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(
+                observationKind: .contentUpdates,
+                candidateVisual: .playing,
+                observedVisual: .prePlay,
+                spacedPlayingRetryAlreadyArmed: false
+            ),
+            "A contentUpdates yield that is still Connecting schedules the same retry"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(
+                observationKind: .delayedReread,
+                candidateVisual: .playing,
+                observedVisual: .prePlay,
+                spacedPlayingRetryAlreadyArmed: true
+            ),
+            "An already scheduled spaced retry is not restarted"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(
+                observationKind: .delayedReread,
+                candidateVisual: .userPaused,
+                observedVisual: .prePlay,
+                spacedPlayingRetryAlreadyArmed: false
+            ),
+            "userPaused is not held behind the closed Connecting apply"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(
+                observationKind: .immediatePostAwait,
+                candidateVisual: .playing,
+                observedVisual: .prePlay,
+                spacedPlayingRetryAlreadyArmed: false
+            ),
+            "Immediate post-await does not schedule the spaced retry"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldCancelSpacedPlayingRetry(ownedVisual: .prePlay),
+            "Settled ensure must not cancel the spaced retry while owned visual is still Connecting"
+        )
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldCancelSpacedPlayingRetry(ownedVisual: .playing),
+            "Owned playing may cancel the spaced retry"
+        )
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldUseSingleActivityUpdateForClosedPlayingOverConnecting(
+                closedUntilSpacedRetry: true,
+                ownedVisual: .prePlay
+            ),
+            "Each long-horizon interval for the closed pair, including the dual-axis rail, is one updateCurrentActivity"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldUseSingleActivityUpdateForClosedPlayingOverConnecting(
+                closedUntilSpacedRetry: false,
+                ownedVisual: .prePlay
+            ),
+            "An open apply is not the closed-pair single update"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.postQuietLongHorizonPlayingRetryContentPushesPerInterval,
+            1
+        )
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldCoalesceVisualDifferingContentPushWhileInFlight(
+                inFlightVisual: .playing,
+                candidateVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "A second playing candidate during the still-unconfirmed await stays coalesced"
+        )
+    }
+
     /// An attaching switch with owned Connecting must make the hold visible before
     /// axis-heal can publish the previous station's playing visual. A paused switch
     /// does not take the hold. An owned playing card stays language-only.

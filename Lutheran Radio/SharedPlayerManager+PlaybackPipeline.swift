@@ -1338,6 +1338,57 @@ extension SharedPlayerManager {
         #endif
     }
     
+    /// Whether an audible item may clear the attaching Connecting hold.
+    ///
+    /// The body lives here because the widget extension compiles this file and does not
+    /// compile ``DirectStreamingPlayer``’s engine. ``setPlaying(audibleAttachedLanguage:enforceAttachingDestination:)``
+    /// calls it in the same actor turn, before the hold is cleared.
+    /// ``DirectStreamingPlayer/shouldPublishAuthoritativePlayingForAudibleItem(canProceedWithPlayback:isStreamSwitchPrePlayHoldActive:attachedItemLanguageCode:destinationLanguageCode:attachGenerationSnapshot:currentAttachGeneration:)``
+    /// forwards here.
+    ///
+    /// ``canProceedWithPlayback`` is not enough. While the attaching hold is active,
+    /// ``attachedItemLanguageCode`` must equal ``destinationLanguageCode``
+    /// (``streamSwitchConnectingLanguageCode``). A caller snapshot that differs from
+    /// ``currentAttachGeneration`` does not publish and does not clear the hold.
+    /// When the hold is inactive, language is not consulted (cold start, soft-pause
+    /// resume, and fresh attach stay on the existing path).
+    ///
+    /// - Parameters:
+    ///   - canProceedWithPlayback: ``canProceedWithPlayback()``.
+    ///   - isStreamSwitchPrePlayHoldActive: ``isStreamSwitchPrePlayHoldActive``.
+    ///   - attachedItemLanguageCode: Language bound to the current item.
+    ///   - destinationLanguageCode: ``streamSwitchConnectingLanguageCode``.
+    ///   - attachGenerationSnapshot: Generation the caller captured, when it has one.
+    ///     Pass `nil` from this actor: ``playbackAttachGeneration`` is not actor state.
+    ///   - currentAttachGeneration: ``playbackAttachGeneration`` at the decision.
+    ///     Pass `0` from this actor when the snapshot is `nil`.
+    /// - Returns: `true` when ``setPlaying`` may clear the hold for this item.
+    /// - SeeAlso: ``setPlaying(audibleAttachedLanguage:enforceAttachingDestination:)``,
+    ///   ``DirectStreamingPlayer/publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``,
+    ///   ``beginAttachingStreamSwitchPrePlayHold(languageCode:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    /// - Note: Pure decision. No actor state.
+    nonisolated static func shouldPublishAuthoritativePlayingForAudibleItem(
+        canProceedWithPlayback: Bool,
+        isStreamSwitchPrePlayHoldActive: Bool,
+        attachedItemLanguageCode: String?,
+        destinationLanguageCode: String?,
+        attachGenerationSnapshot: UInt64?,
+        currentAttachGeneration: UInt64
+    ) -> Bool {
+        guard canProceedWithPlayback else { return false }
+        if let attachGenerationSnapshot, attachGenerationSnapshot != currentAttachGeneration {
+            return false
+        }
+        guard isStreamSwitchPrePlayHoldActive else { return true }
+        guard let attachedItemLanguageCode, !attachedItemLanguageCode.isEmpty,
+              let destinationLanguageCode, !destinationLanguageCode.isEmpty,
+              attachedItemLanguageCode == destinationLanguageCode else {
+            return false
+        }
+        return true
+    }
+
     /// Sets the visual state to `.playing` (and the intent to `.shouldBePlaying`
     /// unless a sleep timer is active) and persists the authoritative snapshot.
     ///
@@ -1345,12 +1396,26 @@ extension SharedPlayerManager {
     /// asserts that transition without real audio). Production call sites:
     /// soft-pause resume after rate kick, readyToPlay first-play kick / KVO playing via
     /// ``DirectStreamingPlayer`` `publishAuthoritativePlayingIfNeeded`, interruption resume.
+    /// While an attaching Connecting hold is active, that publish helper calls this only
+    /// when ``attachedItemLanguageCode`` matches ``streamSwitchConnectingLanguageCode``.
+    /// A previous item that is still audible must not clear the hold.
     ///
     /// - Important: Do **not** call from the start of ``play()`` or from `startPlayback` while
     ///   still awaiting `.readyToPlay`. Connecting chrome must stay `.prePlay` (rate 0, play
-    ///   affordance) until this method runs.
+    ///   affordance) until this method runs. ``publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``
+    ///   passes `enforceAttachingDestination: true` so a previous item cannot clear a hold
+    ///   that is already visible. The hold check and ``clearStreamSwitchPrePlayHold()``
+    ///   run in this actor turn, before any await.
     ///
-    /// - Postcondition: `currentVisualState == .playing`, intent updated if appropriate,
+    /// - Parameters:
+    ///   - audibleAttachedLanguage: ``DirectStreamingPlayer/attachedItemLanguageCode`` when
+    ///     the engine is enforcing the attaching-destination gate. Ignored when
+    ///     `enforceAttachingDestination` is false.
+    ///   - enforceAttachingDestination: When `true`, return without clearing the hold
+    ///     unless ``shouldPublishAuthoritativePlayingForAudibleItem`` allows this item.
+    ///     Default `false` keeps direct callers (tests, already-decided audible start) unchanged.
+    /// - Postcondition: When the attaching-destination gate refuses, visual and hold are unchanged.
+    ///   Otherwise `currentVisualState == .playing`, intent updated if appropriate,
     ///   stream-switch hold cleared, snapshot saved (when the privacy gate allows) with
     ///   privacy-gated ``homeWidgetLiveChrome`` projected as ``.playing`` + current language,
     ///   Now Playing / Live Activity surfaces notified via
@@ -1368,7 +1433,29 @@ extension SharedPlayerManager {
     /// mutation) because `setPlaying` is the canonical surface for "underlying streaming
     /// became active." Engine helpers must call it only after audible start (or soft-resume
     /// rate kick). Do not re-introduce optimistic setPlaying in ``play()``.
-    func setPlaying() async {
+    func setPlaying(
+        audibleAttachedLanguage: String? = nil,
+        enforceAttachingDestination: Bool = false
+    ) async {
+        if enforceAttachingDestination {
+            let canProceed: Bool = {
+                if currentPlaybackIntent.isStickyPauseOrLock { return false }
+                if currentPlaybackIntent == .sleepTimer {
+                    return currentVisualState == .playing || holdPrePlayVisualUntilPlayback
+                }
+                return currentPlaybackIntent == .shouldBePlaying
+            }()
+            guard Self.shouldPublishAuthoritativePlayingForAudibleItem(
+                canProceedWithPlayback: canProceed,
+                isStreamSwitchPrePlayHoldActive: isStreamSwitchPrePlayHoldActive,
+                attachedItemLanguageCode: audibleAttachedLanguage,
+                destinationLanguageCode: streamSwitchConnectingLanguageCode,
+                attachGenerationSnapshot: nil,
+                currentAttachGeneration: 0
+            ) else {
+                return
+            }
+        }
         // UI Test isolation (SSOT): perform the canonical visual + intent + event mutations
         // and persist the snapshot (when the privacy gate allows) so unit tests can assert
         // emission order on the DEBUG notification seam. Skip Live Activity and Now Playing

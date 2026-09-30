@@ -809,6 +809,109 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         )
     }
 
+    /// An attaching hold whose destination differs from ``attachedItemLanguageCode``
+    /// does not clear the hold and does not publish ``.playing``.
+    ///
+    /// ``canProceedWithPlayback()`` true is not enough. A ``playbackAttachGeneration``
+    /// mismatch does not allow the publish. A matching destination language still
+    /// clears the hold on the new station's audible start. Does **not** claim
+    /// lock-screen paint.
+    ///
+    /// Why this pattern is required: the previous item can still be ``.playing`` after
+    /// the chip sets the destination stamp. ``setPlaying()`` would clear the hold and
+    /// the pause glyph would show during the silent teardown.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/shouldPublishAuthoritativePlayingForAudibleItem(canProceedWithPlayback:isStreamSwitchPrePlayHoldActive:attachedItemLanguageCode:destinationLanguageCode:attachGenerationSnapshot:currentAttachGeneration:)``,
+    ///   ``DirectStreamingPlayer/publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``,
+    ///   ``SharedPlayerManager/beginAttachingStreamSwitchPrePlayHold(languageCode:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testStaleAttachingAudiblePublishDoesNotClearConnectingHold() async {
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldPublishAuthoritativePlayingForAudibleItem(
+                canProceedWithPlayback: true,
+                isStreamSwitchPrePlayHoldActive: true,
+                attachedItemLanguageCode: "et",
+                destinationLanguageCode: "fi",
+                attachGenerationSnapshot: nil,
+                currentAttachGeneration: 1
+            ),
+            "canProceed true does not publish the previous station while the attaching hold is active"
+        )
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldPublishAuthoritativePlayingForAudibleItem(
+                canProceedWithPlayback: true,
+                isStreamSwitchPrePlayHoldActive: true,
+                attachedItemLanguageCode: "fi",
+                destinationLanguageCode: "fi",
+                attachGenerationSnapshot: 7,
+                currentAttachGeneration: 7
+            ),
+            "A matching destination language still publishes on the new station's audible start"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldPublishAuthoritativePlayingForAudibleItem(
+                canProceedWithPlayback: true,
+                isStreamSwitchPrePlayHoldActive: false,
+                attachedItemLanguageCode: "fi",
+                destinationLanguageCode: "fi",
+                attachGenerationSnapshot: 3,
+                currentAttachGeneration: 4
+            ),
+            "A playbackAttachGeneration mismatch does not call publishAuthoritativePlayingIfNeeded"
+        )
+        XCTAssertTrue(
+            DirectStreamingPlayer.shouldPublishAuthoritativePlayingForAudibleItem(
+                canProceedWithPlayback: true,
+                isStreamSwitchPrePlayHoldActive: false,
+                attachedItemLanguageCode: "et",
+                destinationLanguageCode: "fi",
+                attachGenerationSnapshot: nil,
+                currentAttachGeneration: 1
+            ),
+            "Without an attaching hold, language mismatch is not this gate"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.shouldPublishAuthoritativePlayingForAudibleItem(
+                canProceedWithPlayback: false,
+                isStreamSwitchPrePlayHoldActive: false,
+                attachedItemLanguageCode: "fi",
+                destinationLanguageCode: "fi",
+                attachGenerationSnapshot: nil,
+                currentAttachGeneration: 1
+            ),
+            "Sticky pause still blocks publish"
+        )
+
+        let engine = DirectStreamingPlayer.shared
+        let manager = SharedPlayerManager.shared
+        await manager.stop()
+        await manager.setUserIntentToPlay()
+        await manager.beginAttachingStreamSwitchPrePlayHold(languageCode: "fi")
+        engine.attachedItemLanguageCode = "et"
+
+        await engine.test_publishAuthoritativePlayingIfNeeded()
+        var visual = await manager.currentVisualState
+        var hold = await manager.isStreamSwitchPrePlayHoldActive
+        XCTAssertEqual(
+            visual,
+            .prePlay,
+            "Previous-station audible publish must not call setPlaying"
+        )
+        XCTAssertTrue(hold, "Previous-station audible publish must not clear the Connecting hold")
+        let destination = await manager.streamSwitchConnectingLanguageCode
+        XCTAssertEqual(destination, "fi")
+
+        engine.attachedItemLanguageCode = "fi"
+        await engine.test_publishAuthoritativePlayingIfNeeded()
+        visual = await manager.currentVisualState
+        hold = await manager.isStreamSwitchPrePlayHoldActive
+        XCTAssertEqual(visual, .playing, "Matching destination language still clears the hold")
+        XCTAssertFalse(hold)
+
+        engine.clearAttachedItemBinding()
+        await manager.stop()
+    }
+
     // MARK: - Early-window attach recovery (stream-switch / cold launch)
 
     /// Early-window recovery must hard-cap secured recreates so progressive ICY loading

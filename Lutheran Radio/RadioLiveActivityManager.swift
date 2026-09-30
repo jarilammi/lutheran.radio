@@ -90,9 +90,20 @@ import WidgetSurface
 /// Connecting→playing pair. Pause (``.userPaused``) still updates. The existing
 /// post-quiet long-horizon playing retry (5 s / 15 s / 45 s) is the next push, and it
 /// is **one** `Activity.update` per interval — it does not enter the 3-attempt
-/// soft-ensure loop. ``publishAuthoritativePlayingIfNeeded()`` does not publish a
+/// soft-ensure loop. On the audible path, ``ensureAuthoritativeDualAxisContentIfNeeded()``
+/// and ``ensureAuthoritativePlayingContentIfNeeded()`` do not enter those loops while
+/// the apply is unconfirmed or closed and owned visual is still ``.prePlay``.
+/// Settled dual-axis, settled playing, and a false
+/// ``shouldEnsureAuthoritativePlayingContent`` return do not cancel the spaced playing
+/// retry unless owned visual is actually ``.playing``. Closing the observation
+/// schedules that retry when it is not already scheduled. The dual-axis long-horizon
+/// and the language long-horizon branch that would otherwise run the dual-axis loop
+/// send one ``updateCurrentActivity()`` per interval for this closed pair. That update
+/// may carry the destination language and ``.playing``.
+/// ``publishAuthoritativePlayingIfNeeded()`` does not publish a
 /// second Live Activity visual push while that first playing apply is unconfirmed or
-/// while the closed apply is still waiting for the spaced retry. In-app playing chrome
+/// while the closed apply is still waiting for the spaced retry, and that skip leaves
+/// the spaced retry scheduled. In-app playing chrome
 /// may still update. This is not a new ensure rail. Does **not** invent `.playing`.
 /// Does **not** end while ineligible.
 ///
@@ -3141,7 +3152,9 @@ class RadioLiveActivityManager: ObservableObject {
     /// Active playback intent and an owned Connecting card: the previous station can
     /// still be ``.playing`` on the actor until ``resetToPrePlayForNewStream``. Without
     /// the hold, axis-heal publishes that ``.playing`` into the silent gap, and
-    /// Connecting skip then keeps the pause glyph. A paused switch is not an active
+    /// Connecting skip then keeps the pause glyph. The previous item's audible callback
+    /// is refused by ``DirectStreamingPlayer/shouldPublishAuthoritativePlayingForAudibleItem(canProceedWithPlayback:isStreamSwitchPrePlayHoldActive:attachedItemLanguageCode:destinationLanguageCode:attachGenerationSnapshot:currentAttachGeneration:)``
+    /// so ``setPlaying()`` does not clear the hold. A paused switch is not an active
     /// intent and must not take the hold. An owned ``.playing`` card stays language-only
     /// on that glyph. Does not invent ``.playing``.
     ///
@@ -3256,6 +3269,108 @@ class RadioLiveActivityManager: ObservableObject {
         )
     }
 
+    /// Whether the audible-path 3-attempt playing or dual-axis loop may run.
+    ///
+    /// `false` while the first ``.playing`` apply is unconfirmed, or a committed
+    /// observation closed it, and owned visual is still Connecting. Remembering the
+    /// candidate is allowed. Another immediate or 200/400/800 ms playing push is not.
+    /// The first update, before either of those states, still returns `true`.
+    ///
+    /// - Parameters:
+    ///   - closedUntilSpacedRetry: ``playingOverConnectingApplyClosedUntilSpacedRetry``.
+    ///   - inFlightVisual: Visual of ``inFlightContentPushCandidate``, if any.
+    ///   - ownedVisual: Owned `content.state.visualState`, if any.
+    /// - Returns: `false` when the loop must not start or must not take another attempt.
+    /// - SeeAlso: ``shouldSuppressAuthoritativePlayingLiveActivityPush(closedUntilSpacedRetry:inFlightVisual:ownedVisual:)``,
+    ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   ``ensureAuthoritativeDualAxisContentIfNeeded()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldEnterPlayingOrDualAxisSoftEnsureLoop(
+        closedUntilSpacedRetry: Bool,
+        inFlightVisual: PlayerVisualState?,
+        ownedVisual: PlayerVisualState?
+    ) -> Bool {
+        !shouldSuppressAuthoritativePlayingLiveActivityPush(
+            closedUntilSpacedRetry: closedUntilSpacedRetry,
+            inFlightVisual: inFlightVisual,
+            ownedVisual: ownedVisual
+        )
+    }
+
+    /// Whether settled acceptance or a false playing-ensure return may cancel the
+    /// spaced playing retry.
+    ///
+    /// Owned visual must actually be ``.playing``. A Connecting card that is waiting
+    /// for that retry keeps the scheduled task.
+    ///
+    /// - Parameter ownedVisual: Owned `content.state.visualState`, if any.
+    /// - Returns: `true` only when owned visual is ``.playing``.
+    /// - SeeAlso: ``schedulePostQuietLongHorizonPlayingEnsure()``,
+    ///   ``pushSettledPlayingAcceptanceContentIfNeeded()``,
+    ///   ``pushSettledDualAxisAcceptanceContentIfNeeded()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldCancelSpacedPlayingRetry(ownedVisual: PlayerVisualState?) -> Bool {
+        ownedVisual == .playing
+    }
+
+    /// Whether closing a Connecting→playing observation schedules the spaced playing retry.
+    ///
+    /// A committed delayed re-read or `contentUpdates` yield whose candidate is
+    /// ``.playing`` and whose observed visual is still ``.prePlay`` schedules the
+    /// existing 5 s / 15 s / 45 s retry when that retry is not already scheduled.
+    /// ``.userPaused`` does not. Immediate post-await does not.
+    ///
+    /// - Parameters:
+    ///   - observationKind: Delayed re-read or `contentUpdates`.
+    ///   - candidateVisual: Visual submitted on the in-flight update.
+    ///   - observedVisual: System-held visual at the committed observation.
+    ///   - spacedPlayingRetryAlreadyArmed: Whether the playing long-horizon task exists.
+    /// - Returns: `true` when ``schedulePostQuietLongHorizonPlayingEnsure()`` should run.
+    /// - SeeAlso: ``shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(observationKind:candidateVisual:observedVisual:)``,
+    ///   ``schedulePostQuietLongHorizonPlayingEnsure()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(
+        observationKind: LiveActivityContentPushObservationKind,
+        candidateVisual: PlayerVisualState,
+        observedVisual: PlayerVisualState,
+        spacedPlayingRetryAlreadyArmed: Bool
+    ) -> Bool {
+        guard !spacedPlayingRetryAlreadyArmed else { return false }
+        guard observedVisual == .prePlay else { return false }
+        return shouldClearInFlightPlayingCandidateWithoutImmediateIdenticalFlush(
+            observationKind: observationKind,
+            candidateVisual: candidateVisual,
+            observedVisual: observedVisual
+        )
+    }
+
+    /// Whether a long-horizon interval for this closed pair is one ``updateCurrentActivity()``.
+    ///
+    /// Dual-axis long-horizon, and the language long-horizon branch that would
+    /// otherwise call ``ensureAuthoritativeDualAxisContentIfNeeded()`` when both axes
+    /// lag, use this so the interval does not enter the 3-attempt loop. One update
+    /// may carry the destination language and ``.playing``.
+    ///
+    /// - Parameters:
+    ///   - closedUntilSpacedRetry: ``playingOverConnectingApplyClosedUntilSpacedRetry``.
+    ///   - ownedVisual: Owned `content.state.visualState`.
+    /// - Returns: `true` when this interval must be a single ``updateCurrentActivity()``.
+    /// - SeeAlso: ``shouldSuppressPlayingContentPushAfterClosedConnectingObservation(closedUntilSpacedRetry:candidateVisual:ownedVisual:)``,
+    ///   ``schedulePostQuietLongHorizonDualAxisEnsure()``,
+    ///   ``schedulePostQuietLongHorizonLanguageEnsure(destination:)``,
+    ///   ``postQuietLongHorizonPlayingRetryContentPushesPerInterval``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldUseSingleActivityUpdateForClosedPlayingOverConnecting(
+        closedUntilSpacedRetry: Bool,
+        ownedVisual: PlayerVisualState
+    ) -> Bool {
+        shouldSuppressPlayingContentPushAfterClosedConnectingObservation(
+            closedUntilSpacedRetry: closedUntilSpacedRetry,
+            candidateVisual: .playing,
+            ownedVisual: ownedVisual
+        )
+    }
+
     /// Instance gate for ``DirectStreamingPlayer/publishAuthoritativePlayingIfNeeded()``.
     ///
     /// - Returns: ``shouldSuppressAuthoritativePlayingLiveActivityPush(closedUntilSpacedRetry:inFlightVisual:ownedVisual:)``
@@ -3267,6 +3382,79 @@ class RadioLiveActivityManager: ObservableObject {
             inFlightVisual: inFlightContentPushCandidate?.visualState,
             ownedVisual: currentActivity?.content.state.visualState
         )
+    }
+
+    /// Schedules the spaced playing retry when a duplicate playing push is skipped
+    /// and that retry is not already scheduled.
+    ///
+    /// In-app chrome may already be ``.playing``. This does not call `Activity.update`
+    /// and does not restart a retry that is already scheduled.
+    ///
+    /// - SeeAlso: ``shouldSuppressAuthoritativePlayingLiveActivityPush(closedUntilSpacedRetry:inFlightVisual:ownedVisual:)``,
+    ///   ``schedulePostQuietLongHorizonPlayingEnsure()``,
+    ///   ``DirectStreamingPlayer/publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    func leaveSpacedPlayingRetryArmedForClosedConnectingApply() {
+        guard shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush() else { return }
+        scheduleSpacedPlayingRetryIfUnarmed()
+    }
+
+    /// Schedules ``schedulePostQuietLongHorizonPlayingEnsure()`` when no playing
+    /// long-horizon task exists.
+    ///
+    /// Does not restart an existing retry. UITestMode and the test host do not schedule.
+    ///
+    /// - SeeAlso: ``shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(observationKind:candidateVisual:observedVisual:spacedPlayingRetryAlreadyArmed:)``,
+    ///   ``leaveSpacedPlayingRetryArmedForClosedConnectingApply()``.
+    @MainActor
+    private func scheduleSpacedPlayingRetryIfUnarmed() {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        guard currentActivity != nil else { return }
+        guard postQuietLongHorizonPlayingEnsureTask == nil else { return }
+        schedulePostQuietLongHorizonPlayingEnsure()
+    }
+
+    /// `true` when this attempt must leave the 3-attempt playing or dual-axis loop.
+    ///
+    /// When it returns `true`, the spaced playing retry is scheduled if it is not
+    /// already scheduled. Does not call `Activity.update`.
+    ///
+    /// - SeeAlso: ``shouldEnterPlayingOrDualAxisSoftEnsureLoop(closedUntilSpacedRetry:inFlightVisual:ownedVisual:)``.
+    @MainActor
+    private func shouldLeavePlayingSoftEnsureLoopToSpacedRetry() -> Bool {
+        let enter = Self.shouldEnterPlayingOrDualAxisSoftEnsureLoop(
+            closedUntilSpacedRetry: playingOverConnectingApplyClosedUntilSpacedRetry,
+            inFlightVisual: inFlightContentPushCandidate?.visualState,
+            ownedVisual: currentActivity?.content.state.visualState
+        )
+        guard !enter else { return false }
+        scheduleSpacedPlayingRetryIfUnarmed()
+        return true
+    }
+
+    /// One ``updateCurrentActivity()`` for a closed Connecting→playing long-horizon interval.
+    ///
+    /// - Parameter ownedVisual: Owned visual sampled for this interval.
+    /// - Returns: `true` when this interval already pushed and the caller must not
+    ///   enter ``ensureAuthoritativeDualAxisContentIfNeeded()``.
+    /// - SeeAlso: ``shouldUseSingleActivityUpdateForClosedPlayingOverConnecting(closedUntilSpacedRetry:ownedVisual:)``,
+    ///   ``clearClosedUnconfirmedPlayingApplyBeforeLongHorizonRetry()``.
+    @MainActor
+    private func pushClosedPlayingOverConnectingLongHorizonUpdateIfNeeded(
+        ownedVisual: PlayerVisualState?
+    ) async -> Bool {
+        guard let ownedVisual else { return false }
+        guard Self.shouldUseSingleActivityUpdateForClosedPlayingOverConnecting(
+            closedUntilSpacedRetry: playingOverConnectingApplyClosedUntilSpacedRetry,
+            ownedVisual: ownedVisual
+        ) else { return false }
+        clearClosedUnconfirmedPlayingApplyBeforeLongHorizonRetry()
+        await updateCurrentActivity()
+        return true
     }
 
     /// Whether this status callback is a repeat metadata-only push for a title we
@@ -5768,9 +5956,11 @@ class RadioLiveActivityManager: ObservableObject {
             cancelPostQuietLongHorizonPlayingEnsure()
         }
         guard needsEnsure else {
-            playingEnsureQuietPending = false
-            playingEnsureQuietSkipLogged = false
-            cancelPostQuietLongHorizonPlayingEnsure()
+            if Self.shouldCancelSpacedPlayingRetry(ownedVisual: ownedVisual) {
+                playingEnsureQuietPending = false
+                playingEnsureQuietSkipLogged = false
+                cancelPostQuietLongHorizonPlayingEnsure()
+            }
             return
         }
 
@@ -5834,12 +6024,19 @@ class RadioLiveActivityManager: ObservableObject {
         ) else {
             return
         }
+        if shouldLeavePlayingSoftEnsureLoopToSpacedRetry() {
+            return
+        }
+
         playingEnsureSoftPushesInFlight = true
         defer { playingEnsureSoftPushesInFlight = false }
         // Soft pushes running → allow a fresh quiet-skip log if this cycle exhausts again.
         playingEnsureQuietSkipLogged = false
 
         for attempt in 1...Self.authoritativePlayingContentEnsureMaxAttempts {
+            if shouldLeavePlayingSoftEnsureLoopToSpacedRetry() {
+                return
+            }
             guard currentActivity != nil else { return }
 
             let loopVisual = await manager.currentVisualState
@@ -6304,9 +6501,12 @@ class RadioLiveActivityManager: ObservableObject {
         if !requestEligible {
             playingSettledAcceptanceConsumed = true
         }
-        // Fresh settle cycle owns delayed retries + long-horizon for this play cycle.
+        // Fresh settle cycle owns delayed retries. The spaced playing retry stays
+        // scheduled while owned visual is still Connecting.
         cancelPostSettledPlayingEnsureRetries()
-        cancelPostQuietLongHorizonPlayingEnsure()
+        if Self.shouldCancelSpacedPlayingRetry(ownedVisual: ownedVisual) {
+            cancelPostQuietLongHorizonPlayingEnsure()
+        }
 
         #if DEBUG
         print(
@@ -6778,6 +6978,14 @@ class RadioLiveActivityManager: ObservableObject {
             observedVisual: observedVisual
         ) else { return }
         playingOverConnectingApplyClosedUntilSpacedRetry = true
+        if Self.shouldArmSpacedPlayingRetryAfterClosedConnectingObservation(
+            observationKind: observationKind,
+            candidateVisual: candidateVisual,
+            observedVisual: observedVisual,
+            spacedPlayingRetryAlreadyArmed: postQuietLongHorizonPlayingEnsureTask != nil
+        ) {
+            scheduleSpacedPlayingRetryIfUnarmed()
+        }
     }
 
     /// Drops a closed Connecting→playing apply so a new pause, Play, or station
@@ -7135,7 +7343,11 @@ class RadioLiveActivityManager: ObservableObject {
                         "ownedLang=\(ownedLanguage ?? "nil") ownedVisual=\(String(describing: ownedVisual))"
                     )
                     #endif
-                    await self.ensureAuthoritativeDualAxisContentIfNeeded()
+                    if await self.pushClosedPlayingOverConnectingLongHorizonUpdateIfNeeded(
+                        ownedVisual: ownedVisual
+                    ) == false {
+                        await self.ensureAuthoritativeDualAxisContentIfNeeded()
+                    }
                     let acceptedLangAfterDual = self.currentActivity?.content.state.currentLanguage
                     if acceptedLangAfterDual == destination {
                         self.languageEnsureQuietPendingDestination = nil
@@ -7188,8 +7400,11 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// Schedules sparse delayed **dual-axis** soft-ensure fires after quiet / settle still lags on both axes.
     ///
-    /// Each fire clears both quiet flags once, runs one ``ensureAuthoritativeDualAxisContentIfNeeded()``,
-    /// then may record playing quiet between fires while ineligible. Language quiet records only
+    /// Each interval clears both quiet flags once. A closed Connecting→playing pair
+    /// (owned visual still ``.prePlay``) sends one ``updateCurrentActivity()`` and does
+    /// not enter ``ensureAuthoritativeDualAxisContentIfNeeded()``. Other intervals run
+    /// that dual-axis ensure once. Playing quiet may record again between intervals
+    /// while ineligible. Language quiet records only
     /// after committed language-ensure exhaustion. Logs dual-axis retries distinctly.
     ///
     /// - SeeAlso: ``postQuietLongHorizonEnsureDelayedIntervalsMilliseconds``,
@@ -7309,7 +7524,11 @@ class RadioLiveActivityManager: ObservableObject {
                 )
                 #endif
 
-                await self.ensureAuthoritativeDualAxisContentIfNeeded()
+                if await self.pushClosedPlayingOverConnectingLongHorizonUpdateIfNeeded(
+                    ownedVisual: ownedVisual
+                ) == false {
+                    await self.ensureAuthoritativeDualAxisContentIfNeeded()
+                }
 
                 let acceptedLang = self.currentActivity?.content.state.currentLanguage
                 let acceptedVisual = self.currentActivity?.content.state.visualState
@@ -7458,7 +7677,14 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
+        if shouldLeavePlayingSoftEnsureLoopToSpacedRetry() {
+            return
+        }
+
         for attempt in 1...Self.authoritativePlayingContentEnsureMaxAttempts {
+            if shouldLeavePlayingSoftEnsureLoopToSpacedRetry() {
+                return
+            }
             guard currentActivity != nil else { return }
 
             let loopHold = await manager.isStreamSwitchPrePlayHoldActive
@@ -7603,9 +7829,15 @@ class RadioLiveActivityManager: ObservableObject {
         // Dual settle owns this prePlay cycle — cancel single-axis post-settled peers that
         // would thrash after sequential settle, then run one dual-axis soft budget. Fresh
         // freeze soft budget for this attach settle so thrash smart-loosen does not starve it.
+        // The spaced playing retry stays scheduled while owned visual is still Connecting.
         cancelPostSettledLanguageEnsureRetries()
         cancelPostSettledPlayingEnsureRetries()
-        cancelAllPostQuietLongHorizonEnsure()
+        if Self.shouldCancelSpacedPlayingRetry(ownedVisual: ownedVisual) {
+            cancelAllPostQuietLongHorizonEnsure()
+        } else {
+            cancelPostQuietLongHorizonLanguageEnsure()
+            cancelPostQuietLongHorizonDualAxisEnsure()
+        }
         languageEnsureQuietPendingDestination = nil
         languageEnsureQuietSkipLogged = false
         playingEnsureQuietPending = false

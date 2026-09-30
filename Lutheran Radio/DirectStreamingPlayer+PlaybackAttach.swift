@@ -737,7 +737,9 @@ extension DirectStreamingPlayer {
     ///   generation still wins. A rejected kick does not set ``isSoftPaused`` (user pause is
     ///   Icecast hard teardown).
     /// - SeeAlso: ``audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``,
-    ///   ``shouldAllowAudiblePlaybackKick(startedAt:)``, ``publishAuthoritativePlayingIfNeeded()``,
+    ///   ``shouldAllowAudiblePlaybackKick(startedAt:)``,
+    ///   ``shouldPublishAuthoritativePlayingForAudibleItem(canProceedWithPlayback:isStreamSwitchPrePlayHoldActive:attachedItemLanguageCode:destinationLanguageCode:attachGenerationSnapshot:currentAttachGeneration:)``,
+    ///   ``publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``,
     ///   ``makeSecuredPlayerItem(for:)``, CODING_AGENT.md.
     @MainActor
     @discardableResult
@@ -774,6 +776,32 @@ extension DirectStreamingPlayer {
             #endif
             return false
         case .kickNow(_):
+            // Re-check immediately before publish. The check after publish cannot
+            // restore a Connecting hold ``setPlaying()`` already cleared. A previous
+            // item that is still audible is not the destination of an attaching hold.
+            let holdActive = await SharedPlayerManager.shared.isStreamSwitchPrePlayHoldActive
+            let destination = await SharedPlayerManager.shared.streamSwitchConnectingLanguageCode
+            guard Self.shouldPublishAuthoritativePlayingForAudibleItem(
+                canProceedWithPlayback: true,
+                isStreamSwitchPrePlayHoldActive: holdActive,
+                attachedItemLanguageCode: attachedItemLanguageCode,
+                destinationLanguageCode: destination,
+                attachGenerationSnapshot: generation,
+                currentAttachGeneration: playbackAttachGeneration
+            ) else {
+                if generation != playbackAttachGeneration {
+                    player?.pause()
+                    player?.rate = 0.0
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] live-attach audible kick discarded before publish — generation advanced")
+                    #endif
+                } else {
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] live-attach audible kick skipped — item is not the attaching destination")
+                    #endif
+                }
+                return false
+            }
             isDeferringFirstPlayKick = false
             initialPlaybackRetryCount = 0
             cancelEarlyICYDropRecreate()
@@ -784,7 +812,7 @@ extension DirectStreamingPlayer {
             safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")
             stopBufferingTimer()
             hasStartedPlaying = true
-            await publishAuthoritativePlayingIfNeeded()
+            await publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot: generation)
             // Stop can hop onto MainActor during publish. Fail closed: do not leave a stale
             // attach's play() as the success result, and do not treat this as soft-pause.
             guard generation == playbackAttachGeneration else {
@@ -896,6 +924,35 @@ extension DirectStreamingPlayer {
         return true
     }
 
+    /// Engine-facing name for the attaching-hold audible gate.
+    ///
+    /// The body is ``SharedPlayerManager/shouldPublishAuthoritativePlayingForAudibleItem(canProceedWithPlayback:isStreamSwitchPrePlayHoldActive:attachedItemLanguageCode:destinationLanguageCode:attachGenerationSnapshot:currentAttachGeneration:)``.
+    /// It lives on the actor because the widget extension compiles ``setPlaying`` and
+    /// does not compile this file. Callers on the main actor pass the snapshots they
+    /// already sampled. ``canProceedWithPlayback()`` is not enough while the hold is active.
+    ///
+    /// - SeeAlso: ``publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``,
+    ///   ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``,
+    ///   ``SharedPlayerManager/setPlaying(audibleAttachedLanguage:enforceAttachingDestination:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldPublishAuthoritativePlayingForAudibleItem(
+        canProceedWithPlayback: Bool,
+        isStreamSwitchPrePlayHoldActive: Bool,
+        attachedItemLanguageCode: String?,
+        destinationLanguageCode: String?,
+        attachGenerationSnapshot: UInt64?,
+        currentAttachGeneration: UInt64
+    ) -> Bool {
+        SharedPlayerManager.shouldPublishAuthoritativePlayingForAudibleItem(
+            canProceedWithPlayback: canProceedWithPlayback,
+            isStreamSwitchPrePlayHoldActive: isStreamSwitchPrePlayHoldActive,
+            attachedItemLanguageCode: attachedItemLanguageCode,
+            destinationLanguageCode: destinationLanguageCode,
+            attachGenerationSnapshot: attachGenerationSnapshot,
+            currentAttachGeneration: currentAttachGeneration
+        )
+    }
+
     /// Publishes authoritative `.playing` chrome after the engine has started or resumed audible output.
     ///
     /// Call only after a rate kick / soft-resume `playImmediately` (or equivalent KVO observation of
@@ -910,25 +967,66 @@ extension DirectStreamingPlayer {
     /// or Connecting while audio is live. While the first ``.playing`` apply is unconfirmed,
     /// or a committed observation closed it and the spaced retry has not yet pushed,
     /// and owned visual is still ``.prePlay``, that reconcile is skipped. In-app chrome
-    /// stays green. The spaced long-horizon playing retry is the next Live Activity visual push.
+    /// stays green. The skip leaves the spaced long-horizon playing retry scheduled.
+    /// That retry is the next Live Activity visual push.
     ///
+    /// While an attaching Connecting hold is active, this returns without
+    /// ``SharedPlayerManager/setPlaying(audibleAttachedLanguage:enforceAttachingDestination:)``
+    /// unless ``attachedItemLanguageCode`` equals
+    /// ``streamSwitchConnectingLanguageCode``. ``canProceedWithPlayback()`` is not
+    /// enough: the previous item can still be audible until
+    /// ``resetToPrePlayForNewStream``. A caller that already holds an attach-generation
+    /// snapshot passes it here; a mismatch does not publish and does not clear the hold.
+    /// That generation is read again immediately before ``setPlaying``, because sampling
+    /// visual can suspend long enough for a new attach to advance it. ``setPlaying``
+    /// then re-checks the hold in the same actor turn, before the hold is cleared.
+    /// ``SharedPlayerManager`` cannot read ``playbackAttachGeneration``.
+    ///
+    /// - Parameter attachGenerationSnapshot: Bind/attach generation from a caller that
+    ///   already captured one (live-attach kick, KVO). `nil` when the caller has no snapshot.
     /// - Important: Never call from the start of ``SharedPlayerManager/play()`` or from
     ///   ``startPlayback(context:attachGeneration:)`` while still awaiting `isPlaybackLikelyToKeepUp`.
-    /// - SeeAlso: ``SharedPlayerManager/setPlaying()``, ``shouldAllowAudiblePlaybackKick(startedAt:)``,
+    /// - SeeAlso: ``shouldPublishAuthoritativePlayingForAudibleItem(canProceedWithPlayback:isStreamSwitchPrePlayHoldActive:attachedItemLanguageCode:destinationLanguageCode:attachGenerationSnapshot:currentAttachGeneration:)``,
+    ///   ``SharedPlayerManager/setPlaying(audibleAttachedLanguage:enforceAttachingDestination:)``,
+    ///   ``shouldAllowAudiblePlaybackKick(startedAt:)``,
     ///   ``RadioLiveActivityManager/pushSettledLanguageAcceptanceContentIfNeeded()``,
     ///   ``RadioLiveActivityManager/pushSettledPlayingAcceptanceContentIfNeeded()``,
     ///   ``RadioLiveActivityManager/ensureAuthoritativePlayingContentIfNeeded()``,
     ///   ``RadioLiveActivityManager/shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush(inFlightVisual:ownedVisual:)``,
+    ///   ``RadioLiveActivityManager/leaveSpacedPlayingRetryArmedForClosedConnectingApply()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (connecting chrome vs audible start),
     ///   ``MediaTransportLatencyTimeline`` (DEBUG first-audio milestone).
     @MainActor
-    func publishAuthoritativePlayingIfNeeded() async {
-        guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+    func publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot: UInt64? = nil) async {
+        let canProceed = await SharedPlayerManager.shared.canProceedWithPlayback()
+        guard canProceed else {
             #if DEBUG
             print("[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded skipped — sticky pause/lock")
             MediaTransportLatencyTimeline.mark(
                 .authoritativePlayingSkipped,
                 detail: "reason=stickyPauseOrLock"
+            )
+            #endif
+            return
+        }
+        let holdActive = await SharedPlayerManager.shared.isStreamSwitchPrePlayHoldActive
+        let destination = await SharedPlayerManager.shared.streamSwitchConnectingLanguageCode
+        guard Self.shouldPublishAuthoritativePlayingForAudibleItem(
+            canProceedWithPlayback: true,
+            isStreamSwitchPrePlayHoldActive: holdActive,
+            attachedItemLanguageCode: attachedItemLanguageCode,
+            destinationLanguageCode: destination,
+            attachGenerationSnapshot: attachGenerationSnapshot,
+            currentAttachGeneration: playbackAttachGeneration
+        ) else {
+            #if DEBUG
+            print(
+                "[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded skipped — " +
+                "attaching hold item is not the destination or attach generation advanced"
+            )
+            MediaTransportLatencyTimeline.mark(
+                .authoritativePlayingSkipped,
+                detail: "reason=staleAttachingItem"
             )
             #endif
             return
@@ -940,6 +1038,9 @@ extension DirectStreamingPlayer {
             // committed Connecting observation is waiting for the spaced retry.
             // The spaced long-horizon retry is that next push.
             if RadioLiveActivityManager.shared.shouldSuppressDuplicateAuthoritativePlayingLiveActivityPush() {
+                // In-app chrome is already green. Leave the spaced playing retry
+                // scheduled; this skip is not a substitute for that retry.
+                RadioLiveActivityManager.shared.leaveSpacedPlayingRetryArmedForClosedConnectingApply()
                 #if DEBUG
                 print(
                     "[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded skipped " +
@@ -970,7 +1071,28 @@ extension DirectStreamingPlayer {
             await RadioLiveActivityManager.shared.ensureAuthoritativePlayingContentIfNeeded()
             return
         }
-        await SharedPlayerManager.shared.setPlaying()
+        // `playbackAttachGeneration` lives on this type. Re-read it on this turn,
+        // immediately before the actor hop. The visual sample above can suspend, and
+        // ``setPlaying(audibleAttachedLanguage:enforceAttachingDestination:)`` cannot
+        // see the counter. A mismatch must not clear a hold the new station just set.
+        if let attachGenerationSnapshot, attachGenerationSnapshot != playbackAttachGeneration {
+            #if DEBUG
+            print(
+                "[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded skipped — " +
+                "attach generation advanced before setPlaying"
+            )
+            MediaTransportLatencyTimeline.mark(
+                .authoritativePlayingSkipped,
+                detail: "reason=staleAttachingItem"
+            )
+            #endif
+            return
+        }
+        let audibleLanguage = attachedItemLanguageCode
+        await SharedPlayerManager.shared.setPlaying(
+            audibleAttachedLanguage: audibleLanguage,
+            enforceAttachingDestination: true
+        )
         #if DEBUG
         print("[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded → setPlaying after audible start")
         MediaTransportLatencyTimeline.mark(.authoritativePlayingPublished)

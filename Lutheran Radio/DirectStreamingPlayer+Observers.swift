@@ -7,7 +7,9 @@
 //  AVPlayer / AVPlayerItem KVO observers, buffer timers, and observer teardown for the streaming engine façade.
 //  First-play kick is ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``
 //  (Icecast `.readyToPlay` waits for keep-up). ``addObservers()`` captures ``playbackAttachGeneration``
-//  at bind time and passes that snapshot into the kick — never fire-time generation.
+//  at bind time and passes that snapshot into the kick — never the generation read after stop.
+//  `timeControlStatus == .playing` uses the same audible-item gate: a previous item that is
+//  still `.playing` while an attaching hold names a different destination does not publish.
 //
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
 //  DirectStreamingPlayer remains the public façade; this file owns one domain.
@@ -59,9 +61,11 @@ extension DirectStreamingPlayer {
 
                 switch newTC {
                 case .playing:
+                    let generationAtObservation = self.playbackAttachGeneration
                     self.cancelEarlyICYDropRecreate()
                     // KVO resurrection protection is driven by authoritative playback intent.
-                    guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+                    let canProceed = await SharedPlayerManager.shared.canProceedWithPlayback()
+                    guard canProceed else {
                         #if DEBUG
                         print("[DirectStreamingPlayer] [KVO] timeControlStatus.playing: resurrection suppressed by playbackIntent — enforcing pause")
                         #endif
@@ -77,13 +81,33 @@ extension DirectStreamingPlayer {
                         #endif
                         return
                     }
+                    // Same gate as the live-attach kick. The previous item can still be
+                    // `.playing` after an attaching chip has set the destination stamp.
+                    // ``canProceedWithPlayback()`` does not prove this item is that station.
+                    let holdActive = await SharedPlayerManager.shared.isStreamSwitchPrePlayHoldActive
+                    let destination = await SharedPlayerManager.shared.streamSwitchConnectingLanguageCode
+                    guard Self.shouldPublishAuthoritativePlayingForAudibleItem(
+                        canProceedWithPlayback: true,
+                        isStreamSwitchPrePlayHoldActive: holdActive,
+                        attachedItemLanguageCode: self.attachedItemLanguageCode,
+                        destinationLanguageCode: destination,
+                        attachGenerationSnapshot: generationAtObservation,
+                        currentAttachGeneration: self.playbackAttachGeneration
+                    ) else {
+                        #if DEBUG
+                        print("[DirectStreamingPlayer] [KVO] timeControlStatus.playing: skipped — item is not the attaching destination or generation advanced")
+                        #endif
+                        return
+                    }
                     self.isDeferringFirstPlayKick = false
                     self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")
                     self.hasStartedPlaying = true
                     self.stopBufferingTimer()
                     // Defense-in-depth: if keep-up kick already published chrome, this no-ops;
                     // if KVO observed audible play first (stall-wait completed), surfaces catch up here.
-                    await self.publishAuthoritativePlayingIfNeeded()
+                    await self.publishAuthoritativePlayingIfNeeded(
+                        attachGenerationSnapshot: generationAtObservation
+                    )
                     
                 case .paused:
                     if !self.isPlaybackTeardownActive && observedPlayer.rate == 0.0 {
