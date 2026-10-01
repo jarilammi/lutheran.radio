@@ -4171,11 +4171,13 @@ class RadioLiveActivityManagerTests: XCTestCase {
     /// playing candidate and does not schedule an immediate identical playing flush.
     /// The next long-horizon playing retry is not coalesced once in-flight is nil.
     /// A second ``.playing`` candidate during the still-unconfirmed await is coalesced.
-    /// ``.userPaused`` is not held behind that apply. Ineligible explicit Play may still
-    /// move pause → Connecting → authoritative playing. Ineligible playing-chip switch
-    /// stays language-only on owned playing. Paused chip switch stays paused. Connecting
-    /// is still skipped over owned playing. Does **not** invent `.playing`. Does **not**
-    /// end while ineligible. Does **not** claim lock-screen paint.
+    /// ``.userPaused`` is not held behind that apply. Ineligible explicit Play keeps the
+    /// owned pause control (Connecting over that pause is suppressed) and may still
+    /// replace an already-Connecting card with authoritative playing. Ineligible
+    /// playing-chip switch stays language-only on owned playing. Paused chip switch
+    /// stays paused. Connecting is still skipped over owned playing. Does **not**
+    /// invent `.playing`. Does **not** end while ineligible. Does **not** claim
+    /// lock-screen paint.
     ///
     /// Why this pattern is required: a second playing push during the unconfirmed await,
     /// flushed again when the re-read is still Connecting, keeps an apply outstanding so
@@ -4283,14 +4285,14 @@ class RadioLiveActivityManagerTests: XCTestCase {
             "Owned playing is not the unconfirmed Connecting apply"
         )
 
-        XCTAssertFalse(
+        XCTAssertTrue(
             manager._test_shouldSuppressConnectingContentPushWhileIneligible(
                 isRequestEligible: false,
                 ownedVisual: .userPaused,
                 candidateVisual: .prePlay,
                 explicitFreshAttachPlay: true
             ),
-            "Ineligible explicit Play may still move userPaused to Connecting"
+            "Ineligible explicit Play keeps the owned pause control"
         )
         XCTAssertFalse(
             manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
@@ -5656,29 +5658,52 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
-    /// Explicit Play after hard teardown, while request is ineligible, may replace owned
-    /// ``.userPaused`` with Connecting and then replace that Connecting with authoritative
-    /// ``.playing`` — including after freeze. It must not cover owned ``.playing`` with
-    /// Connecting, and it must not jump owned pause straight to ``.playing``. Default
-    /// (flag false) keeps the committed-glyph skips. Does **not** invent `.playing`.
+    /// Explicit Play after hard teardown, while request is ineligible, keeps the owned
+    /// pause control. It does not spend `Activity.update` on Connecting over that pause.
+    /// When the station is audible, ``.playing`` may replace owned ``.userPaused``,
+    /// including after freeze, and still may replace owned ``.prePlay`` when the card
+    /// is already Connecting. Connecting over an already-audible card still skips.
+    /// Without the flag, Connecting over pause and ``.playing`` over pause still skip.
+    /// Request-eligible Connecting over pause does not take the ineligible skip.
+    /// Does **not** invent `.playing`. Does **not** prove the card on a locked phone.
     ///
-    /// Why this pattern is required: a pause glyph for a stream that has never been
-    /// audible is a false control, and the later audible push must still be allowed on
-    /// the same activity while locked. Playing-chip and paused-chip paths do not set
-    /// the flag. Pure `should*` — no ActivityKit waits.
+    /// Why this pattern is required: Connecting over the owned pause is the update the
+    /// lock screen kept, and the later playing update did not replace it. The audible
+    /// update has to be allowed on the same activity while locked. Playing-chip and
+    /// paused-chip paths do not set the flag. Pure `should*` — no ActivityKit waits.
     ///
     /// - SeeAlso: ``RadioLiveActivityManager/shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
     ///   ``RadioLiveActivityManager/shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(isRequestEligible:freezeSoftBudgetExhausted:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual).
-    func testExplicitFreshAttachPlayMayMovePauseToConnectingThenAuthoritativePlaying() {
-        XCTAssertFalse(
+    func testExplicitFreshAttachPlayKeepsOwnedPauseUntilAudiblePlaying() {
+        XCTAssertTrue(
             manager._test_shouldSuppressConnectingContentPushWhileIneligible(
                 isRequestEligible: false,
                 ownedVisual: .userPaused,
                 candidateVisual: .prePlay,
                 explicitFreshAttachPlay: true
             ),
-            "Explicit Play may replace owned pause with Connecting while ineligible"
+            "Ineligible explicit Play suppresses Connecting over owned pause"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: true,
+                ownedVisual: .userPaused,
+                candidateVisual: .playing,
+                explicitFreshAttachPlay: true
+            ),
+            "Ineligible explicit Play allows playing over owned pause after freeze"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: false,
+                ownedVisual: .userPaused,
+                candidateVisual: .playing,
+                explicitFreshAttachPlay: true
+            ),
+            "Ineligible explicit Play allows playing over owned pause before freeze"
         )
         XCTAssertFalse(
             manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
@@ -5688,7 +5713,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 candidateVisual: .playing,
                 explicitFreshAttachPlay: true
             ),
-            "Authoritative playing may replace the Connecting this Play published, even after freeze"
+            "Ineligible explicit Play still allows playing over an already-Connecting card"
         )
         XCTAssertTrue(
             manager._test_shouldSuppressConnectingContentPushWhileIneligible(
@@ -5697,17 +5722,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 candidateVisual: .prePlay,
                 explicitFreshAttachPlay: true
             ),
-            "Explicit Play must not cover an already-audible card with Connecting"
-        )
-        XCTAssertTrue(
-            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
-                isRequestEligible: false,
-                freezeSoftBudgetExhausted: false,
-                ownedVisual: .userPaused,
-                candidateVisual: .playing,
-                explicitFreshAttachPlay: true
-            ),
-            "Explicit Play must not jump owned pause straight to playing"
+            "Ineligible explicit Play still suppresses Connecting over owned playing"
         )
         XCTAssertTrue(
             manager._test_shouldSuppressConnectingContentPushWhileIneligible(
@@ -5716,7 +5731,26 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 candidateVisual: .prePlay,
                 explicitFreshAttachPlay: false
             ),
-            "Without the explicit-Play flag, ineligible Connecting over pause still skips"
+            "Without the flag, ineligible Connecting over pause still suppresses"
+        )
+        XCTAssertTrue(
+            manager._test_shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+                isRequestEligible: false,
+                freezeSoftBudgetExhausted: true,
+                ownedVisual: .userPaused,
+                candidateVisual: .playing,
+                explicitFreshAttachPlay: false
+            ),
+            "Without the flag, ineligible playing over pause still suppresses"
+        )
+        XCTAssertFalse(
+            manager._test_shouldSuppressConnectingContentPushWhileIneligible(
+                isRequestEligible: true,
+                ownedVisual: .userPaused,
+                candidateVisual: .prePlay,
+                explicitFreshAttachPlay: true
+            ),
+            "Request-eligible Connecting over pause does not take the ineligible suppress"
         )
     }
 

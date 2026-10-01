@@ -29,6 +29,9 @@
 @unsafe @preconcurrency import ActivityKit
 import Foundation
 import WidgetSurface
+#if LUTHERAN_MAIN_APP
+import UIKit
+#endif
 
 // MARK: - Intent execution (cross-target SSOT)
 
@@ -402,11 +405,19 @@ enum WidgetIntentExecution {
     ///   app, when ``DirectStreamingPlayer/selectedStream`` language differs from owned
     ///   ContentState language, the optimistic push co-heals language with the visual flip so
     ///   pause after stream switch does not re-stamp lagging prior-language chrome.
+    /// - Important: While request is ineligible, Connecting (``.prePlay``) over owned
+    ///   ``.userPaused`` or ``.playing`` does not call `Activity.update`, including explicit
+    ///   fresh-attach Play. The main-app record below still sets
+    ///   ``explicitFreshAttachPlayAllowsIneligibleVisual`` so the later audible ``.playing``
+    ///   update may replace that pause. In-app chrome and the durable mirror may still move
+    ///   through Connecting. Request-eligible Play with no retained item still publishes
+    ///   Connecting. Soft-resume ``.playing`` is not this skip.
     /// - SeeAlso: ``performLiveActivityToggle()``,
     ///   ``pushOptimisticLiveActivityStreamSwitchContent(languageCode:visualState:)``,
     ///   ``LutheranRadioLiveActivityAttributes/ContentState/replacingVisualState(_:)``,
     ///   ``RadioLiveActivityManager/languageForOptimisticToggleContentAlignment(lastPushedLanguage:ownedContentLanguage:selectedStreamLanguage:durableLanguageMirror:)``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    ///   ``RadioLiveActivityManager/shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual).
     static func pushOptimisticLiveActivityToggleContent(visualState: PlayerVisualState) async {
         let skipActivityKitIPC = SharedPlayerManager.isRunningInUITestMode
             || SharedPlayerManager.isRunningAsIOSAppOnMac
@@ -419,8 +430,37 @@ enum WidgetIntentExecution {
         #endif
 
         if !skipActivityKitIPC {
+            #if LUTHERAN_MAIN_APP
+            let requestEligible = await MainActor.run {
+                RadioLiveActivityManager.isInteractiveLiveActivityRequestEligible(
+                    areActivitiesEnabled: RadioLiveActivityManager.areActivitiesEnabledOnThisHost,
+                    isApplicationActive: UIApplication.shared.applicationState == .active
+                )
+            }
+            #endif
             for activity in interactiveLiveActivities() {
                 let current = activity.content.state
+                #if LUTHERAN_MAIN_APP
+                // Same decision as updateCurrentActivity. Skipping this IPC does not
+                // clear the fresh-attach flag; recordOptimisticToggleContent still runs.
+                if RadioLiveActivityManager.shouldSuppressConnectingContentPushWhileIneligible(
+                    isRequestEligible: requestEligible,
+                    ownedVisual: current.visualState,
+                    candidateVisual: visualState,
+                    explicitFreshAttachPlay: visualState == .prePlay
+                ) {
+                    continue
+                }
+                #else
+                // Extension host is not the presentable app and does not compile
+                // RadioLiveActivityManager. Match the ineligible arm of
+                // shouldSuppressConnectingContentPushWhileIneligible: do not spend
+                // Activity.update on Connecting over owned pause or playing.
+                if visualState == .prePlay,
+                   current.visualState == .userPaused || current.visualState == .playing {
+                    continue
+                }
+                #endif
                 // Main-app: co-heal language chrome when stream attach already advanced but
                 // system-held ContentState language still lags (pause/play after switch must
                 // not re-stamp prior-language via replacingVisualState alone). Same-language

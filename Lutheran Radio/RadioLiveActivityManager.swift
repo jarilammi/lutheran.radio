@@ -59,12 +59,14 @@ import WidgetSurface
 /// ``shouldSuppressLiveActivityContentPush(lastPushed:candidate:ownedContentLanguage:)``
 /// (or force/initial), is not an ineligible Connecting overwrite of owned
 /// paused/playing (``shouldSuppressConnectingContentPushWhileIneligible`` — same-stream
-/// resume **and** stream-switch hold after dest language has landed), is not an
+/// resume, stream-switch hold after dest language has landed, **and** explicit
+/// fresh-attach Play), is not an
 /// ineligible dest-language Connecting bundle over a committed pause/play glyph
 /// (``shouldPreserveOwnedVisualOnIneligibleLanguageMutation`` keeps owned visual),
 /// is not a visual-differing `.playing` push while request is ineligible after freeze
 /// or over a committed pause/play glyph
-/// (``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible``),
+/// (``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible`` — explicit
+/// fresh-attach Play may still replace owned ``.userPaused`` with audible ``.playing``),
 /// **and** is not coalesced as a second visual mutation while
 /// ``inFlightContentPushCandidate`` is unconfirmed. Suppress is an **optimization**, not a source of truth: owned
 /// `Activity.content.state.currentLanguage` beats optimistic / aspirational
@@ -114,20 +116,26 @@ import WidgetSurface
 ///
 /// ## Explicit Play after hard teardown while ineligible
 /// Optimistic Live Activity ``.playing`` is only for a retained same-stream soft-resume
-/// (``canSoftResumeSameStream``). Play with no retained item publishes Connecting until
-/// ``publishAuthoritativePlayingIfNeeded()``. While request is ineligible, that explicit
-/// Play may replace owned ``.userPaused`` with Connecting and then replace that Connecting
-/// with authoritative ``.playing`` (``explicitFreshAttachPlayAllowsIneligibleVisual``).
-/// Ineligible playing-chip switch still keeps owned ``.playing``. Paused chip switch still
-/// keeps ``.userPaused`` and does not attach. Connecting is not pushed over owned
-/// ``.playing``. Does not add an ensure rail.
+/// (``canSoftResumeSameStream``). Play with no retained item publishes Connecting on
+/// in-app chrome and App Group mirrors until ``publishAuthoritativePlayingIfNeeded()``.
+/// While request is ineligible, that explicit Play does not spend `Activity.update` on
+/// Connecting over owned ``.userPaused``. The owned pause control stays until the audible
+/// ``.playing`` update, which may replace that pause and carries the actor's same-language
+/// program title (``explicitFreshAttachPlayAllowsIneligibleVisual``). Skipping the
+/// Connecting IPC does not clear the flag. A chip whose card is already Connecting still
+/// publishes Connecting. Ineligible playing-chip switch still keeps owned ``.playing``.
+/// Paused chip switch still keeps ``.userPaused`` and does not attach. Connecting is not
+/// pushed over owned ``.playing``. Stream-switch hold does not publish this ``.playing``
+/// update: ``resolveContentPushVisual(visualState:streamSwitchHold:isConnectingPlayback:)``
+/// clamps it to Connecting, and ``recordOptimisticStreamSwitchContent(language:visualState:)``
+/// clears the flag. Does not add an ensure rail.
 ///
 /// ## Same-stream ineligible resume must not spend an apply on Connecting
 /// While interactive request is ineligible, ``updateCurrentActivity()`` must not
-/// `Activity.update` Connecting (``.prePlay``) over owned ``.playing``, or over owned
-/// ``.userPaused`` unless the candidate is that explicit fresh-attach Play.
-/// That overwrite is the last visual apply Apple still accepted on same-stream
-/// play-after-pause under lock; later `.playing` mutations then dropped. Stream-switch
+/// `Activity.update` Connecting (``.prePlay``) over owned ``.playing`` or owned
+/// ``.userPaused``, including when the candidate is that explicit fresh-attach Play.
+/// That Connecting overwrite is the visual apply the lock screen kept on play-after-pause;
+/// the later `.playing` update did not replace it. Stream-switch
 /// hold still publishes Connecting + destination language **when request-eligible**
 /// (presentable honesty). After dest language has landed on owned pause/playing while
 /// still ineligible, hold-active Connecting is also skipped (sibling section). First
@@ -180,13 +188,17 @@ import WidgetSurface
 /// While request is ineligible, freeze soft budget is exhausted **or** owned visual is
 /// already a committed ``.userPaused`` / ``.playing`` glyph, ``updateCurrentActivity()``
 /// must not `Activity.update` candidate `.playing` when that visual differs from owned.
-/// Play re-arm (``recordOptimisticToggleContent``) may still clear quiet for a later
-/// **eligible** cycle; it does not by itself authorize this IPC. Language-only (dest
-/// language on the owned glyph) still updates. Pause as a **new** visual (owned playing
-/// → candidate ``.userPaused``) still updates. Dual-axis settle after hold clear while
-/// owned is still Connecting (freeze not exhausted) still may push `.playing`. Unlock /
-/// become-active remains the presentable playing-glyph repair. Does **not** invent
-/// `.playing`. Does **not** end while ineligible. Does **not** add another ensure rail.
+/// Clearing playing quiet in ``recordOptimisticToggleContent(visualState:)`` may still
+/// open a later **eligible** cycle; it does not by itself authorize this IPC. Explicit
+/// fresh-attach Play is the exception: while the flag is set, audible ``.playing`` may
+/// replace owned ``.userPaused``, including after freeze, and may still replace owned
+/// ``.prePlay`` when the card is already Connecting. Without the flag, ``.playing`` over
+/// ``.userPaused`` still skips. Language-only (dest language on the owned glyph) still
+/// updates. Pause as a **new** visual (owned playing → candidate ``.userPaused``) still
+/// updates. Dual-axis settle after hold clear while owned is still Connecting (freeze
+/// not exhausted) still may push `.playing`. Unlock / become-active remains the
+/// presentable playing-glyph repair. Does **not** invent `.playing`. Does **not** end
+/// while ineligible. Does **not** add another ensure rail.
 ///
 /// ## Missing-card start (sessionNeeds)
 /// ``ensureInteractiveLiveActivityIfNeeded()`` requests a **missing** interactive card
@@ -834,14 +846,16 @@ class RadioLiveActivityManager: ObservableObject {
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private var playingEnsureQuietPending = false
 
-    /// Explicit Play published Connecting because no soft-paused item was retained.
+    /// Explicit Play recorded Connecting because no soft-paused item was retained.
     ///
-    /// While request is ineligible, that Play may replace owned ``.userPaused`` with
-    /// Connecting and then replace that Connecting with authoritative ``.playing``
-    /// on the same activity. Cleared on pause, on soft-resume ``.playing``, and on
-    /// any stream-switch optimistic stamp so a paused chip and an ineligible
-    /// playing-chip switch keep their glyphs. Does not authorize Connecting over
-    /// owned ``.playing``.
+    /// While request is ineligible, that Play does not spend `Activity.update` on
+    /// Connecting over owned ``.userPaused``. The flag stays set so the audible
+    /// ``.playing`` update may replace that pause and carry the actor's same-language
+    /// title. Skipping the Connecting IPC does not clear it. Cleared on pause, on
+    /// soft-resume ``.playing``, and on any stream-switch optimistic stamp so a paused
+    /// chip and an ineligible playing-chip switch keep their glyphs. Does not authorize
+    /// Connecting over owned ``.playing``. A chip whose card is already Connecting still
+    /// publishes Connecting.
     ///
     /// - SeeAlso: ``shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
     ///   ``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(isRequestEligible:freezeSoftBudgetExhausted:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
@@ -1544,8 +1558,9 @@ class RadioLiveActivityManager: ObservableObject {
     /// **Same-stream ineligible Connecting skip:** While request is ineligible,
     /// ``shouldSuppressConnectingContentPushWhileIneligible`` skips `Activity.update`
     /// when the candidate is Connecting (``.prePlay``) and owned visual is already
-    /// ``.userPaused`` or ``.playing``. Keep the committed glyph until authoritative
-    /// `.playing` or a later `.userPaused` is the candidate. Hold does **not** authorize
+    /// ``.userPaused`` or ``.playing``, including explicit fresh-attach Play. Keep the
+    /// committed pause control until the audible `.playing` update, which may replace
+    /// that pause and carries the actor's same-language title. Hold does **not** authorize
     /// this IPC while ineligible (dest-landed skip below). First start (owned already
     /// Connecting) and request-eligible still publish Connecting. Durable mirrors still
     /// warm. Does **not** invent `.playing`.
@@ -1571,12 +1586,16 @@ class RadioLiveActivityManager: ObservableObject {
     /// budget is exhausted **or** owned visual is already ``.userPaused`` / ``.playing``,
     /// ``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible`` skips
     /// `Activity.update` when the candidate is `.playing` and differs from owned.
-    /// ``recordOptimisticToggleContent`` may still clear quiet for a later eligible
-    /// cycle; it does not authorize this IPC. Language-only still updates
+    /// Clearing playing quiet may still open a later eligible cycle; it does not
+    /// authorize this IPC. Explicit fresh-attach Play may replace owned ``.userPaused``
+    /// with audible ``.playing``, including after freeze, and may still replace owned
+    /// ``.prePlay`` when the card is already Connecting. Without the flag, ``.playing``
+    /// over pause still skips. Language-only still updates
     /// (``shouldPreserveOwnedVisualOnIneligibleLanguageMutation`` already made
     /// candidate visual equal owned). Pause as a new visual still updates.
     /// Dual-axis settle after hold clear while owned is Connecting (freeze not
-    /// exhausted) still may push `.playing`. Durable mirrors already warmed. Must
+    /// exhausted) still may push `.playing`. Stream-switch hold clamps playing to
+    /// Connecting before this gate. Durable mirrors already warmed. Must
     /// run before visual coalesce so a dropped `.playing` candidate cannot become
     /// the outstanding flush. Does **not** invent `.playing`.
     ///
@@ -1879,11 +1898,13 @@ class RadioLiveActivityManager: ObservableObject {
         }
 
         // Ineligible Connecting over committed pause/playing: skip even during
-        // stream-switch hold (dest language already matching owned). Dest-lag is
-        // language-only above (candidate visual equals owned; this skip does not
-        // see .prePlay). Eligible switch still Connecting via isRequestEligible.
-        // Durable mirrors already warmed above. Must run before visual coalesce so a
-        // Connecting candidate cannot become the outstanding flush.
+        // stream-switch hold and for explicit fresh-attach Play (dest language
+        // already matching owned). Dest-lag is language-only above (candidate visual
+        // equals owned; this skip does not see .prePlay). Eligible switch still
+        // Connecting via isRequestEligible. Skipping this IPC does not clear
+        // explicitFreshAttachPlayAllowsIneligibleVisual. Durable mirrors already
+        // warmed above. Must run before visual coalesce so a Connecting candidate
+        // cannot become the outstanding flush.
         if Self.shouldSuppressConnectingContentPushWhileIneligible(
             isRequestEligible: requestEligible,
             ownedVisual: ownedVisual,
@@ -1914,11 +1935,13 @@ class RadioLiveActivityManager: ObservableObject {
         }
 
         // Ineligible freeze: do not spend an ActivityKit visual apply on `.playing`
-        // over a committed pause/play glyph (or after freeze soft-budget exhaust).
-        // Play re-arm may have cleared quiet; that does not authorize this IPC.
-        // Language-only already preserved owned visual above. Pause as a new visual
-        // still pushes. Must run before visual coalesce so dropped playing cannot
-        // become the outstanding flush. Durable mirrors already warmed.
+        // over a committed pause/play glyph (or after freeze soft-budget exhaust),
+        // except explicit fresh-attach Play may replace owned pause and may still
+        // replace Connecting when the card is already `.prePlay`. Clearing playing
+        // quiet does not authorize this IPC. Language-only already preserved owned
+        // visual above. Pause as a new visual still pushes. Must run before visual
+        // coalesce so dropped playing cannot become the outstanding flush. Durable
+        // mirrors already warmed.
         if Self.shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
             isRequestEligible: requestEligible,
             freezeSoftBudgetExhausted: contentEnsureFreezeSoftBudgetExhausted,
@@ -2860,22 +2883,28 @@ class RadioLiveActivityManager: ObservableObject {
     ///   - candidateVisual: Visual from ``resolveContentPushVisual(visualState:streamSwitchHold:isConnectingPlayback:)``
     ///     after language-only preserve (candidate visual equals owned when dest lags).
     ///   - explicitFreshAttachPlay: ``explicitFreshAttachPlayAllowsIneligibleVisual``.
-    ///     When true, owned ``.userPaused`` may become Connecting for this Play. Owned
+    ///     When true, this Play still skips Connecting over owned ``.userPaused``.
+    ///     The flag stays set for the later audible ``.playing`` update. Owned
     ///     ``.playing`` still skips Connecting.
-    /// - Returns: `true` when IPC must skip Connecting (owned playing, or owned pause
-    ///   without explicit fresh-attach Play, ineligible, candidate ``.prePlay``).
+    /// - Returns: `true` when IPC must skip Connecting (owned playing or owned pause,
+    ///   ineligible, candidate ``.prePlay``), including when `explicitFreshAttachPlay`
+    ///   is true.
     /// - Important: Does **not** invent `.playing` during attach. First start (owned
     ///   already ``.prePlay``) still publishes Connecting — nothing better to keep.
     ///   Pause (``.userPaused``) and authoritative `.playing` candidates still push.
     ///   Eligible switch still publishes Connecting. Does **not** skip Connecting when
     ///   candidate visual already equals owned (language-only). Does **not** push
-    ///   Connecting over a card whose owned visual is already ``.playing``.
+    ///   Connecting over a card whose owned visual is already ``.playing`` or
+    ///   ``.userPaused`` while ineligible. Skipping this IPC does not clear the flag.
     /// - SeeAlso: ``updateCurrentActivity()``,
+    ///   ``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(isRequestEligible:freezeSoftBudgetExhausted:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
     ///   ``shouldPreserveOwnedVisualOnIneligibleLanguageMutation(isRequestEligible:destinationLanguage:ownedLanguage:ownedVisual:)``,
     ///   ``resolveContentPushVisual(visualState:streamSwitchHold:isConnectingPlayback:)``,
     ///   ``PlaybackPlayDecision/shouldApplyConnectingPrePlayChrome(visualState:isActivePlaybackIntent:canSoftResumeSameStream:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
-    static func shouldSuppressConnectingContentPushWhileIneligible(
+    /// - Note: `nonisolated` because the decision reads no actor state. The optimistic
+    ///   Live Activity toggle calls it off the main actor before `Activity.update`.
+    nonisolated static func shouldSuppressConnectingContentPushWhileIneligible(
         isRequestEligible: Bool,
         ownedVisual: PlayerVisualState,
         candidateVisual: PlayerVisualState,
@@ -2883,15 +2912,12 @@ class RadioLiveActivityManager: ObservableObject {
     ) -> Bool {
         guard !isRequestEligible else { return false }
         guard candidateVisual == .prePlay else { return false }
+        // The flag does not lift this skip. Explicit fresh-attach Play keeps the
+        // owned pause control; the audible `.playing` update is what may replace it.
+        _ = explicitFreshAttachPlay
         switch ownedVisual {
-        case .playing:
-            // Never cover an already-audible card with Connecting, including explicit Play.
+        case .playing, .userPaused:
             return true
-        case .userPaused:
-            // Explicit Play after hard teardown may replace pause with Connecting so the
-            // card is not stuck on a pause glyph for a stream that has never been audible.
-            // Paused chip switch and stream-switch hold do not set this flag.
-            return !explicitFreshAttachPlay
         case .prePlay, .cleared, .thermalPaused, .securityLocked:
             return false
         }
@@ -2901,37 +2927,47 @@ class RadioLiveActivityManager: ObservableObject {
     /// while request is ineligible after freeze, or while the surface already holds a
     /// committed pause/play glyph.
     ///
-    /// Play re-arm (``recordOptimisticToggleContent`` / ``rearmPlayingEnsureQuietPending``)
-    /// clears playing quiet and freeze generation so a **later eligible** cycle can heal.
-    /// That re-arm must not by itself spend lock-stretch visual IPC on `.playing` Apple
-    /// drops — language-only still lands; pause as a new visual still lands. Unlock /
-    /// become-active remains the presentable playing-glyph repair.
+    /// ``recordOptimisticToggleContent(visualState:)`` / ``rearmPlayingEnsureQuietPending()``
+    /// clear playing quiet and freeze generation so a **later eligible** cycle can heal.
+    /// That quiet clear must not by itself spend lock-stretch visual IPC on `.playing`
+    /// Apple drops — language-only still lands; pause as a new visual still lands.
+    /// Explicit fresh-attach Play is the exception below. Unlock / become-active remains
+    /// the presentable playing-glyph repair. Stream-switch hold never presents `.playing`
+    /// to this gate: ``resolveContentPushVisual(visualState:streamSwitchHold:isConnectingPlayback:)``
+    /// clamps it to Connecting, and a chip clears the flag.
     ///
     /// - Parameters:
     ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``.
     ///     Presentable apply is cheap; `.playing` honesty stands while eligible.
     ///   - freezeSoftBudgetExhausted: ``contentEnsureFreezeSoftBudgetExhausted``. After
-    ///     exhaust, even owned Connecting must not spend `.playing` IPC while ineligible.
+    ///     exhaust, owned Connecting must not spend `.playing` IPC while ineligible
+    ///     unless `explicitFreshAttachPlay` is true.
     ///   - ownedVisual: Owned `content.state.visualState` (last committed Apple visual).
     ///   - candidateVisual: Visual of the ActivityKit candidate after language-only
     ///     preserve / Connecting skip.
     ///   - explicitFreshAttachPlay: ``explicitFreshAttachPlayAllowsIneligibleVisual``.
-    ///     When true, authoritative ``.playing`` may replace the Connecting this Play
-    ///     published, including after freeze. It does not authorize ``.playing`` over
-    ///     owned ``.userPaused``.
+    ///     When true, authoritative ``.playing`` may replace owned ``.userPaused``,
+    ///     including after freeze, and may still replace owned ``.prePlay`` when the
+    ///     card is already Connecting. Without the flag, ``.playing`` over
+    ///     ``.userPaused`` still skips.
     /// - Returns: `true` when IPC must skip visual-differing `.playing`.
     /// - Important: Does **not** skip pause (``.userPaused``) as a new visual. Does
     ///   **not** skip language-only (candidate visual already equals owned). Does
     ///   **not** skip dual-axis settle after hold clear while owned is still
     ///   Connecting and freeze is not exhausted. Does **not** invent `.playing`.
     ///   Explicit Play still reaches ``.playing`` only after the engine publishes it.
+    ///   The actor's same-language program title rides that update; a later title
+    ///   still uses the one metadata-only follow-through. Does **not** send `.playing`
+    ///   during stream-switch hold.
     /// - SeeAlso: ``updateCurrentActivity()``,
-    ///   ``shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:)``,
+    ///   ``shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
     ///   ``shouldPreserveOwnedVisualOnIneligibleLanguageMutation(isRequestEligible:destinationLanguage:ownedLanguage:ownedVisual:)``,
     ///   ``recordOptimisticToggleContent(visualState:)``,
     ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
-    static func shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
+    /// - Note: `nonisolated` because the decision reads no actor state. Callers on and
+    ///   off the main actor share this gate.
+    nonisolated static func shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
         isRequestEligible: Bool,
         freezeSoftBudgetExhausted: Bool,
         ownedVisual: PlayerVisualState,
@@ -2941,11 +2977,11 @@ class RadioLiveActivityManager: ObservableObject {
         guard !isRequestEligible else { return false }
         guard candidateVisual == .playing else { return false }
         guard candidateVisual != ownedVisual else { return false }
-        // Explicit Play's authoritative playing may replace the Connecting this play
-        // published, even after freeze. It must not jump owned pause straight to
-        // `.playing` — that glyph is only honest after the engine is audible, and
-        // the card reaches it through Connecting first.
-        if explicitFreshAttachPlay, ownedVisual == .prePlay {
+        // Explicit fresh-attach Play may replace owned pause once the station is
+        // audible, including after freeze, and may still replace Connecting when
+        // the card is already `.prePlay` (cold start, or a chip that published
+        // Connecting). Without the flag, `.playing` over `.userPaused` still skips.
+        if explicitFreshAttachPlay, (ownedVisual == .prePlay || ownedVisual == .userPaused) {
             return false
         }
         if freezeSoftBudgetExhausted {
@@ -6021,8 +6057,9 @@ class RadioLiveActivityManager: ObservableObject {
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
         // Ineligible freeze: skip the soft-push loop so inter-attempt delays do not
-        // run for IPC ``updateCurrentActivity()`` would drop. Quiet re-arm from
-        // ``recordOptimisticToggleContent`` still stands for a later eligible cycle.
+        // run for IPC ``updateCurrentActivity()`` would drop. Explicit fresh-attach
+        // Play is not this skip when it may replace owned pause or already-Connecting
+        // chrome. Clearing playing quiet still stands for a later eligible cycle.
         // Language-only and pause honesty go through ``updateCurrentActivity()``.
         if let ownedVisual,
            Self.shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(
