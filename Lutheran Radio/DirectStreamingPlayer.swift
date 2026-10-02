@@ -230,7 +230,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // | Deinit hygiene | DirectStreamingPlayer+DeinitHygiene.swift | `clearCallbacks` + ordered `performDeinitCleanup` (façade `deinit` stays on primary type) |
     // | Status callback delivery | DirectStreamingPlayer+StatusCallbackDelivery.swift | `safeOnStatusChange` / deliver / invoke + transient KVO suppress + metadata hop |
     // | Periodic certificate validation | DirectStreamingPlayer+PeriodicCertificateValidation.swift | `startPeriodicValidation` / `stopPeriodicCertificateValidation` (Core pin HEAD cadence) |
-    // | Playback attach | DirectStreamingPlayer+PlaybackAttach.swift | Generation, soft-pause, silence, prepareStreamChoice / attachAndPlay / startPlayback, Icecast audible-kick policy (``shouldAllowAudiblePlaybackKick(startedAt:)`` is generation + intent + teardown + soft-pause; not in-flight gated) |
+    // | Playback attach | DirectStreamingPlayer+PlaybackAttach.swift | Generation, soft-pause, silence, prepareStreamChoice / attachAndPlay / startPlayback, Icecast audible-kick policy (``shouldAllowAudiblePlaybackKick(startedAt:)`` is generation + intent + teardown + soft-pause; not in-flight gated). Explicit background Play may begin a finite UIApplication task until that existing kick; the decision does not call play() while the item is unknown. |
     // | Item recovery | DirectStreamingPlayer+PlayerItemRecovery.swift | Startup safety net, early ICY recreate, secured recreate |
     // | Observers | DirectStreamingPlayer+Observers.swift | Player/item KVO, buffer timers |
     // | Metadata | DirectStreamingPlayer+Metadata.swift | ICY StreamTitle push delegate |
@@ -339,6 +339,22 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// True while cold launch / stream-switch attach waits for a healthy live buffer
     /// (`.readyToPlay` and `isPlaybackLikelyToKeepUp`) before the chrome-publishing audible kick.
     var isDeferringFirstPlayKick = false
+    /// Outstanding finite background-task token for one explicit background Play.
+    ///
+    /// `nil` means no assertion. The attach domain begins it only after
+    /// ``userRequestedPlay()`` reaches ``startPlayback`` with the kick still deferred
+    /// and the scene not foreground. Expiration and teardown clear it without calling
+    /// `play()`.
+    ///
+    /// - SeeAlso: ``explicitBackgroundPlayHoldDecision(signal:context:)``,
+    ///   ``audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``.
+    var explicitBackgroundPlayHoldToken: ExplicitBackgroundPlayHoldToken?
+    /// Nested ``userRequestedPlay()`` requests that have not returned yet.
+    ///
+    /// ``play()`` cold launch, factory reset, and recovery do not increment this.
+    /// A positive count is necessary for the background hold and is not sufficient:
+    /// the scene must still be background, the item attached, and the first kick deferred.
+    var explicitUserPlayBackgroundHoldRequests: Int = 0
     /// True after the first non-empty ICY StreamTitle on the current attach (cold launch / stream switch).
     // Writable from Metadata / attach recovery domain files (same module).
     var hasReceivedLiveStreamMetadata = false

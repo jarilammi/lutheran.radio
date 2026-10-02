@@ -600,6 +600,11 @@ extension SharedPlayerManager {
     ///    sticky/one-shot/security guards, connecting chrome, engine drive; ``setPlaying()`` only
     ///    after soft-resume or readyToPlay audible kick). Soft-paused same-language resume still
     ///    reaches ``DirectStreamingPlayer/resumeFromSoftPauseIfAvailable()`` (not step 3).
+    ///    On the main app, this entry notes the engine first
+    ///    (``noteExplicitUserPlayForBackgroundHold()``) and clears that note when `play()`
+    ///    returns. Background ``startPlayback`` may then keep a finite `UIApplication` task
+    ///    until the existing kick. The note does not call `play()`. Cold launch and recovery
+    ///    call `play()` without it. Foreground does not begin the task.
     ///
     /// - Precondition: Must be used for every *explicit user* "start playing" surface.
     ///   Raw `play()` is reserved for:
@@ -623,6 +628,7 @@ extension SharedPlayerManager {
     ///   ``canProceedWithPlayback()``,
     ///   ``DirectStreamingPlayer/nudgeStaleConnectingPlay()``,
     ///   ``DirectStreamingPlayer/isConnectingAttachStale()``,
+    ///   ``DirectStreamingPlayer/explicitBackgroundPlayHoldDecision(signal:context:)``,
     ///   RadioPlayerCoordinator.completeStreamSwitch,
     ///   RadioPlayerCoordinator.switchToStreamFromWidget,
     ///   CODING_AGENT.md (Single Source of Truth Principles),
@@ -686,9 +692,21 @@ extension SharedPlayerManager {
 
         #if LUTHERAN_MAIN_APP
         await configureNowPlayingControlsIfNeeded()
+        // Background lock-screen / Live Activity Play reaches startPlayback and returns
+        // before the existing kick. Note the request so that path can keep the process
+        // scheduled. Cold launch and recovery call play() without this note.
+        // Foreground still does not begin the task. Cleared when play() returns.
+        await MainActor.run {
+            DirectStreamingPlayer.shared.noteExplicitUserPlayForBackgroundHold()
+        }
         #endif
         await setUserIntentToPlay()
         await play()   // ← Fixed: no try/catch needed (play() is now non-throwing)
+        #if LUTHERAN_MAIN_APP
+        await MainActor.run {
+            DirectStreamingPlayer.shared.clearUnconsumedExplicitUserPlayForBackgroundHold()
+        }
+        #endif
     }
 
     /// Whether a second play request must no-op because playback is already audible on the

@@ -13,6 +13,14 @@
 //  ``shouldAllowAudiblePlaybackKick(startedAt:)`` (same token as ``shouldContinueInFlightAttach(startedAt:)``;
 //  not ``isCurrentlyAttemptingPlayback``).
 //
+//  Explicit background Play (``userRequestedPlay()`` while the scene is not foreground)
+//  may begin one finite `UIApplication` background task after the item is attached and
+//  the first kick is still deferred. ``audiblePlaybackKickTiming`` still refuses `play()`
+//  until `.readyToPlay`. The task ends when that existing kick calls `play()`, on discard,
+//  on user pause, or in the system expiration handler. Expiration does not call `play()`
+//  and does not publish `.playing`. Foreground cold launch does not begin the task.
+//  UITestMode does not call `beginBackgroundTask`.
+//
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
 //  DirectStreamingPlayer remains the public façade; this file owns one domain.
 //
@@ -27,8 +35,24 @@
 
 import Foundation
 import Core
+import UIKit
 import WidgetSurface
 @unsafe @preconcurrency import AVFoundation
+
+/// Identifier holder for one finite explicit-background-Play assertion.
+///
+/// The expiration handler and ``endExplicitBackgroundPlayHold()`` both clear
+/// ``identifier`` on the main actor before `endBackgroundTask`, so the task ends once.
+/// The handler does not call `play()`.
+///
+/// - SeeAlso: ``DirectStreamingPlayer/explicitBackgroundPlayHoldDecision(signal:context:)``.
+// SAFETY: `identifier` is written only on the main actor (begin, end, and the
+// expiration hop). The expiration closure must capture the token, so the type is
+// Sendable. A lock would not match that single main-actor mutation rule.
+final class ExplicitBackgroundPlayHoldToken: @unchecked Sendable {
+    /// `UIBackgroundTaskIdentifier` for the assertion. `.invalid` after it is ended.
+    var identifier: UIBackgroundTaskIdentifier = .invalid
+}
 
 extension DirectStreamingPlayer {
     // MARK: - PlaybackAttachController domain
@@ -399,7 +423,11 @@ extension DirectStreamingPlayer {
     ///     user pause via ``invalidateInFlightPlaybackAttach()``.
     /// - SeeAlso: ``shouldContinueInFlightAttach(startedAt:)``, ``shouldAllowAudiblePlaybackKick(startedAt:)``,
     ///   ``audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``,
-    ///   ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``.
+    ///   ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``,
+    ///   ``explicitBackgroundPlayHoldDecision(signal:context:)``.
+    /// - Important: After the item is attached and the first kick is deferred, an explicit
+    ///   background Play may begin a finite `UIApplication` task. That decision does not call
+    ///   `play()`. The first `play()` remains the existing ready-to-play kick.
     func startPlayback(context: PlaybackAttachContext = .coldLaunch, attachGeneration: UInt64) async {
         // UI Test isolation (defense-in-depth).
         guard !isTesting else {
@@ -512,6 +540,17 @@ extension DirectStreamingPlayer {
             print("[DirectStreamingPlayer] startPlayback: awaiting likelyToKeepUp before first play kick (item.status: \(player.currentItem?.status.rawValue ?? -1))")
             #endif
         }
+
+        // Explicit background Play: keep this process scheduled until the existing kick.
+        // Unknown items stay on `.waitForReadyToPlay` — this does not call play().
+        let intentAllowsAudio = await shouldContinueInFlightAttach(startedAt: attachGeneration)
+        await MainActor.run {
+            self.syncExplicitBackgroundPlayHold(
+                signal: .deferredFirstKick,
+                itemAttached: self.player?.currentItem != nil,
+                playbackIntentAllowsAudio: intentAllowsAudio
+            )
+        }
         
         // Optional ICY head-start retry — cold launch, stream switch, and fresh attach
         // after hard teardown. Same-stream ``.resume`` (retained secured item path) skips it.
@@ -602,6 +641,11 @@ extension DirectStreamingPlayer {
         let bump: @MainActor () -> Void = { [weak self] in
             guard let self else { return }
             self.playbackAttachGeneration &+= 1
+            self.syncExplicitBackgroundPlayHold(
+                signal: .attachDiscarded,
+                itemAttached: self.player?.currentItem != nil,
+                playbackIntentAllowsAudio: false
+            )
             #if DEBUG
             print("[DirectStreamingPlayer] playbackAttachGeneration advanced → \(self.playbackAttachGeneration) (in-flight attach invalidated)")
             #endif
@@ -663,6 +707,11 @@ extension DirectStreamingPlayer {
         lastObservedTimeControl = nil
         lastObservedItemStatus = nil
         safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")
+        syncExplicitBackgroundPlayHold(
+            signal: .attachDiscarded,
+            itemAttached: player?.currentItem != nil,
+            playbackIntentAllowsAudio: false
+        )
         #if DEBUG
         print("[DirectStreamingPlayer] enforceSilenceAfterDiscardedAttach — rate 0, soft-paused=\(isSoftPaused)")
         #endif
@@ -717,6 +766,264 @@ extension DirectStreamingPlayer {
         return .kickNow(usePlayImmediately: false)
     }
 
+    /// Why the explicit-background-Play hold is being considered.
+    ///
+    /// End signals always end the task. ``deferredFirstKick`` is the only signal that can begin it.
+    ///
+    /// - SeeAlso: ``explicitBackgroundPlayHoldDecision(signal:context:)``.
+    enum ExplicitBackgroundPlayHoldSignal: Equatable, Sendable {
+        /// ``startPlayback`` attached an item and deferred the first kick.
+        case deferredFirstKick
+        /// The existing kick called `play()` (ready-to-play stall-wait or keep-up).
+        case audibleKickRan
+        /// ``enforceSilenceAfterDiscardedAttach()`` or a generation advance.
+        case attachDiscarded
+        /// User pause.
+        case userPaused
+        /// System ended the finite background time.
+        case systemExpired
+    }
+
+    /// Facts for ``explicitBackgroundPlayHoldDecision(signal:context:)``.
+    ///
+    /// Tests build this value directly. Production reads it from the engine and the scene.
+    ///
+    /// - SeeAlso: ``explicitBackgroundPlayHoldDecision(signal:context:)``,
+    ///   ``audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``.
+    struct ExplicitBackgroundPlayHoldContext: Equatable, Sendable {
+        /// ``userRequestedPlay()`` is still inside ``play()``. Cold launch and recovery stay false.
+        var explicitUserPlay: Bool
+        /// A player item is attached.
+        var itemAttached: Bool
+        /// First kick is still deferred. Unknown items remain in this state.
+        var isDeferringFirstPlayKick: Bool
+        /// ``canProceedWithPlayback()`` still allows audio.
+        var playbackIntentAllowsAudio: Bool
+        /// Scene is foreground (`UIApplication.applicationState == .active`).
+        var sceneIsForeground: Bool
+        /// UITestMode / engine `isTesting`. Must not call `beginBackgroundTask`.
+        var isTesting: Bool
+    }
+
+    /// What to do with the finite background task. No case calls `play()` or publishes `.playing`.
+    ///
+    /// - SeeAlso: ``explicitBackgroundPlayHoldDecision(signal:context:)``.
+    enum ExplicitBackgroundPlayHoldDecision: Equatable, Sendable {
+        /// Do not begin a task.
+        case leaveUnarmed
+        /// Begin one finite background task. Do not call `play()`.
+        case armWithoutPlay
+        /// End the task. Do not call `play()`, publish `.playing`, or change visual state.
+        case endWithoutPlay
+    }
+
+    /// Pure arm / end decision for an explicit Play that reached Connecting in the background.
+    ///
+    /// An unknown item (`isDeferringFirstPlayKick`, not yet `.readyToPlay`) can arm the task.
+    /// Playback still waits on ``audiblePlaybackKickTiming`` (`.waitForReadyToPlay` does not
+    /// call `play()`). Foreground cold launch, a Play nobody requested, and UITestMode do not arm.
+    ///
+    /// - Parameters:
+    ///   - signal: Why the hold is being considered.
+    ///   - context: Explicit Play, attach, intent, scene, and test flags.
+    /// - Returns: Arm, end, or leave unarmed. Never a `play()` instruction.
+    /// - Important: System expiration returns ``endWithoutPlay``. The handler must not call `play()`.
+    /// - SeeAlso: ``audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``,
+    ///   ``startPlayback(context:attachGeneration:)``,
+    ///   ``enforceSilenceAfterDiscardedAttach()``,
+    ///   ``SharedPlayerManager/userRequestedPlay()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   CODING_AGENT.md.
+    static func explicitBackgroundPlayHoldDecision(
+        signal: ExplicitBackgroundPlayHoldSignal,
+        context: ExplicitBackgroundPlayHoldContext
+    ) -> ExplicitBackgroundPlayHoldDecision {
+        switch signal {
+        case .audibleKickRan, .attachDiscarded, .userPaused, .systemExpired:
+            return .endWithoutPlay
+        case .deferredFirstKick:
+            guard context.explicitUserPlay,
+                  context.itemAttached,
+                  context.isDeferringFirstPlayKick,
+                  context.playbackIntentAllowsAudio,
+                  !context.sceneIsForeground,
+                  !context.isTesting
+            else {
+                return .leaveUnarmed
+            }
+            return .armWithoutPlay
+        }
+    }
+
+    /// Counts one in-flight ``userRequestedPlay()`` so background ``startPlayback`` can arm.
+    ///
+    /// - Postcondition: ``explicitUserPlayBackgroundHoldRequests`` increased by one.
+    /// - SeeAlso: ``clearUnconsumedExplicitUserPlayForBackgroundHold()``,
+    ///   ``explicitBackgroundPlayHoldDecision(signal:context:)``.
+    @MainActor
+    func noteExplicitUserPlayForBackgroundHold() {
+        explicitUserPlayBackgroundHoldRequests += 1
+    }
+
+    /// Drops one ``userRequestedPlay()`` count after ``play()`` returns.
+    ///
+    /// Safe when the count is already zero (early return before ``noteExplicitUserPlayForBackgroundHold()``).
+    ///
+    /// - SeeAlso: ``noteExplicitUserPlayForBackgroundHold()``.
+    @MainActor
+    func clearUnconsumedExplicitUserPlayForBackgroundHold() {
+        if explicitUserPlayBackgroundHoldRequests > 0 {
+            explicitUserPlayBackgroundHoldRequests -= 1
+        }
+    }
+
+    /// Scene foreground for the hold. UITestMode reports foreground so tests do not arm.
+    ///
+    /// Production uses `UIApplication.shared.applicationState == .active`, the same
+    /// foreground reading as other main-app media surfaces.
+    ///
+    /// - Returns: `true` when the scene is foreground, or when `isTesting` is true.
+    /// - SeeAlso: ``explicitBackgroundPlayHoldDecision(signal:context:)``.
+    @MainActor
+    func sceneIsForegroundForExplicitBackgroundPlayHold() -> Bool {
+        if isTesting { return true }
+        return UIApplication.shared.applicationState == .active
+    }
+
+    /// Builds the production context for ``explicitBackgroundPlayHoldDecision(signal:context:)``.
+    ///
+    /// - Parameters:
+    ///   - itemAttached: Whether an item is on the player.
+    ///   - playbackIntentAllowsAudio: Result of the generation + intent re-check.
+    /// - Returns: Context for one hold decision.
+    /// - SeeAlso: ``syncExplicitBackgroundPlayHold(signal:itemAttached:playbackIntentAllowsAudio:)``.
+    @MainActor
+    func explicitBackgroundPlayHoldContext(
+        itemAttached: Bool,
+        playbackIntentAllowsAudio: Bool
+    ) -> ExplicitBackgroundPlayHoldContext {
+        ExplicitBackgroundPlayHoldContext(
+            explicitUserPlay: explicitUserPlayBackgroundHoldRequests > 0,
+            itemAttached: itemAttached,
+            isDeferringFirstPlayKick: isDeferringFirstPlayKick,
+            playbackIntentAllowsAudio: playbackIntentAllowsAudio,
+            sceneIsForeground: sceneIsForegroundForExplicitBackgroundPlayHold(),
+            isTesting: isTesting
+        )
+    }
+
+    /// Applies ``explicitBackgroundPlayHoldDecision(signal:context:)`` without calling `play()`.
+    ///
+    /// - Parameters:
+    ///   - signal: Arm site or end site.
+    ///   - itemAttached: Whether an item is on the player.
+    ///   - playbackIntentAllowsAudio: Generation + intent still allow audio.
+    /// - SeeAlso: ``beginExplicitBackgroundPlayHold()``, ``endExplicitBackgroundPlayHold()``.
+    @MainActor
+    func syncExplicitBackgroundPlayHold(
+        signal: ExplicitBackgroundPlayHoldSignal,
+        itemAttached: Bool,
+        playbackIntentAllowsAudio: Bool
+    ) {
+        let decision = Self.explicitBackgroundPlayHoldDecision(
+            signal: signal,
+            context: explicitBackgroundPlayHoldContext(
+                itemAttached: itemAttached,
+                playbackIntentAllowsAudio: playbackIntentAllowsAudio
+            )
+        )
+        switch decision {
+        case .leaveUnarmed:
+            break
+        case .armWithoutPlay:
+            beginExplicitBackgroundPlayHold()
+        case .endWithoutPlay:
+            endExplicitBackgroundPlayHold()
+        }
+    }
+
+    /// Begins one finite background task. Does not call `play()`.
+    ///
+    /// No-op under UITestMode and when a task is already outstanding.
+    /// A very slow connect can still outlive the assertion; expiration only ends it.
+    ///
+    /// - SeeAlso: ``explicitBackgroundPlayHoldDecision(signal:context:)``,
+    ///   ``endExplicitBackgroundPlayHold()``.
+    @MainActor
+    func beginExplicitBackgroundPlayHold() {
+        guard !isTesting else { return }
+        guard explicitBackgroundPlayHoldToken == nil else { return }
+        let token = ExplicitBackgroundPlayHoldToken()
+        let task = UIApplication.shared.beginBackgroundTask(
+            withName: "LutheranRadio.explicitBackgroundPlayConnecting"
+        ) { [weak self, token] in
+            let finish: @MainActor () -> Void = {
+                let context: ExplicitBackgroundPlayHoldContext
+                if let self {
+                    context = self.explicitBackgroundPlayHoldContext(
+                        itemAttached: self.player?.currentItem != nil,
+                        playbackIntentAllowsAudio: false
+                    )
+                } else {
+                    context = ExplicitBackgroundPlayHoldContext(
+                        explicitUserPlay: false,
+                        itemAttached: false,
+                        isDeferringFirstPlayKick: false,
+                        playbackIntentAllowsAudio: false,
+                        sceneIsForeground: false,
+                        isTesting: false
+                    )
+                }
+                let decision = Self.explicitBackgroundPlayHoldDecision(
+                    signal: .systemExpired,
+                    context: context
+                )
+                // Expiration ends the task and returns. No case calls play() or publishes .playing.
+                switch decision {
+                case .endWithoutPlay, .leaveUnarmed, .armWithoutPlay:
+                    let id = token.identifier
+                    token.identifier = .invalid
+                    self?.explicitBackgroundPlayHoldToken = nil
+                    guard id != .invalid else { return }
+                    UIApplication.shared.endBackgroundTask(id)
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] explicit background Play hold ended — system expiration")
+                    #endif
+                }
+            }
+            if Thread.isMainThread {
+                MainActor.assumeIsolated(finish)
+            } else {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated(finish)
+                }
+            }
+        }
+        guard task != .invalid else { return }
+        token.identifier = task
+        explicitBackgroundPlayHoldToken = token
+        #if DEBUG
+        print("[DirectStreamingPlayer] explicit background Play hold armed — waiting for the existing ready-to-play kick")
+        #endif
+    }
+
+    /// Ends the finite background task when one is outstanding. Does not call `play()`.
+    ///
+    /// - SeeAlso: ``beginExplicitBackgroundPlayHold()``,
+    ///   ``explicitBackgroundPlayHoldDecision(signal:context:)``.
+    @MainActor
+    func endExplicitBackgroundPlayHold() {
+        guard let token = explicitBackgroundPlayHoldToken else { return }
+        explicitBackgroundPlayHoldToken = nil
+        let id = token.identifier
+        token.identifier = .invalid
+        guard id != .invalid, !isTesting else { return }
+        UIApplication.shared.endBackgroundTask(id)
+        #if DEBUG
+        print("[DirectStreamingPlayer] explicit background Play hold ended")
+        #endif
+    }
+
     /// Applies the live-attach audible kick when policy and ``shouldAllowAudiblePlaybackKick(startedAt:)`` allow.
     ///
     /// Cold launch, stream switch, head-start fallback, and recreate share this helper so the
@@ -752,6 +1059,11 @@ extension DirectStreamingPlayer {
             isDeferringFirstPlayKick = false
             player?.pause()
             player?.rate = 0.0
+            syncExplicitBackgroundPlayHold(
+                signal: .attachDiscarded,
+                itemAttached: player?.currentItem != nil,
+                playbackIntentAllowsAudio: false
+            )
             #if DEBUG
             print("[DirectStreamingPlayer] live-attach kick suppressed — user pause / soft-pause / teardown / generation")
             #endif
@@ -771,6 +1083,11 @@ extension DirectStreamingPlayer {
             if (player?.rate ?? 0) < 0.1 {
                 player?.play()
             }
+            syncExplicitBackgroundPlayHold(
+                signal: .audibleKickRan,
+                itemAttached: player?.currentItem != nil,
+                playbackIntentAllowsAudio: true
+            )
             #if DEBUG
             print("[DirectStreamingPlayer] live-attach stall-wait play() — readyToPlay but not likelyToKeepUp")
             #endif
@@ -809,6 +1126,11 @@ extension DirectStreamingPlayer {
             if (player?.rate ?? 0) < 0.1 {
                 player?.play()
             }
+            syncExplicitBackgroundPlayHold(
+                signal: .audibleKickRan,
+                itemAttached: player?.currentItem != nil,
+                playbackIntentAllowsAudio: true
+            )
             safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")
             stopBufferingTimer()
             hasStartedPlaying = true

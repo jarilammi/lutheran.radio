@@ -46,6 +46,7 @@
 //  - User-action stop always hard-tears down the custom resource-loader session so a paused
 //    Icecast keep-alive cannot keep receiving the live body. ``SharedPlayerManager/stop()`` then
 //    deactivates ``AVAudioSession``. Play after pause is full ``attachAndPlay``.
+//  - User-action stop ends an explicit background Play hold. That end does not call `play()`.
 //  - ``SharedPlayerManager/stop()`` may pass `applyUserPauseVisualLock: false` when it already
 //    owns sticky `.userPaused` + single media-surface refresh.
 //
@@ -313,6 +314,13 @@ extension DirectStreamingPlayer {
                 }
                 self.cancelStartupSafetyNet()
                 self.cancelEarlyICYDropRecreate()
+                if reason == .userAction {
+                    self.syncExplicitBackgroundPlayHold(
+                        signal: .userPaused,
+                        itemAttached: self.player?.currentItem != nil,
+                        playbackIntentAllowsAudio: false
+                    )
+                }
                 self.player?.pause()
                 self.player?.rate = 0.0
                 self.isSoftPaused = false
@@ -462,6 +470,13 @@ extension DirectStreamingPlayer {
         activatePlaybackTeardownGuardFromStop()
         hasStartedPlaying = false
         isDeferringFirstPlayKick = false
+        if reason == .userAction {
+            syncExplicitBackgroundPlayHold(
+                signal: .userPaused,
+                itemAttached: player?.currentItem != nil,
+                playbackIntentAllowsAudio: false
+            )
+        }
         
         if isDeallocating {
             stopSynchronously()

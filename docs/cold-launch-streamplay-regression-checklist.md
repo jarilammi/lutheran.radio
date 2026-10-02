@@ -117,6 +117,7 @@ End with security impact, build status, localization needed.
 4. **No buffer auto-resume** — After sticky `.userPaused`: zero `timeControlStatus → 2 | rate: 1.0`; no audible restart.
 5. **Buffer observers gated** — `isPlaybackLikelyToKeepUp` / `isPlaybackBufferFull` call `play()` only when `canProceedWithPlayback()` is true.
 6. **Playing KVO enforcement** — `.playing` `timeControlStatus` while intent blocks → `pause()` + `rate = 0`.
+7. **Explicit background Play** — ``userRequestedPlay()`` may begin one finite `UIApplication` background task after ``startPlayback`` defers the first kick and the scene is not foreground (``explicitBackgroundPlayHoldDecision``). The task ends on the existing ready-to-play kick, on discard, on user pause, or when the system expiration handler runs. Expiration does not call `play()`. Unknown items stay `.waitForReadyToPlay`. Foreground cold launch and `play()` without that note do not begin the task. UITestMode does not call `beginBackgroundTask`. Gate: `testExplicitBackgroundPlayHoldPolicy`.
 7. **Hard-teardown guard** — User-action stop activates the playback teardown guard synchronously (same as stream-switch / interruption).
 8. **In-flight discard only** — ``enforceSilenceAfterDiscardedAttach`` may still rate-pause a discarded attach; it is not the unattended user-pause path.
 9. **Stash cleared on language change** — `nowPlayingStreamMetadata` cleared on language switch.

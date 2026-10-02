@@ -14,6 +14,7 @@
 //  ``shouldSkipForceWidgetSaveOnStableStatus`` /
 //  ``shouldSkipSessionCoreDeactivate`` /
 //  ``audiblePlaybackKickTiming`` /
+//  ``explicitBackgroundPlayHoldDecision`` /
 //  ``shouldReplaceCurrentItemWithNilOnStop`` /
 //  ``shouldAllowAudiblePlaybackKick(startedAt:)`` policy.
 //
@@ -23,6 +24,7 @@
 //    ``DirectStreamingPlayer/shouldSettleSessionCoreBeforeFirstPlaybackCategory(hasAppliedPlaybackSessionThisProcess:categoryIsPlayback:)``,
 //    ``DirectStreamingPlayer/shouldSkipForceWidgetSaveOnStableStatus(isPlaying:reasonKey:visual:)``,
 //    ``DirectStreamingPlayer/audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``,
+//    ``DirectStreamingPlayer/explicitBackgroundPlayHoldDecision(signal:context:)``,
 //    ``DirectStreamingPlayer/shouldReplaceCurrentItemWithNilOnStop(reason:)``,
 //    ``DirectStreamingPlayer/shouldAllowAudiblePlaybackKick(startedAt:)``,
 //    docs/Live-Activity-Stacking-and-Media-Surfaces.md,
@@ -635,6 +637,107 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
             .kickNow(usePlayImmediately: true),
             "Soft-pause resume must not wait for a cold live keep-up window"
         )
+    }
+
+    /// Explicit background Play may keep the process scheduled until the existing kick.
+    ///
+    /// Protects: an unknown item does not call `play()`; foreground cold launch does not
+    /// take the hold; system expiration does not call `play()`; pause or a discarded
+    /// attach ends the hold. UITestMode does not arm. `play()` stays on
+    /// ``audiblePlaybackKickTiming`` (`.waitForReadyToPlay` while the item is unknown).
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/explicitBackgroundPlayHoldDecision(signal:context:)``,
+    ///   ``DirectStreamingPlayer/audiblePlaybackKickTiming(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:isSoftPauseSameStreamResume:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/cold-launch-streamplay-regression-checklist.md.
+    func testExplicitBackgroundPlayHoldPolicy() {
+        let backgroundExplicit = DirectStreamingPlayer.ExplicitBackgroundPlayHoldContext(
+            explicitUserPlay: true,
+            itemAttached: true,
+            isDeferringFirstPlayKick: true,
+            playbackIntentAllowsAudio: true,
+            sceneIsForeground: false,
+            isTesting: false
+        )
+
+        XCTAssertEqual(
+            DirectStreamingPlayer.explicitBackgroundPlayHoldDecision(
+                signal: .deferredFirstKick,
+                context: backgroundExplicit
+            ),
+            .armWithoutPlay,
+            "Explicit background Play with a deferred kick arms without play()"
+        )
+        XCTAssertEqual(
+            DirectStreamingPlayer.audiblePlaybackKickTiming(
+                itemIsReadyToPlay: false,
+                isPlaybackLikelyToKeepUp: false,
+                isSoftPauseSameStreamResume: false
+            ),
+            .waitForReadyToPlay,
+            "Unknown item must not play() or playImmediately; the hold does not change that"
+        )
+
+        var foregroundColdLaunch = backgroundExplicit
+        foregroundColdLaunch.explicitUserPlay = false
+        foregroundColdLaunch.sceneIsForeground = true
+        XCTAssertEqual(
+            DirectStreamingPlayer.explicitBackgroundPlayHoldDecision(
+                signal: .deferredFirstKick,
+                context: foregroundColdLaunch
+            ),
+            .leaveUnarmed,
+            "Foreground cold launch must not take the background hold"
+        )
+
+        var inAppForeground = backgroundExplicit
+        inAppForeground.sceneIsForeground = true
+        XCTAssertEqual(
+            DirectStreamingPlayer.explicitBackgroundPlayHoldDecision(
+                signal: .deferredFirstKick,
+                context: inAppForeground
+            ),
+            .leaveUnarmed,
+            "Foreground explicit Play must not begin the background task"
+        )
+
+        var nobodyTappedPlay = backgroundExplicit
+        nobodyTappedPlay.explicitUserPlay = false
+        XCTAssertEqual(
+            DirectStreamingPlayer.explicitBackgroundPlayHoldDecision(
+                signal: .deferredFirstKick,
+                context: nobodyTappedPlay
+            ),
+            .leaveUnarmed,
+            "Factory reset and residual relaunch must not arm when nobody tapped Play"
+        )
+
+        var underTest = backgroundExplicit
+        underTest.isTesting = true
+        XCTAssertEqual(
+            DirectStreamingPlayer.explicitBackgroundPlayHoldDecision(
+                signal: .deferredFirstKick,
+                context: underTest
+            ),
+            .leaveUnarmed,
+            "UITestMode must not call beginBackgroundTask"
+        )
+
+        for signal in [
+            DirectStreamingPlayer.ExplicitBackgroundPlayHoldSignal.systemExpired,
+            .userPaused,
+            .attachDiscarded,
+            .audibleKickRan,
+        ] {
+            XCTAssertEqual(
+                DirectStreamingPlayer.explicitBackgroundPlayHoldDecision(
+                    signal: signal,
+                    context: backgroundExplicit
+                ),
+                .endWithoutPlay,
+                "\(signal) ends the hold and does not call play()"
+            )
+        }
     }
 
     /// Stream-switch hard stop nils `AVPlayer.currentItem`; other hard-stop reasons do not
