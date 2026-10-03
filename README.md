@@ -749,7 +749,7 @@ This table is the source of truth for the historical record of security models (
 | `fredericksburg`    | June 2, 2026       | August 26, 2026    | 26.5.1                 |
 | `brenham`           | June 23, 2026      | August 26, 2026    | 26.5.2                 |
 | `dallas`            | August 1, 2026     | (ongoing)          | 26.6.0                 |
-| `montereypark`      | (pending)          | (pending)          | 27.0.1                 |
+| `montereypark`      | October 3, 2026    | (ongoing)          | 27.0.1                 |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
