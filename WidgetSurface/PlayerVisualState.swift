@@ -175,6 +175,13 @@ import UIKit
     /// ``publishAuthoritativePlayingIfNeeded()``. A pause glyph for a stream that has never
     /// become audible is a false control.
     ///
+    /// Recording ``.playing`` clears ``explicitFreshAttachPlayAllowsIneligibleVisual``
+    /// in ``recordOptimisticToggleContent``, which runs before the mailbox. That
+    /// optimistic update is the one that may move the card. If ActivityKit drops it
+    /// over owned pause, the later ``setPlaying()`` publish is suppressed. ``.prePlay``
+    /// is the record that leaves the allowance set for that later publish. Do not swap
+    /// the two results to chase a locked card.
+    ///
     /// - ``securityLocked`` → ``prePlay`` even when `canSoftResumeSameStream` is true, so
     ///   recovery re-validation does not flash green while DNS/cert work is still in flight.
     ///
@@ -184,7 +191,8 @@ import UIKit
     /// - Returns: Target visual for the durable Live Activity mirror and optimistic ContentState.
     /// - SeeAlso: ``optimisticVisualAfterPlayPlan``, ``optimisticHomeWidgetVisualAfterPlayPlan``,
     ///   ``WidgetIntentExecution/performLiveActivityToggle()``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual)
+    ///   ``WidgetIntentCoordinators/optimisticLiveActivityVisualForTogglePlan(plan:canSoftResumeSameStream:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual, Home-widget Play)
     public func optimisticLiveActivityVisualAfterPlayPlan(
         canSoftResumeSameStream: Bool
     ) -> PlayerVisualState {
@@ -205,7 +213,7 @@ import UIKit
     /// - Returns: Always ``.prePlay``. Soft-resume callers must pass `canSoftResumeSameStream: true`
     ///   to ``optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``.
     /// - SeeAlso: ``optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual)
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual, Home-widget Play)
     public var optimisticVisualAfterPlayPlan: PlayerVisualState {
         optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream: false)
     }
@@ -213,8 +221,16 @@ import UIKit
     /// Optimistic **home-widget** visual after a play plan — never invents audible ``.playing``.
     ///
     /// Home control chrome must match next-action affordance honesty until the engine settles:
-    /// - ``userPaused`` → hold ``userPaused`` (soft-resume intermediate; main
-    ///   ``setPlaying()`` advances to green / pause glyph — same as main-app soft-resume hold).
+    /// - ``userPaused`` → hold ``userPaused`` until audible ``setPlaying()``.
+    ///   Same-stream soft-resume skips Connecting through ``canSoftResumeSameStream``
+    ///   (gapless; same intermediate as main-app soft-resume). Fresh attach with no
+    ///   retained item is a different skip:
+    ///   ``SharedPlayerManager/retainHomeWidgetPauseHoldUntilAudible`` is true only
+    ///   for that mailbox and is cleared when it returns, including when background
+    ///   ``play()`` returns before the item is ready. Do not leave the boolean true
+    ///   until ``setPlaying()``. A Connecting stamp after the mailbox returns replaces
+    ///   the hold. Lock-screen and in-app fresh attach still stamp Connecting.
+    ///   This helper is not the Live Activity record.
     /// - ``securityLocked`` / ``cleared`` / ``prePlay`` / other non-playing → ``prePlay``
     ///   (Connecting; play glyph + Yhdistää, not Toistaa / pause glyph).
     /// - ``playing`` → ``playing`` (play plan should not run while already playing).
@@ -228,7 +244,9 @@ import UIKit
     /// - Returns: Target visual for home session + ``homeWidgetLiveChrome`` after a home play plan.
     /// - SeeAlso: ``optimisticVisualAfterPlayPlan``,
     ///   ``WidgetIntentCoordinators/planHomeWidgetToggle(from:)``,
-    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.2 soft-resume, §5.3 extension play).
+    ///   ``SharedPlayerManager/retainHomeWidgetPauseHoldUntilAudible``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.2 soft-resume, §5.3 extension play),
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (Home-widget Play).
     public var optimisticHomeWidgetVisualAfterPlayPlan: PlayerVisualState {
         switch self {
         case .userPaused:

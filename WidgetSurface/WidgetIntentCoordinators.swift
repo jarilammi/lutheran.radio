@@ -274,9 +274,14 @@ public enum WidgetIntentCoordinators {
     /// - Pause → ``.userPaused``. ``recordOptimisticToggleContent`` clears the flag.
     /// - Play whose target is ``.userPaused`` →
     ///   ``PlayerVisualState/optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``
-    ///   on that target. Fresh attach (`false`) is ``.prePlay``, which sets the flag before
-    ///   the audible ``.playing`` update. Same-stream soft-resume (`true`) is ``.playing``.
-    ///   Do not record the home hold in either case.
+    ///   on that target. Fresh attach (`false`) is ``.prePlay``, which sets the flag.
+    ///   Connecting IPC stays skipped, so that record is what leaves the later audible
+    ///   ``.playing`` update allowed. Same-stream soft-resume (`true`) is ``.playing``.
+    ///   ``recordOptimisticToggleContent`` runs before the mailbox and clears the flag
+    ///   for that ``.playing``. The optimistic update is the one that may move the card.
+    ///   If ActivityKit drops it over owned pause, the later ``setPlaying()`` publish is
+    ///   suppressed. Do not record the home hold in either case. Do not treat the
+    ///   fresh-attach allowance as covering soft-resume.
     /// - Control Play, whose target is already ``.playing``, stays ``.playing``.
     /// - Home Play whose target is ``.prePlay`` (connect, cleared, or security recovery)
     ///   returns `nil`. That path does not touch the Live Activity record.
@@ -284,7 +289,8 @@ public enum WidgetIntentCoordinators {
     ///
     /// ``shouldSuppressConnectingContentPushWhileIneligible`` still skips Connecting over
     /// owned pause or playing while request is ineligible, including when this result is
-    /// ``.prePlay``. The audible ``.playing`` update may replace that owned pause.
+    /// ``.prePlay``. For that ``.prePlay`` result, the audible ``.playing`` update may
+    /// replace owned pause. The soft-resume ``.playing`` result above does not.
     ///
     /// - Parameters:
     ///   - plan: Home or Control toggle plan. Home chrome stays ``targetVisualState``.
@@ -297,7 +303,7 @@ public enum WidgetIntentCoordinators {
     ///   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``,
     ///   ``PlayerVisualState/optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``,
     ///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual).
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual, Home-widget Play).
     public static func optimisticLiveActivityVisualForTogglePlan(
         plan: WidgetToggleActionPlan,
         canSoftResumeSameStream: Bool

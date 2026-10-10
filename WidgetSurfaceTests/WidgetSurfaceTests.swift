@@ -620,8 +620,10 @@ struct WidgetSurfaceTests {
     /// **Invariant protected:** ``planHomeWidgetPlay(from: .userPaused)`` leaves
     /// ``targetVisualState`` at ``.userPaused``. Fresh attach
     /// (`canSoftResumeSameStream` false) records ``.prePlay``, which is the record that
-    /// sets ``explicitFreshAttachPlayAllowsIneligibleVisual``. Soft-resume records
-    /// ``.playing``. Pause records ``.userPaused``, which clears that flag. Control Play
+    /// sets ``explicitFreshAttachPlayAllowsIneligibleVisual`` for the later audible
+    /// publish. Soft-resume records ``.playing``, which clears that flag before the
+    /// mailbox; a dropped optimistic playing update is not this allowance. Pause records
+    /// ``.userPaused``, which clears that flag. Control Play
     /// records ``.playing``. Home connect, cleared, and security-recovery Play record
     /// nothing (`nil`). ``.none`` records nothing. This does not prove the card.
     ///

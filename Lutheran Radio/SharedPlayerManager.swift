@@ -644,22 +644,39 @@ actor SharedPlayerManager {
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     internal var isPlaybackStartPipelineActive = false
 
-    /// Home-widget Play from sticky pause keeps ``.userPaused`` on home chrome until
-    /// audible ``setPlaying()``, including a fresh attach with no retained item.
+    /// Skips the three Connecting stamps for one home-widget fresh-attach Play.
     ///
-    /// Set for the mailbox inside ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``
-    /// only. Lock-screen and in-app play leave it false and still project Connecting.
-    /// ``shouldSuppressConnectingContentPushWhileIneligible`` is a different gate.
+    /// Home chrome stays ``.userPaused`` until audible ``setPlaying()``. That paint
+    /// result is not this boolean's lifetime. The boolean is true only while
+    /// ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)`` is inside
+    /// that mailbox, and the caller clears it when the mailbox returns. Background
+    /// ``play()`` can return before the item is ready, so the boolean is already
+    /// false when ``setPlaying()`` runs. The hold survives because
+    /// ``setUserIntentToPlay()``, ``clearUserPausedLockIfNeeded()``, and the
+    /// post-security phase of ``play()`` already skipped Connecting while it was
+    /// true. A Connecting stamp after ``play()`` returns replaces the hold. Do not
+    /// extend the boolean until ``setPlaying()`` — a later play would inherit the skip.
     ///
-    /// - SeeAlso: ``setUserIntentToPlay()``, ``clearUserPausedLockIfNeeded()``,
-    ///   ``setRetainHomeWidgetPauseHoldUntilAudible(_:)``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual),
+    /// Lock-screen and in-app play leave it false and still project Connecting.
+    /// Same-stream soft-resume already skips Connecting through
+    /// ``canSoftResumeSameStreamForPlayChrome()`` and does not set this flag.
+    /// ``shouldSuppressConnectingContentPushWhileIneligible`` is a different gate
+    /// (Live Activity IPC, not home chrome).
+    ///
+    /// - SeeAlso: ``setRetainHomeWidgetPauseHoldUntilAudible(_:)``,
+    ///   ``setUserIntentToPlay()``, ``clearUserPausedLockIfNeeded()``,
+    ///   ``WidgetIntentCoordinators/optimisticLiveActivityVisualForTogglePlan(plan:canSoftResumeSameStream:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (Home-widget Play),
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
     var retainHomeWidgetPauseHoldUntilAudible = false
 
-    /// Sets ``retainHomeWidgetPauseHoldUntilAudible`` for one home-widget fresh-attach Play.
+    /// Sets ``retainHomeWidgetPauseHoldUntilAudible`` for the home-widget fresh-attach mailbox.
     ///
-    /// - Parameter retain: `true` while that mailbox is in flight. Cleared when it returns.
+    /// - Parameter retain: `true` only while that mailbox is in flight. The caller
+    ///   clears it when the mailbox returns, including when ``play()`` returns before
+    ///   the item is ready. The pause hold after that is the visual those stamps left
+    ///   in place, not this boolean.
+    /// - Important: Do not leave `retain` true until ``setPlaying()``.
     /// - SeeAlso: ``retainHomeWidgetPauseHoldUntilAudible``,
     ///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``.
     func setRetainHomeWidgetPauseHoldUntilAudible(_ retain: Bool) {

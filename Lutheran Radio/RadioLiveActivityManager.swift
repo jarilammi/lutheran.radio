@@ -116,13 +116,25 @@ import WidgetSurface
 ///
 /// ## Explicit Play after hard teardown while ineligible
 /// Optimistic Live Activity ``.playing`` is only for a retained same-stream soft-resume
-/// (``canSoftResumeSameStream``). Play with no retained item publishes Connecting on
-/// in-app chrome and App Group mirrors until ``publishAuthoritativePlayingIfNeeded()``.
-/// While request is ineligible, that explicit Play does not spend `Activity.update` on
+/// (``canSoftResumeSameStream``). Lock-screen and in-app Play with no retained item
+/// publish Connecting on in-app chrome and App Group mirrors until
+/// ``publishAuthoritativePlayingIfNeeded()``. Home-widget Play from pause keeps the
+/// actor at ``.userPaused`` until ``setPlaying()``. Fresh attach (no retained item)
+/// does that with ``retainHomeWidgetPauseHoldUntilAudible``, which is true only
+/// while that mailbox runs and is cleared when it returns, including when ``play()``
+/// returns before the item is ready. Do not leave the boolean true until
+/// ``setPlaying()``. Its Live Activity record is ``.prePlay``, which sets the flag
+/// below. Same-stream soft-resume already skips Connecting without that boolean.
+/// Its Live Activity record is ``.playing``, written before the mailbox, and that
+/// record clears the flag. That optimistic update is the one that may move the card.
+/// It is not the later audible allowance.
+/// While request is ineligible, explicit fresh-attach Play does not spend `Activity.update` on
 /// Connecting over owned ``.userPaused``. The owned pause control stays until the audible
 /// ``.playing`` update, which may replace that pause and carries the actor's same-language
-/// program title (``explicitFreshAttachPlayAllowsIneligibleVisual``). Skipping the
-/// Connecting IPC does not clear the flag. A chip whose card is already Connecting still
+/// program title (``explicitFreshAttachPlayAllowsIneligibleVisual``). That allowance
+/// is the fresh-attach ``.prePlay`` record above, not the soft-resume ``.playing``
+/// record. Skipping the Connecting IPC does not clear the flag. A chip whose card
+/// is already Connecting still
 /// publishes Connecting. Ineligible playing-chip switch still keeps owned ``.playing``.
 /// Paused chip switch still keeps ``.userPaused`` and does not attach. Connecting is not
 /// pushed over owned ``.playing``. Stream-switch hold does not publish this ``.playing``
@@ -852,15 +864,23 @@ class RadioLiveActivityManager: ObservableObject {
     /// Connecting over owned ``.userPaused``. The flag stays set so the audible
     /// ``.playing`` update may replace that pause and carry the actor's same-language
     /// title. Skipping the Connecting IPC does not clear it. Cleared on pause, on
-    /// soft-resume ``.playing``, and on any stream-switch optimistic stamp so a paused
-    /// chip and an ineligible playing-chip switch keep their glyphs. Does not authorize
-    /// Connecting over owned ``.playing``. A chip whose card is already Connecting still
+    /// soft-resume or Control ``.playing``, and on any stream-switch optimistic stamp
+    /// so a paused chip and an ineligible playing-chip switch keep their glyphs.
+    /// That ``.playing`` record runs in
+    /// ``WidgetIntentExecution/pushOptimisticLiveActivityToggleContent(visualState:)``
+    /// before the mailbox. The allowance is already clear when ``setPlaying()``
+    /// publishes, so a dropped optimistic playing update is not repaired by the
+    /// audible publish. Fresh-attach ``.prePlay`` is the record that leaves the
+    /// allowance set for that later publish. Does not authorize Connecting over
+    /// owned ``.playing``. A chip whose card is already Connecting still
     /// publishes Connecting.
     ///
     /// - SeeAlso: ``shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
     ///   ``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible(isRequestEligible:freezeSoftBudgetExhausted:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
     ///   ``PlayerVisualState/optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual).
+    ///   ``WidgetIntentCoordinators/optimisticLiveActivityVisualForTogglePlan(plan:canSoftResumeSameStream:)``,
+    ///   ``WidgetIntentExecution/pushOptimisticLiveActivityToggleContent(visualState:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual, Home-widget Play).
     private var explicitFreshAttachPlayAllowsIneligibleVisual = false
 
     /// Whether a post-hold **settled** playing acceptance soft-ensure re-arm already ran while
@@ -8740,8 +8760,10 @@ class RadioLiveActivityManager: ObservableObject {
         if visualState != .userPaused {
             explicitPauseNeedsDestinationLanguageUpdate = false
         }
-        // Connecting optimistic play is fresh attach (no soft-paused item). Pause and
-        // soft-resume `.playing` close that allowance so later skips stay in force.
+        // `.prePlay` is fresh attach: leave the allowance set for the audible publish.
+        // `.userPaused` and `.playing` clear it here, before the mailbox returns, so a
+        // later `setPlaying()` publish is subject to the ineligible playing skip.
+        // A dropped optimistic `.playing` update is not repaired by that publish.
         switch visualState {
         case .prePlay:
             explicitFreshAttachPlayAllowsIneligibleVisual = true

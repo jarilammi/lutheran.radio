@@ -406,8 +406,9 @@ extension SharedPlayerManager {
     /// Widget process finishes here with optimistic visual + pending action; main app continues.
     private func runPlayPostSecuritySurfacesPhase() async -> PlayPostSecuritySurfaceResult {
         let canSoftResume = await canSoftResumeSameStreamForPlayChrome()
-        // Same home-widget pause hold as ``setUserIntentToPlay()``. Skip Connecting
-        // here so a later status save does not replace the hold before audible playing.
+        // One of the three mailbox-scoped skips. Leaving visual at `.userPaused`
+        // here is what a later status save persists. The boolean is not still true
+        // for that save; it is cleared when the mailbox returns.
         if !retainHomeWidgetPauseHoldUntilAudible,
            PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
             visualState: currentVisualState,
@@ -1206,9 +1207,14 @@ extension SharedPlayerManager {
     ///
     /// Same-stream soft-pause resume is an exception: Connecting is skipped and sticky visual
     /// is retained until engine ``setPlaying()`` so home widgets do not paint post-audible
-    /// Connecting chrome on the gapless path.
+    /// Connecting chrome on the gapless path. Home-widget fresh attach is a second skip,
+    /// ``retainHomeWidgetPauseHoldUntilAudible``, and only while that mailbox is in flight.
+    /// The boolean is already false when a background ``play()`` returns before the item
+    /// is ready. Do not add another Connecting stamp on the assumption that the boolean
+    /// still covers the wait until ``setPlaying()``.
     ///
     /// - SeeAlso: ``play()``, ``canSoftResumeSameStreamForPlayChrome()``,
+    ///   ``retainHomeWidgetPauseHoldUntilAudible``,
     ///   ``PlaybackPlayDecision/shouldApplyConnectingPrePlayChrome(visualState:isActivePlaybackIntent:canSoftResumeSameStream:)``,
     ///   docs/Widget-Presentation-Dataflow.md (home soft-resume refresh authority).
     func setUserIntentToPlay() async {
@@ -1229,6 +1235,7 @@ extension SharedPlayerManager {
             || currentVisualState == .cleared
             || currentVisualState == .thermalPaused
             || currentVisualState == .securityLocked {
+            // Mailbox-scoped. This is not a hold that lasts until `setPlaying()`.
             if !retainHomeWidgetPauseHoldUntilAudible,
                PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
                 visualState: currentVisualState,
@@ -1649,8 +1656,11 @@ extension SharedPlayerManager {
     ///
     /// Same-stream soft-pause resume retains sticky visual until engine ``setPlaying()``
     /// (no intermediate Connecting stamp) so home chrome stays honest on gapless resume.
+    /// Home-widget fresh attach uses ``retainHomeWidgetPauseHoldUntilAudible`` for the
+    /// same skip, and only for the mailbox that set it.
     ///
     /// - SeeAlso: ``setUserIntentToPlay()``, ``canSoftResumeSameStreamForPlayChrome()``,
+    ///   ``retainHomeWidgetPauseHoldUntilAudible``,
     ///   ``PlaybackPlayDecision/shouldApplyConnectingPrePlayChrome(visualState:isActivePlaybackIntent:canSoftResumeSameStream:)``.
     public func clearUserPausedLockIfNeeded() async {
         ensureVisualStateLoaded()
@@ -1672,8 +1682,8 @@ extension SharedPlayerManager {
 
         let canSoftResume = await canSoftResumeSameStreamForPlayChrome()
         if currentVisualState == .userPaused || currentPlaybackIntent == .cleared || currentVisualState == .cleared {
-            // Home-widget fresh-attach Play keeps the pause hold. Other callers still
-            // project Connecting when this is not a same-stream soft-resume.
+            // Mailbox-scoped home-widget fresh-attach skip. After `play()` returns the
+            // boolean is false. Other callers still project Connecting.
             if !retainHomeWidgetPauseHoldUntilAudible,
                PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
                 visualState: currentVisualState,

@@ -368,9 +368,13 @@ final class WidgetIntentContractTests: XCTestCase {
     /// ``homeWidgetLiveChrome`` on ``.userPaused``. ``lastPushedContent.visualState`` is the
     /// planner’s result. This host has no retained item, so
     /// ``canSoftResumeSameStreamForPlayChrome()`` is false and the record is ``.prePlay``.
-    /// ``.prePlay`` is the record that sets ``explicitFreshAttachPlayAllowsIneligibleVisual``.
+    /// ``.prePlay`` is the record that sets ``explicitFreshAttachPlayAllowsIneligibleVisual``
+    /// for the later audible publish. Soft-resume is a different record: ``.playing``
+    /// clears the flag before the mailbox, and this host does not cover that row.
     /// A following pause plan sets ``lastPushedContent`` to ``.userPaused``, which clears
-    /// that flag. This does not prove the card.
+    /// that flag. This does not prove the card. The home pause hold in this test is the
+    /// optimistic stamp. It does not show ``retainHomeWidgetPauseHoldUntilAudible``
+    /// staying true until ``setPlaying()`` — that boolean is cleared when the mailbox returns.
     ///
     /// - SeeAlso: ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
     ///   ``WidgetIntentCoordinators/optimisticLiveActivityVisualForTogglePlan(plan:canSoftResumeSameStream:)``,

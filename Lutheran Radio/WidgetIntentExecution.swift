@@ -410,17 +410,20 @@ enum WidgetIntentExecution {
     ///   pause after stream switch does not re-stamp lagging prior-language chrome.
     /// - Important: While request is ineligible, Connecting (``.prePlay``) over owned
     ///   ``.userPaused`` or ``.playing`` does not call `Activity.update`, including explicit
-    ///   fresh-attach Play. The main-app record below still sets
+    ///   fresh-attach Play. The main-app record below still runs. ``.prePlay`` sets
     ///   ``explicitFreshAttachPlayAllowsIneligibleVisual`` so the later audible ``.playing``
-    ///   update may replace that pause. In-app chrome and the durable mirror may still move
-    ///   through Connecting. Request-eligible Play with no retained item still publishes
-    ///   Connecting. Soft-resume ``.playing`` is not this skip.
+    ///   update may replace that pause. ``.playing`` (same-stream soft-resume or Control)
+    ///   clears that flag in this same record, before the mailbox, so a dropped optimistic
+    ///   playing update is not repaired by the audible publish. In-app chrome and the
+    ///   durable mirror may still move through Connecting. Request-eligible Play with no
+    ///   retained item still publishes Connecting. Soft-resume ``.playing`` is not the
+    ///   Connecting skip.
     /// - SeeAlso: ``performLiveActivityToggle()``,
     ///   ``pushOptimisticLiveActivityStreamSwitchContent(languageCode:visualState:)``,
     ///   ``LutheranRadioLiveActivityAttributes/ContentState/replacingVisualState(_:)``,
     ///   ``RadioLiveActivityManager/languageForOptimisticToggleContentAlignment(lastPushedLanguage:ownedContentLanguage:selectedStreamLanguage:durableLanguageMirror:)``,
     ///   ``RadioLiveActivityManager/shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual).
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual, Home-widget Play).
     static func pushOptimisticLiveActivityToggleContent(visualState: PlayerVisualState) async {
         let skipActivityKitIPC = SharedPlayerManager.isRunningInUITestMode
             || SharedPlayerManager.isRunningAsIOSAppOnMac
@@ -748,20 +751,23 @@ enum WidgetIntentExecution {
     ///
     /// **Two visuals.** Home chrome, the actor visual, the paint epoch, and the widget
     /// refresh all use ``plan.targetVisualState``. Home Play from pause stays ``.userPaused``
-    /// until audible settle. A fresh-attach home Play sets
-    /// ``SharedPlayerManager/retainHomeWidgetPauseHoldUntilAudible`` for the mailbox so
-    /// Connecting is not projected over that hold. Lock-screen and in-app play do not set it.
+    /// until audible ``setPlaying()``. A fresh-attach home Play sets
+    /// ``SharedPlayerManager/retainHomeWidgetPauseHoldUntilAudible`` only for the mailbox
+    /// below, and clears it when that mailbox returns — including a background ``play()``
+    /// that returns before the item is ready. The pause hold after that is the visual the
+    /// three Connecting stamps left in place. Do not extend the boolean until
+    /// ``setPlaying()``. Lock-screen and in-app play do not set it.
     /// The Live Activity record is
     /// ``WidgetIntentCoordinators/optimisticLiveActivityVisualForTogglePlan(plan:canSoftResumeSameStream:)``.
-    /// That planner returns ``.userPaused`` for pause (``recordOptimisticToggleContent`` clears
-    /// ``explicitFreshAttachPlayAllowsIneligibleVisual``), ``.prePlay`` for a fresh-attach home
-    /// Play from the pause hold (the record that sets the flag), and ``.playing`` for
-    /// same-stream soft-resume or Control Play. Home connect Play (target ``.prePlay``) and
-    /// ``.none`` return `nil` and do not touch the Live Activity record.
-    /// ``shouldSuppressConnectingContentPushWhileIneligible`` still skips the Connecting
-    /// `Activity.update` over owned pause or playing while request is ineligible, including
-    /// when the candidate is ``.prePlay``. The record still runs, so the flag is set before
-    /// the audible ``.playing`` update, which may replace that owned pause.
+    /// Pause returns ``.userPaused`` (``recordOptimisticToggleContent`` clears
+    /// ``explicitFreshAttachPlayAllowsIneligibleVisual``). Fresh-attach home Play from the
+    /// pause hold returns ``.prePlay``, which sets the flag. Connecting IPC is still
+    /// skipped, so that record is what leaves the later audible ``.playing`` update
+    /// allowed to replace owned pause. Same-stream soft-resume and Control Play return
+    /// ``.playing``. That record runs here, before the mailbox, and clears the flag.
+    /// The optimistic ``.playing`` update is the one that may move the card. A drop of
+    /// that update is not repaired by ``setPlaying()``. Home connect Play (target
+    /// ``.prePlay``) and ``.none`` return `nil` and do not touch the Live Activity record.
     ///
     /// Attach state (``SharedPlayerManager/canSoftResumeSameStreamForPlayChrome()``) is read
     /// only for the home-hold Play row. The widget extension compiles that read; outside
@@ -792,7 +798,7 @@ enum WidgetIntentExecution {
     ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3),
     ///   docs/Event-Driven-Refactor-Roadmap.md,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual).
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual, Home-widget Play).
     static func executeOptimisticToggle(plan: WidgetToggleActionPlan, language: String) async {
         guard plan.shouldExecutePendingAction else { return }
         // Coerce before persist so an empty extension session that passed locale `sv` cannot
@@ -870,8 +876,8 @@ enum WidgetIntentExecution {
             trigger: .extensionOptimistic
         )
         #if LUTHERAN_MAIN_APP
-        // Fresh attach only. Soft-resume already keeps the pause hold, and must not
-        // take this path (its audible settle is ``.playing`` inside the mailbox).
+        // Fresh attach only. Soft-resume already skips Connecting without this boolean.
+        // Clear it when the mailbox returns. Do not hold it until `setPlaying()`.
         let retainHomePauseHold = plan.action == .play
             && plan.targetVisualState == .userPaused
             && !canSoftResumeSameStream
