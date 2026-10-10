@@ -262,6 +262,65 @@ public enum WidgetIntentCoordinators {
         )
     }
 
+    /// Live Activity visual to record for a home or Control toggle, separate from home chrome.
+    ///
+    /// Home Play from sticky pause keeps ``WidgetToggleActionPlan/targetVisualState`` at
+    /// ``.userPaused`` (``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``).
+    /// That hold is not the Live Activity record. Recording it would clear
+    /// ``explicitFreshAttachPlayAllowsIneligibleVisual`` before the station is audible, and
+    /// ``shouldSuppressVisualDifferingPlayingContentPushWhileIneligible`` would then skip
+    /// the later ``.playing`` update over owned pause.
+    ///
+    /// - Pause → ``.userPaused``. ``recordOptimisticToggleContent`` clears the flag.
+    /// - Play whose target is ``.userPaused`` →
+    ///   ``PlayerVisualState/optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``
+    ///   on that target. Fresh attach (`false`) is ``.prePlay``, which sets the flag before
+    ///   the audible ``.playing`` update. Same-stream soft-resume (`true`) is ``.playing``.
+    ///   Do not record the home hold in either case.
+    /// - Control Play, whose target is already ``.playing``, stays ``.playing``.
+    /// - Home Play whose target is ``.prePlay`` (connect, cleared, or security recovery)
+    ///   returns `nil`. That path does not touch the Live Activity record.
+    /// - ``WidgetToggleAction/none`` returns `nil`.
+    ///
+    /// ``shouldSuppressConnectingContentPushWhileIneligible`` still skips Connecting over
+    /// owned pause or playing while request is ineligible, including when this result is
+    /// ``.prePlay``. The audible ``.playing`` update may replace that owned pause.
+    ///
+    /// - Parameters:
+    ///   - plan: Home or Control toggle plan. Home chrome stays ``targetVisualState``.
+    ///   - canSoftResumeSameStream: Retained same-stream item. Queried only for the
+    ///     home-hold Play row. Ignored for every other row.
+    /// - Returns: Visual for the durable Live Activity mirror and
+    ///   ``pushOptimisticLiveActivityToggleContent(visualState:)``, or `nil` when this
+    ///   plan must not touch the Live Activity record.
+    /// - SeeAlso: ``planHomeWidgetPlay(from:)``, ``planControlWidgetToggle(isPlayingRequested:)``,
+    ///   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``,
+    ///   ``PlayerVisualState/optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``,
+    ///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual).
+    public static func optimisticLiveActivityVisualForTogglePlan(
+        plan: WidgetToggleActionPlan,
+        canSoftResumeSameStream: Bool
+    ) -> PlayerVisualState? {
+        switch plan.action {
+        case .none:
+            return nil
+        case .pause:
+            return .userPaused
+        case .play:
+            switch plan.targetVisualState {
+            case .userPaused:
+                return plan.targetVisualState.optimisticLiveActivityVisualAfterPlayPlan(
+                    canSoftResumeSameStream: canSoftResumeSameStream
+                )
+            case .playing:
+                return .playing
+            case .prePlay, .cleared, .thermalPaused, .securityLocked:
+                return nil
+            }
+        }
+    }
+
     /// Resolves which visual state should drive Live Activity play/pause planning.
     ///
     /// - Parameters:

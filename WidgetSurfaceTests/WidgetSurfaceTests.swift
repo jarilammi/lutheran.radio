@@ -615,6 +615,89 @@ struct WidgetSurfaceTests {
         #expect(PlayerVisualState.securityLocked.optimisticHomeWidgetVisualAfterPlayPlan == .prePlay)
     }
 
+    /// Home Play from pause keeps the home hold and records a different Live Activity visual.
+    ///
+    /// **Invariant protected:** ``planHomeWidgetPlay(from: .userPaused)`` leaves
+    /// ``targetVisualState`` at ``.userPaused``. Fresh attach
+    /// (`canSoftResumeSameStream` false) records ``.prePlay``, which is the record that
+    /// sets ``explicitFreshAttachPlayAllowsIneligibleVisual``. Soft-resume records
+    /// ``.playing``. Pause records ``.userPaused``, which clears that flag. Control Play
+    /// records ``.playing``. Home connect, cleared, and security-recovery Play record
+    /// nothing (`nil`). ``.none`` records nothing. This does not prove the card.
+    ///
+    /// - SeeAlso: ``WidgetIntentCoordinators/optimisticLiveActivityVisualForTogglePlan(plan:canSoftResumeSameStream:)``,
+    ///   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``,
+    ///   ``PlayerVisualState/optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual).
+    @Test func optimisticLiveActivityVisualForTogglePlanSplitsHomeHoldFromLiveActivityRecord() {
+        let homePlay = WidgetIntentCoordinators.planHomeWidgetPlay(from: .userPaused)
+        #expect(homePlay.action == .play)
+        #expect(homePlay.targetVisualState == .userPaused)
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForTogglePlan(
+                plan: homePlay,
+                canSoftResumeSameStream: false
+            ) == .prePlay
+        )
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForTogglePlan(
+                plan: homePlay,
+                canSoftResumeSameStream: true
+            ) == .playing
+        )
+
+        let pause = WidgetIntentCoordinators.planHomeWidgetPause()
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForTogglePlan(
+                plan: pause,
+                canSoftResumeSameStream: false
+            ) == .userPaused
+        )
+
+        let controlPlay = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: true)
+        #expect(controlPlay.targetVisualState == .playing)
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForTogglePlan(
+                plan: controlPlay,
+                canSoftResumeSameStream: false
+            ) == .playing
+        )
+
+        let connectPlay = WidgetIntentCoordinators.planHomeWidgetPlay(from: .prePlay)
+        #expect(connectPlay.targetVisualState == .prePlay)
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForTogglePlan(
+                plan: connectPlay,
+                canSoftResumeSameStream: false
+            ) == nil
+        )
+        let clearedPlay = WidgetIntentCoordinators.planHomeWidgetPlay(from: .cleared)
+        #expect(clearedPlay.targetVisualState == .prePlay)
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForTogglePlan(
+                plan: clearedPlay,
+                canSoftResumeSameStream: true
+            ) == nil
+        )
+        let securityPlay = WidgetIntentCoordinators.planHomeWidgetPlay(from: .securityLocked)
+        #expect(securityPlay.targetVisualState == .prePlay)
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForTogglePlan(
+                plan: securityPlay,
+                canSoftResumeSameStream: false
+            ) == nil
+        )
+
+        let refused = WidgetIntentCoordinators.planHomeWidgetToggle(from: .thermalPaused)
+        #expect(refused.action == .none)
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForTogglePlan(
+                plan: refused,
+                canSoftResumeSameStream: false
+            ) == nil
+        )
+    }
+
     @Test func resolveLiveActivityTogglePrefersContentThenMirror() {
         let fromContent = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
             liveActivityContent: .playing,

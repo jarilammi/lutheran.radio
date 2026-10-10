@@ -406,7 +406,10 @@ extension SharedPlayerManager {
     /// Widget process finishes here with optimistic visual + pending action; main app continues.
     private func runPlayPostSecuritySurfacesPhase() async -> PlayPostSecuritySurfaceResult {
         let canSoftResume = await canSoftResumeSameStreamForPlayChrome()
-        if PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
+        // Same home-widget pause hold as ``setUserIntentToPlay()``. Skip Connecting
+        // here so a later status save does not replace the hold before audible playing.
+        if !retainHomeWidgetPauseHoldUntilAudible,
+           PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
             visualState: currentVisualState,
             isActivePlaybackIntent: currentPlaybackIntent.isActivePlaybackIntent,
             canSoftResumeSameStream: canSoftResume
@@ -1226,7 +1229,8 @@ extension SharedPlayerManager {
             || currentVisualState == .cleared
             || currentVisualState == .thermalPaused
             || currentVisualState == .securityLocked {
-            if PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
+            if !retainHomeWidgetPauseHoldUntilAudible,
+               PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
                 visualState: currentVisualState,
                 isActivePlaybackIntent: true,
                 canSoftResumeSameStream: canSoftResume
@@ -1237,7 +1241,7 @@ extension SharedPlayerManager {
                 #endif
             } else {
                 #if DEBUG
-                print("[SharedPlayerManager] setUserIntentToPlay() — soft-resume eligible; retaining \(currentVisualState) until authoritative playing")
+                print("[SharedPlayerManager] setUserIntentToPlay() — retaining \(currentVisualState) until authoritative playing")
                 #endif
             }
         }
@@ -1668,7 +1672,10 @@ extension SharedPlayerManager {
 
         let canSoftResume = await canSoftResumeSameStreamForPlayChrome()
         if currentVisualState == .userPaused || currentPlaybackIntent == .cleared || currentVisualState == .cleared {
-            if PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
+            // Home-widget fresh-attach Play keeps the pause hold. Other callers still
+            // project Connecting when this is not a same-stream soft-resume.
+            if !retainHomeWidgetPauseHoldUntilAudible,
+               PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
                 visualState: currentVisualState,
                 isActivePlaybackIntent: true,
                 canSoftResumeSameStream: canSoftResume

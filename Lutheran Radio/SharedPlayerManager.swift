@@ -644,6 +644,28 @@ actor SharedPlayerManager {
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     internal var isPlaybackStartPipelineActive = false
 
+    /// Home-widget Play from sticky pause keeps ``.userPaused`` on home chrome until
+    /// audible ``setPlaying()``, including a fresh attach with no retained item.
+    ///
+    /// Set for the mailbox inside ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``
+    /// only. Lock-screen and in-app play leave it false and still project Connecting.
+    /// ``shouldSuppressConnectingContentPushWhileIneligible`` is a different gate.
+    ///
+    /// - SeeAlso: ``setUserIntentToPlay()``, ``clearUserPausedLockIfNeeded()``,
+    ///   ``setRetainHomeWidgetPauseHoldUntilAudible(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual),
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
+    var retainHomeWidgetPauseHoldUntilAudible = false
+
+    /// Sets ``retainHomeWidgetPauseHoldUntilAudible`` for one home-widget fresh-attach Play.
+    ///
+    /// - Parameter retain: `true` while that mailbox is in flight. Cleared when it returns.
+    /// - SeeAlso: ``retainHomeWidgetPauseHoldUntilAudible``,
+    ///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``.
+    func setRetainHomeWidgetPauseHoldUntilAudible(_ retain: Bool) {
+        retainHomeWidgetPauseHoldUntilAudible = retain
+    }
+
     /// Whether a user-visible start is in progress (Connecting) without audible ``isActivelyPlaying``.
     ///
     /// - Returns: `true` when the play start pipeline is active and visual is not yet `.playing`.
