@@ -362,6 +362,56 @@ final class WidgetIntentContractTests: XCTestCase {
         XCTAssertEqual(manager.loadSharedState().currentLanguage, "et")
     }
 
+    /// Home Play from pause keeps the home pause hold and records a fresh-attach Live Activity visual.
+    ///
+    /// **Invariant protected:** ``planHomeWidgetPlay(from: .userPaused)`` leaves
+    /// ``homeWidgetLiveChrome`` on ``.userPaused``. ``lastPushedContent.visualState`` is the
+    /// planner’s result. This host has no retained item, so
+    /// ``canSoftResumeSameStreamForPlayChrome()`` is false and the record is ``.prePlay``.
+    /// ``.prePlay`` is the record that sets ``explicitFreshAttachPlayAllowsIneligibleVisual``.
+    /// A following pause plan sets ``lastPushedContent`` to ``.userPaused``, which clears
+    /// that flag. This does not prove the card.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
+    ///   ``WidgetIntentCoordinators/optimisticLiveActivityVisualForTogglePlan(plan:canSoftResumeSameStream:)``,
+    ///   ``RadioLiveActivityManager/recordOptimisticToggleContent(visualState:actorProgramMetadata:actorLanguage:)``,
+    ///   ``RadioLiveActivityManager/shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual).
+    @MainActor
+    func testExecuteOptimisticToggleHomePlayFromPauseRecordsFreshAttachLiveActivityVisual() async {
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        RadioLiveActivityManager.shared._test_clearLastPushedContent()
+
+        let playPlan = WidgetIntentCoordinators.planHomeWidgetPlay(from: .userPaused)
+        XCTAssertEqual(playPlan.targetVisualState, .userPaused)
+        let expectedLiveActivity = WidgetIntentCoordinators.optimisticLiveActivityVisualForTogglePlan(
+            plan: playPlan,
+            canSoftResumeSameStream: false
+        )
+        XCTAssertEqual(expectedLiveActivity, .prePlay)
+
+        await WidgetIntentExecution.executeOptimisticToggle(plan: playPlan, language: "sv")
+
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .userPaused,
+            "Home Play from pause must keep the pause hold until the station is audible"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.shared.lastPushedContent?.visualState,
+            expectedLiveActivity,
+            ".prePlay is the record that sets explicitFreshAttachPlayAllowsIneligibleVisual"
+        )
+
+        let pausePlan = WidgetIntentCoordinators.planHomeWidgetPause()
+        await WidgetIntentExecution.executeOptimisticToggle(plan: pausePlan, language: "sv")
+        XCTAssertEqual(
+            RadioLiveActivityManager.shared.lastPushedContent?.visualState,
+            .userPaused,
+            ".userPaused clears explicitFreshAttachPlayAllowsIneligibleVisual"
+        )
+    }
+
     /// Instant feedback remains the language signal when no session or live chrome exists.
     func testLoadSharedStateUsesInstantFeedbackWhenNoSettledSessionOrLiveChrome() {
         SharedPlayerManager.removeAllLocalPlaybackKeys()

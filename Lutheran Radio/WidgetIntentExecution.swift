@@ -396,7 +396,10 @@ enum WidgetIntentExecution {
     /// ``RadioLiveActivityManager/lastPushedContent`` to the same title and glyph so
     /// subsequent ``updateCurrentActivity()`` calls do not regress while the actor catches up.
     ///
-    /// - Parameter visualState: Target control visual (`.userPaused` after pause plan, `.playing` after play).
+    /// - Parameter visualState: Live Activity record from
+    ///   ``WidgetIntentCoordinators/optimisticLiveActivityVisualForTogglePlan(plan:canSoftResumeSameStream:)``
+    ///   (``.userPaused`` after pause, ``.prePlay`` for a fresh-attach home Play from the
+    ///   pause hold, ``.playing`` for soft-resume or Control Play). Not the home-widget hold.
     /// - Note: Skips ActivityKit IPC under ``SharedPlayerManager/isRunningInUITestMode`` and
     ///   ``SharedPlayerManager/isRunningAsIOSAppOnMac`` (Designed-for-iPhone Mac has no
     ///   ActivityKit service) so those hosts stay free of system-service connection failures;
@@ -743,12 +746,26 @@ enum WidgetIntentExecution {
     /// ``reloadAllTimelines`` here (dual wakes thrashed residual LIVE without healing it).
     /// System also reloads the Provider after ``perform()`` returns (App Intent contract).
     ///
-    /// **Live Activity pause honesty:** When the plan targets a control visual (``.userPaused``
-    /// or ``.playing``), also warms the durable LA toggle mirror (not gated by home widgets)
-    /// and publishes optimistic ActivityKit ContentState via ``pushOptimisticLiveActivityToggleContent(visualState:)``.
-    /// That path preserves language chrome and replaces a stale system-held Connecting
-    /// (``.prePlay``) glyph so lock-screen controls track home/Control pause without waiting
-    /// for main-app soft silence + ``updateCurrentActivity()`` acceptance.
+    /// **Two visuals.** Home chrome, the actor visual, the paint epoch, and the widget
+    /// refresh all use ``plan.targetVisualState``. Home Play from pause stays ``.userPaused``
+    /// until audible settle. A fresh-attach home Play sets
+    /// ``SharedPlayerManager/retainHomeWidgetPauseHoldUntilAudible`` for the mailbox so
+    /// Connecting is not projected over that hold. Lock-screen and in-app play do not set it.
+    /// The Live Activity record is
+    /// ``WidgetIntentCoordinators/optimisticLiveActivityVisualForTogglePlan(plan:canSoftResumeSameStream:)``.
+    /// That planner returns ``.userPaused`` for pause (``recordOptimisticToggleContent`` clears
+    /// ``explicitFreshAttachPlayAllowsIneligibleVisual``), ``.prePlay`` for a fresh-attach home
+    /// Play from the pause hold (the record that sets the flag), and ``.playing`` for
+    /// same-stream soft-resume or Control Play. Home connect Play (target ``.prePlay``) and
+    /// ``.none`` return `nil` and do not touch the Live Activity record.
+    /// ``shouldSuppressConnectingContentPushWhileIneligible`` still skips the Connecting
+    /// `Activity.update` over owned pause or playing while request is ineligible, including
+    /// when the candidate is ``.prePlay``. The record still runs, so the flag is set before
+    /// the audible ``.playing`` update, which may replace that owned pause.
+    ///
+    /// Attach state (``SharedPlayerManager/canSoftResumeSameStreamForPlayChrome()``) is read
+    /// only for the home-hold Play row. The widget extension compiles that read; outside
+    /// ``LUTHERAN_MAIN_APP`` the method returns `false` (no retained item).
     ///
     /// - Parameters:
     ///   - plan: Home-widget or Control-widget toggle plan.
@@ -757,9 +774,16 @@ enum WidgetIntentExecution {
     ///     resumed). Coerced again via ``SharedPlayerManager/languageForInstantFeedbackWrite(_:)``
     ///     so a locale fallback or leftover session code cannot persist into the optimistic
     ///     snapshot or instant-feedback keys while fresher live chrome already names the stream.
-    /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``,
+    /// - SeeAlso: ``WidgetIntentCoordinators/optimisticLiveActivityVisualForTogglePlan(plan:canSoftResumeSameStream:)``,
+    ///   ``PlayerVisualState/optimisticHomeWidgetVisualAfterPlayPlan``,
+    ///   ``PlayerVisualState/optimisticLiveActivityVisualAfterPlayPlan(canSoftResumeSameStream:)``,
+    ///   ``WidgetRefreshTrigger/extensionOptimistic``,
     ///   ``pushOptimisticLiveActivityToggleContent(visualState:)``,
+    ///   ``RadioLiveActivityManager/recordOptimisticToggleContent(visualState:actorProgramMetadata:actorLanguage:)``,
+    ///   ``RadioLiveActivityManager/shouldSuppressConnectingContentPushWhileIneligible(isRequestEligible:ownedVisual:candidateVisual:explicitFreshAttachPlay:)``,
     ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``,
+    ///   ``SharedPlayerManager/canSoftResumeSameStreamForPlayChrome()``,
+    ///   ``SharedPlayerManager/retainHomeWidgetPauseHoldUntilAudible``,
     ///   ``SharedPlayerManager/writeInstantFeedback(language:)``,
     ///   ``SharedPlayerManager/languageForInstantFeedbackWrite(_:)``,
     ///   ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
@@ -768,7 +792,7 @@ enum WidgetIntentExecution {
     ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
     ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3),
     ///   docs/Event-Driven-Refactor-Roadmap.md,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (explicit Play visual).
     static func executeOptimisticToggle(plan: WidgetToggleActionPlan, language: String) async {
         guard plan.shouldExecutePendingAction else { return }
         // Coerce before persist so an empty extension session that passed locale `sv` cannot
@@ -810,16 +834,28 @@ enum WidgetIntentExecution {
             epoch: SharedPlayerManager.loadHomeWidgetInteractivePaintEpoch(),
             postPaintWake: false
         )
-        // Home/Control pause must not leave LA ContentState stuck on Connecting while the
-        // home snapshot already shows userPaused — same optimistic ContentState path as LA toggle.
-        if plan.targetVisualState.isDefinitiveMediaToggleVisual {
-            SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(plan.targetVisualState)
+        // Home chrome stays on plan.targetVisualState (pause hold or Connecting).
+        // The Live Activity record is a different visual: home Play from .userPaused
+        // must not record that hold, or the fresh-attach flag stays clear.
+        // Query attach state only for that home-hold Play row. Extension hosts and a
+        // test process with no retained item get false from the method below.
+        let canSoftResumeSameStream: Bool
+        if plan.action == .play, plan.targetVisualState == .userPaused {
+            canSoftResumeSameStream = await manager.canSoftResumeSameStreamForPlayChrome()
+        } else {
+            canSoftResumeSameStream = false
+        }
+        if let liveActivityVisual = WidgetIntentCoordinators.optimisticLiveActivityVisualForTogglePlan(
+            plan: plan,
+            canSoftResumeSameStream: canSoftResumeSameStream
+        ) {
+            SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(liveActivityVisual)
             if !language.isEmpty {
                 SharedPlayerManager.persistLiveActivityLanguageMirror(language)
             } else if let contentLanguage = currentLiveActivityContentLanguage(), !contentLanguage.isEmpty {
                 SharedPlayerManager.persistLiveActivityLanguageMirror(contentLanguage)
             }
-            await pushOptimisticLiveActivityToggleContent(visualState: plan.targetVisualState)
+            await pushOptimisticLiveActivityToggleContent(visualState: liveActivityVisual)
         }
         // Yield so App Group live-chrome / session writers, paint epoch, and actor force-set are
         // visible to Provider re-resolve and interactive entry-view heal before WidgetCenter wakes.
@@ -834,7 +870,18 @@ enum WidgetIntentExecution {
             trigger: .extensionOptimistic
         )
         #if LUTHERAN_MAIN_APP
+        // Fresh attach only. Soft-resume already keeps the pause hold, and must not
+        // take this path (its audible settle is ``.playing`` inside the mailbox).
+        let retainHomePauseHold = plan.action == .play
+            && plan.targetVisualState == .userPaused
+            && !canSoftResumeSameStream
+        if retainHomePauseHold {
+            await manager.setRetainHomeWidgetPauseHoldUntilAudible(true)
+        }
         await executeHomeOrControlToggleViaMailbox(plan: plan)
+        if retainHomePauseHold {
+            await manager.setRetainHomeWidgetPauseHoldUntilAudible(false)
+        }
         #endif
     }
 
