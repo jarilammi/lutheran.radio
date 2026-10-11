@@ -376,8 +376,10 @@ class ViewController: UIViewController {
         // after the sleep-timer `.confirmationDialog` presented chain is empty **and**
         // leftover `GlassPopoverContentViewRepresentable` hosts have left the window
         // scene, then `layoutIfNeeded` on this host + hosting view.
-        // `presentedViewController == nil` is not enough (320 autoresizing vs ~357
-        // alert width). PlaybackControlsView also withholds `onClearLocalStateTapped`
+        // `presentedViewController == nil` is not enough (320 autoresizing host vs
+        // alert content wider than that host). ``SleepTimerGlassPopoverLayout``
+        // retargets the dialog's own content width while it is up.
+        // PlaybackControlsView also withholds `onClearLocalStateTapped`
         // until the dialog `isPresented` is false (`SleepTimerPrivacyClearPresentation`).
         // Do not disable the confirmationDialog; do not fight UIKit's glass host constraints.
         radioPlayerCoordinator.presentAlert = { [weak self] alert in

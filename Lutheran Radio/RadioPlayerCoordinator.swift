@@ -179,11 +179,13 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     // window scene, then `layoutIfNeeded` on the host, then `present`.
     // `presentedViewController == nil` is not enough: glass can remain at 320pt
     // autoresizing after the presented chain clears, fighting
-    // `_UIAlertControllerPhoneTVMacView` ~357pt. PlaybackControlsView
-    // ``SleepTimerPrivacyClearPresentation`` withholds this path until the dialog
-    // `isPresented` is false. All `presentAlert?` sites use this host settle.
-    // Do not disable the confirmationDialog; do not fight the glass host's
-    // `translatesAutoresizingMaskIntoConstraints`.
+    // `_UIAlertControllerPhoneTVMacView` content wider than that host.
+    // ``SleepTimerMenuButton`` / ``SleepTimerGlassPopoverLayout`` make the dialog's
+    // own content follow the host while it is presented, and that follow stops before this
+    // alert is built. ``SleepTimerPrivacyClearPresentation`` withholds this path
+    // until the dialog `isPresented` is false. All `presentAlert?` sites use this
+    // host settle. Do not disable the confirmationDialog; do not fight the glass
+    // host's `translatesAutoresizingMaskIntoConstraints`.
     var presentAlert: ((UIAlertController) -> Void)?
 
     // MARK: - SwiftUI observation bridge (optional, non-breaking)

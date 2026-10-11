@@ -140,15 +140,17 @@ extension ViewController {
     /// presented from ``playerHostingController``. Privacy-clear confirmation (and
     /// other coordinator alerts) present from this host. Presenting the UIKit alert
     /// while `GlassPopoverContentViewRepresentable` is still in the hierarchy fights
-    /// `_UIAlertControllerPhoneTVMacView` content width (~357) against the popover’s
-    /// autoresizing width 320. UIKit recovers by breaking the alert constraint; the
-    /// dump is layout noise, not a policy to fight on the glass host.
+    /// `_UIAlertControllerPhoneTVMacView` content wider than the popover’s
+    /// autoresizing width 320. ``SleepTimerGlassPopoverLayout`` retargets the
+    /// dialog’s own content width to that host while the dialog is presented.
+    /// This wait is still required for the secondary alert: do not fight the
+    /// glass host’s autoresizing mask.
     ///
     /// `presentedViewController == nil` is not sufficient. On iOS 26+ the
     /// confirmationDialog glass host can remain in a scene window after SwiftUI has
     /// already cleared the presented chain. Waiting only for the presented
     /// controller returns immediately and still presents into leftover glass
-    /// (320-vs-357). This path waits until
+    /// (host width 320 versus wider alert content). This path waits until
     /// ``CoordinatorAlertPresentationSettle/canPresentCoordinatorAlert(outgoingPresentedViewController:sceneContainsGlassPopoverHost:)``
     /// is true (presented chain empty **and** no glass host in the scene), yields one
     /// more run-loop turn, then lays out before `present(_:animated:)`.
@@ -325,9 +327,11 @@ extension ViewController {
 /// - Important: `presentedViewController == nil` is not sufficient. SwiftUI
 ///   `.confirmationDialog` uses `GlassPopoverContentViewRepresentable`; that host
 ///   can remain in a scene window (autoresizing width 320) after the presented
-///   chain is empty. Presenting `_UIAlertControllerPhoneTVMacView` (~357pt
-///   content) into that leftover host is unsatisfiable. Do not set
-///   `translatesAutoresizingMaskIntoConstraints` on the glass host.
+///   chain is empty. Presenting `_UIAlertControllerPhoneTVMacView` content wider
+///   than that host is unsatisfiable. ``SleepTimerGlassPopoverLayout`` retargets
+///   the dialog’s own content while it is presented; this gate is still the
+///   secondary-alert wait. Do not set `translatesAutoresizingMaskIntoConstraints`
+///   on the glass host.
 /// - SeeAlso: ``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``,
 ///   ``SleepTimerPrivacyClearPresentation``,
 ///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority),

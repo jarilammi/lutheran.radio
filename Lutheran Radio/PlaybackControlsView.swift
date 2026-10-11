@@ -29,8 +29,17 @@
 //    commands are not this surface.
 //
 //  Sleep timer:
-//  - Sole presentation is a native `.confirmationDialog` with duration presets,
-//    conditional "Cancel timer", and the destructive "Clear local state" privacy action.
+//  - Sole presentation is a native `.confirmationDialog` on ``SleepTimerMenuButton``
+//    with duration presets, conditional "Cancel timer", and the destructive
+//    "Clear local state" privacy action.
+//  - The menu button is equatable on cancel-timer availability and the minute
+//    accessibility string. Action closures are left out of that comparison: the
+//    parent reallocates them on every status paint, and comparing them rebuilds
+//    the glass popover (a second `GlassPopoverContentViewRepresentable`).
+//  - While the dialog is presented, ``SleepTimerGlassPopoverLayout`` retargets
+//    alert content that requires a width wider than the glass host so the content
+//    follows the popover. It does not set `translatesAutoresizingMaskIntoConstraints`
+//    on the host.
 //  - Accessibility value (when active) comes from the pre-derived
 //    `sleepTimerAccessibilityValue` (derived on the model, not inside the view body).
 //
@@ -85,11 +94,16 @@ import WidgetSurface
 ///
 /// Sleep timer presentation:
 /// - Timer countdown and accessibility value come in pre-computed.
-/// - The moon button tap triggers a native `.confirmationDialog` offering the presets,
-///   conditional Cancel, and the "Clear local state" privacy action.
+/// - The moon button tap triggers a native `.confirmationDialog` on
+///   ``SleepTimerMenuButton`` offering the presets, conditional Cancel, and the
+///   "Clear local state" privacy action. Equatable inputs omit action closures so
+///   a status paint does not build a second glass host.
+/// - While that dialog is presented, ``SleepTimerGlassPopoverLayout`` makes alert
+///   content follow the glass host width.
 /// - The destructive privacy row only arms ``SleepTimerPrivacyClearPresentation``;
 ///   `onClearLocalStateTapped` runs after the dialog’s `isPresented` binding is false
 ///   so the secondary `UIAlertController` is not built while glass is still up.
+///   The width correction stops on that same transition.
 /// - All complex orchestration, countdown, and privacy logic remains in `RadioPlayerCoordinator`.
 ///
 /// - Precondition: The values must be driven by the coordinator (or mock for previews/tests).
@@ -103,7 +117,9 @@ import WidgetSurface
 ///   ``HapticPlaybackPolicy``, ``HapticsController``,
 ///   ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
 ///   ``PlaybackPausePressFeedback``,
+///   ``SleepTimerMenuButton``,
 ///   ``SleepTimerPrivacyClearPresentation``,
+///   ``SleepTimerGlassPopoverLayout``,
 ///   ``CoordinatorAlertPresentationSettle``,
 ///   ``PlayerVisualState/isActivelyPlaying``,
 ///   CODING_AGENT.md (narrow inputs for separate View types + cached derived values),
@@ -142,15 +158,6 @@ struct PlaybackControlsView: View {
     ///   ``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     var onClearLocalStateTapped: (() -> Void)? = nil
-
-    // Local presentation state for the SwiftUI-native sleep timer options dialog.
-    // This is the primary user-facing path after the SwiftUI migration of the player UI.
-    @State private var isShowingSleepTimerDialog = false
-
-    /// Armed by the destructive "Clear local state" row. Consumed when the
-    /// confirmationDialog `isPresented` binding becomes false
-    /// (``SleepTimerPrivacyClearPresentation``).
-    @State private var pendingPrivacyClearConfirm = false
 
     /// Equatable trigger for pause-only `.sensoryFeedback`. Incremented only by
     /// ``requestPauseFromControl()`` when ``PlaybackPausePressFeedback`` allows.
@@ -208,107 +215,23 @@ struct PlaybackControlsView: View {
                 }
             }
 
-            // Sleep timer: moon button opens sole presentation surface — `.confirmationDialog`
-            // with 15/30/45/60 presets, conditional Cancel, and always-visible Clear local state.
-            // Preset/cancel closures reach coordinator handlers via PlayerViewModel; clear arms
-            // SleepTimerPrivacyClearPresentation then confirmAndClearLocalState (secondary UIAlert).
-            Button {
-                isShowingSleepTimerDialog = true
-            } label: {
-                let active = (sleepTimerRemaining ?? 0) > 0
-                Image(systemName: active ? "moon.zzz.fill" : "moon.zzz")
-                    .font(.system(size: 22, weight: .medium))
-                    .frame(width: 44, height: 44)
-                    .foregroundStyle(active ? Color.indigo : .secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(String(localized: "accessibility_label_sleep_timer", table: "Localizable"))
-            .accessibilityHint(String(localized: "accessibility_hint_sleep_timer", table: "Localizable"))
-            // Sleep timer a11y value is supplied pre-derived from the caller.
-            // When a timer is active the value surfaces remaining minutes to VoiceOver
-            // (e.g. "12 minutes remaining"); otherwise empty string.
-            .accessibilityValue(sleepTimerAccessibilityValue ?? "")
-            .confirmationDialog(
-                String(localized: "sleep_timer_sheet_title", table: "Localizable"),
-                isPresented: $isShowingSleepTimerDialog,
-                titleVisibility: .visible
-            ) {
-                Button(String(localized: "sleep_timer_preset_15_min", table: "Localizable")) {
-                    onSelectSleepTimer?(15)
-                }
-                Button(String(localized: "sleep_timer_preset_30_min", table: "Localizable")) {
-                    onSelectSleepTimer?(30)
-                }
-                Button(String(localized: "sleep_timer_preset_45_min", table: "Localizable")) {
-                    onSelectSleepTimer?(45)
-                }
-                Button(String(localized: "sleep_timer_preset_60_min", table: "Localizable")) {
-                    onSelectSleepTimer?(60)
-                }
-
-                // Cancel only when a timer is currently active.
-                if let remaining = sleepTimerRemaining, remaining > 0 {
-                    Button(
-                        String(localized: "sleep_timer_cancel_timer", table: "Localizable"),
-                        role: .destructive
-                    ) {
-                        onCancelSleepTimer?()
-                    }
-                }
-
-                // Privacy: clear recent playback/widget/Live Activity App Group state (not Core security data).
-                // Arm only — invoke onClearLocalStateTapped after isPresented is false
-                // (SleepTimerPrivacyClearPresentation). The host then waits for leftover
-                // glass popover hosts before presenting the secondary UIAlert.
-                // - SeeAlso: SharedPlayerManager.clearAllLocalState,
-                //   SleepTimerPrivacyClearPresentation,
-                //   ViewController.presentCoordinatorAlertAfterOutgoingPresentationSettles,
-                //   <doc:Architecture>, CODING_AGENT.md.
-                Button(
-                    String(localized: "clear_local_state_title", table: "Localizable"),
-                    role: .destructive
-                ) {
-                    armPrivacyClearConfirmAfterDialogDismisses()
-                }
-            }
-            .onChange(of: isShowingSleepTimerDialog) { _, isShowing in
-                presentPendingPrivacyClearConfirmIfReady(dialogIsPresented: isShowing)
-            }
+            // Sleep timer: ``SleepTimerMenuButton`` is the sole `.confirmationDialog`.
+            // Equatable so a status / metadata paint does not build a second glass host.
+            // Width correction: ``SleepTimerGlassPopoverLayout`` while the dialog is up.
+            SleepTimerMenuButton(
+                sleepTimerRemaining: sleepTimerRemaining,
+                sleepTimerAccessibilityValue: sleepTimerAccessibilityValue,
+                onSelectSleepTimer: onSelectSleepTimer,
+                onCancelSleepTimer: onCancelSleepTimer,
+                onClearLocalStateTapped: onClearLocalStateTapped
+            )
+            .equatable()
 
             // Status pill consumes the narrow cached presentation passed in.
             // Invalidation boundary is limited to statusPresentation changes only.
             StatusPill(presentation: statusPresentation)
         }
         .frame(height: 50)
-    }
-
-    /// Arms the privacy-clear confirm and invokes it immediately only if SwiftUI
-    /// has already flipped the confirmationDialog `isPresented` binding to false.
-    ///
-    /// Otherwise ``presentPendingPrivacyClearConfirmIfReady(dialogIsPresented:)``
-    /// runs from `.onChange` when the dialog finishes dismissing.
-    ///
-    /// - SeeAlso: ``SleepTimerPrivacyClearPresentation``
-    private func armPrivacyClearConfirmAfterDialogDismisses() {
-        pendingPrivacyClearConfirm = true
-        presentPendingPrivacyClearConfirmIfReady(dialogIsPresented: isShowingSleepTimerDialog)
-    }
-
-    /// Invokes `onClearLocalStateTapped` when a privacy confirm is pending and the
-    /// sleep-timer confirmationDialog is no longer presented.
-    ///
-    /// - Parameter dialogIsPresented: Current `isShowingSleepTimerDialog` value
-    ///   (from the binding or from `.onChange`).
-    /// - SeeAlso: ``SleepTimerPrivacyClearPresentation/shouldInvokePrivacyClearConfirm(dialogIsPresented:pendingPrivacyConfirm:)``
-    private func presentPendingPrivacyClearConfirmIfReady(dialogIsPresented: Bool) {
-        guard SleepTimerPrivacyClearPresentation.shouldInvokePrivacyClearConfirm(
-            dialogIsPresented: dialogIsPresented,
-            pendingPrivacyConfirm: pendingPrivacyClearConfirm
-        ) else {
-            return
-        }
-        pendingPrivacyClearConfirm = false
-        onClearLocalStateTapped?()
     }
 
     /// Shared pause request from the `Button` action and the `toggle_playback`
@@ -331,6 +254,155 @@ struct PlaybackControlsView: View {
             pausePressFeedbackToken += 1
         }
         onPause()
+    }
+}
+
+// MARK: - Sleep-timer menu (sole confirmationDialog)
+
+/// Moon button and the only sleep-timer `.confirmationDialog`.
+///
+/// Equatable inputs are cancel-timer availability and the minute accessibility
+/// string. ``PlaybackControlsView`` reallocates action closures on every status
+/// paint. Putting those closures in `==` would treat the button as changed and
+/// SwiftUI would build a second `GlassPopoverContentViewRepresentable` while the
+/// dialog is up. The closures capture the stable view model and host for the
+/// life of the screen; the first body that runs keeps calling them.
+///
+/// The moon-button action starts ``SleepTimerGlassPopoverLayout`` following the
+/// host width before `isPresented` becomes true. ``stopFollowingHostWidth()``
+/// runs when the binding goes false, before ``onClearLocalStateTapped`` builds
+/// the secondary privacy alert.
+///
+/// - SeeAlso: ``PlaybackControlsView``,
+///   ``SleepTimerGlassPopoverLayout``,
+///   ``SleepTimerPrivacyClearPresentation``,
+///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority),
+///   CODING_AGENT.md
+struct SleepTimerMenuButton: View, Equatable {
+
+    /// Countdown input for ``==``. Nonisolated so equality stays off the main
+    /// actor: ``View`` isolation would otherwise make the `Equatable` witness
+    /// cross actors. Minute ticks of this value do not participate in ``==``.
+    nonisolated let sleepTimerRemaining: TimeInterval?
+    /// Minute-bucketed VoiceOver string. Same isolation reason as
+    /// ``sleepTimerRemaining``.
+    nonisolated let sleepTimerAccessibilityValue: String?
+    var onSelectSleepTimer: ((Int) -> Void)?
+    var onCancelSleepTimer: (() -> Void)?
+    var onClearLocalStateTapped: (() -> Void)?
+
+    /// Cancel-timer row is present only while a countdown is active.
+    /// Minute ticks inside the same spoken accessibility string do not flip this.
+    nonisolated var cancelTimerIsAvailable: Bool {
+        (sleepTimerRemaining ?? 0) > 0
+    }
+
+    /// Ignores action closures. Those are reallocated on every status paint.
+    nonisolated static func == (lhs: SleepTimerMenuButton, rhs: SleepTimerMenuButton) -> Bool {
+        lhs.cancelTimerIsAvailable == rhs.cancelTimerIsAvailable
+            && lhs.sleepTimerAccessibilityValue == rhs.sleepTimerAccessibilityValue
+    }
+
+    @State private var isShowingSleepTimerDialog = false
+    @State private var pendingPrivacyClearConfirm = false
+
+    var body: some View {
+        Button {
+            // Arm before SwiftUI presents, so the first content-width assignment
+            // is already gated. ``SleepTimerGlassPopoverLayout``.
+            SleepTimerGlassPopoverLayout.beginFollowingHostWidth()
+            isShowingSleepTimerDialog = true
+        } label: {
+            Image(systemName: cancelTimerIsAvailable ? "moon.zzz.fill" : "moon.zzz")
+                .font(.system(size: 22, weight: .medium))
+                .frame(width: 44, height: 44)
+                .foregroundStyle(cancelTimerIsAvailable ? Color.indigo : .secondary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(String(localized: "accessibility_label_sleep_timer", table: "Localizable"))
+        .accessibilityHint(String(localized: "accessibility_hint_sleep_timer", table: "Localizable"))
+        // Pre-derived minute string. Empty when no timer is active.
+        .accessibilityValue(sleepTimerAccessibilityValue ?? "")
+        .confirmationDialog(
+            String(localized: "sleep_timer_sheet_title", table: "Localizable"),
+            isPresented: $isShowingSleepTimerDialog,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "sleep_timer_preset_15_min", table: "Localizable")) {
+                onSelectSleepTimer?(15)
+            }
+            Button(String(localized: "sleep_timer_preset_30_min", table: "Localizable")) {
+                onSelectSleepTimer?(30)
+            }
+            Button(String(localized: "sleep_timer_preset_45_min", table: "Localizable")) {
+                onSelectSleepTimer?(45)
+            }
+            Button(String(localized: "sleep_timer_preset_60_min", table: "Localizable")) {
+                onSelectSleepTimer?(60)
+            }
+
+            if cancelTimerIsAvailable {
+                Button(
+                    String(localized: "sleep_timer_cancel_timer", table: "Localizable"),
+                    role: .destructive
+                ) {
+                    onCancelSleepTimer?()
+                }
+            }
+
+            // Pending confirm only. Invoke onClearLocalStateTapped after isPresented
+            // is false (SleepTimerPrivacyClearPresentation). The width correction
+            // stops on that transition. The host then waits for leftover glass hosts.
+            // - SeeAlso: SleepTimerPrivacyClearPresentation,
+            //   SleepTimerGlassPopoverLayout,
+            //   ViewController.presentCoordinatorAlertAfterOutgoingPresentationSettles,
+            //   CODING_AGENT.md.
+            Button(
+                String(localized: "clear_local_state_title", table: "Localizable"),
+                role: .destructive
+            ) {
+                armPrivacyClearConfirmAfterDialogDismisses()
+            }
+        }
+        .onChange(of: isShowingSleepTimerDialog) { _, isShowing in
+            if !isShowing {
+                SleepTimerGlassPopoverLayout.stopFollowingHostWidth()
+            }
+            presentPendingPrivacyClearConfirmIfReady(dialogIsPresented: isShowing)
+        }
+    }
+
+    /// Arms the privacy-clear confirm and invokes it immediately only if SwiftUI
+    /// has already flipped the confirmationDialog `isPresented` binding to false.
+    ///
+    /// Otherwise ``presentPendingPrivacyClearConfirmIfReady(dialogIsPresented:)``
+    /// runs from `.onChange` when the dialog finishes dismissing.
+    ///
+    /// - SeeAlso: ``SleepTimerPrivacyClearPresentation``
+    private func armPrivacyClearConfirmAfterDialogDismisses() {
+        pendingPrivacyClearConfirm = true
+        presentPendingPrivacyClearConfirmIfReady(dialogIsPresented: isShowingSleepTimerDialog)
+    }
+
+    /// Invokes `onClearLocalStateTapped` when a privacy confirm is pending and the
+    /// sleep-timer confirmationDialog is no longer presented.
+    ///
+    /// Stops ``SleepTimerGlassPopoverLayout`` following the host before the closure
+    /// so the secondary alert’s own width is not retargeted to the glass host.
+    ///
+    /// - Parameter dialogIsPresented: Current `isShowingSleepTimerDialog` value.
+    /// - SeeAlso: ``SleepTimerPrivacyClearPresentation/shouldInvokePrivacyClearConfirm(dialogIsPresented:pendingPrivacyConfirm:)``,
+    ///   ``SleepTimerGlassPopoverLayout/stopFollowingHostWidth()``
+    private func presentPendingPrivacyClearConfirmIfReady(dialogIsPresented: Bool) {
+        guard SleepTimerPrivacyClearPresentation.shouldInvokePrivacyClearConfirm(
+            dialogIsPresented: dialogIsPresented,
+            pendingPrivacyConfirm: pendingPrivacyClearConfirm
+        ) else {
+            return
+        }
+        pendingPrivacyClearConfirm = false
+        SleepTimerGlassPopoverLayout.stopFollowingHostWidth()
+        onClearLocalStateTapped?()
     }
 }
 
@@ -394,15 +466,19 @@ enum PlaybackPausePressFeedback {
 /// while the dialog is still `isPresented`. That action builds a secondary
 /// `UIAlertController`; presenting it during the dialog action races iOS 26+
 /// `GlassPopoverContentViewRepresentable` (autoresizing width 320) against
-/// `_UIAlertControllerPhoneTVMacView` (~357pt). UIKit recovers by breaking the
-/// alert constraint. The row only arms a pending flag; the coordinator runs
-/// after `isPresented` is false. The host then waits for leftover glass hosts
-/// to leave the window scene before `present`.
+/// `_UIAlertControllerPhoneTVMacView` content that is wider than that host.
+/// The row only arms a pending flag; the coordinator runs after `isPresented`
+/// is false. ``SleepTimerGlassPopoverLayout`` has already stopped following the
+/// host by then.
+/// The host then waits for leftover glass hosts to leave the window scene
+/// before `present`.
 ///
 /// This is present-timing only. Do not disable the confirmationDialog. Do not
 /// invent a second privacy surface.
 ///
 /// - SeeAlso: ``PlaybackControlsView``,
+///   ``SleepTimerMenuButton``,
+///   ``SleepTimerGlassPopoverLayout``,
 ///   ``CoordinatorAlertPresentationSettle``,
 ///   ``ViewController/presentCoordinatorAlertAfterOutgoingPresentationSettles(_:)``,
 ///   ``RadioPlayerCoordinator/confirmAndClearLocalState()``,
@@ -417,8 +493,8 @@ enum SleepTimerPrivacyClearPresentation {
     ///     `isPresented` binding.
     ///   - pendingPrivacyConfirm: Armed by the destructive row; not yet consumed.
     /// - Returns: `true` only when a confirm is pending **and** the dialog has
-    ///   already dismissed. Presenting while `dialogIsPresented` is true is the
-    ///   320-vs-357 glass overlap.
+    ///   already dismissed. Presenting while `dialogIsPresented` is true overlaps
+    ///   the glass host (autoresizing width 320) with a wider alert content width.
     /// - SeeAlso: ``CoordinatorAlertPresentationSettle/canPresentCoordinatorAlert(outgoingPresentedViewController:sceneContainsGlassPopoverHost:)``
     static func shouldInvokePrivacyClearConfirm(
         dialogIsPresented: Bool,
