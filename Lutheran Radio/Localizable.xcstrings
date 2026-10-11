@@ -99,6 +99,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -603,6 +609,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld harsuna"
+                }
+              }
+            }
+          }
+        },
+        "haw" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ʻōlelo"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ʻōlelo"
                 }
               }
             }
@@ -1386,6 +1410,12 @@
             "value" : "Danna sau biyu don zaɓar na'urar fitar da sauti"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E kaomi pālua no ke koho ʻana i ka hāmeʻa puka leo"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1688,6 +1718,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yana nuna bayani game da shirin rediyo na yanzu"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hōʻike i ka ʻike no ka papahana lekiō o kēia manawa"
           }
         },
         "hi" : {
@@ -1994,6 +2030,12 @@
             "value" : "Yana juya kunna ko dakatar da watsawar rediyo"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻololi i ka hoʻokani ʻana o ke kahawai lekiō"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2296,6 +2338,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zaɓi tsawon lokaci har sai watsawa ta tsaya"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E koho i ka lōʻihi a hoʻōki ka hoʻokani ʻana"
           }
         },
         "hi" : {
@@ -2602,6 +2650,12 @@
             "value" : "Yana daidaita ƙarar sautin watsawa"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻololi i ka leo o ka hoʻokani ʻana"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2901,6 +2955,12 @@
           }
         },
         "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "haw" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -3211,6 +3271,12 @@
             "value" : "Tambarin Lutheran Radio"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hōʻailona Lutheran Radio"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3513,6 +3579,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dakata"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻomaha"
           }
         },
         "hi" : {
@@ -3820,6 +3892,12 @@
             "value" : "Hoton %@"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiʻi o %@"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4122,6 +4200,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kunna"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻokani"
           }
         },
         "hi" : {
@@ -4428,6 +4512,12 @@
             "value" : "Agogon barci"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uaki hiamoe"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4730,6 +4820,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sauti"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leo"
           }
         },
         "hi" : {
@@ -5236,6 +5332,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "kashi ɗari %lld"
+                }
+              }
+            }
+          }
+        },
+        "haw" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pākēneka"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pākēneka"
                 }
               }
             }
@@ -6019,6 +6133,12 @@
             "value" : "Ci gaba"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻomau"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6321,6 +6441,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sake gwadawa"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻāʻo hou"
           }
         },
         "hi" : {
@@ -6627,6 +6753,12 @@
             "value" : "Yarda a wannan zama"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E ʻae no kēia manawa"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6929,6 +7061,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yarda koyaushe"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E ʻae mau"
           }
         },
         "hi" : {
@@ -7235,6 +7373,12 @@
             "value" : "Ba yanzu ba"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻAʻole i kēia manawa"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7537,6 +7681,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Goge"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Holoi"
           }
         },
         "hi" : {
@@ -7843,6 +7993,12 @@
             "value" : "An goge"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ua holoi ʻia"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8145,6 +8301,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wannan zai tsayar da watsawa, cire bayanan wijet da Live Activity, kuma goge kwanan nan na sauraro daga wannan na'ura. Ba za a iya soke wannan aikin ba."
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻōki kēia i ka hoʻokani ʻana, e holoi i ka ʻikepili widget a me Live Activity, a e holoi i ke kūlana hoʻolohe hou loa mai kēia hāmeʻa. ʻAʻole hiki ke hoʻihoʻi i kēia hana."
           }
         },
         "hi" : {
@@ -8451,6 +8613,12 @@
             "value" : "Goge yanayin watsawa na ciki"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E holoi i ke kūlana hoʻokani kūloko"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8753,6 +8921,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Saiti na wijet ɗin Lutheran Radio."
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻonohonoho no ka widget Lutheran Radio."
           }
         },
         "hi" : {
@@ -9060,6 +9234,12 @@
             "value" : "Kuskuren haɗi"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hewa hoʻohui"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9365,6 +9545,12 @@
             "value" : "Sarrafa watsawar Lutheran Radio kuma ka ga tashar yanzu."
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻomalu i ka hoʻokani ʻana o Lutheran Radio a e ʻike i ke kahawai o kēia manawa."
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9667,6 +9853,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sarrafa watsawa kuma ka canza tsakanin watsawar harsuna."
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻomalu i ka hoʻokani ʻana a e hoʻololi ma waena o nā kahawai ʻōlelo."
           }
         },
         "hi" : {
@@ -9974,6 +10166,12 @@
             "value" : "Rage sauti"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻēmi i ka leo"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10279,6 +10477,12 @@
             "value" : "Ƙara sauti"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻonui i ka leo"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10581,6 +10785,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ana kunna"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ke hoʻokani ʻia nei"
           }
         },
         "hi" : {
@@ -10888,6 +11098,12 @@
             "value" : "Harshe"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻŌlelo"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11190,6 +11406,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lambar harshe"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hōʻailona ʻōlelo"
           }
         },
         "hi" : {
@@ -11497,6 +11719,12 @@
             "value" : "Turanci"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pelekānia"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11800,6 +12028,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Istoniyanci"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻEsetonia"
           }
         },
         "hi" : {
@@ -12107,6 +12341,12 @@
             "value" : "Yaren Finland"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pinilana"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12410,6 +12650,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Jamusanci"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kelemānia"
           }
         },
         "hi" : {
@@ -12717,6 +12963,12 @@
             "value" : "Yaren Sweden"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuekene"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13020,6 +13272,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Watsawa kai tsaye"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Kahawai ola"
           }
         },
         "hi" : {
@@ -13327,6 +13585,12 @@
             "value" : "Na ciki kawai"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kūloko wale"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13627,6 +13891,12 @@
           }
         },
         "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "haw" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -13937,6 +14207,12 @@
             "value" : "Harshe na gaba"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻŌlelo aʻe"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14240,6 +14516,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kunna/Dakata"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻokani/Hoʻomaha"
           }
         },
         "hi" : {
@@ -14547,6 +14829,12 @@
             "value" : "Watsawa"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻokani ʻana"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14850,6 +15138,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Harshe na baya"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻŌlelo mamua"
           }
         },
         "hi" : {
@@ -15156,6 +15450,12 @@
             "value" : "Manhajar tana amfani da odat ɗin waya, wanda zai iya haifar da kuɗi gwargwadon shirin odat ɗinku."
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ke hoʻohana nei ka polokalamu i ka ʻikepili kelepona, a hiki ke piʻi ke kumukūʻai ma muli o kāu palapala ʻikepili."
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15458,6 +15758,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Amfani da odat ɗin waya"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ka hoʻohana ʻana i ka ʻikepili kelepona"
           }
         },
         "hi" : {
@@ -15764,6 +16070,12 @@
             "value" : "Babu bayanin waƙa"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻAʻohe ʻike mele"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16068,6 +16380,12 @@
             "value" : "Ana kunna yanzu"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ke hoʻokani nei"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16367,6 +16685,12 @@
           }
         },
         "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "haw" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -16677,6 +17001,12 @@
             "value" : "Buɗe manhaja da farko"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E wehe mua i ka polokalamu"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16981,6 +17311,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dakatar da Lutheran Radio"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻomaha iā Lutheran Radio"
           }
         },
         "hi" : {
@@ -17288,6 +17624,12 @@
             "value" : "Dakatar da watsawar Lutheran Radio."
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻomaha i ka hoʻokani ʻana o Lutheran Radio."
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17590,6 +17932,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kunna"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻokani"
           }
         },
         "hi" : {
@@ -17897,6 +18245,12 @@
             "value" : "Kunna Lutheran Radio"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻokani iā Lutheran Radio"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18199,6 +18553,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kunna ko dakatar da Lutheran Radio."
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻokani a i ʻole e hoʻomaha iā Lutheran Radio."
           }
         },
         "hi" : {
@@ -18506,6 +18866,12 @@
             "value" : "Kunna ko ci gaba da Lutheran Radio."
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻokani a i ʻole e hoʻomaka hou iā Lutheran Radio."
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18808,6 +19174,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "An kasa fara watsawa saboda gazawar tabbatar da tsaro. Da fatan za a duba haɗin intanet ɗinku kuma ku tabbatar cewa manhajar tana da sabuntawa. Idan matsalar ta ci gaba, sake kunna manhajar ku gwada kuma."
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻAʻole hiki ke hoʻomaka i ka hoʻokani ʻana no ka hāʻule ʻana o ka hōʻoia palekana. E nānā i kou pili pūnaewele a e hōʻoia ua hou ka polokalamu. Inā mau ka pilikia, e hoʻomaka hou i ka polokalamu a e hoʻāʻo hou."
           }
         },
         "hi" : {
@@ -19114,6 +19486,12 @@
             "value" : "Tabbatar da tsaro ya gaza"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hāʻule ka hōʻoia palekana"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19417,6 +19795,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zaɓi %@"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E koho i %@"
           }
         },
         "hi" : {
@@ -19923,6 +20307,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "mintuna %lld sun saura"
+                }
+              }
+            }
+          }
+        },
+        "haw" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuke i koe"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuke i koe"
                 }
               }
             }
@@ -20706,6 +21108,12 @@
             "value" : "Soke agogo"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E kāpae i ka uaki"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21008,6 +21416,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "minti 15"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 minuke"
           }
         },
         "hi" : {
@@ -21314,6 +21728,12 @@
             "value" : "minti 30"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 minuke"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21616,6 +22036,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "minti 45"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 minuke"
           }
         },
         "hi" : {
@@ -21922,6 +22348,12 @@
             "value" : "minti 60"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 minuke"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22224,6 +22656,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Agogon barci"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uaki hiamoe"
           }
         },
         "hi" : {
@@ -22530,6 +22968,12 @@
             "value" : "Server ɗin watsawa sun sabunta takardun shaida na SSL. Manhajar tana aiki a yanayin daidaitawa. Da fatan za a sabunta zuwa sabuwar sigar da ta samu don tsaro mafi kyau."
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ua hoʻohou nā kikowaena kahawai i kā lākou palapala hōʻoia SSL. Ke hana nei ka polokalamu ma ke ʻano kūlike. E hoʻohou i ka mana hou loa ke loaʻa no ka palekana maikaʻi loa."
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22832,6 +23276,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "An sabunta takardar shaida"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ua hoʻohou ʻia ka palapala hōʻoia"
           }
         },
         "hi" : {
@@ -23139,6 +23589,12 @@
             "value" : "Fara ko ci gaba da watsawar Lutheran Radio."
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻomaka a i ʻole e hoʻomaka hou i ka hoʻokani ʻana o Lutheran Radio."
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23441,6 +23897,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fara ko tsayar da watsawar Lutheran Radio."
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻomaka a i ʻole e hoʻōki i ka hoʻokani ʻana o Lutheran Radio."
           }
         },
         "hi" : {
@@ -23747,6 +24209,12 @@
             "value" : "Cikawa"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻopiha"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24049,6 +24517,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Haɗa"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻohui"
           }
         },
         "hi" : {
@@ -24355,6 +24829,12 @@
             "value" : "Ya gaza"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hāʻule"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24659,6 +25139,12 @@
             "value" : "Ba kan layi"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻAʻohe pūnaewele"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24961,6 +25447,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dakata"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻomaha"
           }
         },
         "hi" : {
@@ -25268,6 +25760,12 @@
             "value" : "An dakata – Kira yana gudana"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻomaha – ke kelepona"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25571,6 +26069,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Watsawa ta gaza: %@"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hāʻule ka hoʻokani ʻana: %@"
           }
         },
         "hi" : {
@@ -25878,6 +26382,12 @@
             "value" : "Kunna"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻokani"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26180,6 +26690,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tsaro"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Palekana"
           }
         },
         "hi" : {
@@ -26486,6 +27002,12 @@
             "value" : "An sabunta takardar shaida ta SSL - sabunta manhaja nan ba da jimawa ba"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ua hoʻohou ʻia ka palapala hōʻoia SSL - e hoʻohou koke i ka polokalamu"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26788,6 +27310,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "An tsaya"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ua hoʻōki"
           }
         },
         "hi" : {
@@ -27094,6 +27622,12 @@
             "value" : "Kashe"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pio"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27396,6 +27930,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Na'ura mai zafi"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wela ka hāmeʻa"
           }
         },
         "hi" : {
@@ -27702,6 +28242,12 @@
             "value" : "Watsawar ba ta samuwa a ɗan lokaci. Da fatan za a sake gwadawa daga baya."
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻAʻole loaʻa ka hoʻolaha i kēia manawa. E hoʻāʻo hou ma hope."
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28004,6 +28550,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Watsawar ba ta samuwa"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻAʻole loaʻa ka hoʻolaha"
           }
         },
         "hi" : {
@@ -28311,6 +28863,12 @@
             "value" : "Canza watsawar harshen Lutheran Radio."
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻololi i ke kahawai ʻōlelo o Lutheran Radio."
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28613,6 +29171,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Canza watsawa"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻololi i ke kahawai"
           }
         },
         "hi" : {
@@ -28920,6 +29484,12 @@
             "value" : "Canza zuwa %@"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻololi i %@"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29222,6 +29792,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Canza zuwa watsawar harshe daban daga Live Activity."
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻololi i kekahi kahawai ʻōlelo ʻē aʻe mai Live Activity."
           }
         },
         "hi" : {
@@ -29528,6 +30104,12 @@
             "value" : "Canza zuwa watsawar harshe daban."
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻololi i kekahi kahawai ʻōlelo ʻē aʻe."
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29831,6 +30413,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "An canza zuwa %@"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ua hoʻololi ʻia i %@"
           }
         },
         "hi" : {
@@ -30139,6 +30727,12 @@
             "value" : "Taɓa don buɗewa"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E kaomi no ka wehe ʻana"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30442,6 +31036,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Juya Lutheran Radio"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻololi iā Lutheran Radio"
           }
         },
         "hi" : {
@@ -30748,6 +31348,12 @@
             "value" : "Juya watsawar Lutheran Radio"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻololi i ka hoʻokani ʻana o Lutheran Radio"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31050,6 +31656,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Juya kunna/dakata daga Live Activity."
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻololi i ka hoʻokani/hoʻomaha mai Live Activity."
           }
         },
         "hi" : {
@@ -31355,6 +31967,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Juya watsawa"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻololi i ka hoʻokani ʻana"
           }
         },
         "hi" : {
@@ -31861,6 +32479,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "An saita sauti zuwa kashi ɗari %lld"
+                }
+              }
+            }
+          }
+        },
+        "haw" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ua hoʻonohonoho ʻia ka leo i ka %lld pākēneka"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ua hoʻonohonoho ʻia ka leo i ka %lld pākēneka"
                 }
               }
             }
@@ -32642,6 +33278,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Saitin wijet"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoʻonohonoho widget"
           }
         },
         "hi" : {

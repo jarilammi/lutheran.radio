@@ -100,6 +100,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
