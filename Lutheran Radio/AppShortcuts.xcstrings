@@ -100,6 +100,12 @@
             "value" : "Dakata ${applicationName}"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻomaha iā ${applicationName}"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -403,6 +409,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kunna ${applicationName}"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻokani iā ${applicationName}"
           }
         },
         "hi" : {
@@ -710,6 +722,12 @@
             "value" : "Kunna ${applicationName} a ${language}"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻokani iā ${applicationName} ma ka ʻōlelo ${language}"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1013,6 +1031,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fara ${applicationName}"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻomaka iā ${applicationName}"
           }
         },
         "hi" : {
@@ -1320,6 +1344,12 @@
             "value" : "Tsaya ${applicationName}"
           }
         },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻōki iā ${applicationName}"
+          }
+        },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1623,6 +1653,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Canza ${applicationName} zuwa ${language}"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E hoʻololi iā ${applicationName} i ka ʻōlelo ${language}"
           }
         },
         "hi" : {

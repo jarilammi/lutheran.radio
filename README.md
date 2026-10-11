@@ -51,6 +51,7 @@ The app is fully localized in the following languages:
 - German (de)
 - Greek (el)
 - Hausa (ha)
+- Hawaiian (haw)
 - Hindi (hi)
 - Hungarian (hu)
 - Icelandic (is)

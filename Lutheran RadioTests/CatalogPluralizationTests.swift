@@ -9,7 +9,7 @@
 //  interpolation so Foundation can select the CLDR category.
 //
 //  Coverage is both catalog structure and compiled runtime for every README
-//  Localizations language (50 codes), not a 10-locale subset. A missing or
+//  Localizations language (51 codes), not a 10-locale subset. A missing or
 //  wrong Slovak `few` string, a dropped Northern Sami `two`, or a missing
 //  Latvian `zero` must fail CI. Integer-unreachable `many` (cs, sk, lt) and
 //  decimal-only `other` (pl, ru, uk) are catalog-gated; integer probes skip them.
@@ -36,11 +36,11 @@ final class CatalogPluralizationTests: XCTestCase {
     /// a Polish `.lproj` without `locale: "pl"` still applies Finnish one/other rules.
     private let appBundle = Bundle(for: PlayerViewModel.self)
 
-    /// UI catalog languages: README Localizations / Localizable coverage (the 50
+    /// UI catalog languages: README Localizations / Localizable coverage (the 51
     /// language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "af", "am", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
-        "fo", "fr", "gag", "ha", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
+        "fo", "fr", "gag", "ha", "haw", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
         "lv", "mg", "nb", "ng", "nl", "nn", "om", "pl", "pt", "pt-BR", "ro", "ru",
         "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "ti", "uk", "yo", "zu",
         "zh-Hans", "zh-Hant",
@@ -77,6 +77,7 @@ final class CatalogPluralizationTests: XCTestCase {
         "fr": ["one", "other"],
         "gag": ["one", "other"],
         "ha": ["one", "other"],
+        "haw": ["one", "other"],
         "hi": ["one", "other"],
         "hr": ["one", "few", "other"],
         "hu": ["one", "other"],
@@ -130,7 +131,7 @@ final class CatalogPluralizationTests: XCTestCase {
         XCTAssertEqual(
             Set(requiredCatalogCategories.keys),
             Set(supportedLanguages),
-            "requiredCatalogCategories must list exactly the 50 UI catalog languages"
+            "requiredCatalogCategories must list exactly the 51 UI catalog languages"
         )
 
         let catalog = try loadLocalizableCatalog()
@@ -432,6 +433,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("gag", 2, "other", "2 minut kaldı"),
         .init("ha", 1, "one", "minti 1 ya saura"),
         .init("ha", 2, "other", "mintuna 2 sun saura"),
+        .init("haw", 1, "one", "1 minuke i koe"),
+        .init("haw", 2, "other", "2 minuke i koe"),
         .init("hi", 1, "one", "1 मिनट शेष"),
         .init("hi", 2, "other", "2 मिनट शेष"),
         .init("hr", 1, "one", "Još 1 minuta"),
@@ -553,6 +556,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("gag", 2, "other", "2 dil"),
         .init("ha", 1, "one", "1 harshe"),
         .init("ha", 2, "other", "2 harsuna"),
+        .init("haw", 1, "one", "1 ʻōlelo"),
+        .init("haw", 2, "other", "2 ʻōlelo"),
         .init("hi", 1, "one", "1 भाषा"),
         .init("hi", 2, "other", "2 भाषाएँ"),
         .init("hr", 1, "one", "1 jezik"),
@@ -674,6 +679,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("gag", 2, "other", "2 proţent"),
         .init("ha", 1, "one", "kashi ɗari 1"),
         .init("ha", 2, "other", "kashi ɗari 2"),
+        .init("haw", 1, "one", "1 pākēneka"),
+        .init("haw", 2, "other", "2 pākēneka"),
         .init("hi", 1, "one", "1 प्रतिशत"),
         .init("hi", 2, "other", "2 प्रतिशत"),
         .init("hr", 1, "one", "1 posto"),
@@ -795,6 +802,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("gag", 2, "other", "Ses 2 proţentä ayarlandı"),
         .init("ha", 1, "one", "An saita sauti zuwa kashi ɗari 1"),
         .init("ha", 2, "other", "An saita sauti zuwa kashi ɗari 2"),
+        .init("haw", 1, "one", "Ua hoʻonohonoho ʻia ka leo i ka 1 pākēneka"),
+        .init("haw", 2, "other", "Ua hoʻonohonoho ʻia ka leo i ka 2 pākēneka"),
         .init("hi", 1, "one", "वॉल्यूम 1 प्रतिशत पर सेट किया गया"),
         .init("hi", 2, "other", "वॉल्यूम 2 प्रतिशत पर सेट किया गया"),
         .init("hr", 1, "one", "Glasnoća postavljena na 1 posto"),
