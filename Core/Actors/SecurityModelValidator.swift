@@ -187,7 +187,9 @@ private func deallocateDNSServiceRef(bits: UInt?, extra: DNSServiceRef? = nil) {
 /// 4. **Transient** (error, timeout, no validate bit, etc.) → next host; that host is
 ///    **fully trusted** if it returns an authoritative allow-list containing the expected model.
 /// - Success (model present **and** DNSSEC-validated) → result is cached for 1 hour in `UserDefaults`.
+///   A timestamp ahead of the device clock is discarded (it is not a cache hit).
 /// - Permanent failure → streaming is permanently disabled for the process lifetime.
+///   The success timestamp is removed and cannot revive `.failedPermanent`.
 ///
 /// The actor uses strict Swift 6 isolation. All public API is `async` where mutation
 /// or cross-actor access is involved. DNS-SD callback vs watchdog teardown is
@@ -235,12 +237,14 @@ public actor SecurityModelValidator {
     /// Validates that the app's embedded security model is currently approved.
     ///
     /// This is the primary entry point. It:
-    /// 1. Returns `true` immediately if a successful validation result is still within
-    ///    the 1-hour cache window.
-    /// 2. Otherwise performs DNS TXT queries in ``securityModelDomains`` order
+    /// 1. Returns `false` immediately when this process has already recorded
+    ///    ``ValidationState/failedPermanent``. A stored success timestamp cannot revive it.
+    /// 2. Returns `true` immediately if a successful validation result is still within
+    ///    the 1-hour cache window. A timestamp ahead of the device clock is discarded.
+    /// 3. Otherwise performs DNS TXT queries in ``securityModelDomains`` order
     ///    (authoritative answer stops the walk; only transient advances — see type-level
     ///    Behavior list and ``<doc:Security-Invariants>`` Invariant 1).
-    /// 3. Returns `true` only if the expected model appears in an authoritative TXT set.
+    /// 4. Returns `true` only if the expected model appears in an authoritative TXT set.
     ///
     /// On permanent failure the validator transitions to `.failedPermanent` and
     /// will continue returning `false` until the process exits.
@@ -256,13 +260,16 @@ public actor SecurityModelValidator {
             return false
         }
 
+        // Permanent denial outranks the success cache. Checking the cache first
+        // would let a clock step back into the stored hour undo an authoritative
+        // "model not in TXT" result (Invariant 1: process lifetime).
+        if validationState == .failedPermanent {
+            return false
+        }
+
         if isSuccessCacheFresh() {
             validationState = .success
             return true
-        }
-
-        if validationState == .failedPermanent {
-            return false
         }
 
         if let inFlight = inFlightValidation {
@@ -277,19 +284,38 @@ public actor SecurityModelValidator {
     }
 
     /// Returns whether a successful validation is still within the 1-hour cache window.
+    ///
+    /// A timestamp ahead of ``currentDate`` is discarded. `timeIntervalSince` is
+    /// negative in that case, and `age < modelCacheDuration` would stay true until
+    /// the device clock catches the future instant — longer than the 1-hour
+    /// success window in ``<doc:Security-Invariants>`` Invariant 1.
+    ///
+    /// ``ValidationState/failedPermanent`` is never a cache hit.
     private func isSuccessCacheFresh() -> Bool {
-        if validationState == .success,
-           let last = lastValidationTime,
-           currentDate().timeIntervalSince(last) < config.modelCacheDuration {
-            return true
+        if validationState == .failedPermanent {
+            return false
         }
 
-        if let last = lastValidationTime ?? UserDefaults.standard.object(forKey: userDefaultsKey) as? Date,
-           currentDate().timeIntervalSince(last) < config.modelCacheDuration {
-            return true
+        guard let last = lastValidationTime ?? UserDefaults.standard.object(forKey: userDefaultsKey) as? Date else {
+            return false
         }
 
-        return false
+        let age = currentDate().timeIntervalSince(last)
+        if age < 0 {
+            discardSuccessCacheTimestamp()
+            return false
+        }
+        return age < config.modelCacheDuration
+    }
+
+    /// Drops the in-memory and `UserDefaults` success timestamp.
+    ///
+    /// Used when the stored instant is ahead of the device clock, when an
+    /// authoritative TXT answer does not contain the model, and when a transient
+    /// retry explicitly invalidates the cache.
+    private func discardSuccessCacheTimestamp() {
+        lastValidationTime = nil
+        UserDefaults.standard.removeObject(forKey: userDefaultsKey)
     }
 
     /// Performs DNS TXT validation when cache is stale or absent. DEBUG "started" logs only here.
@@ -338,7 +364,10 @@ public actor SecurityModelValidator {
                     return true
                 } else {
                     // Does not contain it → permanent fail; stop (no fall-through).
+                    // Drop the previous success timestamp so a later clock step
+                    // cannot treat that hour as still authoritative.
                     validationState = .failedPermanent
+                    discardSuccessCacheTimestamp()
                     
                     #if DEBUG
                     print("[SecurityModelValidator] Permanent failure: '\(config.expectedSecurityModel)' not in TXT record from \(domain)")
@@ -425,7 +454,9 @@ public actor SecurityModelValidator {
     ///
     /// After calling this method, the next call to ``validateSecurityModel()`` or
     /// ``isCurrentlyValid()`` will perform a fresh DNS query (subject to normal
-    /// transient retry logic).
+    /// transient retry logic). The persisted `lastSecurityValidation` timestamp is
+    /// removed, not only the in-memory copy. Leaving it in `UserDefaults` would
+    /// let a clock step backward satisfy the success-cache check.
     ///
     /// Permanent failures (``ValidationState/failedPermanent``) are unaffected.
     /// Use this method only to recover from transient network conditions during testing
@@ -433,7 +464,7 @@ public actor SecurityModelValidator {
     public func resetTransientState() {
         if validationState == .failedTransient {
             validationState = .pending
-            lastValidationTime = nil
+            discardSuccessCacheTimestamp()
             #if DEBUG
             print("[SecurityModelValidator] Reset transient state → pending, cache invalidated")
             #endif

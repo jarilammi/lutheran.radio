@@ -121,40 +121,24 @@ struct CoreTests {
     /// Transition window for the next preferred-apex rotation is keyed to the live
     /// `*.siikkari.net` leaf (`notAfter` 2027-02-10) with a deliberate start on 2027-01-01.
     ///
-    /// Protects Invariant 4: window dates live only in ``SecurityConfiguration``; agents
-    /// must not leave the prior 2026-07-27…2026-08-26 cutover window after media cutover.
+    /// Protects Invariant 4: the bounds are absolute Gregorian GMT instants, not
+    /// ``Calendar.current`` (a Buddhist, Japanese, Hebrew, or Islamic calendar
+    /// reinterprets year 2027). Agents must not leave the prior 2026-07-27…2026-08-26
+    /// cutover window after media cutover.
     @Test func securityConfigurationTransitionWindowMatchesSiikkariLeafExpiryLeadIn() {
         let policy = SecurityConfiguration.current
-        var startComponents = DateComponents(calendar: .current, timeZone: .gmt)
-        startComponents.year = 2027
-        startComponents.month = 1
-        startComponents.day = 1
-        startComponents.hour = 0
-        startComponents.minute = 0
-        startComponents.second = 0
-        var endComponents = DateComponents(calendar: .current, timeZone: .gmt)
-        endComponents.year = 2027
-        endComponents.month = 2
-        endComponents.day = 10
-        endComponents.hour = 23
-        endComponents.minute = 59
-        endComponents.second = 59
+        // 2027-01-01 00:00:00 GMT and 2027-02-10 23:59:59 GMT.
+        let expectedStart = Date(timeIntervalSince1970: 1_798_761_600)
+        let expectedEnd = Date(timeIntervalSince1970: 1_802_303_999)
 
-        guard let expectedStart = Calendar.current.date(from: startComponents),
-              let expectedEnd = Calendar.current.date(from: endComponents) else {
-            Issue.record("Failed to build expected transition window dates")
-            return
-        }
         #expect(policy.transitionWindowStart == expectedStart)
         #expect(policy.transitionWindowEnd == expectedEnd)
         #expect(policy.transitionWindowStart < policy.transitionWindowEnd)
-        // Membership via bounds (wall-clock-independent; do not assert isInTransitionWindow).
-        let mid = expectedStart.addingTimeInterval(86_400)
-        let before = expectedStart.addingTimeInterval(-86_400)
-        let after = expectedEnd.addingTimeInterval(86_400)
-        #expect(mid >= policy.transitionWindowStart && mid <= policy.transitionWindowEnd)
-        #expect(!(before >= policy.transitionWindowStart && before <= policy.transitionWindowEnd))
-        #expect(!(after >= policy.transitionWindowStart && after <= policy.transitionWindowEnd))
+        #expect(policy.isInTransitionWindow(at: expectedStart))
+        #expect(policy.isInTransitionWindow(at: expectedEnd))
+        #expect(policy.isInTransitionWindow(at: expectedStart.addingTimeInterval(86_400)))
+        #expect(!policy.isInTransitionWindow(at: expectedStart.addingTimeInterval(-1)))
+        #expect(!policy.isInTransitionWindow(at: expectedEnd.addingTimeInterval(1)))
     }
 
 }

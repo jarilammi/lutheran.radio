@@ -83,7 +83,76 @@ struct CertificateValidatorTests {
         let mockTrust = createMockSecTrust()
         
         let isValid = await validator.validateServerTrust(mockTrust)
-        #expect(isValid == true, "Should be lenient during transition period")
+        #expect(isValid == true, "A pinned leaf stays accepted during the transition window")
+    }
+
+    /// Invariant 4: outside the Gregorian GMT window a leaf that is not on
+    /// ``pinnedFingerprintDigests`` is a hard failure even though this fixture
+    /// passes `SecTrustEvaluateWithError` (the test installs it as the sole anchor).
+    @Test(
+        "Pin mismatch outside the transition window is a hard failure",
+        arguments: [
+            Date(timeIntervalSince1970: 1_798_761_600 - 86_400),
+            Date(timeIntervalSince1970: 1_802_303_999 + 86_400)
+        ]
+    )
+    func validateServerTrust_unpinnedOutsideWindow(deviceDate: Date) async {
+        let validator = CertificateValidator(currentDate: { deviceDate })
+        let isValid = await validator.validateServerTrust(createUnpinnedSecTrust())
+        #expect(isValid == false)
+    }
+
+    /// Invariant 3 and 4: a leniency accept is not a 10-minute pin-cache hit.
+    /// After the latch drops, the next challenge must re-evaluate the leaf.
+    @Test("Leniency accept is not reused after the latch turns off")
+    func leniencyAcceptIsNotCachedAfterLatch() async {
+        let insideWindow = Date(timeIntervalSince1970: 1_798_761_600 + 3_600)
+        let validator = CertificateValidator(currentDate: { insideWindow })
+
+        // A fresh `SecTrust` per call. Reusing one value across `await` is a
+        // sending violation: `SecTrust` is not `Sendable`.
+        let first = await validator.validateServerTrust(createUnpinnedSecTrust())
+        #expect(first == true, "ATS fallback applies inside the window while the latch is on")
+
+        let latched = await validator.noteServerDateForTransitionLeniency(
+            serverDate: insideWindow.addingTimeInterval(301)
+        )
+        #expect(latched == false)
+
+        let second = await validator.validateServerTrust(createUnpinnedSecTrust())
+        #expect(second == false, "A leniency accept must not satisfy the pin-result cache")
+        let stillOff = await validator.allowTransitionLeniency
+        #expect(stillOff == false)
+    }
+
+    /// Invariant 4: skew or a device-in-window / server-outside mismatch disables
+    /// leniency for the process. A later in-skew `Date` must not turn it back on.
+    @Test("Server date observation never re-enables transition leniency")
+    func serverDateObservationDoesNotRearmLeniency() async {
+        let start = Date(timeIntervalSince1970: 1_798_761_600)
+        let inside = start.addingTimeInterval(30)
+        let mismatchValidator = CertificateValidator(currentDate: { inside })
+        let mismatchLatched = await mismatchValidator.noteServerDateForTransitionLeniency(
+            serverDate: start.addingTimeInterval(-30)
+        )
+        #expect(mismatchLatched == false, "Device inside the window and server outside latches leniency off")
+        let mismatchStaysOff = await mismatchValidator.noteServerDateForTransitionLeniency(serverDate: inside)
+        #expect(mismatchStaysOff == false)
+
+        let skewValidator = CertificateValidator(currentDate: { inside })
+        let skewLatched = await skewValidator.noteServerDateForTransitionLeniency(
+            serverDate: inside.addingTimeInterval(301)
+        )
+        #expect(skewLatched == false)
+        let skewStaysOff = await skewValidator.noteServerDateForTransitionLeniency(serverDate: inside)
+        #expect(skewStaysOff == false)
+
+        let beforeWindow = start.addingTimeInterval(-3_600)
+        let stillLenient = CertificateValidator(currentDate: { beforeWindow })
+        let allowed = await stillLenient.noteServerDateForTransitionLeniency(
+            serverDate: beforeWindow.addingTimeInterval(20)
+        )
+        #expect(allowed == true, "Skew inside 5 minutes and both clocks outside the window leaves the latch on")
     }
     
     // MARK: - Helpers
@@ -106,6 +175,30 @@ struct CertificateValidatorTests {
             fatalError("Failed to create mock SecTrust: \(status)")
         }
         
+        SecTrustSetAnchorCertificates(mockTrust, [cert] as CFArray)
+        return mockTrust
+    }
+
+    /// Leaf that is **not** on ``pinnedFingerprintDigests``.
+    ///
+    /// `SecTrustSetAnchorCertificates` makes `SecTrustEvaluateWithError` succeed so
+    /// the test reaches the runtime pin check. Production does not install this
+    /// certificate as a trust anchor. Validity is 2020-01-01 through 2036-01-01 GMT
+    /// so the system clock, not the transition window, is what the trust evaluation sees.
+    private func createUnpinnedSecTrust() -> SecTrust {
+        let unpinnedDERHex = "308201573081ffa003020102021412b1fc2cbbb59f804f114f22940b299505a0ce3b300a06082a8648ce3d040302301b3119301706035504030c10756e70696e6e65642e6578616d706c65301e170d3230303130313030303030305a170d3336303130313030303030305a301b3119301706035504030c10756e70696e6e65642e6578616d706c653059301306072a8648ce3d020106082a8648ce3d03010703420004f412bb1f6ced16551cc21240b88b96694a7ab0f15c81307a95535f0b2e912121a6a049cc120df6ab1872a7006968f8683819cc66fdef483c72ced1290f91931ca321301f301d0603551d0e041604141b7d4bc13886be706bbd1a6a4d22a0056acc13f6300a06082a8648ce3d040302034700304402207bdac94c3923bdd5c44ab314455022b4b6ecf080e9607b1833ea9a4823f39b50022056280733f1df43c126f2d3baa9409f42dede3910cb846a13b4e95912ea6acab8"
+        guard let der = Data(hexString: unpinnedDERHex) else {
+            fatalError("Invalid unpinned DER data in test helper")
+        }
+        guard let cert = SecCertificateCreateWithData(nil, der as CFData) else {
+            fatalError("Failed to create unpinned SecCertificate in test helper")
+        }
+        let policy = SecPolicyCreateBasicX509()
+        var trust: SecTrust?
+        let status = unsafe SecTrustCreateWithCertificates(cert, policy, &trust)
+        guard status == errSecSuccess, let mockTrust = trust else {
+            fatalError("Failed to create unpinned SecTrust: \(status)")
+        }
         SecTrustSetAnchorCertificates(mockTrust, [cert] as CFArray)
         return mockTrust
     }

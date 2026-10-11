@@ -50,8 +50,10 @@ Authoritative dates: `SecurityConfiguration.transitionWindowStart` / `transition
 
 - Window: **2027-01-01 00:00:00 GMT** through **2027-02-10 23:59:59 GMT**.
 - End aligns with live `*.siikkari.net` leaf `notAfter` on `livestream.siikkari.net`; start is a deliberate calendar lead-in.
+- The instants are Gregorian GMT. They are not derived from `Calendar.current`.
 - During the window, if the runtime pin list rejects the leaf, the validator may still trust ATS evaluation **only when** `allowTransitionLeniency` remains true **and** device vs HTTP `Date` skew is ≤ 5 minutes (`maxAllowedTimeSkew`).
-- Any detected time manipulation or window mismatch permanently disables leniency for the remainder of the process.
+- Any detected time manipulation or window mismatch permanently disables leniency for the remainder of the process. A later in-skew `Date` header does not turn the latch back on.
+- A leniency accept is not a 10-minute pin-cache hit. The next challenge re-checks the leaf.
 - Outside the window, fingerprint mismatches are hard failures regardless of ATS.
 
 Review and update the window on each leaf rotation via app release.

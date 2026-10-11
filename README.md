@@ -340,8 +340,8 @@ Those `simctl` commands do not erase the available simulator you still run tests
 
 | Item                          | Value / Note                                                                                                                                                                                                 | Source (always use via `Core/`)                                                    |
 |-------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
-| `expectedSecurityModel`       | `"montereypark"` (must be present in the live TXT for streaming to be allowed)                                                                                                                                    | `SecurityConfiguration.swift` (via `SecurityConfiguration.current`)                |
-| Live active models (DNS TXT)  | `dallas,montereypark` (live on primary; secondary/backup mirror for transient fallback)                                                                                            | `dig +short +dnssec TXT securitymodels.siikkari.net`                               |
+| `expectedSecurityModel`       | `"kailuakona"` (must be present in the live TXT for streaming to be allowed). | `SecurityConfiguration.swift` (via `SecurityConfiguration.current`)                |
+| Live active models (DNS TXT)  | `dallas,montereypark,kailuakona` (live on primary; secondary/backup mirror for transient fallback).                                                                                | `dig +short +dnssec TXT securitymodels.siikkari.net`                               |
 | Streaming media apex          | Sole apex: `siikkari.net` (`european.siikkari.net`, `livestream.siikkari.net`, language hosts). Use `preferredStreamingDomainSuffixes` / `streamingHostCandidates(leadingLabel:)` — never hard-code. | `SecurityConfiguration.current`                                                    |
 | DNS TXT model hosts (order)   | `securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk` (ordered host walk: authoritative answer stops; only transient advances — see Security Model Validation) | `securityModelDomains`                                                             |
 | Runtime leaf pins (authoritative) | `CertificateFingerprint` digests (raw 32-byte SHA-256 of leaf DER). Never compare hex strings at runtime. Validator accepts **any** entry in the list.                                                     | `pinnedFingerprintDigests`                                                         |
@@ -352,7 +352,7 @@ Those `simctl` commands do not erase the available simulator you still run tests
 | Model validation cache        | 1 hour (3600 s), success-only, in `UserDefaults` (`modelCacheDuration`). Failures always re-query. Distinct from certificate pin-result caching.                                                              | `SecurityConfiguration` + `SecurityModelValidator`                                 |
 | Certificate validation cache  | 10 minutes (600 s), success reuse in `CertificateValidator` (`certificateValidationCacheDuration`). Periodic HEAD revalidation in `DirectStreamingPlayer` uses the same constant.                             | `SecurityConfiguration` + `CertificateValidator`                                   |
 
-**AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The montereypark row in the history table is the current model (previous models are retained for the historical record and to prevent name reuse).
+**AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The `kailuakona` row is the embedded model for this build (previous models are retained for the historical record and to prevent name reuse).
 
 ### Media Apex Cutover & SSL Certificate Rotation (siikkari.net)
 
@@ -410,7 +410,7 @@ For enhanced security, the app uses two complementary pinning approaches:
 
 This dual approach provides defense-in-depth: SPKI handles baseline TLS security and rotations, while full pinning adds runtime enforcement. During the transition period (**2027-01-01 through 2027-02-10 GMT**, keyed to the live `*.siikkari.net` leaf expiry), runtime validation may allow pinning mismatches to fall back to ATS/SPKI (subject to time-skew protection) so a coordinated leaf rotation can complete without hard-stopping streams.
 
-The app also detects potential device time manipulation by comparing the device time with the server's Date header during validation. If a significant discrepancy (beyond 5 minutes) is detected, or if the device is in the transition period but the server is not, transition leniency is disabled. This mitigates risks of exploiting the transition window through time manipulation, ensuring stricter enforcement when anomalies are present.
+The app also detects potential device time manipulation by comparing the device time with the server's Date header during validation. If a significant discrepancy (beyond 5 minutes) is detected, or if the device is in the transition period but the server is not, transition leniency is disabled for the rest of the process. A later `Date` header inside the skew limit does not turn leniency back on. A leniency accept is not stored in the 10-minute pin-result cache, so the next challenge re-checks the leaf. This mitigates risks of exploiting the transition window through time manipulation, ensuring stricter enforcement when anomalies are present.
 
 This check enhances security without additional dependencies, while protecting app users and preserving a seamless streaming experience under normal conditions.
 
@@ -503,7 +503,7 @@ The app performs security model validation to confirm that the version in use ma
    **Secondary domain:** `securitymodels.lutheranradio.eu` (transient-only mirror of the allow-list)
    **Backup domain:** `securitymodels.lutheranradio.sk` (final transient fallback)
 2. **Mechanism:** Queries DNS TXT records (via `DNSServiceQueryRecord` + `kDNSServiceFlagsValidate`) from the ordered list of domains, applying the ordered host walk above.
-3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"montereypark"`, always read via `SecurityConfiguration.current`)
+3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"kailuakona"`, always read via `SecurityConfiguration.current`)
 4. **Location:** Enforced by the actor `Core/Actors/SecurityModelValidator.swift` (single source of truth for validation — see the Key Files table)
 5. **Behavior:** If the app’s security model isn’t in an **authoritative** TXT set from a responding host, playback is permanently disabled with a user-facing error message (no fall-through).
 
@@ -519,7 +519,7 @@ DNS TXT hosts on the ordered `securityModelDomains` list are expected to be unde
 
 When primary (or a fallback host) is queried with the DO (DNSSEC OK) bit set (e.g. `dig +dnssec`), the response includes:
 - The TXT record containing the comma-separated list of valid models:
-  `"dallas,montereypark"`
+  `"dallas,montereypark,kailuakona"`
 - An accompanying **RRSIG** signature.
 
 In current observed recursive responses, the **AD (Authenticated Data)** flag may **not** be set (`;; flags: qr rd ra` / `qr aa rd ra`), indicating that the recursive resolver did not perform (or did not assert) full DNSSEC validation when answering the query. Re-check primary and fallbacks with the Agent Verification Commands after any DNS publish.
@@ -581,11 +581,11 @@ dig +short +dnssec TXT securitymodels.lutheranradio.sk
 Example primary output (captured live; always re-verify with `dig` before relying on it):
 
 ```
-"dallas,montereypark"
-TXT 13 3 600 20260913050425 20260911030425 34505 siikkari.net. 2Dcn+uNqexb6IDlMqBjYZuBy/4PjWVxrada3rHGTt91IusBAFuFr8G9S r2TVyCnhHLsrcicxbXPN2rs8+6vFkA==
+"dallas,montereypark,kailuakona"
+TXT 13 3 600 20261012090932 20261010070932 34505 siikkari.net. OEJm2BYrW1hvsARH00OUm6T2sp2S88HO9V5z/T6LXOF2tNCO0wfHT5GZ 6TX/NTrcHYEyEbNvBuCiZJj58Ytugg==
 ```
 
-Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```montereypark```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed on a **validated** responding host, validation fails permanently for that host (no fall-through on permanent absence). To update the allow-list: publish / update the TXT on ```securitymodels.siikkari.net``` (primary) and keep secondary/backup (```securitymodels.lutheranradio.eu```, ```securitymodels.lutheranradio.sk```) consistent.
+Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```kailuakona```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed on a **validated** responding host, validation fails permanently for that host (no fall-through on permanent absence). To update the allow-list: publish / update the TXT on ```securitymodels.siikkari.net``` (primary) and keep secondary/backup (```securitymodels.lutheranradio.eu```, ```securitymodels.lutheranradio.sk```) consistent.
 
 See also: ``<doc:Security-Invariants>`` (Invariant 1), [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules).
 
@@ -597,9 +597,11 @@ To improve resilience against transient DNS failures (e.g., network instability 
 - **Duration:** 1 hour (3600 seconds) from the last successful validation.
 - **Storage:** A non-sensitive timestamp (`Date`) is stored in `UserDefaults` under the key `"lastSecurityValidation"`. No actual security models or TXT records are cached.
 - **Behavior:**
-  - On app launch or validation trigger: If a valid cache exists (timestamp within 1 hour), the app assumes success and proceeds with streaming.
+  - On app launch or validation trigger: If a valid cache exists (timestamp within 1 hour, and not ahead of the device clock), the app assumes success and proceeds with streaming.
+  - A stored timestamp ahead of the device clock is discarded. It is not a cache hit. Otherwise a clock correction would keep the success cache fresh until that future instant.
   - Cache is only updated on successful DNS fetches (i.e., when `SecurityConfiguration.expectedSecurityModel` appears in the TXT record).
   - Failures are **not** cached—full validation (DNS query) is always performed on failure, with permanent disablement if the model is invalid.
+  - An authoritative permanent failure removes the stored success timestamp. For the rest of that process, `.failedPermanent` is not returned to success by a timestamp that still falls inside the original hour.
   - Time handling uses an injectable `currentDate()` closure for testability and consistency.
 - **Security Considerations:**
   - The cache provides a short window during which a previously successful validation remains valid. If the DNS TXT record changes, devices with a recent cache may continue for up to 1 hour. This supports availability in low-connectivity scenarios.
@@ -624,9 +626,9 @@ This feature enhances availability while maintaining the app's privacy-first pri
 | File / Symbol                                              | Responsibility                                                                 | Important notes for agents |
 |------------------------------------------------------------|--------------------------------------------------------------------------------|----------------------------|
 | `Core/Configuration/SecurityConfiguration.swift`           | Single source of truth for all policy and constants (`expectedSecurityModel`, sole live leaf via `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests`, `isInTransitionWindow`, `transitionWindow*`, `maxAllowedTimeSkew`, `modelCacheDuration`, `certificateValidationCacheDuration`, `securityModelDomains`, `preferredStreamingDomainSuffixes`, `streamingHostCandidates(leadingLabel:)`, `hostRequiresDNSSECValidation`, `requiresDNSSECValidationForStreaming`, `makeSecureEphemeralConfiguration`, `current`) | Never duplicate these values elsewhere. Colon-hex views (`pinnedLeafFingerprint`, `pinnedSiikkariLeafFingerprint`, `pinnedFingerprints`) are for README/openssl parity only. DNS model cache (1 h) and certificate pin-result cache (10 min) are **distinct** constants. Streaming media apex (`siikkari.net` only) is **independent** of DNS TXT host order. Do not keep retired leaf digests on the production acceptance list. The secure session factory is the central point for `requiresDNSSECValidation` + cache hardening on streaming sessions. |
-| `Core/Actors/SecurityModelValidator.swift`                 | Actor-isolated DNS TXT security model validation against ordered `securityModelDomains` (`siikkari.net` primary → `lutheranradio.eu` → `lutheranradio.sk`) | Uses `kDNSServiceFlagsValidate` + explicit callback bit check for DNSSEC (strict). `Span<UInt8>` / `UTF8Span` zero-copy rdata borrow in `dns_sd` callback. 1-hour success-only cache via `modelCacheDuration`. Four-point ordered host walk (authoritative answer stops; only transient advances). Entry point: `validateSecurityModel()`. The **only** place DNS TXT logic is allowed. |
+| `Core/Actors/SecurityModelValidator.swift`                 | Actor-isolated DNS TXT security model validation against ordered `securityModelDomains` (`siikkari.net` primary → `lutheranradio.eu` → `lutheranradio.sk`) | Uses `kDNSServiceFlagsValidate` + explicit callback bit check for DNSSEC (strict). `Span<UInt8>` / `UTF8Span` zero-copy rdata borrow in `dns_sd` callback. 1-hour success-only cache via `modelCacheDuration`. A timestamp ahead of the device clock is discarded. `.failedPermanent` clears that timestamp and is not revived by the cache. Four-point ordered host walk (authoritative answer stops; only transient advances). Entry point: `validateSecurityModel()`. The **only** place DNS TXT logic is allowed. |
 | `Core/Security/CertificateFingerprint.swift`               | 32-byte SHA-256 DER digest type + stack-local hashing via `Data.span` + constant-time `constantTimeMatches` | Runtime code must never compare hex strings. Materializes colon-hex only for docs/tooling. |
-| `Core/Security/CertificateValidator.swift`                 | Runtime full-certificate (DER) pinning + 10-minute success cache (`certificateValidationCacheDuration`) + transition window + device/server time-skew protection | Complements (does not replace) ATS SPKI pinning from `Info.plist`. Uses `pinnedFingerprintDigests`. Must **not** read `modelCacheDuration`. Time skew > 5 min permanently disables leniency for the process. |
+| `Core/Security/CertificateValidator.swift`                 | Runtime full-certificate (DER) pinning + 10-minute **pin-match** cache (`certificateValidationCacheDuration`) + transition window + device/server time-skew protection | Complements (does not replace) ATS SPKI pinning from `Info.plist`. Uses `pinnedFingerprintDigests`. Must **not** read `modelCacheDuration`. Leniency accepts are not cached. Time skew > 5 min latches leniency off for the process and does not re-enable it. |
 | `DirectStreamingPlayer.swift` (+ domain extensions; streaming delegates) | Main audio engine façade; embeds security model in stream URLs; domain files own catalog, server selection, attach, recovery, resource loader, periodic Core pin HEAD revalidation; consumes validators; resource-loader sessions via the Core secure factory | Consumes the Core single sources of truth (including DNSSEC-enabled sessions). No policy duplication. Error classification treats DNSSEC-unavailable cases as transient. Isolation map on the façade documents domain ownership. Connect readiness is AVPlayer item status + resource-loader timeouts (no adaptive handshake-budget Task). TLS trust is Core pin + ATS SPKI only. |
 
 **Core Framework Surface Area (mandatory rule):** Any new security logic, certificate handling, or validation must be added inside `Core/` under the appropriate subdirectory (`Configuration/`, `Actors/`, or `Security/`) and exposed through the existing public types. Duplication in the main app, `LutheranRadioWidget/`, or elsewhere is not permitted.
@@ -750,6 +752,7 @@ This table is the source of truth for the historical record of security models (
 | `brenham`           | June 23, 2026      | August 26, 2026    | 26.5.2                 |
 | `dallas`            | August 1, 2026     | (ongoing)          | 26.6.0                 |
 | `montereypark`      | October 3, 2026    | (ongoing)          | 27.0.1                 |
+| `kailuakona`        | (pending)          | (pending)          | 27.0.2                 |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
@@ -768,11 +771,11 @@ When introducing a new security model (requires security review + documentation 
 6. Improve surrounding documentation per the Documentation & Comment Standards in [`CODING_AGENT.md`](CODING_AGENT.md) (add "Why", Security Invariant callouts, cross-links to ``<doc:Security-Invariants>`` and the Architecture article, update agent checklist context if needed).
 7. Run the mandatory find command + build/test gates. Include security impact assessment in the PR.
 
-See also: ``<doc:Security-Invariants>`` (Invariant 1 and "Enforcement"), "Verifying the Security Model" section above, [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules + "Current model = montereypark" + response style requirements).
+See also: ``<doc:Security-Invariants>`` (Invariant 1 and "Enforcement"), "Verifying the Security Model" section above, [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules + "Current model = kailuakona" + response style requirements).
 
 ### Why Track Security Model Names?
 
-Security model names (e.g., ```dallas```, ```montereypark```) are embedded in the app and validated against the DNS TXT record before any streaming is permitted. Once a name is used, it becomes part of the app's permanent history and may still exist in older App Store versions. Reusing a name could allow an older version to pass validation in some cases.
+Security model names (e.g., ```dallas```, ```montereypark```, ```kailuakona```) are embedded in the app and validated against the DNS TXT record before any streaming is permitted. Once a name is used, it becomes part of the app's permanent history and may still exist in older App Store versions. Reusing a name could allow an older version to pass validation in some cases.
 
 **Why this matters (explicit invariant):** The DNS TXT mechanism plus the history table together provide a forward-only, collision-resistant way to rotate the approved security implementation without breaking the "no bypass" rule or requiring clients to trust arbitrary future names.
 

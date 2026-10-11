@@ -333,6 +333,91 @@ struct SecurityModelValidatorTests {
         
         await restoreRealClock()
     }
+
+    /// Invariant 1: the success cache is exactly one hour. A stored timestamp
+    /// ahead of the device clock used to satisfy `age < modelCacheDuration`
+    /// because the age is negative, which skips DNS until that future instant.
+    @Test("Success timestamp ahead of the device clock does not skip DNS")
+    func futureSuccessTimestampDoesNotAuthorize() async {
+        await resetForDeterministicTest()
+        await restoreRealClock()
+
+        final class Counter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var _value = 0
+            var value: Int { lock.withLock { _value } }
+            func increment() { lock.withLock { _value += 1 } }
+        }
+        let counter = Counter()
+
+        await SecurityModelValidator._test_setTXTFetcher { _ in
+            counter.increment()
+            return [testExpectedSecurityModel]
+        }
+
+        let first = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(first == true)
+        #expect(counter.value == 1)
+
+        let clockBehindStoredSuccess = Date().addingTimeInterval(-7_200)
+        await SecurityModelValidator._test_setCurrentDate { clockBehindStoredSuccess }
+        await SecurityModelValidator._test_setTXTFetcher({ _ in
+            counter.increment()
+            return ["revoked-model"]
+        }, clearCache: false)
+
+        let second = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(second == false, "A future-dated success timestamp must not authorize streaming")
+        #expect(counter.value == 2, "DNS must run again after the future timestamp is discarded")
+        #expect(await SecurityModelValidator.shared.isPermanentlyInvalid)
+
+        await resetForDeterministicTest()
+        await restoreRealClock()
+    }
+
+    /// Invariant 1: `.failedPermanent` lasts for the process. Rolling the clock
+    /// back into the hour of an earlier success must not return the cache to
+    /// `.success` or query DNS again.
+    @Test("Permanent failure is not revived by a success timestamp still inside the hour")
+    func permanentFailureSurvivesClockRollback() async {
+        await resetForDeterministicTest()
+        await restoreRealClock()
+
+        await SecurityModelValidator._test_setTXTFetcher { _ in
+            [testExpectedSecurityModel]
+        }
+        let initial = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(initial == true)
+
+        await forceFutureClock()
+        await SecurityModelValidator._test_setTXTFetcher({ _ in
+            ["some-other-model"]
+        }, clearCache: false)
+        let denied = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(denied == false)
+        #expect(await SecurityModelValidator.shared.isPermanentlyInvalid)
+
+        final class Counter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var _value = 0
+            var value: Int { lock.withLock { _value } }
+            func increment() { lock.withLock { _value += 1 } }
+        }
+        let counter = Counter()
+        await restoreRealClock()
+        await SecurityModelValidator._test_setTXTFetcher({ _ in
+            counter.increment()
+            return [testExpectedSecurityModel]
+        }, clearCache: false)
+
+        let revived = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(revived == false)
+        #expect(await SecurityModelValidator.shared.isPermanentlyInvalid)
+        #expect(counter.value == 0, "Permanent failure must not re-query or honor the old success hour")
+
+        await resetForDeterministicTest()
+        await restoreRealClock()
+    }
 }
 
 // MARK: - QueryContext claim-once (Mutex session, no DNS)

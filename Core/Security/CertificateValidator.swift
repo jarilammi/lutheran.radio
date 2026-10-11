@@ -17,11 +17,14 @@ import Foundation
 /// ## Key Responsibilities
 /// - Performs system trust evaluation (includes ATS SPKI pinning and chain validation).
 /// - Verifies the leaf certificate's full DER SHA-256 fingerprint.
-/// - Caches **successful** pin results for ``SecurityConfiguration/certificateValidationCacheDuration``
-///   (10 minutes). This is intentionally separate from the 1-hour DNS TXT model cache
-///   (``SecurityConfiguration/modelCacheDuration``).
+/// - Caches **pin matches** for ``SecurityConfiguration/certificateValidationCacheDuration``
+///   (10 minutes). A transition-window leniency accept is not a cache hit: the next
+///   challenge re-checks the leaf. This cache is separate from the 1-hour DNS TXT
+///   model cache (``SecurityConfiguration/modelCacheDuration``). A cached pin timestamp
+///   ahead of the device clock is not reused.
 /// - Enforces the certificate transition window with device/server time-skew protection
-///   (see ``<doc:Security-Invariants>``).
+///   (see ``<doc:Security-Invariants>``). ``allowTransitionLeniency`` starts `true` and
+///   latches `false` for the rest of the process; a later `Date` header must not turn it back on.
 ///
 /// ## Concurrency
 /// The validator is an `actor`, making all state mutations (cache, leniency flag) isolated.
@@ -40,11 +43,19 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// caches and transition state that would be lost with additional instances.
     public static let shared = CertificateValidator()
     
-    /// Barrier flag to allow leniency during transition, mitigating date manipulation risks.
-    /// Defaults to true (lenient, trusting ATS on mismatch); set to false if manipulation detected (e.g., via server time check).
+    /// Process-lifetime latch for transition-window ATS fallback.
+    ///
+    /// Starts `true`. ``noteServerDateForTransitionLeniency(serverDate:)`` sets it
+    /// `false` when device/server skew exceeds ``SecurityConfiguration/maxAllowedTimeSkew``
+    /// or the device clock is inside the window while the server clock is not.
+    /// Nothing sets it back to `true`. Invariant 4 in ``<doc:Security-Invariants>``.
     var allowTransitionLeniency: Bool = true
     
-    /// Timestamp of the last validation attempt.
+    /// Timestamp of the last **pin-match** cache entry (or of a hard failure).
+    ///
+    /// A leniency accept does not refresh this. Combined with ``lastValidationResult``,
+    /// the early return in ``validateServerTrust(_:)`` reuses only pin matches whose
+    /// age is in `0 ..< certificateValidationCacheDuration`.
     private var lastValidationTime: Date?
     
     /// How long a successful pin result may be reused without re-evaluation.
@@ -56,8 +67,17 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         SecurityConfiguration.current.certificateValidationCacheDuration
     }
     
-    /// Cached result of the last validation.
+    /// `true` only after a leaf digest matched ``SecurityConfiguration/pinnedFingerprintDigests``.
+    ///
+    /// Leniency accepts leave this `false` so they cannot satisfy the pin-result cache.
     private var lastValidationResult: Bool = false
+    
+    /// Outcome of the most recent ``validateServerTrust(_:)`` call, including leniency.
+    ///
+    /// ``validateServerCertificate(for:)`` must read this rather than ``lastValidationResult``.
+    /// The HEAD `Date` header is not available until after the challenge, and a leniency
+    /// accept is intentionally absent from the pin-result cache.
+    private var lastChallengeAccepted = false
     
     /// Formatter for parsing HTTP Date headers (RFC 7231 format: "EEE, dd MMM yyyy HH:mm:ss zzz").
     private lazy var httpDateFormatter: DateFormatter = {
@@ -106,8 +126,11 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// It performs the full security evaluation (system trust + fingerprint pinning)
     /// while respecting the current transition window and time-skew policy.
     ///
-    /// Results that succeed are cached for ``SecurityConfiguration/certificateValidationCacheDuration``
-    /// (10 minutes). The method is safe to call from any context; all state access is actor-isolated.
+    /// Pin matches are cached for ``SecurityConfiguration/certificateValidationCacheDuration``
+    /// (10 minutes). Transition-window leniency accepts are not cached. The device
+    /// clock is ``currentDate`` (production: `Date()`), including for the window test
+    /// ``SecurityConfiguration/isInTransitionWindow(at:)``. The method is safe to call
+    /// from any context; all state access is actor-isolated.
     ///
     /// - Parameter serverTrust: The `SecTrust` from an `NSURLAuthenticationMethodServerTrust` challenge.
     /// - Returns: `true` if the server should be trusted, `false` if the connection must be rejected.
@@ -115,13 +138,19 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// - SeeAlso: ``validateServerCertificate(for:)``, ``<doc:Security-Invariants>``,
     ///   ``SecurityConfiguration/certificateValidationCacheDuration``
     public func validateServerTrust(_ serverTrust: SecTrust) async -> Bool {
-        if let lastTime = lastValidationTime,
-           Date().timeIntervalSince(lastTime) < validationInterval,
-           lastValidationResult {
-            #if DEBUG
-            print("[CertificateValidator] Using cached valid result from \(lastTime)")
-            #endif
-            return true
+        // `currentDate` is the device clock for this actor (production: `Date()`).
+        // A negative age means the cached instant is ahead of that clock; reusing it
+        // would stretch the 10-minute pin cache until the clock catches up.
+        let now = currentDate()
+        if let lastTime = lastValidationTime {
+            let age = now.timeIntervalSince(lastTime)
+            if age >= 0, age < validationInterval, lastValidationResult {
+                #if DEBUG
+                print("[CertificateValidator] Using cached pin match from \(lastTime)")
+                #endif
+                lastChallengeAccepted = true
+                return true
+            }
         }
         
         var error: CFError?
@@ -129,8 +158,9 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
             #if DEBUG
             print("[CertificateValidator] System trust evaluation failed: \(error?.localizedDescription ?? "Unknown error")")
             #endif
-            lastValidationTime = Date()
+            lastValidationTime = now
             lastValidationResult = false
+            lastChallengeAccepted = false
             return false
         }
         
@@ -139,17 +169,16 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         
         let isValid: Bool
         
-        // Use fresh Date() for each check — cheap and consistent with config.isInTransitionWindow
-        if Date() > config.transitionWindowEnd {
+        if now > config.transitionWindowEnd {
             isValid = isPinnedValid
             #if DEBUG
-            let now = Date()
-            print("[CertificateValidator] Fingerprint validation failed after transition window at \(now).")
+            if !isPinnedValid {
+                print("[CertificateValidator] Fingerprint validation failed after transition window at \(now).")
+            }
             #endif
-        } else if config.isInTransitionWindow {
+        } else if config.isInTransitionWindow(at: now) {
             if !isPinnedValid {
                 #if DEBUG
-                let now = Date()
                 print("[CertificateValidator] Fingerprint mismatch during transition window at \(now). " +
                       "Leniency: \(allowTransitionLeniency ? "allowed (ATS fallback)" : "disabled")")
                 #endif
@@ -160,17 +189,28 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         } else {
             isValid = isPinnedValid
             #if DEBUG
-            let now = Date()
-            print("[CertificateValidator] Fingerprint validation failed before transition window at \(now).")
+            if !isPinnedValid {
+                print("[CertificateValidator] Fingerprint validation failed before transition window at \(now).")
+            }
             #endif
         }
         
-        let nowForCache = Date()  // only once for cache timestamp
-        lastValidationTime = nowForCache
-        lastValidationResult = isValid
+        lastChallengeAccepted = isValid
+        if isPinnedValid {
+            // Invariant 3: cache pin matches only. A leniency accept must be
+            // re-checked on the next challenge so a latched-off flag takes effect
+            // inside the 10-minute window.
+            lastValidationTime = now
+            lastValidationResult = true
+        } else {
+            lastValidationResult = false
+            if !isValid {
+                lastValidationTime = now
+            }
+        }
         
         #if DEBUG
-        print("[CertificateValidator] Certificate validation \(isValid ? "succeeded" : "failed") at \(nowForCache)")
+        print("[CertificateValidator] Certificate validation \(isValid ? "succeeded" : "failed") at \(now)")
         #endif
         
         return isValid
@@ -190,6 +230,10 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     ///
     /// DNS resolution for the target host is authenticated via DNSSEC (when the policy is enabled)
     /// before the TLS challenge is even delivered to this validator.
+    ///
+    /// When the response carries an HTTP `Date` header, that instant is applied to the
+    /// one-way leniency latch. The returned bool is the challenge outcome. A latched-off
+    /// flag does not by itself reject a leaf that matched ``pinnedFingerprintDigests``.
     ///
     /// - Parameter url: The HTTPS URL of the audio stream (must use HTTPS).
     /// - Returns: `true` if the server certificate is acceptable under current policy.
@@ -216,48 +260,21 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         do {
             let (_, response) = try await session.data(for: request)  // ← modern async API
             
-            let isValid = lastValidationResult  // set by the async challenge handler
+            // Challenge outcome, including a one-shot leniency accept. Do not read
+            // `lastValidationResult` here: that flag is pin-match cache state and
+            // stays false when leniency allowed this handshake.
+            let challengeAccepted = lastChallengeAccepted
             
-            // Manipulation detection (updated to use central config)
-            if isValid, let httpResponse = response as? HTTPURLResponse,
+            if challengeAccepted, let httpResponse = response as? HTTPURLResponse,
                let dateStr = httpResponse.value(forHTTPHeaderField: "Date"),
                let serverDate = self.httpDateFormatter.date(from: dateStr) {
-                
-                self.allowTransitionLeniency = true
-                
-                let deviceDate = self.currentDate()
-                let tolerance: TimeInterval = SecurityConfiguration.current.maxAllowedTimeSkew  // ← use central value (300 s)
-                
-                let timeDiff = abs(deviceDate.timeIntervalSince(serverDate))
-                if timeDiff > tolerance {
-                    #if DEBUG
-                    print("[CertificateValidator] Device time manipulation suspected (diff: \(timeDiff)s)...")
-                    #endif
-                    self.allowTransitionLeniency = false
-                } else {
-                    let config = SecurityConfiguration.current
-                    
-                    // Use the same transition window check as everywhere else
-                    let deviceInTransition = config.isInTransitionWindow
-                    
-                    // For server date: compute equivalent check manually (since config.isInTransitionWindow uses Date())
-                    let serverInTransition = serverDate >= config.transitionWindowStart
-                                          && serverDate <= config.transitionWindowEnd
-                    
-                    if deviceInTransition && !serverInTransition {
-                        #if DEBUG
-                        print("[CertificateValidator] Transition period mismatch detected " +
-                              "(device in window, server not) → disabling leniency")
-                        #endif
-                        self.allowTransitionLeniency = false
-                    }
-                }
+                _ = self.noteServerDateForTransitionLeniency(serverDate: serverDate)
             }
             
             #if DEBUG
-            print("[CertificateValidator] HEAD request completed for \(url). Valid: \(isValid)")
+            print("[CertificateValidator] HEAD request completed for \(url). Valid: \(challengeAccepted)")
             #endif
-            return isValid
+            return challengeAccepted
             
         } catch {
             #if DEBUG
@@ -294,6 +311,46 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     }
     
     // MARK: - Internal Methods
+    
+    /// Applies one HTTP `Date` observation to the process-lifetime leniency latch.
+    ///
+    /// Leniency starts enabled. Skew above ``SecurityConfiguration/maxAllowedTimeSkew``,
+    /// or a device clock inside the transition window while the server clock is
+    /// outside, sets ``allowTransitionLeniency`` to `false`. Later observations
+    /// never set it back to `true` (Invariant 4).
+    ///
+    /// The device instant is ``currentDate``, not a second `Date()` call, so the
+    /// skew comparison and ``SecurityConfiguration/isInTransitionWindow(at:)``
+    /// share one clock.
+    ///
+    /// - Parameter serverDate: Parsed HTTP `Date` header.
+    /// - Returns: `allowTransitionLeniency` after this observation.
+    /// - SeeAlso: ``<doc:Security-Invariants>`` Invariant 4, ``validateServerCertificate(for:)``
+    func noteServerDateForTransitionLeniency(serverDate: Date) -> Bool {
+        guard allowTransitionLeniency else { return false }
+        
+        let config = SecurityConfiguration.current
+        let deviceDate = currentDate()
+        let skew = abs(deviceDate.timeIntervalSince(serverDate))
+        if skew > config.maxAllowedTimeSkew {
+            #if DEBUG
+            print("[CertificateValidator] Device time manipulation suspected (diff: \(skew)s)...")
+            #endif
+            allowTransitionLeniency = false
+            return false
+        }
+        
+        let deviceInTransition = config.isInTransitionWindow(at: deviceDate)
+        let serverInTransition = config.isInTransitionWindow(at: serverDate)
+        if deviceInTransition && !serverInTransition {
+            #if DEBUG
+            print("[CertificateValidator] Transition period mismatch detected " +
+                  "(device in window, server not) → disabling leniency")
+            #endif
+            allowTransitionLeniency = false
+        }
+        return allowTransitionLeniency
+    }
     
     /// Validates the certificate chain by checking the leaf certificate's fingerprint.
     ///

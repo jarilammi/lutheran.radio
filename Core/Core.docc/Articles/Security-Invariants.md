@@ -25,6 +25,8 @@ This document defines the **required security invariants** of the Lutheran Radio
 - On **permanent failure** (model not present in a *validated* TXT record), streaming is **permanently disabled** for the lifetime of the process. The only recovery is installing a new app build with an updated model.
 - On **transient failure** (network, timeout, *or DNSSEC validation not asserted*), the app may retry, but must eventually succeed or fall back to a safe error state.
 - Successful validations (validated response + model present) are cached for exactly 1 hour in `UserDefaults` (key: `lastSecurityValidation`). The cache applies **only** to successes.
+- A stored success timestamp **ahead of the device clock** is discarded and is not a cache hit. A negative age must not extend trust until that future instant.
+- ``ValidationState/failedPermanent`` clears the success timestamp. For the rest of the process, that state is not returned to success by a timestamp that still falls inside the original hour.
 - The validator is an `actor` and all mutation of validation state is isolated.
 
 ## Invariant 2: DNSSEC-protected name resolution for streaming hosts
@@ -43,22 +45,24 @@ This document defines the **required security invariants** of the Lutheran Radio
 - Comparison uses ``CertificateFingerprint/constantTimeMatches(_:)``; runtime code must not compare colon-hex strings.
 - App Transport Security (ATS) SPKI pinning in `Info.plist` provides the baseline. The runtime validator adds a second, independent layer.
 - ``SecurityConfiguration/pinnedFingerprintDigests`` is the authoritative acceptance list (sole production leaf: live preferred-apex `*.siikkari.net`). ``pinnedLeafFingerprintDigest`` is that digest; ``pinnedSiikkariLeafFingerprintDigest`` is an alias for the same value; ``pinnedLeafFingerprint``, ``pinnedSiikkariLeafFingerprint``, and ``pinnedFingerprints`` are derived colon-hex views for operators and docs only. Never duplicate or override digest values elsewhere. Do not leave retired pre-cutover leaves on the acceptance list — obsolete pins enlarge the set of certificates the runtime will accept.
-- Successful runtime pin results are cached for exactly ``SecurityConfiguration/certificateValidationCacheDuration`` (**10 minutes** / 600 s). This duration is **independent** of the DNS TXT model success cache (``modelCacheDuration`` = 1 hour). Call sites (including the streaming engine’s periodic HEAD timer) must read the configuration constant rather than hard-coding 600.
+- Successful **pin matches** are cached for exactly ``SecurityConfiguration/certificateValidationCacheDuration`` (**10 minutes** / 600 s). A transition-window leniency accept is not a cache hit. A cached timestamp ahead of the device clock is not reused. This duration is **independent** of the DNS TXT model success cache (``modelCacheDuration`` = 1 hour). Call sites (including the streaming engine’s periodic HEAD timer) must read the configuration constant rather than hard-coding 600.
 
 ## Invariant 4: Transition Window & Time-Skew Protection
 
 - A transition window exists before preferred-apex leaf expiry (currently **2027-01-01 00:00:00 GMT** through **2027-02-10 23:59:59 GMT**, end aligned with live `*.siikkari.net` `notAfter`; start is a deliberate calendar lead-in on 2027-01-01).
+- Those instants are **Gregorian GMT** (``SecurityConfiguration/transitionWindowStart`` / ``transitionWindowEnd``). They must not be built with ``Calendar.current``: a non-Gregorian device calendar reinterprets year 2027 and moves the window.
 - During the window, a fingerprint mismatch is tolerated (falls back to ATS trust) **only if**:
   - `allowTransitionLeniency` remains `true`, **and**
   - Device time vs. HTTP `Date` header skew is ≤ 5 minutes (`maxAllowedTimeSkew`).
-- Any detected time manipulation or window mismatch **permanently disables** leniency for the remainder of the process.
+- Any detected time manipulation or window mismatch **permanently disables** leniency for the remainder of the process. The latch is one-way: a later `Date` header inside the skew limit must not set `allowTransitionLeniency` back to `true`.
+- A leniency accept is **not** a pin-result cache hit. ``CertificateValidator`` caches digest matches only, for ``certificateValidationCacheDuration``. The next challenge re-checks the leaf, so a latch that drops during the 10-minute window takes effect on that challenge.
 - Outside the window (before start or after end), fingerprint mismatches cause **hard failure** regardless of ATS result.
 
 ## Invariant 5: Configuration Centralization
 
 All of the following values exist **only** inside ``SecurityConfiguration`` and are never hard-coded elsewhere:
 
-- `expectedSecurityModel` ("montereypark")
+- `expectedSecurityModel` ("kailuakona")
 - `pinnedLeafFingerprintDigest` (sole production 32-byte pin — live `*.siikkari.net`; ``CertificateFingerprint``)
 - `pinnedSiikkariLeafFingerprintDigest` (alias of the sole live preferred-apex pin)
 - `pinnedFingerprintDigests` (acceptable digests for ``CertificateValidator`` — sole live siikkari leaf; append only during deliberate rotation overlap)

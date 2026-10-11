@@ -5,7 +5,7 @@
 //  Single source of truth for every security constant and networking policy.
 //
 //  This file owns:
-//  - The embedded `expectedSecurityModel` ("montereypark")
+//  - The embedded `expectedSecurityModel` ("kailuakona")
 //  - Authoritative certificate fingerprints (DER digest form)
 //  - Transition window + time-skew parameters
 //  - Distinct cache durations: `modelCacheDuration` (DNS TXT success, 1 h) and
@@ -51,8 +51,9 @@ public struct SecurityConfiguration: Sendable {
     ///
     /// If validation fails permanently, streaming is disabled for the lifetime of the process.
     ///
-    /// - SeeAlso: ``<doc:Security-Invariants>``, ``SecurityModelValidator/validateSecurityModel()``
-    public let expectedSecurityModel: String = "montereypark"
+    /// - SeeAlso: ``<doc:Security-Invariants>``, ``SecurityModelValidator/validateSecurityModel()``,
+    ///   README Security Model History
+    public let expectedSecurityModel: String = "kailuakona"
     
     /// Primary domain queried for TXT record containing valid models (comma-separated).
     ///
@@ -302,40 +303,48 @@ public struct SecurityConfiguration: Sendable {
     /// - Window start is intentionally **2027-01-01 00:00:00 GMT** (calendar-month
     ///   lead-in before expiry, slightly longer than a strict 30-day window)
     ///
+    /// The instant is Gregorian GMT, built in this file and not with ``Calendar.current``.
+    /// A non-Gregorian device calendar would reinterpret year 2027.
+    ///
     /// Outside this window, ``pinnedFingerprintDigests`` membership is the
     /// normal acceptance path; leniency is only needed when rotating to a leaf
     /// not yet on the pin list (or when ATS SPKI still matches during cutover).
     ///
     /// - SeeAlso: ``transitionWindowEnd``, ``isInTransitionWindow``, ``<doc:Security-Invariants>``,
     ///   README “Media Apex Cutover & SSL Certificate Rotation”
-    let transitionWindowStart: Date = {
-        var components = DateComponents(calendar: .current, timeZone: .gmt)
-        components.year   = 2027
-        components.month  = 1
-        components.day    = 1
-        components.hour   = 0
-        components.minute = 0
-        components.second = 0
-        return Calendar.current.date(from: components) ?? Date.distantFuture
-    }()
+    let transitionWindowStart: Date = gregorianGMTDate(
+        year: 2027, month: 1, day: 1,
+        hour: 0, minute: 0, second: 0,
+        fallback: .distantFuture
+    )
     
     /// End of the transition window (inclusive), aligned with live leaf `notAfter`.
     ///
     /// After this date: strict runtime pinning enforcement (no ATS leniency on pin mismatch).
     /// Must stay in sync with the current preferred-apex certificate expiry
     /// (`*.siikkari.net` → 2027-02-10 23:59:59 GMT until the next rotation).
+    /// Same Gregorian GMT rule as ``transitionWindowStart``.
     ///
     /// - SeeAlso: ``transitionWindowStart``, ``isInTransitionWindow``
-    let transitionWindowEnd: Date = {
-        var components = DateComponents(calendar: .current, timeZone: .gmt)
-        components.year   = 2027
-        components.month  = 2
-        components.day    = 10
-        components.hour   = 23
-        components.minute = 59
-        components.second = 59
-        return Calendar.current.date(from: components) ?? Date.distantPast
-    }()
+    let transitionWindowEnd: Date = gregorianGMTDate(
+        year: 2027, month: 2, day: 10,
+        hour: 23, minute: 59, second: 59,
+        fallback: .distantPast
+    )
+    
+    /// Whether `date` falls inside the certificate transition grace period.
+    ///
+    /// Bounds are the absolute Gregorian GMT instants ``transitionWindowStart`` and
+    /// ``transitionWindowEnd``, not the device calendar or local time zone.
+    ///
+    /// - Parameter date: Device or server instant to test. Callers that compare
+    ///   device time with an HTTP `Date` header must pass each instant explicitly
+    ///   so both sides use the same bounds.
+    /// - Returns: `true` when `date` is inside the inclusive window.
+    /// - SeeAlso: ``isInTransitionWindow``, ``<doc:Security-Invariants>`` Invariant 4
+    public func isInTransitionWindow(at date: Date) -> Bool {
+        date >= transitionWindowStart && date <= transitionWindowEnd
+    }
     
     /// Whether the current device date falls inside the certificate transition grace period.
     ///
@@ -347,10 +356,43 @@ public struct SecurityConfiguration: Sendable {
     /// `*.siikkari.net` leaf expiry). Time-skew protection (``maxAllowedTimeSkew``)
     /// can disable leniency even inside the window.
     ///
-    /// - SeeAlso: ``<doc:Security-Invariants>``, ``CertificateValidator``
+    /// - SeeAlso: ``isInTransitionWindow(at:)``, ``<doc:Security-Invariants>``, ``CertificateValidator``
     public var isInTransitionWindow: Bool {
-        let now = Date()
-        return now >= transitionWindowStart && now <= transitionWindowEnd
+        isInTransitionWindow(at: Date())
+    }
+    
+    /// Gregorian GMT instant for transition-window bounds.
+    ///
+    /// ``Calendar.current`` follows the device calendar identifier. Buddhist,
+    /// Japanese, Hebrew, Islamic, and Chinese calendars reinterpret year 2027
+    /// and move this window by centuries, so leniency would not match the
+    /// documented GMT lead-in. The time zone is GMT so the instant does not
+    /// follow the device zone either.
+    ///
+    /// `fallback` is fail-closed: a missing start uses ``Date.distantFuture`` and
+    /// a missing end uses ``Date.distantPast``, which keeps the window empty.
+    private static func gregorianGMTDate(
+        year: Int,
+        month: Int,
+        day: Int,
+        hour: Int,
+        minute: Int,
+        second: Int,
+        fallback: Date
+    ) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        let gmt = TimeZone(secondsFromGMT: 0) ?? TimeZone.gmt
+        calendar.timeZone = gmt
+        var components = DateComponents()
+        components.calendar = calendar
+        components.timeZone = gmt
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = hour
+        components.minute = minute
+        components.second = second
+        return calendar.date(from: components) ?? fallback
     }
     
     

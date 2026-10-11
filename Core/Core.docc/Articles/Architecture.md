@@ -42,7 +42,7 @@ A plain `struct` (value type) that exposes only the minimal public surface requi
 - `expectedSecurityModel`
 - `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests` (authoritative runtime pins; sole production leaf is live `*.siikkari.net`; siikkari symbol is an alias)
 - `pinnedLeafFingerprint` / `pinnedSiikkariLeafFingerprint` / `pinnedFingerprints` (derived colon-hex)
-- `isInTransitionWindow`
+- `isInTransitionWindow` / `isInTransitionWindow(at:)` (Gregorian GMT bounds; not `Calendar.current`)
 - `preferredStreamingDomainSuffixes` / `preferredStreamingDomainSuffix` (sole media apex: `siikkari.net`)
 - `isProtectedStreamingHost(_:)` / `hostRequiresDNSSECValidation(_:)` / `streamingHostCandidates(leadingLabel:)` (DNSSEC host membership + host construction; no hard-coded apexes at call sites)
 - `requiresDNSSECValidationForStreaming` + `makeSecureEphemeralConfiguration()` / `applySecureNetworkingRequirements(to:)` (the single place that turns on `URLSessionConfiguration.requiresDNSSECValidation` and related hardening for streaming hosts)
@@ -60,7 +60,7 @@ An `actor` that:
 
 - Performs DNS-SD TXT queries with `kDNSServiceFlagsValidate` against the configured domains.
 - In the C callback: requires the validation bit before accepting any rdata (DNSSEC hardening); parses length-prefixed TXT rdata with `Span<UInt8>` and `UTF8Span` (zero-copy borrow of dns_sd `rdata`).
-- Implements a one-hour success-only cache persisted in `UserDefaults`.
+- Implements a one-hour success-only cache persisted in `UserDefaults`. A timestamp ahead of the device clock is discarded. `.failedPermanent` clears that timestamp and is not revived by the cache.
 - Distinguishes **permanent** failures (model not in *validated* TXT → streaming must stay disabled) from **transient** failures (network/DNS/DNSSEC-unvalidated → safe to retry). Ordered host walk is the four-point contract in ``<doc:Security-Invariants>`` Invariant 1 (authoritative answer stops; only transient advances).
 - Exposes a tiny set of test seams under `#if DEBUG` that have zero production impact.
 
@@ -83,8 +83,8 @@ An `actor` that:
 
 - Implements `URLSessionTaskDelegate` for modern async challenge handling.
 - Performs full SHA-256 DER leaf certificate digest validation against ``SecurityConfiguration/pinnedFingerprintDigests``.
-- Maintains a successful-result cache for ``SecurityConfiguration/certificateValidationCacheDuration`` (**10 minutes**). This constant is separate from ``SecurityConfiguration/modelCacheDuration`` (DNS TXT success cache = 1 hour).
-- Implements the transition window + device/server time-skew protection logic.
+- Maintains a **pin-match** cache for ``SecurityConfiguration/certificateValidationCacheDuration`` (**10 minutes**). Leniency accepts are not cached. This constant is separate from ``SecurityConfiguration/modelCacheDuration`` (DNS TXT success cache = 1 hour). A cached pin timestamp ahead of the device clock is not reused.
+- Implements the transition window + device/server time-skew protection logic. `allowTransitionLeniency` latches off for the process and is never turned back on.
 - Can be driven either via `validateServerTrust(_:)` (during live challenges) or `validateServerCertificate(for:)` (periodic HEAD checks on the same 10-minute cadence).
 
 ## Integration Points
