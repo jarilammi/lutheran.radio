@@ -4867,7 +4867,7 @@
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sisamat"
+            "value" : "Nipitussuseq"
           }
         },
         "lt" : {
@@ -5469,13 +5469,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld pisumi"
+                  "value" : "%lld procenti"
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld pisumi"
+                  "value" : "%lld procentit"
                 }
               }
             }
@@ -10211,7 +10211,7 @@
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hørigutit nakkutit"
+            "value" : "Nipitussutsip annikillisitsinera"
           }
         },
         "lt" : {
@@ -10522,7 +10522,7 @@
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hørigutit qaffasissuseq"
+            "value" : "Nipitussutsip qaffaanera"
           }
         },
         "lt" : {
@@ -20444,13 +20444,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld minuti sinnerusoq"
+                  "value" : "%lld minutsi sinneruttoq"
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld minutsit sinnerusoq"
+                  "value" : "%lld minutit sinneruttut"
                 }
               }
             }
@@ -21463,7 +21463,7 @@
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "15 minutsit"
+            "value" : "15 minutit"
           }
         },
         "lt" : {
@@ -21773,7 +21773,7 @@
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "30 minutsit"
+            "value" : "30 minutit"
           }
         },
         "lt" : {
@@ -22083,7 +22083,7 @@
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "45 minutsit"
+            "value" : "45 minutit"
           }
         },
         "lt" : {
@@ -22393,7 +22393,7 @@
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "60 minutsit"
+            "value" : "60 minutit"
           }
         },
         "lt" : {
@@ -32182,7 +32182,7 @@
       }
     },
     "volume_set_to" : {
-      "comment" : "VoiceOver announcement after a volume step. String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the percent via String(localized:defaultValue:). A literal percent sign in a translation must be written %% (stringsdict is a format string; %-mut / %-ii would be consumed as a specifier).",
+      "comment" : "VoiceOver announcement after a volume step. String Catalog variations.plural with CLDR categories per locale. Call sites must interpolate the percent via String(localized:defaultValue:). A literal percent sign in a translation must be written %% (stringsdict is a format string; Northern Sami %-ii would be consumed as a specifier).",
       "localizations" : {
         "af" : {
           "variations" : {
@@ -32616,13 +32616,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Hørigutit %lld %%-mut settet"
+                  "value" : "Nipitussuseq %lld procentimut inissinneqarpoq"
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Hørigutit %lld %%-mut settet"
+                  "value" : "Nipitussuseq %lld procentinut inissinneqarpoq"
                 }
               }
             }

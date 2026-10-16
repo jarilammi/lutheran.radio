@@ -186,9 +186,9 @@ final class CatalogPluralizationTests: XCTestCase {
                         value.contains("%lld"),
                         "\(key) \(language) \(category) dropped the integer placeholder: \(value)"
                     )
-                    // stringsdict is a format string: a literal `%` (Kalaallisut/Northern
-                    // Sami allative/illative "%-mut" / "%-ii") must be `%%` or Foundation
-                    // consumes it as a specifier (`%-i`).
+                    // stringsdict is a format string: a literal `%` (Northern Sami
+                    // illative "%-ii") must be `%%` or Foundation consumes it as a
+                    // specifier (`%-i`).
                     let withoutIntegerPlaceholder = value.replacingOccurrences(of: "%lld", with: "")
                     var index = withoutIntegerPlaceholder.startIndex
                     while index < withoutIntegerPlaceholder.endIndex {
@@ -450,8 +450,9 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("it", 1, "one", "1 minuto rimanente"),
         .init("it", 2, "other", "2 minuti rimanenti"),
         .init("it", 12, "other", "12 minuti rimanenti"),
-        .init("kl", 1, "one", "1 minuti sinnerusoq"),
-        .init("kl", 2, "other", "2 minutsit sinnerusoq"),
+        // Geminated participle.
+        .init("kl", 1, "one", "1 minutsi sinneruttoq"),
+        .init("kl", 2, "other", "2 minutit sinneruttut"),
         .init("lt", 1, "one", "Liko 1 minutė"),
         .init("lt", 2, "few", "Liko 2 minutės"),
         .init("lt", 10, "other", "Liko 10 minučių"),
@@ -696,8 +697,9 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("it", 1, "one", "1 percento"),
         .init("it", 2, "other", "2 percento"),
         .init("it", 12, "other", "12 percento"),
-        .init("kl", 1, "one", "1 pisumi"),
-        .init("kl", 2, "other", "2 pisumi"),
+        // Absolutive.
+        .init("kl", 1, "one", "1 procenti"),
+        .init("kl", 2, "other", "2 procentit"),
         .init("lt", 1, "one", "1 procentas"),
         .init("lt", 2, "few", "2 procentai"),
         .init("lt", 10, "other", "10 procentų"),
@@ -819,8 +821,9 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("it", 1, "one", "Volume impostato al 1 percento"),
         .init("it", 2, "other", "Volume impostato al 2 percento"),
         .init("it", 12, "other", "Volume impostato al 12 percento"),
-        .init("kl", 1, "one", "Hørigutit 1 %-mut settet"),
-        .init("kl", 2, "other", "Hørigutit 2 %-mut settet"),
+        // Allative.
+        .init("kl", 1, "one", "Nipitussuseq 1 procentimut inissinneqarpoq"),
+        .init("kl", 2, "other", "Nipitussuseq 2 procentinut inissinneqarpoq"),
         .init("lt", 1, "one", "Garsumas nustatytas 1 procento"),
         .init("lt", 2, "few", "Garsumas nustatytas 2 procentų"),
         .init("lt", 10, "other", "Garsumas nustatytas 10 procentų"),
