@@ -12,6 +12,8 @@
 	<true/>
 	<key>com.apple.security.hardened-process.checked-allocations.enable-pure-data</key>
 	<true/>
+	<key>com.apple.security.hardened-process.checked-allocations.enforce-checked-pointer-arithmetic-overflow</key>
+	<true/>
 	<key>com.apple.security.hardened-process.checked-allocations.no-tagged-receive</key>
 	<true/>
 	<key>com.apple.security.hardened-process.dyld-ro</key>
