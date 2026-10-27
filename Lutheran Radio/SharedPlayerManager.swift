@@ -147,11 +147,14 @@ import WidgetKit
 ///   that call `clearUserPausedLockIfNeeded()`.
 ///   (Why this guard exists: an explicit user pause action must never be overridden by
 ///   cold-launch, resurrection, recovery, or KVO paths.)
-/// - `.securityLocked` — permanent security failure (DNS TXT fail, 403, cert error).
-///   Set in `play()` guard and `setSecurityLocked()`. Persists until next explicit play
+/// - `.securityLocked` — permanent security failure from an authoritative TXT answer
+///   that omits ``SecurityConfiguration/expectedSecurityModel``, from certificate
+///   pinning failure, or from streaming HTTP 403.
+///   Set when ``runPlaySecurityValidationPhase()`` sees ``isPermanentlyInvalid()``,
+///   and from `setSecurityLocked()` (HTTP 403). Persists until the next explicit play
 ///   that passes validation.
-///   (Why this guard exists: a failing security validation is authoritative and permanent
-///   for this process until an explicit user play succeeds; protects the security model.)
+///   (Why this guard exists: an authoritative security rejection stays sticky for
+///   this process until an explicit user play succeeds; protects the security model.)
 /// - `.cleared` — explicit privacy clear. Set via `resetStateToClearedForPrivacy()`
 ///   (called from `clearAllLocalState`). Cleared only by explicit play paths
 ///   (via `clearUserPausedLockIfNeeded()`).
@@ -230,7 +233,8 @@ import WidgetKit
 /// | .playing / Connecting | User-initiated stream/language switch             | `resetToPrePlayForNewStream(connectingLanguageCode:)` (chrome + clear ICY + destination language + **clear start-pipeline latch**) **before** silent engine stop, then `play()` | .prePlay → .playing | Hold prePlay through attach; never advertise `.playing` mid teardown; never prior-language chrome with Connecting; superseded Connecting start must not skip the follow-on `play()`; engine `setPlaying` after readyToPlay |
 /// | .playing        | Mid-session stall / ICY drop / item transient     | `canProceedWithPlayback()` then secured `recreatePlayerItem()` / rate kick (attach generation) | .playing        | Engine-internal; does not call `play()`. Sticky pause blocks admission. |
 /// | .playing        | Host technical recovery (network reconnect, route)| `canProceedWithPlayback()` then permitted raw `play()`          | .playing / .prePlay → .playing | Not explicit user play; still process-local sticky only. |
-/// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
+/// | any             | Authoritative TXT rejection, pinning failure, or HTTP 403 | ``runPlaySecurityValidationPhase()`` when ``isPermanentlyInvalid()``, or StreamingSessionDelegate 403 / ``setSecurityLocked()`` | .securityLocked | Sticky until an explicit play passes validation |
+/// | any             | All-host transient DNS timeout                 | ``runPlaySecurityValidationPhase()`` when ``beforeAttach`` is false and ``isPermanentlyInvalid()`` is false | .userPaused (grey) | Intent unchanged (``.shouldBePlaying`` or ``.sleepTimer``). Does not attach. A later ``play()`` can validate again |
 /// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
 /// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()` then visual/intent re-check | (unchanged or forced .userPaused) | Restore does not start audio; engine resume only when still allowed. Sticky intent only — no prior-process App Group play gate. |
 /// | cold launch     | **User-initiated** main open after quit / terminate / reboot (icon, open URL, Siri) — first **presentable** scene | `resetToFactoryDefaultsOnLaunch()` immediately, then special tuning + cold-play on become-active (or already-`.active` after hygiene) | .prePlay → .playing (when allowed) | Factory reset clears prior play status (OI-1) even if the process was created in the background; termination liveness remains widget passive chrome only; product “open app = radio” when sticky pause absent **and** a scene is presentable — **not** residual App Group play restore; jetsam / last-media background relaunch waits; residual reboot chrome alone (main process not resident) is a different honesty contract |

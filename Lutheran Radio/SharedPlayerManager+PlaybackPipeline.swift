@@ -10,7 +10,10 @@
 //  Purpose: Playback intent checks, public play/stop/switch API, visual-state mutations, and private playback helpers.
 //
 //  `play()` is a sequential phase pipeline (entry surfaces → preflight early gates → security →
-//  post-security surfaces → engine attach). Pure decision tables live in ``PlaybackPlayDecision``;
+//  post-security surfaces → engine attach). Security failure branches on
+//  ``SecurityValidationFacade/isPermanentlyInvalid()``: authoritative rejection locks;
+//  an all-host transient DNS miss stays grey `.userPaused` and does not attach.
+//  Pure decision tables live in ``PlaybackPlayDecision``;
 //  sticky pause re-checks after each await that can interleave with user stop.
 //
 //  - SeeAlso: SharedPlayerManager.swift, ``PlaybackPlayDecision``,
@@ -138,7 +141,9 @@ extension SharedPlayerManager {
     /// Phase pipeline (order matters for resurrection / one-shot / intent correctness):
     /// 1. **Entry surfaces** — visual load, Now Playing configure, sleep-timer policy, sticky clear
     /// 2. **Preflight** — pure ``PlaybackPlayDecision`` early gates + one-shot / UITest side effects
-    /// 3. **Security** — ``SecurityValidationFacade`` `.beforeAttach` → sticky re-check → lock on fail
+    /// 3. **Security** — ``SecurityValidationFacade`` `.beforeAttach` → sticky re-check →
+    ///    ``.securityLocked`` when permanently invalid, or grey ``.userPaused`` without attach
+    ///    when every host failed transiently
     /// 4. **Post-security surfaces** — connecting ``.prePlay`` chrome + widget optimistic branch
     /// 5. **Engine attach** — tuning wait, soft-pause resume, widget-language align, ``attachAndPlay``
     ///
@@ -185,7 +190,7 @@ extension SharedPlayerManager {
         }
 
         switch await runPlaySecurityValidationPhase() {
-        case .abortedSticky, .permanentlyLocked:
+        case .abortedSticky, .permanentlyLocked, .abortedTransient:
             return
         case .validated:
             break
@@ -215,10 +220,15 @@ extension SharedPlayerManager {
     }
 
     /// Outcome of ``runPlaySecurityValidationPhase()``.
+    ///
+    /// ``abortedTransient`` means ``beforeAttach`` returned false and Core is not
+    /// permanently invalid. Playback does not attach. Intent is left unchanged.
     private enum PlaySecurityPhaseResult: Sendable {
         case validated
         case abortedSticky
         case permanentlyLocked
+        /// All-host transient DNS failure. Grey pause, no security lock, no attach.
+        case abortedTransient
     }
 
     /// Outcome of ``runPlayPostSecuritySurfacesPhase()``.
@@ -271,6 +281,14 @@ extension SharedPlayerManager {
         let alreadyAudible = await shouldNoOpPlayWhileAlreadyAudible()
         // Process isolation: early gates use only in-process sticky intent / pipeline / engine
         // truth. App Group termination liveness is never a play input (widget passive chrome only).
+        // DEBUG: the play-security seam forces the production security outcome under the XCTest
+        // host. ``isRunningInUITestMode`` itself stays true so engine attach remains a no-op.
+        #if DEBUG
+        let isUITestModeForPlayGates = Self.isRunningInUITestMode
+            && !(unsafe Self._test_bypassUITestModeForPlaySecurityValidation)
+        #else
+        let isUITestModeForPlayGates = Self.isRunningInUITestMode
+        #endif
         let earlyDecision = PlaybackPlayDecision.evaluateEarlyGates(
             PlaybackPlayDecisionInputs(
                 isStickyPauseOrLock: currentPlaybackIntent.isStickyPauseOrLock,
@@ -280,7 +298,7 @@ extension SharedPlayerManager {
                 initialPlaybackHasRun: initialPlaybackHasRun,
                 isActivePlaybackIntent: currentPlaybackIntent.isActivePlaybackIntent,
                 isTrueColdLaunchPlay: isTrueColdLaunchPlay,
-                isUITestMode: Self.isRunningInUITestMode
+                isUITestMode: isUITestModeForPlayGates
             )
         )
 
@@ -352,9 +370,31 @@ extension SharedPlayerManager {
 
     /// Phase 3 — Core security validation via ``SecurityValidationFacade`` before attach.
     ///
-    /// Sticky pause after the `await` wins over both success and failure paths so lock-screen
-    /// / Live Activity / headset pause during validation never optimistic-starts audio.
-    /// Permanent validation failure locks ``.securityLocked`` and persists session state.
+    /// ``validate(_:)`` with ``.beforeAttach`` returns false both when an authoritative
+    /// TXT answer omits ``SecurityConfiguration/expectedSecurityModel`` and when every
+    /// security-model host fails transiently. ``isPermanentlyInvalid()`` is the branch.
+    /// Permanent invalidity locks ``.securityLocked`` (same path as pinning failure and
+    /// streaming HTTP 403). An all-host transient timeout paints grey ``.userPaused``
+    /// through ``markPlaybackStoppedByStreamFailure(_:)``, leaves
+    /// ``PlaybackIntent/shouldBePlaying`` or ``PlaybackIntent/sleepTimer`` unchanged,
+    /// and returns without attaching. It does not present the security-model alert
+    /// (that alert follows ``.securityLocked`` only) and does not cancel the sleep timer.
+    ///
+    /// Sticky pause after each `await` wins, including the permanent-flag read, so a
+    /// lock-screen / Live Activity / headset pause during validation is not overwritten
+    /// and never optimistic-starts audio.
+    ///
+    /// - Returns: ``PlaySecurityPhaseResult/validated`` when attach may continue;
+    ///   ``abortedSticky`` when pause or an existing lock won; ``permanentlyLocked``
+    ///   after an authoritative failure; ``abortedTransient`` when validation failed
+    ///   and Core is not permanently invalid.
+    /// - Important: ``abortedTransient`` is not a successful validation. Attach stays
+    ///   refused until a later ``validate(_:)`` returns true. The prePlay one-shot is
+    ///   unchanged: grey ``.userPaused`` plus an active intent lets a later ``play()``
+    ///   enter this phase again.
+    /// - SeeAlso: ``SecurityValidationFacade/isPermanentlyInvalid()``,
+    ///   ``markPlaybackStoppedByStreamFailure(_:)``, ``PlaybackIntent/securityLocked``,
+    ///   ``play()``, ``<doc:Security-Invariants>``, CODING_AGENT.md.
     private func runPlaySecurityValidationPhase() async -> PlaySecurityPhaseResult {
         let isValid = await SecurityValidationFacade.validate(.beforeAttach)
 
@@ -373,26 +413,46 @@ extension SharedPlayerManager {
         }
 
         guard isValid else {
+            // False covers authoritative rejection and all-host transient DNS.
+            // The permanent flag is the same branch the engine uses for status chrome.
+            let permanentlyInvalid = await SecurityValidationFacade.isPermanentlyInvalid()
+
+            // Pause or lock during the flag read must not be overwritten.
+            if abortPlayPipelineIfSticky(debugLabel: "after permanent-invalidity read") {
+                return .abortedSticky
+            }
+
+            if permanentlyInvalid {
+                #if DEBUG
+                print("[SharedPlayerManager] Permanent security validation failure — locking UI to .securityLocked")
+                #endif
+
+                #if LUTHERAN_MAIN_APP
+                await cancelSleepTimer(restorePlaybackIntent: false)
+                #endif
+
+                // Use apply so visualStateDidChange is emitted (Tier 1).
+                applyVisualState(.securityLocked)
+
+                updatePlaybackIntent(to: .securityLocked)
+                clearPlaybackStartPipeline()
+
+                await self.saveCurrentState()
+
+                #if DEBUG
+                print("[SharedPlayerManager] Security lock applied – currentVisualState is now .securityLocked")
+                #endif
+                return .permanentlyLocked
+            }
+
             #if DEBUG
-            print("[SharedPlayerManager] Permanent security validation failure — locking UI to .securityLocked")
+            print("[SharedPlayerManager] Transient security validation failure — grey .userPaused, intent unchanged, no attach")
             #endif
-
-            #if LUTHERAN_MAIN_APP
-            await cancelSleepTimer(restorePlaybackIntent: false)
-            #endif
-
-            // Use apply so visualStateDidChange is emitted (Tier 1).
-            applyVisualState(.securityLocked)
-
-            updatePlaybackIntent(to: .securityLocked)
+            // Grey pause, intent unchanged (.shouldBePlaying or .sleepTimer). No security alert.
+            // Sleep timer stays armed. Pipeline must clear so a later play() can validate again.
+            await markPlaybackStoppedByStreamFailure(.transientFailure)
             clearPlaybackStartPipeline()
-
-            await self.saveCurrentState()
-
-            #if DEBUG
-            print("[SharedPlayerManager] Security lock applied – currentVisualState is now .securityLocked")
-            #endif
-            return .permanentlyLocked
+            return .abortedTransient
         }
 
         return .validated

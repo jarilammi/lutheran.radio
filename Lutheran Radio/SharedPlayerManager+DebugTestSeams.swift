@@ -43,6 +43,28 @@ extension SharedPlayerManager {
     // production call sites already consult.
     nonisolated(unsafe) internal static var _test_isRunningAsIOSAppOnMacOverride: Bool?
 
+    // SAFETY: DEBUG-only play() early-gate override. Does not change DNS, pinning,
+    // ``isRunningInUITestMode``, or engine ``isTesting``. A fall-through
+    // ``attachAndPlay`` still no-ops under the XCTest host. Exists so one main-app
+    // test can reach ``.beforeAttach`` without passing `-UITestMode` (that argument,
+    // and the DEBUG XCTest fallback, take ``.enterUITestIsolation`` and skip security).
+    nonisolated(unsafe) internal static var _test_bypassUITestModeForPlaySecurityValidation = false
+
+    /// Lets ``play()`` take the production security early-gate while the XCTest host
+    /// still reports ``isRunningInUITestMode``.
+    ///
+    /// `-UITestMode` and the DEBUG XCTest fallback both skip ``.beforeAttach``.
+    /// This seam flips only that early-gate input. Engine attach, audio session,
+    /// and Live Activity IPC stay on the UITest no-op path.
+    ///
+    /// - Parameter bypass: Pass `true` before ``play()`` in the security-phase test;
+    ///   `false` in tear-down so later tests keep UITest isolation.
+    /// - SeeAlso: ``runPlaySecurityValidationPhase()``, ``isRunningInUITestMode``,
+    ///   CODING_AGENT.md (UI test isolation).
+    nonisolated static func _test_setBypassUITestModeForPlaySecurityValidation(_ bypass: Bool) {
+        unsafe _test_bypassUITestModeForPlaySecurityValidation = bypass
+    }
+
     /// Overrides ``isRunningAsIOSAppOnMac`` for unit tests of unavailable-surface gates.
     ///
     /// - Parameter override: `true` / `false` to pin the host query; `nil` restores

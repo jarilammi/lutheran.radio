@@ -45,10 +45,11 @@ import Foundation
 ///                    and visual state stays `.playing`. When the timer fires, visual
 ///                    becomes `.userPaused` but intent remains `.sleepTimer` so logic
 ///                    can distinguish timer-driven pause from sticky `.userPaused`.
-/// - securityLocked:  Permanent security failure (DNS TXT validation failure,
-///                    certificate pinning failure, 403 from streaming server, etc.).
-///                    This is a hard, permanent blocker until the next successful
-///                    explicit play that passes full security validation.
+/// - securityLocked:  Permanent security failure from an authoritative TXT answer
+///                    that omits the expected security model, from certificate
+///                    pinning failure, or from HTTP 403 on the stream.
+///                    Sticky until the next explicit play that passes full
+///                    security validation.
 /// - cleared:         Explicit user-initiated privacy clear ("Clear local playback state").
 ///                    Visual is set to dedicated .cleared (blue "Cleared" using clear_local_state_done)
 ///                    for explicit confirmation of the completed reset. The blocker lives ONLY in the

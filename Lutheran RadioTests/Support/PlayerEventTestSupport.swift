@@ -504,10 +504,11 @@ func assertEvents(
 /// ``SharedPlayerManager`` emission, media-surface coordination, cold-launch hygiene,
 /// or DEBUG transport latency.
 ///
-/// Order is intentional: Live Activity local nil → clearAllLocalState → enable
-/// widgets-active privacy gate for observability → suspend Tier 2 observation →
-/// recreate the shared ``events`` stream (cancels residual replay iterators) →
-/// pre-warm ``events``.
+/// Order is intentional: Live Activity local nil → clear the play-security UITest
+/// bypass (so a prior ``.beforeAttach`` test cannot leak into later ``play()`` calls)
+/// → clearAllLocalState → enable widgets-active privacy gate for observability →
+/// suspend Tier 2 observation → recreate the shared ``events`` stream (cancels
+/// residual replay iterators) → pre-warm ``events``.
 ///
 /// Recreating the live stream avoids cross-suite pollution: ``AsyncStream`` admits one
 /// iterator, and cancelled collectors from a prior XCTest class can leave buffered
@@ -525,6 +526,9 @@ func prepareSharedPlayerManagerEventTestIsolation(
     await MainActor.run {
         sanitizeLiveActivityLocalState()
         SharedPlayerManager._test_resetProcessExitSessionTeardownOnceFlag()
+        // A leaked play-security seam would send later play() calls into real
+        // ``.beforeAttach`` instead of UITest isolation.
+        SharedPlayerManager._test_setBypassUITestModeForPlaySecurityValidation(false)
     }
 
     await SharedPlayerManager.clearAllLocalState()
@@ -574,6 +578,7 @@ func tearDownSharedPlayerManagerEventTestIsolation(
         WidgetRefreshManager._test_setSuppressPlayerEventObservation(false)
         SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
         SharedPlayerManager._test_setBypassUITestModeForNowPlayingUpdates(false)
+        SharedPlayerManager._test_setBypassUITestModeForPlaySecurityValidation(false)
         SharedPlayerManager._test_setRecordMediaSurfaceCoordinationOrder(false)
         SharedPlayerManager._test_clearMediaSurfaceCoordinationOrderLog()
         SharedPlayerManager._test_resetProcessExitSessionTeardownOnceFlag()
