@@ -25,6 +25,20 @@ import WidgetSurface
 
 final class DirectStreamingPlayerServerSelectionTests: XCTestCase {
 
+    /// Protects: `/ping` sends `User-Agent: Lutheran Radio`.
+    ///
+    /// The origin returns HTTP 200 for that token and HTTP 403 for curl and
+    /// browser agents. The token is not localized UI copy. The session factory
+    /// is unchanged (`makeSecureEphemeralConfiguration`).
+    func testLatencyProbeRequestSetsLutheranRadioUserAgent() {
+        let url = URL(string: "https://european.siikkari.net/ping")!
+        let request = DirectStreamingPlayer.latencyProbeRequest(url: url)
+
+        XCTAssertEqual(request.url, url)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "Lutheran Radio")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), DirectStreamingPlayer.latencyProbeUserAgent)
+    }
+
     /// Protects: ``sameStreamWarmServerReuseInterval`` is strictly longer than the universal
     /// 10 s throttle so pause-then-play after the throttle expires can still skip the ping pair.
     func testSameStreamWarmReuseWindowIsLongerThanThrottle() {

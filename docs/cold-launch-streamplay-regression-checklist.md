@@ -83,7 +83,7 @@ End with security impact, build status, localization needed.
 
 ## 3. Architecture (single sources of truth)
 
-1. **Server selection** — `urlWithOptimalServer(for:)` in `DirectStreamingPlayer`; no ad-hoc host selection. First attach uses default/last-good (EU / `servers[0]`) immediately; the EU/US ping pair runs in the background (typically during the tuning clip) and must not block first audible attach. Dual timeout does not stamp `lastServerSelectionTime`. Ping sessions keep `requiresDNSSECValidation`.
+1. **Server selection** — `urlWithOptimalServer(for:)` in `DirectStreamingPlayer`; no ad-hoc host selection. First attach uses default/last-good (EU / `servers[0]`) immediately; the EU/US ping pair runs in the background (typically during the tuning clip) and must not block first audible attach. Dual timeout does not stamp `lastServerSelectionTime`. Ping requests set `User-Agent` to `Lutheran Radio` (`latencyProbeRequest(url:)`); other agents get HTTP 403 from `/ping`. Ping sessions keep `requiresDNSSECValidation`.
 2. **Playback intent** — `currentPlaybackIntent` / `PlaybackIntent` is authoritative for “user wants audio.” Includes `.cleared` (from privacy clear) as a sticky blocker (isStickyPauseOrLock) alongside `.userPaused` / `.securityLocked`. Do not conflate with grey `.userPaused` visual after stream failure.
 3. **Visual state** — `currentVisualState` / `PlayerVisualState` drives UI only; switch auto-resume gates on `playbackIntent.isActivePlaybackIntent`.
 4. **Widget snapshot** — `PersistedWidgetState` via `loadPersistedWidgetState` / `savePersistedWidgetState` only.

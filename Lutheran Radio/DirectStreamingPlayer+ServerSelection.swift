@@ -98,6 +98,29 @@ extension DirectStreamingPlayer {
         let latency: TimeInterval
     }
 
+    /// `User-Agent` the `/ping` origin requires before it answers HTTP 200.
+    ///
+    /// Curl and browser agents receive 403. The value is a server allow-list
+    /// token, not UI copy, so it is not localized. Icecast media requests keep
+    /// their own agent in `requestWithIcecastHeaders(from:)`.
+    ///
+    /// - SeeAlso: ``latencyProbeRequest(url:)``
+    static let latencyProbeUserAgent = "Lutheran Radio"
+
+    /// Builds the EU/US `/ping` request with ``latencyProbeUserAgent``.
+    ///
+    /// DNSSEC stays on the session (`makeSecureEphemeralConfiguration()`).
+    /// This header does not change certificate pinning or the TXT allow-list.
+    ///
+    /// - Parameter url: Cluster probe URL (`https://european.<apex>/ping` or the US twin).
+    /// - Returns: A GET request whose `User-Agent` is ``latencyProbeUserAgent``.
+    /// - SeeAlso: ``ping(server:)``, ``<doc:Security-Invariants>``
+    static func latencyProbeRequest(url: URL) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.setValue(latencyProbeUserAgent, forHTTPHeaderField: "User-Agent")
+        return request
+    }
+
     /// Repeat probes within this window reuse ``currentSelectedServer`` for every attach context
     /// (cold launch, stream switch, resume, recovery). Only a **valid ping RTT** stamps
     /// ``lastServerSelectionTime``; dual timeout must not, or this window would skip the next
@@ -443,14 +466,17 @@ extension DirectStreamingPlayer {
     func ping(server: Server) async -> PingResult {
         let startTime = Date()
         
-        // Use the centralized secure configuration from Core so that DNSSEC validation
-        // is uniformly required for server-selection pings (same policy as streaming data).
+        // DNSSEC stays on (same secure session as streaming). The `/ping` origin
+        // answers HTTP 200 only for `User-Agent: Lutheran Radio`; other agents
+        // get 403, which this method records as a failed sample.
+        // - SeeAlso: latencyProbeRequest(url:), SecurityConfiguration.makeSecureEphemeralConfiguration()
         let config = SecurityConfiguration.makeSecureEphemeralConfiguration()
         config.timeoutIntervalForRequest = 2.0
         let session = URLSession(configuration: config)
+        let request = Self.latencyProbeRequest(url: server.pingURL)
         
         do {
-            let (_, response) = try await session.data(from: server.pingURL)
+            let (_, response) = try await session.data(for: request)
             let latency = Date().timeIntervalSince(startTime)
             
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
