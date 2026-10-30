@@ -4,7 +4,7 @@
 
 Lutheran Radio streams over HTTPS using AVFoundation (`DirectStreamingPlayer`). Runtime full-certificate pinning lives in `Core/`, not in the player. App Transport Security (ATS) SPKI pinning in `Info.plist` is the TLS baseline; `CertificateValidator` adds an independent DER digest check.
 
-Minimum deployment is iOS 26.2. Agents validate on Xcode 27 with the iOS 27.1 simulator SDK (`iphonesimulator27.1`).
+Minimum deployment is iOS 26.2. Agents validate on Xcode 27.2 with the iOS 27.2 simulator SDK (`iphonesimulator27.2`).
 
 Do not duplicate pin values outside `SecurityConfiguration`. Do not keep retired pre-cutover leaves on the acceptance list.
 

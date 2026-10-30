@@ -37,8 +37,8 @@
 #
 # Build prerequisite (adjust SDK/destination from `xcrun simctl list devices available`
 # and `xcodebuild -scheme "Lutheran Radio" -showdestinations`; never invent a destination):
-#   xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
-#     -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' build
+#   xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.2 \
+#     -destination 'platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro' build
 
 set -euo pipefail
 

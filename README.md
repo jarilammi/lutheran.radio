@@ -177,41 +177,41 @@ openssl s_client -connect livestream.siikkari.net:443 -servername livestream.sii
 
 **4. Run the mandatory build & test gates (execute sequentially; see CODING_AGENT.md for mechanical-work exceptions):**
 
-First discover available simulators (use only a destination the listing actually prints; if the `OS=` and name pair is ambiguous, use `id=`). The gate SDK is the iOS 27.1 simulator (`-sdk iphonesimulator27.1`). `OS=` is the runtime that listing prints:
+First discover available simulators (use only a destination the listing actually prints; if the `OS=` and name pair is ambiguous, use `id=`). The gate SDK is the iOS 27.2 simulator (`-sdk iphonesimulator27.2`). `OS=` is the runtime that listing prints:
 ```bash
 xcrun simctl list devices available
 xcodebuild -scheme "Lutheran Radio" -showdestinations
 ```
 
-**Required (Xcode 27 or later — contributors, agents, local gates, App Store archives):**
+**Required (Xcode 27.2 — contributors, agents, local gates, App Store archives):**
 ```bash
 # Clean build (recommended reference)
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 \
-  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build-for-testing
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.2 \
+  -destination 'platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro' clean build-for-testing
 # Look for: ** TEST BUILD SUCCEEDED **
 
 # Full test suite (default `Lutheran Radio.xctestplan` includes
 # Lutheran RadioTests, Lutheran RadioUITests, CoreTests,
 # WidgetSurfaceTests, and LutheranRadioWidgetTests)
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 \
-  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' test-without-building
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.2 \
+  -destination 'platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro' test-without-building
 # Look for: ** TEST EXECUTE SUCCEEDED **
 
 # Fast path (Core / security / networking)
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 \
-  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean test -only-testing:CoreTests
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.2 \
+  -destination 'platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro' clean test -only-testing:CoreTests
 # Look for: ** TEST SUCCEEDED **
 
 # Widget unit tests only (extension-profile + pure WidgetSurface)
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 \
-  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' \
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.2 \
+  -destination 'platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro' \
   test-without-building \
   -only-testing:LutheranRadioWidgetTests \
   -only-testing:WidgetSurfaceTests
 # Look for: ** TEST EXECUTE SUCCEEDED **
 ```
 
-Prefer `iPhone 18 Pro` when discovery lists it, and build with `-sdk iphonesimulator27.1`. Never invent a destination. The project minimum deployment target is iOS 26.2 (simulator OS is the run destination, not the deployment target). Do not use Xcode 26.6 / iOS 26.5 as a contributor, agent, or App Store gate. GitHub CodeQL remains on Xcode 26.6 and is not that gate. Canonical agent commands live in `CODING_AGENT.md`.
+Prefer `iPhone 18 Pro` when discovery lists it, and build with `-sdk iphonesimulator27.2`. Never invent a destination. The project minimum deployment target is iOS 26.2 (simulator OS is the run destination, not the deployment target). Do not use Xcode 26.6 / iOS 26.5 as a contributor, agent, or App Store gate. GitHub CodeQL remains on Xcode 26.6 and is not that gate. Canonical agent commands live in `CODING_AGENT.md`.
 
 **5. (Optional but recommended for security work) Build DocC for the best invariants/architecture reading experience:**
 
@@ -222,9 +222,9 @@ Prefer `iPhone 18 Pro` when discovery lists it, and build with `-sdk iphonesimul
 Cross-reference: "Current Security Snapshot" and "Single Sources of Truth — Key Files" tables above, the AI checklist, and the exact gates in [`CODING_AGENT.md`](CODING_AGENT.md).
 
 ### Prerequisites
- - Xcode 27 or later (language mode `SWIFT_VERSION = 6`) — required for contributors, agents, local gates, and App Store archives
+ - Xcode 27.2 (language mode `SWIFT_VERSION = 6`) — required for contributors, agents, local gates, and App Store archives
  - Minimum deployment target: iOS 26.2 (required for EMTE + MIE hardened memory protections). Simulator OS is the run destination, not the deployment target.
- - Required run destination: iPhone 18 Pro with the iOS 27.1 simulator SDK (`-sdk iphonesimulator27.1`). Set `OS=` from `xcrun simctl list devices available` / `-showdestinations`; never invent a destination.
+ - Required run destination: iPhone 18 Pro with the iOS 27.2 simulator SDK (`-sdk iphonesimulator27.2`). Set `OS=` from `xcrun simctl list devices available` / `-showdestinations`; never invent a destination.
  - GitHub CodeQL remains on Xcode 26.6 (`macos-26`) and is not the contributor or App Store toolchain
  - The iOS App Store binary also runs on Apple Silicon Mac as Designed for iPhone / iPad (`ProcessInfo.processInfo.isiOSAppOnMac`). That host is the same iOS binary (`LSMinimumSystemVersion` 26.5). Live Activities are unavailable there — ``RadioLiveActivityManager`` skips ActivityKit IPC. Keyboard and menu Play/Pause (Space) and previous/next language (⌘[ / ⌘]) are inserted by ``AppDelegate/buildMenu(with:)`` and call ``userRequestedPlay()`` / ``stop()`` via ``handleTogglePlayback()`` and ``handleLanguageSelection(at:)`` via ``handleAdjacentLanguageSelection(offset:)``. Hardware MIE/EMTE remains an iPhone 17-class claim; do not describe equivalent memory tagging on Mac.
 
@@ -250,14 +250,14 @@ To ensure a smooth development experience, follow these steps before contributin
 
 First run `xcrun simctl list devices available` and `xcodebuild -scheme "Lutheran Radio" -showdestinations` to confirm a suitable simulator.
 
-**Required path (Xcode 27):**
-1. **Verify Project Build:** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build```
+**Required path (Xcode 27.2):**
+1. **Verify Project Build:** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.2 -destination 'platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro' clean build```
    Ensure the output includes: **```** BUILD SUCCEEDED **```**
 
-2. **Run Test Suite:** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean test```
+2. **Run Test Suite:** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.2 -destination 'platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro' clean test```
    Check that the output includes: **```** TEST SUCCEEDED **```**
 
-3. **Run Core Module Tests Only (Fast Path):** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean test -testPlan Core```
+3. **Run Core Module Tests Only (Fast Path):** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.2 -destination 'platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro' clean test -testPlan Core```
    Check that the output includes: **```** TEST SUCCEEDED **```**
 
 Canonical sequential gates (`build-for-testing` then `test-without-building`) are in `CODING_AGENT.md`.
@@ -277,7 +277,7 @@ xcodebuild -version
 xcrun simctl list devices available
 ```
 
-Use a simulator the listing actually prints for that toolchain. Do not invent a destination. Confirm `xcodebuild -version` reports Xcode 27. The contributor / agent / App Store SDK/OS pair lives in [Prerequisites](#prerequisites) and `CODING_AGENT.md`; this section does not restate them. GitHub CodeQL on Xcode 26.6 is a separate static-analysis host, not a local gate.
+Use a simulator the listing actually prints for that toolchain. Do not invent a destination. Confirm `xcodebuild -version` reports Xcode 27.2. The contributor / agent / App Store SDK/OS pair lives in [Prerequisites](#prerequisites) and `CODING_AGENT.md`; this section does not restate them. GitHub CodeQL on Xcode 26.6 is a separate static-analysis host, not a local gate.
 
 **Broken or stale builds.** Wipe Derived Data, then re-run the scheme gates above (not a bare `xcodebuild clean`). This directory is per-Mac and shared by every Xcode project:
 
@@ -477,7 +477,7 @@ Defense-in-depth uses **two complementary layers**:
 
 1. **Compile-time (Swift / Xcode)** — `SWIFT_STRICT_MEMORY_SAFETY = YES` on every target (SE-0458). The compiler flags unsafe memory operations, legacy `@preconcurrency` imports without `@unsafe`, and related patterns. Security-critical code in `Core/` uses explicit `unsafe { … }` only at C/Security framework boundaries (DNS-SD, `SecTrust`, hashing). Hot paths prefer `Span<UInt8>` / `UTF8Span` over `subdata` copies (DNS TXT rdata in `SecurityModelValidator` zero-copy borrows dns_sd `rdata` in the DNS-SD callback; DER hashing in `CertificateFingerprint` uses `Data.span`).
 
-2. **Runtime (iOS hardware)** — Memory Integrity Enforcement (MIE), including the Enhanced Memory Tagging Extension (EMTE), on compatible devices (e.g., iPhone 17 and later with A19 or newer chips). Local validation uses Xcode 27+ / the iOS 27.1 simulator SDK; deployment remains iOS 26.2+. This mitigates memory corruption, use-after-free, and similar issues via tagged allocations, bounds checking, and pointer authentication at runtime.
+2. **Runtime (iOS hardware)** — Memory Integrity Enforcement (MIE), including the Enhanced Memory Tagging Extension (EMTE), on compatible devices (e.g., iPhone 17 and later with A19 or newer chips). Local validation uses Xcode 27.2 / the iOS 27.2 simulator SDK; deployment remains iOS 26.2+. This mitigates memory corruption, use-after-free, and similar issues via tagged allocations, bounds checking, and pointer authentication at runtime.
 
 These layers are independent: strict Swift checking hardens source before ship; MIE/EMTE hardens execution on supported hardware.
 

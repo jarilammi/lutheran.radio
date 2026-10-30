@@ -55,16 +55,16 @@ openssl s_client -connect livestream.siikkari.net:443 -servername livestream.sii
 
 Primary (`securitymodels.siikkari.net`) serves the live allow-list. Secondary/backup mirror it for transient-only fallback. Leaf DER SHA-256 for `*.siikkari.net` must match `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests` in `SecurityConfiguration` (see README "Current Security Snapshot" and "Media Apex Cutover").
 
-**Example — Clean build (canonical gate from CODING_AGENT.md — Xcode 27+)**:
+**Example — Clean build (canonical gate from CODING_AGENT.md — Xcode 27.2)**:
 ```bash
 xcrun simctl list devices available
 xcodebuild -scheme "Lutheran Radio" -showdestinations
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 \
-  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build-for-testing
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.2 \
+  -destination 'platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro' clean build-for-testing
 # Look for: ** TEST BUILD SUCCEEDED **
 
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 \
-  -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' test-without-building
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.2 \
+  -destination 'platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro' test-without-building
 # Look for: ** TEST EXECUTE SUCCEEDED **
 ```
 
@@ -163,7 +163,7 @@ Do **not** call them as ordinary coding tools. Use them only to enhance the fina
 
 ## Environment Notes for Lutheran Radio
 - Working directory is the root of this repository.
-- Required toolchain: **Xcode 27 or later** (language mode `SWIFT_VERSION = 6`) with the **iOS 27.1 simulator SDK** (`iphonesimulator27.1`). Canonical example: `platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro`. `OS=` is the runtime discovery prints and can differ from the SDK. Discover with `xcrun simctl list devices available` / `-showdestinations`; never invent a destination. If the `OS=` and name pair is ambiguous, use the `id=` from `-showdestinations`. Minimum deployment target is **iOS 26.2**. Do not use Xcode 26.6 / iOS 26.5 as a contributor, agent, or App Store gate. GitHub CodeQL remains on Xcode 26.6 and is not that gate.
+- Required toolchain: **Xcode 27.2** (language mode `SWIFT_VERSION = 6`) with the **iOS 27.2 simulator SDK** (`iphonesimulator27.2`). Canonical example: `platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro`. `OS=` is the runtime discovery prints and can differ from the SDK. Discover with `xcrun simctl list devices available` / `-showdestinations`; never invent a destination. If the `OS=` and name pair is ambiguous, use the `id=` from `-showdestinations`. Minimum deployment target is **iOS 26.2**. Do not use Xcode 26.6 / iOS 26.5 as a contributor, agent, or App Store gate. GitHub CodeQL remains on Xcode 26.6 and is not that gate.
 - On macOS hosts you have full access to Xcode command-line tools (`xcodebuild`, `xcrun`, `swift`, `agvtool`, etc.).
 - Strict Swift 6 + memory safety build settings are enforced project-wide. Clean builds must emit **zero warnings** (unless the PR is scoped to warning cleanup per `CODING_AGENT.md`).
 - Security work **must** follow the mandatory reading order and verification commands documented in `README.md` and `CODING_AGENT.md`. Never duplicate DNS/cert logic outside `Core/`.

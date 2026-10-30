@@ -131,7 +131,7 @@ These rules are especially strict for anything that could affect security invari
 
 2. **Build & Test Gate**
    - Every single change must keep these commands green.
-   - Required toolchain for contributors, agents, local gates, and App Store archives: **Xcode 27 or later** with the **iOS 27.1 simulator SDK** (`iphonesimulator27.1`). Canonical example destination: `platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro`. `OS=` is the runtime `-showdestinations` prints and can differ from the SDK. Use only a destination that discovery lists.
+   - Required toolchain for contributors, agents, local gates, and App Store archives: **Xcode 27.2** with the **iOS 27.2 simulator SDK** (`iphonesimulator27.2`). Canonical example destination: `platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro`. `OS=` is the runtime `-showdestinations` prints and can differ from the SDK. Use only a destination that discovery lists.
    - First discover available simulators (use only a destination the listing actually prints):
      ```bash
      xcrun simctl list devices available
@@ -140,16 +140,16 @@ These rules are especially strict for anything that could affect security invari
    - Canonical reference commands:
      ```bash
      # Clean build (recommended reference)
-     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 \
-       -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build-for-testing
+     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.2 \
+       -destination 'platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro' clean build-for-testing
      # Look for: ** TEST BUILD SUCCEEDED **
 
      # Full test suite
-     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 \
-       -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' test-without-building
+     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.2 \
+       -destination 'platform=iOS Simulator,OS=27.2,name=iPhone 18 Pro' test-without-building
      # Look for: ** TEST EXECUTE SUCCEEDED **
      ```
-   - Prefer `iPhone 18 Pro` when discovery lists it, and build with `-sdk iphonesimulator27.1`. Never invent a destination. If the `OS=` and name pair is ambiguous, pin the destination with the `id=` from `-showdestinations`. The project minimum deployment target is iOS 26.2 (simulator OS is the run destination, not the deployment target). Substitute name and OS from discovery when the canonical pair is absent. Do not use Xcode 26.6 / iOS 26.5 as a contributor, agent, or App Store gate. GitHub CodeQL remains on Xcode 26.6 and is not that gate. Mac Designed-for-iPad eyes-on is a different destination (see “iOS App Store binary on Apple Silicon Mac”) and does **not** replace these gates.
+   - Prefer `iPhone 18 Pro` when discovery lists it, and build with `-sdk iphonesimulator27.2`. Never invent a destination. If the `OS=` and name pair is ambiguous, pin the destination with the `id=` from `-showdestinations`. The project minimum deployment target is iOS 26.2 (simulator OS is the run destination, not the deployment target). Substitute name and OS from discovery when the canonical pair is absent. Do not use Xcode 26.6 / iOS 26.5 as a contributor, agent, or App Store gate. GitHub CodeQL remains on Xcode 26.6 and is not that gate. Mac Designed-for-iPad eyes-on is a different destination (see “iOS App Store binary on Apple Silicon Mac”) and does **not** replace these gates.
    - If either gate fails → fix it before suggesting the change.
 
    **Build Gate Exceptions for Mechanical / Warning / Refactoring Work**
@@ -175,10 +175,10 @@ These rules are especially strict for anything that could affect security invari
      - Siri utterances → `Lutheran Radio/AppShortcuts.xcstrings` (Siri trains from that table only).
      - Widget extension gallery section (`CFBundleDisplayName`) → `LutheranRadioWidget/InfoPlist.xcstrings`. The OS reads `InfoPlist.strings`, not `Localizable`. Keep values in lockstep with `"lutheran_radio_title"`. `INFOPLIST_KEY_CFBundleDisplayName` is the development-language fallback and must be `"Lutheran Radio"` — never the target identifier `LutheranRadioWidget`.
 
-4. **iOS 26.2 Deployment and Xcode 27 Toolchain**
+4. **iOS 26.2 Deployment and Xcode 27.2 Toolchain**
    - Minimum deployment target is **iOS 26.2** (no exceptions). Do not raise it to 27.0.
    - Required for full **EMTE + MIE** hardware-backed memory protections. Hardware MIE/EMTE remains an “iPhone 17 and later / A19 or newer” claim.
-   - Required toolchain for agents, human contributors, local gates, and App Store archives: **Xcode 27 or later** (language mode stays `SWIFT_VERSION = 6`) with the iOS 27.1 simulator SDK (`iphonesimulator27.1`; `iPhone 18 Pro` when listed). The destination `OS=` comes from discovery.
+   - Required toolchain for agents, human contributors, local gates, and App Store archives: **Xcode 27.2** (language mode stays `SWIFT_VERSION = 6`) with the iOS 27.2 simulator SDK (`iphonesimulator27.2`; `iPhone 18 Pro` when listed). The destination `OS=` comes from discovery.
    - GitHub CodeQL stays on Xcode 26.6 (`macos-26`); do not migrate that workflow as part of ordinary product work, and do not treat it as the contributor gate.
    - **All targets** use `SWIFT_VERSION = 6`, `SWIFT_STRICT_CONCURRENCY = complete`, `SWIFT_APPROACHABLE_CONCURRENCY = NO`, and `SWIFT_STRICT_MEMORY_SAFETY = YES`. Do not weaken or remove these without owner approval and a documented security impact assessment.
    - Prefer modern APIs and leverage Memory Integrity Enforcement wherever possible.
@@ -425,7 +425,7 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
   * `Core/Security/CertificateValidator.swift` (runtime full DER SHA-256 digest pinning + transition window leniency with time-skew protection; SPKI pinning is enforced exclusively by ATS in Info.plist)
   * ATS + NSPinnedDomains in Info.plist
   * DNS TXT security model validation (1-hour cache in UserDefaults)
-  * MIE/EMTE: Enabled via hardened runtime entitlements (validate on Xcode 27+ / the iOS 27.1 simulator SDK). GitHub CodeQL remains on Xcode 26.6 and is not the contributor gate.
+  * MIE/EMTE: Enabled via hardened runtime entitlements (validate on Xcode 27.2 / the iOS 27.2 simulator SDK). GitHub CodeQL remains on Xcode 26.6 and is not the contributor gate.
 - Security logic is now isolated into the `Core/` framework module (`Core/Configuration/`, `Core/Actors/`, and `Core/Security/`) using Swift actors and strict concurrency for better isolation, testability, and maintainability. All security decisions flow through `SecurityConfiguration`, `SecurityModelValidator`, and `CertificateValidator`.
 - **Tests**: Unit + UI tests in dedicated targets
 - **Scripts**: Minimal Python (1%) — treat as build helpers only
@@ -458,15 +458,15 @@ xcodebuild -scheme "Lutheran Radio" -showdestinations
 xcrun simctl list devices available
 ```
 
-- **Simulator gates:** Prefer `iPhone 18 Pro` from that listing and build with `-sdk iphonesimulator27.1`. If that name is missing, substitute another listed simulator. Never invent a destination. If the `OS=` and name pair is ambiguous, use the `id=` from `-showdestinations`.
-- **Mac eyes-on (Apple Silicon only):** Use the *compatible* `platform=macOS` row whose variant is Designed for iPhone / iPad. The native macOS row for the same Mac is incompatible unless Catalyst is on — do not flip `SUPPORTS_MACCATALYST` to make it compatible. Eyes-on on that host does **not** replace the iOS 27.1 simulator SDK gates.
+- **Simulator gates:** Prefer `iPhone 18 Pro` from that listing and build with `-sdk iphonesimulator27.2`. If that name is missing, substitute another listed simulator. Never invent a destination. If the `OS=` and name pair is ambiguous, use the `id=` from `-showdestinations`.
+- **Mac eyes-on (Apple Silicon only):** Use the *compatible* `platform=macOS` row whose variant is Designed for iPhone / iPad. The native macOS row for the same Mac is incompatible unless Catalyst is on — do not flip `SUPPORTS_MACCATALYST` to make it compatible. Eyes-on on that host does **not** replace the iOS 27.2 simulator SDK gates.
 - **Destination specifiers:** `xcodebuild -destination` splits on commas. The Designed-for-iPad variant string contains commas; prefer the `id=` printed by `-showdestinations` over pasting the variant name.
 - **Launch:** Run through Xcode’s Designed-for-iPad action (the iOS-on-Mac wrapper). Do not `open` a raw `iphoneos` `.app`. The host Mac’s destination id is not an iOS CoreDevice for `devicectl`.
 - **Keyboard:** ``UIKeyCommand`` punctuation remaps to the current input source. On a layout without `[` / `]`, the language verbs appear and fire as the remapped keys (for example ⌘Ö / ⌘Ä on Finnish). Do not assume a US keyboard.
 
 ### Device eyes-on (physical iPhone)
 
-SpringBoard home LIVE chrome, lock-screen Live Activity stacking, and ActivityKit `ContentState` acceptance under lock are **physical-device** claims. The iOS 27.1 simulator SDK gates remain mandatory after product edits; they do **not** prove those surfaces. Mac Designed-for-iPad eyes-on (section above) is a different host and does **not** replace this path.
+SpringBoard home LIVE chrome, lock-screen Live Activity stacking, and ActivityKit `ContentState` acceptance under lock are **physical-device** claims. The iOS 27.2 simulator SDK gates remain mandatory after product edits; they do **not** prove those surfaces. Mac Designed-for-iPad eyes-on (section above) is a different host and does **not** replace this path.
 
 **When this section applies:** home-widget paint, in-widget pause/play/switch while main is backgrounded, force-quit / liveness residual, Live Activity lock stacking, language-switch release QA, or any check that needs SpringBoard or a presentable-window unlock heal.
 
@@ -481,7 +481,7 @@ SpringBoard home LIVE chrome, lock-screen Live Activity stacking, and ActivityKi
 2. **Start the device session early**, then hand it to one child for exclusive use. Lifecycle: start → install-and-run (after each product change; includes the Xcode Debug build) → synthesize events (repeat) → end. Do not leave the session open.
 3. **Launch:** install-and-run is Debug of current `HEAD` via Xcode onto the chosen device. Do **not** `open` a raw `.app`. Do **not** pass `-UITestMode` — that short-circuits ActivityKit, WidgetCenter, DNS, and streaming. `isRunningInUITestMode` stays live in Release for XCUITests; this eyes-on path is not an XCUITest.
 4. **Observe:** capture hierarchy (and screenshot) before and after each gesture; tap hierarchy **center** coordinates. Trust **on-device paint** and extension DEBUG `creating entry: visualState=…`. Do **not** treat main-process “refresh executed … visualState” scheduler labels as rendered home chrome (`docs/Home-Live-Chrome-App-Group-Mirror-Design.md` §8.3). Do **not** treat “ensure logs ran” or long-horizon fire counts as lock-screen flag / glyph proof (`docs/Live-Activity-Stacking-and-Media-Surfaces.md`).
-5. Device eyes-on does **not** replace sequential iOS 27.1 simulator SDK `build-for-testing` then `test-without-building` after a product edit.
+5. Device eyes-on does **not** replace sequential iOS 27.2 simulator SDK `build-for-testing` then `test-without-building` after a product edit.
 
 **SeeAlso:** `docs/Home-Live-Chrome-App-Group-Mirror-Design.md` §10.3 / §14, `docs/Live-Activity-Stacking-and-Media-Surfaces.md` (stacking matrix + language-switch release QA), `docs/Widget-Presentation-Dataflow.md` (Cleanup Invariant), `docs/Widget-Functionality-Roadmap.md` (force-quit liveness residual; Live Activity ContentState acceptance residual).
 
@@ -497,8 +497,8 @@ The `Core` framework is the **single source of truth** for all security decision
 
 ## Development Workflow (Always Follow)
 
-1. Open `Lutheran Radio.xcodeproj` in Xcode 27 or later (required for agents, contributors, local gates, and App Store archives).
-2. Use the iOS 27.1 simulator SDK (`-sdk iphonesimulator27.1`). The canonical gate commands above use `iPhone 18 Pro`; run `xcrun simctl list devices available` and `xcodebuild -scheme "Lutheran Radio" -showdestinations` and substitute the `OS=` that listing prints. Never invent a destination. Physical-iPhone SpringBoard / Live Activity eyes-on uses the **Device eyes-on** section — it does not replace these simulator gates.
+1. Open `Lutheran Radio.xcodeproj` in Xcode 27.2 (required for agents, contributors, local gates, and App Store archives).
+2. Use the iOS 27.2 simulator SDK (`-sdk iphonesimulator27.2`). The canonical gate commands above use `iPhone 18 Pro`; run `xcrun simctl list devices available` and `xcodebuild -scheme "Lutheran Radio" -showdestinations` and substitute the `OS=` that listing prints. Never invent a destination. Physical-iPhone SpringBoard / Live Activity eyes-on uses the **Device eyes-on** section — it does not replace these simulator gates.
 3. Run the two xcodebuild commands above sequentially when you have the final implementation (`build-for-testing` then `test-without-building`).
    For pure compiler warning cleanup, dead code removal, or mechanical refactoring, the lighter rules under "Build Gate Exceptions for Mechanical / Warning / Refactoring Work" apply.
    When running both gates in the same environment, execute them sequentially (build first, then test) to avoid transient build-database contention.
