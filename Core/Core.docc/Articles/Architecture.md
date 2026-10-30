@@ -59,14 +59,14 @@ Callers outside Core (DirectStreamingPlayer, CertificateValidator) obtain secure
 An `actor` that:
 
 - Performs DNS-SD TXT queries with `kDNSServiceFlagsValidate` against the configured domains.
-- In the C callback: requires the validation bit before accepting any rdata (DNSSEC hardening); parses length-prefixed TXT rdata with `Span<UInt8>` and `UTF8Span` (zero-copy borrow of dns_sd `rdata`).
+- In the C callback: buffers TXT rdata until a separate DNSSEC status callback (`kDNSServiceFlagsValidate` + `kDNSServiceFlagsAdd`, zero-length rdata) and accepts the buffered set only when `kDNSServiceFlagsSecure` is set. The Validate bit means status is available, not that validation succeeded. Parses length-prefixed TXT rdata with `Span<UInt8>` and `UTF8Span` (zero-copy borrow of dns_sd `rdata` while the session mutex is held).
 - Implements a one-hour success-only cache persisted in `UserDefaults`. A timestamp ahead of the device clock is discarded. `.failedPermanent` clears that timestamp and is not revived by the cache.
 - Distinguishes **permanent** failures (model not in *validated* TXT → streaming must stay disabled) from **transient** failures (network/DNS/DNSSEC-unvalidated → safe to retry). Ordered host walk is the four-point contract in ``<doc:Security-Invariants>`` Invariant 1 (authoritative answer stops; only transient advances).
 - Exposes a tiny set of test seams under `#if DEBUG` that have zero production impact.
 
 The actor uses a carefully constructed non-isolated static C callback + `Unmanaged` context to satisfy Swift 6 strict concurrency while still using the classic `dnssd` API.
 
-The C callback (`radio.lutheran.dnssd`) and the 5 s watchdog (global queue) cannot be actor-isolated. `QueryContext` holds a `Mutex` (`import Synchronization`) over a `~Copyable` session: first of watchdog, callback, or setup-failure to `claimFinish` wins; losers no-op. `DNSServiceRefDeallocate` and `continuation.resume` run **outside** the lock (the mutex is not recursive; deallocate may deliver work on the dns_sd queue). dns_sd `DNSServiceRef` / `Unmanaged` uses are marked `unsafe` (SE-0458); `// SAFETY:` comments at those sites. `Mutex` is not a replacement for the actor — cache, `validationState`, and in-flight coalescing stay actor-isolated.
+The C callback (`radio.lutheran.dnssd`) and the 5 s watchdog (global queue) cannot be actor-isolated. `QueryContext` holds a `Mutex` (`import Synchronization`) over a `~Copyable` session. Data callbacks buffer parsed TXT names and do not finish the session. The first of watchdog, DNSSEC status callback, transport error, or setup-failure to claim the session wins; losers no-op. `DNSServiceRefDeallocate` and `continuation.resume` run **outside** the lock (the mutex is not recursive; deallocate may deliver work on the dns_sd queue). dns_sd `DNSServiceRef` / `Unmanaged` uses are marked `unsafe` (SE-0458); `// SAFETY:` comments at those sites. `Mutex` is not a replacement for the actor — cache, `validationState`, and in-flight coalescing stay actor-isolated.
 
 ### CertificateFingerprint
 

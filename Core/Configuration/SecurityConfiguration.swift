@@ -419,7 +419,7 @@ public struct SecurityConfiguration: Sendable {
     ///   validated answer the affected `URLSession` task fails. Callers (e.g. DirectStreamingPlayer)
     ///   treat such failures as transient (retry / server failover) rather than permanent.
     /// - Complements, does not replace:
-    ///   - `SecurityModelValidator` (low-level `kDNSServiceFlagsValidate` + bit check for TXT allow-list)
+    ///   - `SecurityModelValidator` (low-level `kDNSServiceFlagsValidate` query; accept TXT only when `kDNSServiceFlagsSecure` is set)
     ///   - ATS SPKI pinning (Info.plist)
     ///   - `CertificateValidator` runtime full-DER pinning
     ///

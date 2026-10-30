@@ -8,6 +8,12 @@
 //  `Mutex` claim-once teardown so they cannot both `DNSServiceRefDeallocate`,
 //  `continuation.resume`, or parse `rdata` after the service is gone.
 //
+//  Why the callback buffers: `dns_sd.h` delivers DNSSEC status separately from
+//  the TXT RRset. A status callback is `kDNSServiceFlagsValidate` +
+//  `kDNSServiceFlagsAdd` with zero-length rdata. The Validate bit means
+//  "status is available", not "validation succeeded". Acceptance is
+//  `kDNSServiceFlagsSecure` only. See ``<doc:Security-Invariants>`` Invariant 1.
+//
 //  Created by Jari Lammi on 19.3.2026.
 //
 
@@ -38,10 +44,19 @@ private struct SendableWatchdog: @unchecked Sendable {
 /// `serviceRefBits` stores the `DNSServiceRef` (`OpaquePointer`) bit pattern as
 /// a `Sendable` identifier — not a Swift-owned object. The claim-once winner is
 /// the only caller that may reconstruct the pointer and `DNSServiceRefDeallocate`.
+///
+/// `bufferedModels` holds TXT names already parsed from non-status callbacks.
+/// The pointer `rdata` is only valid for the duration of that callback, so the
+/// set is copied out under the mutex before the lock is released. A later
+/// zero-length status callback does not replace this set.
 private struct DNSQuerySession: ~Copyable {
     var didFinish = false
     var serviceRefBits: UInt?
     var watchdog: SendableWatchdog?
+    /// Parsed allow-list tokens from data callbacks. Empty until the first one.
+    var bufferedModels = Set<String>()
+    /// `kDNSServiceFlagsSecure` was observed and has not been invalidated by a removal.
+    var sawSecureStatus = false
 }
 
 /// Low-level context for the DNS-SD TXT query callback and timeout watchdog.
@@ -58,12 +73,16 @@ private struct DNSQuerySession: ~Copyable {
 ///   run **outside** `Mutex.withLock`. The mutex is not recursive; deallocate may
 ///   deliver work on the dns_sd queue, which would deadlock if the callback
 ///   tried the same mutex while it was still held.
-/// - Important: Parse `rdata` only after winning the claim and **before**
-///   deallocating the service. `Span` cannot keep `rdata` alive.
-/// - Note: `passRetained` at query start is balanced **exactly once**: callback
-///   win consumes via `takeRetainedValue`, timeout-win `release`s on
-///   `processingQueue` (so a queued callback can still `takeUnretainedValue`),
-///   setup-failure `release`s on the setup thread.
+/// - Important: Parse `rdata` while the mutex is held, before returning, and
+///   before any claim deallocates the service. `Span` cannot keep `rdata` alive.
+///   Data callbacks do **not** claim the session. Claim-once runs when a status
+///   callback accepts or rejects the buffer, or on transport error, timeout, or
+///   setup failure — one winner deallocates and resumes.
+/// - Note: `passRetained` at query start is balanced **exactly once**: the
+///   finishing callback consumes via `takeRetainedValue`, timeout-win `release`s
+///   on `processingQueue` (so a queued callback can still `takeUnretainedValue`),
+///   setup-failure `release`s on the setup thread. Callbacks that only buffer
+///   rdata must not release.
 /// - SeeAlso: ``<doc:Security-Invariants>`` (Invariant 1), ``SecurityModelValidator``
 @safe
 private final class QueryContext: Sendable {
@@ -82,19 +101,16 @@ private final class QueryContext: Sendable {
     /// The winner receives the stored `DNSServiceRef` bit pattern (if any) and
     /// the watchdog is cancelled under the lock (`cancel()` only sets a flag).
     ///
+    /// Data callbacks must not call this. They buffer parsed TXT names and wait
+    /// for the DNSSEC status callback. The status path, transport errors, the
+    /// watchdog, and setup failure share this claim so only one of them
+    /// deallocates and resumes.
+    ///
     /// - Returns: ``SessionFinishClaim/won(serviceRefBits:)`` exactly once per
     ///   instance; thereafter ``SessionFinishClaim/alreadyFinished``.
     func claimFinish() -> SessionFinishClaim {
         session.withLock { state in
-            if state.didFinish {
-                return SessionFinishClaim.alreadyFinished
-            }
-            state.didFinish = true
-            state.watchdog?.cancel()
-            state.watchdog = nil
-            let bits = state.serviceRefBits
-            state.serviceRefBits = nil
-            return SessionFinishClaim.won(serviceRefBits: bits)
+            takeFinishClaim(&state)
         }
     }
 
@@ -140,6 +156,84 @@ private final class QueryContext: Sendable {
             }
         }
     }
+
+    /// Folds one dns_sd callback into the session while the mutex is held.
+    ///
+    /// `rdata` is borrowed only inside this call. The returned value tells the
+    /// caller whether it won claim-once and must deallocate and resume outside
+    /// the lock.
+    ///
+    /// - Parameters:
+    ///   - flags: Callback `DNSServiceFlags`. Do not treat Validate as success.
+    ///   - errorCode: Non-zero is a transport failure and finishes the session.
+    ///   - rdlen: Byte length of `rdata`. Zero with Validate+Add is status, not data.
+    ///   - rdata: Borrowed TXT rdata, or `nil` when `rdlen` is 0.
+    /// - Returns: ``SessionIngest`` describing wait, lose, or the single finish.
+    func ingestDNSCallback(
+        flags: UInt32,
+        errorCode: DNSServiceErrorType,
+        rdlen: Int,
+        rdata: UnsafeRawPointer?
+    ) -> SessionIngest {
+        session.withLock { state in
+            if state.didFinish {
+                return SessionIngest.alreadyFinished
+            }
+            if errorCode != kDNSServiceErr_NoError {
+                return finishClaim(&state, .failure(.dnssd(errorCode)))
+            }
+            if isValidationStatusDelivery(flags: flags, rdlen: rdlen) {
+                return reduceValidationStatus(&state, flags: flags)
+            }
+
+            // SAFETY: `rdata` is valid for `rdlen` bytes only for this callback
+            // (dns_sd contract). The mutex is held, so the watchdog cannot
+            // `DNSServiceRefDeallocate` until this closure returns. `Span` borrows
+            // the pointer and must not escape; parsing finishes before the lock drops.
+            let models: Set<String>
+            if rdlen == 0 {
+                models = []
+            } else if let rdata = unsafe rdata {
+                let rdataStart = unsafe rdata.assumingMemoryBound(to: UInt8.self)
+                models = SecurityModelValidator.parseInlineTXTRecord(
+                    span: unsafe Span(_unsafeStart: rdataStart, count: rdlen)
+                )
+            } else {
+                // `errorCode` is already `kDNSServiceErr_NoError` here; rdata was missing.
+                return finishClaim(&state, .failure(.dnssd(errorCode)))
+            }
+            return reduceRecord(&state, flags: flags, models: models)
+        }
+    }
+
+    /// Test and status-path entry that already holds parsed models (no `rdata` borrow).
+    func ingestPrepared(_ prepared: PreparedDNSCallback) -> SessionIngest {
+        session.withLock { state in
+            if state.didFinish {
+                return SessionIngest.alreadyFinished
+            }
+            switch prepared {
+            case .transportError(let code):
+                return finishClaim(&state, .failure(.dnssd(code)))
+            case .validationStatus(let flags):
+                return reduceValidationStatus(&state, flags: flags)
+            case .record(let flags, let models):
+                return reduceRecord(&state, flags: flags, models: models)
+            }
+        }
+    }
+
+    /// Claim-once winner side effect: deallocate and resume. No-op unless `ingest` finished.
+    func deliver(_ ingest: SessionIngest) {
+        guard case .finish(let bits, let result) = ingest else { return }
+        deallocateDNSServiceRef(bits: bits)
+        switch result {
+        case .models(let models):
+            completion(.success(models))
+        case .failure(let failure):
+            completion(.failure(nsError(for: failure)))
+        }
+    }
 }
 
 /// Reconstructs a `DNSServiceRef` from the mutex-stored bit pattern and deallocates it.
@@ -163,6 +257,173 @@ private func deallocateDNSServiceRef(bits: UInt?, extra: DNSServiceRef? = nil) {
     }
 }
 
+/// Why a DNS-SD callback failed. Transport errors stay on `dnssd`. Missing or
+/// non-Secure DNSSEC status stays on `dnssec` / `-1` (transient for the host walk).
+private enum DNSCallbackFailure: Sendable {
+    case dnssd(DNSServiceErrorType)
+    case dnssecNotSecure
+}
+
+/// Outcome of the single claim-once finish. `models` is an authoritative TXT set,
+/// including an empty set when Secure status arrived with no records.
+private enum IngestResult: Sendable {
+    case models(Set<String>)
+    case failure(DNSCallbackFailure)
+}
+
+/// What the callback must do after the mutex is released.
+///
+/// `.waiting` keeps the `DNSServiceRef` alive for a later status or rdata callback.
+/// `.finish` is the one claim-once winner. `.alreadyFinished` must not deallocate
+/// or resume.
+private enum SessionIngest: Sendable {
+    case waiting
+    case alreadyFinished
+    case finish(serviceRefBits: UInt?, result: IngestResult)
+}
+
+/// Callback facts after `rdata` has been parsed (or when there is no rdata to parse).
+///
+/// Status deliveries are not records. A zero-length status callback must use
+/// `.validationStatus` so it cannot be stored as an empty allow-list by itself
+/// before the Secure check.
+private enum PreparedDNSCallback: Sendable {
+    case transportError(DNSServiceErrorType)
+    case validationStatus(flags: UInt32)
+    case record(flags: UInt32, models: Set<String>)
+}
+
+/// Marks the session finished. Caller must already have observed `didFinish == false`
+/// or must ignore ``SessionFinishClaim/alreadyFinished``.
+private func takeFinishClaim(_ state: inout DNSQuerySession) -> SessionFinishClaim {
+    if state.didFinish {
+        return SessionFinishClaim.alreadyFinished
+    }
+    state.didFinish = true
+    state.watchdog?.cancel()
+    state.watchdog = nil
+    let bits = state.serviceRefBits
+    state.serviceRefBits = nil
+    return SessionFinishClaim.won(serviceRefBits: bits)
+}
+
+/// Claims the session and packages the result for delivery outside the lock.
+private func finishClaim(_ state: inout DNSQuerySession, _ result: IngestResult) -> SessionIngest {
+    switch takeFinishClaim(&state) {
+    case .alreadyFinished:
+        return .alreadyFinished
+    case .won(let bits):
+        return .finish(serviceRefBits: bits, result: result)
+    }
+}
+
+/// Output flags that may sit beside a DNSSEC status code. Mask these before
+/// comparing to `kDNSServiceFlagsSecure` and the other status constants.
+///
+/// Do not mask `0x10` / `0x20` / `0x40` / `0x80`. Those bits are the status
+/// code (`kDNSServiceFlagsShared` overlaps Secure's low bit only as a numeric
+/// coincidence; Secure is `Validate | 0x10`, value `0x200010`).
+private func dnssecStatusCode(from flags: UInt32) -> UInt32 {
+    let accompanyingOutput = UInt32(kDNSServiceFlagsMoreComing)
+        | UInt32(kDNSServiceFlagsAdd)
+        | UInt32(kDNSServiceFlagAnsweredFromCache)
+    return flags & ~accompanyingOutput
+}
+
+/// `kDNSServiceFlagsSecure` after masking MoreComing, Add, and the cache bit.
+///
+/// A nonzero test against `kDNSServiceFlagsSecure` is wrong: that constant is
+/// `0x200010`, and the Validate bit alone (`0x200000`) is a subset of the mask.
+/// Validate means "status is available" (`dns_sd.h`), not "validated".
+/// An expired answer is rejected even when the Secure code is also present.
+private func isSecureDNSSECStatus(_ flags: UInt32) -> Bool {
+    if (flags & UInt32(kDNSServiceFlagsExpiredAnswer)) != 0 {
+        return false
+    }
+    return dnssecStatusCode(from: flags) == UInt32(kDNSServiceFlagsSecure)
+}
+
+/// Insecure, bogus, or indeterminate after the same mask. These are not Secure.
+private func isNonSecureDNSSECStatus(_ flags: UInt32) -> Bool {
+    let code = dnssecStatusCode(from: flags)
+    return code == UInt32(kDNSServiceFlagsInsecure)
+        || code == UInt32(kDNSServiceFlagsBogus)
+        || code == UInt32(kDNSServiceFlagsIndeterminate)
+}
+
+/// Status delivery from `dns_sd.h`: Validate + Add and zero-length rdata.
+///
+/// This callback is the validation signal for the whole RRSet. It is not an
+/// empty TXT record. Empty authoritative data is a separate data callback that
+/// lacks this shape, accepted only after Secure status.
+private func isValidationStatusDelivery(flags: UInt32, rdlen: Int) -> Bool {
+    rdlen == 0
+        && (flags & UInt32(kDNSServiceFlagsValidate)) != 0
+        && (flags & UInt32(kDNSServiceFlagsAdd)) != 0
+}
+
+private func hasMoreComing(_ flags: UInt32) -> Bool {
+    (flags & UInt32(kDNSServiceFlagsMoreComing)) != 0
+}
+
+/// Applies a zero-length status callback. Does not read or replace `bufferedModels`
+/// except to publish them when Secure status is complete.
+///
+/// Why: `dns_sd.h` says validation results may arrive separately from the RRset,
+/// marked with Validate + Add and zero-length rdata. Accept only Secure.
+/// Insecure, bogus, indeterminate, and Validate-without-a-status-code are
+/// transient (``<doc:Security-Invariants>`` Invariant 1). `MoreComing` means
+/// another callback is already queued — usually the RRset — so Secure does not
+/// finish until that burst ends.
+private func reduceValidationStatus(_ state: inout DNSQuerySession, flags: UInt32) -> SessionIngest {
+    if isSecureDNSSECStatus(flags) {
+        state.sawSecureStatus = true
+        if hasMoreComing(flags) {
+            return .waiting
+        }
+        return finishClaim(&state, .models(state.bufferedModels))
+    }
+    return finishClaim(&state, .failure(.dnssecNotSecure))
+}
+
+/// Applies one TXT data callback. Unions into the buffer. Does not finish unless
+/// Secure status was already observed and this callback ends the burst.
+///
+/// A removal (`Add` clear) drops the prior Secure mark. `dns_sd.h`: when Add is
+/// not set, DNSSEC status of the RRSet delivered so far is no longer valid.
+private func reduceRecord(_ state: inout DNSQuerySession, flags: UInt32, models: Set<String>) -> SessionIngest {
+    let isAdd = (flags & UInt32(kDNSServiceFlagsAdd)) != 0
+    if !isAdd {
+        state.sawSecureStatus = false
+        state.bufferedModels.subtract(models)
+        return .waiting
+    }
+    if isNonSecureDNSSECStatus(flags) || (flags & UInt32(kDNSServiceFlagsExpiredAnswer)) != 0 {
+        return finishClaim(&state, .failure(.dnssecNotSecure))
+    }
+    state.bufferedModels.formUnion(models)
+    if isSecureDNSSECStatus(flags) {
+        state.sawSecureStatus = true
+    }
+    if state.sawSecureStatus && !hasMoreComing(flags) {
+        return finishClaim(&state, .models(state.bufferedModels))
+    }
+    return .waiting
+}
+
+private func nsError(for failure: DNSCallbackFailure) -> NSError {
+    switch failure {
+    case .dnssd(let code):
+        return NSError(domain: "dnssd", code: Int(code), userInfo: nil)
+    case .dnssecNotSecure:
+        return NSError(
+            domain: "dnssec",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: "DNSSEC validation failed or not available"]
+        )
+    }
+}
+
 /// Actor-isolated validator for the required security model (via DNS TXT record).
 ///
 /// `SecurityModelValidator` is the **single source of truth** for determining whether
@@ -173,10 +434,19 @@ private func deallocateDNSServiceRef(bits: UInt?, extra: DNSServiceRef? = nil) {
 /// ``SecurityConfiguration/expectedSecurityModel`` appears in the response.
 ///
 /// ## Security Hardening
-/// Queries are performed with `kDNSServiceFlagsValidate`. The callback **requires**
-/// the echoed validation bit in `flags` before parsing or accepting any rdata.
-/// Unvalidated responses are failures (transient). This provides DNSSEC-backed
-/// integrity/authenticity for the allow-list without new dependencies.
+/// Queries are performed with `kDNSServiceFlagsValidate` (strict, not `ValidateOptional`).
+/// `dns_sd.h` may deliver the TXT RRset and the DNSSEC status in separate callbacks.
+/// A status callback is `kDNSServiceFlagsValidate` + `kDNSServiceFlagsAdd` with
+/// **zero-length rdata**. That callback is the validation signal, not an empty RRset.
+/// The Validate bit means "status is available". The callback buffers parsed TXT
+/// names and **accepts them only when `kDNSServiceFlagsSecure` is set**.
+/// Insecure, bogus, indeterminate, expired, and missing status are transient
+/// failures. An empty set accepted under Secure is still an authoritative answer.
+/// This provides DNSSEC-backed integrity for the allow-list without new dependencies.
+///
+/// Why: treating the echoed Validate bit on the first callback as success drops
+/// signed answers. Live zones return the allow-list first (no Secure bit yet) and
+/// the status afterward. See ``<doc:Security-Invariants>`` Invariant 1.
 ///
 /// ## Behavior
 /// Ordered ``securityModelDomains`` walk (AGENT NOTE — single contract with
@@ -184,7 +454,7 @@ private func deallocateDNSServiceRef(bits: UInt?, extra: DNSServiceRef? = nil) {
 /// 1. **Authoritative answer** = DNSSEC-validated TXT rdata accepted by the callback (including empty set).
 /// 2. **Contains expected model** → success; **stop** (later hosts not queried).
 /// 3. **Does not contain it** → permanent fail; **stop** (no fall-through).
-/// 4. **Transient** (error, timeout, no validate bit, etc.) → next host; that host is
+/// 4. **Transient** (error, timeout, missing or non-Secure DNSSEC status, etc.) → next host; that host is
 ///    **fully trusted** if it returns an authoritative allow-list containing the expected model.
 /// - Success (model present **and** DNSSEC-validated) → result is cached for 1 hour in `UserDefaults`.
 ///   A timestamp ahead of the device clock is discarded (it is not a cache hit).
@@ -376,7 +646,7 @@ public actor SecurityModelValidator {
                     return false
                 }
             } catch {
-                // Transient (error, timeout, no validate bit, etc.) → next host.
+                // Transient (error, timeout, missing or non-Secure DNSSEC status) → next host.
                 #if DEBUG
                 print("[SecurityModelValidator] Transient DNS error on \(domain): \(error)")
                 #endif
@@ -479,9 +749,12 @@ public actor SecurityModelValidator {
     /// `DNSServiceSetDispatchQueue` on `radio.lutheran.dnssd`. Watchdog, callback,
     /// and setup-failure paths finish through `QueryContext.claimFinish()`.
     ///
-    /// - Important: The call passes `kDNSServiceFlagsValidate` and the callback enforces
-    ///   the bit before trusting rdata. Failures (including lack of DNSSEC validation)
-    ///   are thrown and treated as transient by the caller.
+    /// - Important: The call passes `kDNSServiceFlagsValidate`. The callback buffers
+    ///   TXT rdata until a separate status callback and accepts it only when
+    ///   `kDNSServiceFlagsSecure` is set. The Validate bit is not success.
+    ///   Failures (including insecure, bogus, indeterminate, or missing status)
+    ///   are thrown and treated as transient by the caller. A Secure empty set
+    ///   is returned, not thrown — the caller treats it as an authoritative answer.
     /// - Important: Do not parse on the watchdog path. Timeout is transient (`dnssd` / `-999`).
     /// - SeeAlso: ``<doc:Security-Invariants>`` (Invariant 1)
     private func queryTXTRecord(for domain: String) async throws -> Set<String> {
@@ -529,12 +802,12 @@ public actor SecurityModelValidator {
             }
 
             var serviceRef: DNSServiceRef?
-            // SECURITY: Enable strict DNSSEC validation via kDNSServiceFlagsValidate (not Optional).
-            // mDNSResponder will attempt validation for signed zones and set the bit in the callback
-            // `flags` parameter **only** on successful validation. We refuse unvalidated rdata for
-            // the security model allow-list (data integrity + authenticity). See
-            // <doc:Security-Invariants> Invariant 1 and README "Why DNS TXT Records?".
-            // This is a minimal hardening step; no new dependencies.
+            // SECURITY: Request strict DNSSEC validation via kDNSServiceFlagsValidate (not Optional).
+            // The request bit is not the result. dns_sd.h delivers status separately: a later
+            // callback with Validate + Add and zero-length rdata carries Secure, Insecure, Bogus,
+            // or Indeterminate. Accept the buffered TXT set only for kDNSServiceFlagsSecure.
+            // Unvalidated, insecure, bogus, and indeterminate answers are transient failures.
+            // See <doc:Security-Invariants> Invariant 1. No new dependencies.
             let err = unsafe DNSServiceQueryRecord(
                 &serviceRef,
                 UInt32(kDNSServiceFlagsValidate),
@@ -575,15 +848,24 @@ public actor SecurityModelValidator {
         }
     }
 
-    // Static non-capturing callback — marked @convention(c) explicitly
+    // Static non-capturing callback — `@convention(c)` via `DNSServiceQueryRecordReply`.
     //
-    // SECURITY: This is the enforcement point for DNSSEC validation. The `flags` bit check
-    // must succeed before any rdata is parsed via parseInlineTXTRecord. All test hooks
-    // bypass this path via `_test_txtFetcher`.
+    // SECURITY: Enforcement point for DNSSEC on the TXT allow-list. `dns_sd.h` may
+    // deliver the RRset and the validation status as separate callbacks. Buffer parsed
+    // TXT names until a callback carries status (Validate + Add + zero-length rdata).
+    // Accept only `kDNSServiceFlagsSecure`. The Validate bit means status is available,
+    // not that validation succeeded. Insecure, bogus, indeterminate, expired, and a
+    // Validate bit with no status code are transient (`dnssec` / -1). A zero-length
+    // status callback is not an empty allow-list. An empty set under Secure is an
+    // authoritative answer and is returned, not thrown. Why: signed zones often deliver
+    // the TXT first and Secure afterward; finishing on the first callback treats a live
+    // allow-list as a transient failure. See <doc:Security-Invariants> Invariant 1.
+    // All test hooks bypass this path via `_test_txtFetcher`.
     //
     // Claim-once: `takeUnretainedValue` does not consume `passRetained`. Only the
-    // winner `takeRetainedValue`s; a loser returns without parsing, completing, or
-    // deallocating. Parse happens only after win and before `DNSServiceRefDeallocate`.
+    // finishing callback `takeRetainedValue`s. A callback that only buffers returns
+    // without deallocating or resuming. Parse runs inside `ingestDNSCallback` while
+    // the mutex is held, before any loser can `DNSServiceRefDeallocate`.
     private static let dnsQueryCallback: DNSServiceQueryRecordReply = {
         sdRef, flags, interfaceIdx, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, ctx in
 
@@ -593,71 +875,31 @@ public actor SecurityModelValidator {
         // outstanding and/or the watchdog / processing-queue release hop holds it.
         // `fromOpaque` / `takeUnretainedValue` / `takeRetainedValue` are `Unmanaged`
         // (unsafe C-interop retain). `takeUnretainedValue` does not consume that
-        // retain; `claimFinish` decides who balances it.
+        // retain; only the claim-once winner balances it.
         let unmanaged = unsafe Unmanaged<QueryContext>.fromOpaque(ctx)
         let queryCtx = unsafe unmanaged.takeUnretainedValue()
 
-        switch queryCtx.claimFinish() {
-        case .alreadyFinished:
+        #if DEBUG
+        let statusDelivery = isValidationStatusDelivery(flags: flags, rdlen: Int(rdlen))
+        let secure = isSecureDNSSECStatus(flags)
+        print("[SecurityModelValidator] DNS response: secure=\(secure) statusDelivery=\(statusDelivery) flags=0x\(String(flags, radix: 16)) rdlen=\(rdlen) errorCode=\(errorCode)")
+        #endif
+
+        // SAFETY: `rdata` is an optional C pointer valid only for this callback.
+        // `ingestDNSCallback` borrows it under the session mutex and does not store it.
+        let ingest = unsafe queryCtx.ingestDNSCallback(
+            flags: flags,
+            errorCode: errorCode,
+            rdlen: Int(rdlen),
+            rdata: rdata
+        )
+        switch ingest {
+        case .waiting, .alreadyFinished:
             return
-        case .won(let bits):
+        case .finish:
             // Consume `passRetained`. Timeout-win must not also release.
             _ = unsafe unmanaged.takeRetainedValue()
-
-            func deallocateClaimed() {
-                deallocateDNSServiceRef(bits: bits)
-            }
-
-            guard errorCode == kDNSServiceErr_NoError else {
-                deallocateClaimed()
-                queryCtx.completion(.failure(
-                    NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)
-                ))
-                return
-            }
-
-            // SECURITY: Require that the response was DNSSEC-validated by the system.
-            // When kDNSServiceFlagsValidate was passed to DNSServiceQueryRecord, the returned
-            // `flags` will contain the bit only if validation succeeded. Unvalidated responses
-            // are treated as transient failures (performFreshValidation falls back to backup
-            // domain or marks .failedTransient). Never silently accept unvalidated data here.
-            let wasValidated = (flags & UInt32(kDNSServiceFlagsValidate)) != 0
-            #if DEBUG
-            print("[SecurityModelValidator] DNS response: validated=\(wasValidated) flags=0x\(String(flags, radix: 16)) errorCode=\(errorCode)")
-            #endif
-            guard wasValidated else {
-                deallocateClaimed()
-                queryCtx.completion(.failure(
-                    NSError(domain: "dnssec", code: -1, userInfo: [
-                        NSLocalizedDescriptionKey: "DNSSEC validation failed or not available"
-                    ])
-                ))
-                return
-            }
-
-            let byteCount = Int(rdlen)
-            let models: Set<String>
-            if byteCount == 0 {
-                models = []
-            } else if let rdata = unsafe rdata {
-                // SAFETY: `rdata` is valid for `byteCount` bytes only for this callback
-                // (dns_sd contract), and only because this callback won the claim before
-                // anyone deallocated the service. `Span` borrows the pointer and must
-                // not escape; parsing completes before deallocate and completion.
-                let rdataStart = unsafe rdata.assumingMemoryBound(to: UInt8.self)
-                models = SecurityModelValidator.parseInlineTXTRecord(
-                    span: unsafe Span(_unsafeStart: rdataStart, count: byteCount)
-                )
-            } else {
-                deallocateClaimed()
-                queryCtx.completion(.failure(
-                    NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)
-                ))
-                return
-            }
-
-            deallocateClaimed()
-            queryCtx.completion(.success(models))
+            queryCtx.deliver(ingest)
         }
     }
 
@@ -672,7 +914,10 @@ public actor SecurityModelValidator {
     ///
     /// `span` must not escape the caller's scope. Production DNS-SD callbacks borrow `rdata`
     /// in place (zero-copy); tests may borrow via `Data.span`.
-    private static func parseInlineTXTRecord(span: Span<UInt8>) -> Set<String> {
+    ///
+    /// `fileprivate` so ``QueryContext`` can parse while the session mutex is held.
+    /// The parser stays in this file. It does not touch actor state.
+    fileprivate static func parseInlineTXTRecord(span: Span<UInt8>) -> Set<String> {
         var models = Set<String>()
         var index = 0
         while index < span.count {
@@ -811,6 +1056,135 @@ public actor SecurityModelValidator {
             }
         }
         return winnerCount.withLock { $0 }
+    }
+
+    /// One synthetic dns_sd callback. Flag bits stay inside Core so tests do not
+    /// re-encode `kDNSServiceFlagsSecure` (`0x200010`).
+    ///
+    /// - SeeAlso: ``<doc:Security-Invariants>`` Invariant 1
+    public enum _TestDNSSECEvent: Sendable {
+        /// TXT data callback. `includeValidateBit` sets Validate without Secure.
+        case record(Set<String>, moreComing: Bool, includeValidateBit: Bool)
+        /// Removal (`Add` clear). Invalidates a Secure mark that has not yet finished the session.
+        case removal(Set<String>)
+        case secureStatus(moreComing: Bool)
+        case secureCachedStatus
+        case expiredSecureStatus
+        case insecureStatus
+        case bogusStatus
+        case indeterminateStatus
+        /// Validate + Add + zero-length rdata, and none of the four status codes.
+        case statusBitOnly
+        case transportError(Int32)
+    }
+
+    /// Disposition of one synthetic callback after the mutex is released.
+    public enum _TestDNSSECStep: Sendable, Equatable {
+        case waiting
+        case alreadyFinished
+        case success(Set<String>)
+        case failure(domain: String, code: Int)
+    }
+
+    /// Steps plus how many times the session resumed the continuation.
+    ///
+    /// `completionCount` must be 1 after a finish and 0 while still waiting.
+    /// A second finish is a claim-once break.
+    public struct _TestDNSSECTrace: Sendable, Equatable {
+        public var steps: [_TestDNSSECStep]
+        public var completionCount: Int
+    }
+
+    /// Drives the DNSSEC buffer and Secure-bit check with no `DNSServiceRef`.
+    ///
+    /// Protects the callback contract in ``<doc:Security-Invariants>`` Invariant 1:
+    /// rdata without Secure does not finish; a later Secure status accepts the
+    /// buffered set; a zero-length status callback is not empty data; insecure,
+    /// bogus, indeterminate, expired, and Validate-without-a-status-code are
+    /// transient; claim-once resumes once.
+    ///
+    /// - Parameter events: Callbacks in delivery order.
+    /// - Returns: One step per event, and the number of continuation resumes.
+    public static func _test_driveDNSSECCallbacks(_ events: [_TestDNSSECEvent]) -> _TestDNSSECTrace {
+        let completionCount = Mutex(0)
+        let context = QueryContext { _ in
+            completionCount.withLock { count in
+                count += 1
+            }
+        }
+        var steps: [_TestDNSSECStep] = []
+        steps.reserveCapacity(events.count)
+        for event in events {
+            let ingest = context.ingestPrepared(preparedDNSCallback(for: event))
+            switch ingest {
+            case .waiting:
+                steps.append(.waiting)
+            case .alreadyFinished:
+                steps.append(.alreadyFinished)
+            case .finish(_, let result):
+                context.deliver(ingest)
+                switch result {
+                case .models(let models):
+                    steps.append(.success(models))
+                case .failure(let failure):
+                    let error = nsError(for: failure)
+                    steps.append(.failure(domain: error.domain, code: error.code))
+                }
+            }
+        }
+        let count = completionCount.withLock { $0 }
+        return _TestDNSSECTrace(steps: steps, completionCount: count)
+    }
+
+    /// Maps a synthetic event onto the prepared callback the production reducer uses.
+    private static func preparedDNSCallback(for event: _TestDNSSECEvent) -> PreparedDNSCallback {
+        switch event {
+        case .record(let models, let moreComing, let includeValidateBit):
+            var flags = UInt32(kDNSServiceFlagsAdd)
+            if moreComing {
+                flags |= UInt32(kDNSServiceFlagsMoreComing)
+            }
+            if includeValidateBit {
+                flags |= UInt32(kDNSServiceFlagsValidate)
+            }
+            return .record(flags: flags, models: models)
+        case .removal(let models):
+            return .record(flags: 0, models: models)
+        case .secureStatus(let moreComing):
+            var flags = UInt32(kDNSServiceFlagsSecure) | UInt32(kDNSServiceFlagsAdd)
+            if moreComing {
+                flags |= UInt32(kDNSServiceFlagsMoreComing)
+            }
+            return .validationStatus(flags: flags)
+        case .secureCachedStatus:
+            let flags = UInt32(kDNSServiceFlagsSecure)
+                | UInt32(kDNSServiceFlagsAdd)
+                | UInt32(kDNSServiceFlagAnsweredFromCache)
+            return .validationStatus(flags: flags)
+        case .expiredSecureStatus:
+            let flags = UInt32(kDNSServiceFlagsSecure)
+                | UInt32(kDNSServiceFlagsAdd)
+                | UInt32(kDNSServiceFlagsExpiredAnswer)
+            return .validationStatus(flags: flags)
+        case .insecureStatus:
+            return .validationStatus(
+                flags: UInt32(kDNSServiceFlagsInsecure) | UInt32(kDNSServiceFlagsAdd)
+            )
+        case .bogusStatus:
+            return .validationStatus(
+                flags: UInt32(kDNSServiceFlagsBogus) | UInt32(kDNSServiceFlagsAdd)
+            )
+        case .indeterminateStatus:
+            return .validationStatus(
+                flags: UInt32(kDNSServiceFlagsIndeterminate) | UInt32(kDNSServiceFlagsAdd)
+            )
+        case .statusBitOnly:
+            return .validationStatus(
+                flags: UInt32(kDNSServiceFlagsValidate) | UInt32(kDNSServiceFlagsAdd)
+            )
+        case .transportError(let code):
+            return .transportError(code)
+        }
     }
 
     private func _installCurrentDateProvider(_ provider: @Sendable @escaping () -> Date) {

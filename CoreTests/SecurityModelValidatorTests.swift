@@ -443,6 +443,156 @@ struct QueryContextClaimOnceTests {
     }
 }
 
+// MARK: - DNSSEC status callback (no live DNS)
+
+@Suite("DNSSEC status is separate from TXT rdata")
+struct DNSSECStatusDeliveryTests {
+
+    /// Invariant 1: the Validate bit means status is available, not that the
+    /// RRset was authenticated. A data callback that only echoes Validate must
+    /// not finish the session or accept the allow-list.
+    @Test("Validate bit on TXT rdata does not accept the record")
+    func validateBitOnRdataDoesNotAccept() {
+        let trace = SecurityModelValidator._test_driveDNSSECCallbacks([
+            .record(["kailuakona"], moreComing: false, includeValidateBit: true)
+        ])
+        #expect(trace.steps == [.waiting])
+        #expect(trace.completionCount == 0)
+    }
+
+    /// Invariant 1: buffer the TXT set until Secure status. The zero-length
+    /// status callback must not replace that set with an empty allow-list.
+    @Test("Secure status accepts the buffered TXT set once")
+    func secureStatusAcceptsBufferedSet() {
+        let trace = SecurityModelValidator._test_driveDNSSECCallbacks([
+            .record(["dallas", "montereypark", "kailuakona"], moreComing: false, includeValidateBit: false),
+            .secureStatus(moreComing: false),
+            .secureStatus(moreComing: false)
+        ])
+        #expect(trace.steps == [
+            .waiting,
+            .success(["dallas", "montereypark", "kailuakona"]),
+            .alreadyFinished
+        ])
+        #expect(trace.completionCount == 1)
+    }
+
+    /// Invariant 1: Secure status with no records is an authoritative empty answer,
+    /// not a transient failure. The host walk then permanent-fails if the model is absent.
+    @Test("Secure status with no rdata is an empty authoritative set")
+    func secureStatusAloneIsEmptyAuthoritativeSet() {
+        let trace = SecurityModelValidator._test_driveDNSSECCallbacks([
+            .secureStatus(moreComing: false)
+        ])
+        #expect(trace.steps == [.success([])])
+        #expect(trace.completionCount == 1)
+    }
+
+    /// Status may be queued ahead of the RRset (`MoreComing`). Do not finish empty.
+    @Test("Secure status with MoreComing waits for the following TXT callback")
+    func secureStatusWithMoreComingWaitsForRdata() {
+        let trace = SecurityModelValidator._test_driveDNSSECCallbacks([
+            .secureStatus(moreComing: true),
+            .record(["kailuakona"], moreComing: false, includeValidateBit: false)
+        ])
+        #expect(trace.steps == [
+            .waiting,
+            .success(["kailuakona"])
+        ])
+        #expect(trace.completionCount == 1)
+    }
+
+    /// Cache bit must not hide Secure. Expired Secure is not accepted.
+    @Test("Cached Secure is accepted and expired Secure is transient")
+    func cachedSecureAcceptedExpiredSecureRejected() {
+        let cached = SecurityModelValidator._test_driveDNSSECCallbacks([
+            .record(["kailuakona"], moreComing: false, includeValidateBit: false),
+            .secureCachedStatus
+        ])
+        #expect(cached.steps == [.waiting, .success(["kailuakona"])])
+        #expect(cached.completionCount == 1)
+
+        let expired = SecurityModelValidator._test_driveDNSSECCallbacks([
+            .record(["kailuakona"], moreComing: false, includeValidateBit: false),
+            .expiredSecureStatus
+        ])
+        #expect(expired.steps == [
+            .waiting,
+            .failure(domain: "dnssec", code: -1)
+        ])
+        #expect(expired.completionCount == 1)
+    }
+
+    /// Invariant 1: insecure, bogus, indeterminate, and Validate without a status
+    /// code are transient. They must not publish the buffered names.
+    @Test(
+        "Non-secure status is a transient dnssec failure",
+        arguments: [
+            SecurityModelValidator._TestDNSSECEvent.insecureStatus,
+            .bogusStatus,
+            .indeterminateStatus,
+            .statusBitOnly
+        ]
+    )
+    func nonSecureStatusIsTransient(status: SecurityModelValidator._TestDNSSECEvent) {
+        let trace = SecurityModelValidator._test_driveDNSSECCallbacks([
+            .record(["kailuakona"], moreComing: false, includeValidateBit: false),
+            status
+        ])
+        #expect(trace.steps == [
+            .waiting,
+            .failure(domain: "dnssec", code: -1)
+        ])
+        #expect(trace.completionCount == 1)
+    }
+
+    /// A removal before finish invalidates Secure and drops those names.
+    @Test("Removal before Secure status drops the removed names")
+    func removalBeforeStatusDropsNames() {
+        let trace = SecurityModelValidator._test_driveDNSSECCallbacks([
+            .record(["dallas", "kailuakona"], moreComing: false, includeValidateBit: false),
+            .removal(["dallas"]),
+            .secureStatus(moreComing: false)
+        ])
+        #expect(trace.steps == [
+            .waiting,
+            .waiting,
+            .success(["kailuakona"])
+        ])
+        #expect(trace.completionCount == 1)
+    }
+
+    /// Several TXT callbacks union before the status callback.
+    @Test("Multiple TXT callbacks union before Secure status")
+    func multipleRecordsUnion() {
+        let trace = SecurityModelValidator._test_driveDNSSECCallbacks([
+            .record(["dallas"], moreComing: true, includeValidateBit: false),
+            .record(["kailuakona"], moreComing: false, includeValidateBit: false),
+            .secureStatus(moreComing: false)
+        ])
+        #expect(trace.steps == [
+            .waiting,
+            .waiting,
+            .success(["dallas", "kailuakona"])
+        ])
+        #expect(trace.completionCount == 1)
+    }
+
+    /// Transport errors finish immediately and a later callback cannot resume again.
+    @Test("Transport error claims the session once")
+    func transportErrorClaimsOnce() {
+        let trace = SecurityModelValidator._test_driveDNSSECCallbacks([
+            .transportError(-65568),
+            .secureStatus(moreComing: false)
+        ])
+        #expect(trace.steps == [
+            .failure(domain: "dnssd", code: -65568),
+            .alreadyFinished
+        ])
+        #expect(trace.completionCount == 1)
+    }
+}
+
 // MARK: - Pure Parser Tests (safe to run in parallel)
 
 @Suite("parseInlineTXTRecord (pure DNS TXT parser) Tests")

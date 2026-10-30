@@ -15,13 +15,13 @@ This document defines the **required security invariants** of the Lutheran Radio
 ## Invariant 1: Security Model Validation (DNS TXT)
 
 - The app **must** successfully validate that its embedded `expectedSecurityModel` appears in the comma-separated TXT record returned by a host in ``SecurityConfiguration/securityModelDomains`` (ordered: `securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk`) before any streaming is allowed.
-- The query uses `kDNSServiceFlagsValidate`; the callback in ``SecurityModelValidator`` **requires** the validation bit in the returned flags before parsing or accepting rdata. Responses without successful DNSSEC validation are treated as transient failures (never trusted).
+- The query uses `kDNSServiceFlagsValidate` (strict, not `ValidateOptional`). `dns_sd.h` may deliver the TXT RRset and the DNSSEC status in **separate** callbacks. A status callback is `kDNSServiceFlagsValidate` + `kDNSServiceFlagsAdd` with **zero-length rdata**; that callback is the validation signal, not an empty RRset. The Validate bit means status is available. ``SecurityModelValidator`` buffers the parsed TXT set and **accepts it only when `kDNSServiceFlagsSecure` is set**. Insecure, bogus, indeterminate, expired, and missing status are transient failures (never trusted). An empty set accepted under `kDNSServiceFlagsSecure` is still an authoritative answer.
 - Validation is performed exclusively by ``SecurityModelValidator``.
 - **Ordered host walk** (``SecurityModelValidator`` / ``securityModelDomains`` — do not weaken):
   1. **Authoritative answer** = DNSSEC-validated TXT rdata accepted by the callback (including empty set).
   2. **Contains expected model** → success; **stop** (later hosts not queried).
   3. **Does not contain it** → permanent fail; **stop** (no fall-through).
-  4. **Transient** (error, timeout, no validate bit, etc.) → next host; that host is **fully trusted** if it returns an authoritative allow-list containing the expected model.
+  4. **Transient** (error, timeout, missing or non-Secure DNSSEC status, etc.) → next host; that host is **fully trusted** if it returns an authoritative allow-list containing the expected model.
 - On **permanent failure** (model not present in a *validated* TXT record), streaming is **permanently disabled** for the lifetime of the process. The only recovery is installing a new app build with an updated model.
 - On **transient failure** (network, timeout, *or DNSSEC validation not asserted*), the app may retry, but must eventually succeed or fall back to a safe error state.
 - Successful validations (validated response + model present) are cached for exactly 1 hour in `UserDefaults` (key: `lastSecurityValidation`). The cache applies **only** to successes.
@@ -36,7 +36,7 @@ This document defines the **required security invariants** of the Lutheran Radio
 - When ``SecurityConfiguration/requiresDNSSECValidationForStreaming`` is true (the default), `URLSessionConfiguration.requiresDNSSECValidation` is set. This causes the system resolver to be asked for DNSSEC-validated answers; unvalidated answers cause the session task to fail.
 - DNSSEC validation failures at this layer are **transient** (see `StreamErrorType` classification and player recovery paths). This keeps the requirement "opt-in safe".
 - This layer authenticates the mapping from hostname to IP address **before** TLS is attempted and before ``CertificateValidator`` sees any server trust object.
-- The low-level `kDNSServiceFlagsValidate` + bit check in ``SecurityModelValidator`` remains the only place used for TXT record policy fetches; the two mechanisms are complementary.
+- The low-level `kDNSServiceFlagsValidate` query and `kDNSServiceFlagsSecure` status check in ``SecurityModelValidator`` remain the only place used for TXT record policy fetches; the two mechanisms are complementary.
 
 ## Invariant 3: Certificate Pinning (Runtime Full-Chain)
 
