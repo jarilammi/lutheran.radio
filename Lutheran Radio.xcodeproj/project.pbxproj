@@ -7,6 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B712B74B309493AB00D52660 /* ProtectedHostHTTPS.swift in Sources */ = {isa = PBXBuildFile; fileRef = B712B749309493AB00D52660 /* ProtectedHostHTTPS.swift */; };
+		B712B74C309493AB00D52660 /* PinnedDoHFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B712B748309493AB00D52660 /* PinnedDoHFetcher.swift */; };
+		B712B74D309493AB00D52660 /* SubjectPublicKeyInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = B712B74A309493AB00D52660 /* SubjectPublicKeyInfo.swift */; };
+		B712B74E309493AB00D52660 /* DNSWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = B712B747309493AB00D52660 /* DNSWire.swift */; };
+		B712B74F309493AB00D52660 /* DNSSECVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B712B746309493AB00D52660 /* DNSSECVerifier.swift */; };
+		B712B750309493AB00D52660 /* ProtectedHostHTTPS.swift in Sources */ = {isa = PBXBuildFile; fileRef = B712B749309493AB00D52660 /* ProtectedHostHTTPS.swift */; };
+		B712B751309493AB00D52660 /* PinnedDoHFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B712B748309493AB00D52660 /* PinnedDoHFetcher.swift */; };
+		B712B752309493AB00D52660 /* SubjectPublicKeyInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = B712B74A309493AB00D52660 /* SubjectPublicKeyInfo.swift */; };
+		B712B753309493AB00D52660 /* DNSWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = B712B747309493AB00D52660 /* DNSWire.swift */; };
+		B712B754309493AB00D52660 /* DNSSECVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B712B746309493AB00D52660 /* DNSSECVerifier.swift */; };
 		B7194FE72FD09507009C466D /* MediaPlayer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B7194FE62FD09507009C466D /* MediaPlayer.framework */; };
 		B72A089E30067E5700560CD1 /* WidgetSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B72A089330067E5600560CD1 /* WidgetSurface.framework */; };
 		B72A08A830067E5700560CD1 /* WidgetSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B72A089330067E5600560CD1 /* WidgetSurface.framework */; };
@@ -165,6 +175,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B712B746309493AB00D52660 /* DNSSECVerifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DNSSECVerifier.swift; sourceTree = "<group>"; };
+		B712B747309493AB00D52660 /* DNSWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DNSWire.swift; sourceTree = "<group>"; };
+		B712B748309493AB00D52660 /* PinnedDoHFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedDoHFetcher.swift; sourceTree = "<group>"; };
+		B712B749309493AB00D52660 /* ProtectedHostHTTPS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedHostHTTPS.swift; sourceTree = "<group>"; };
+		B712B74A309493AB00D52660 /* SubjectPublicKeyInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubjectPublicKeyInfo.swift; sourceTree = "<group>"; };
 		B7194FE62FD09507009C466D /* MediaPlayer.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaPlayer.framework; path = System/Library/Frameworks/MediaPlayer.framework; sourceTree = SDKROOT; };
 		B72A089330067E5600560CD1 /* WidgetSurface.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = WidgetSurface.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		B72A089D30067E5600560CD1 /* WidgetSurfaceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WidgetSurfaceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -411,6 +426,11 @@
 		B7759C912F6E62F700829AC0 /* Security */ = {
 			isa = PBXGroup;
 			children = (
+				B712B746309493AB00D52660 /* DNSSECVerifier.swift */,
+				B712B747309493AB00D52660 /* DNSWire.swift */,
+				B712B748309493AB00D52660 /* PinnedDoHFetcher.swift */,
+				B712B749309493AB00D52660 /* ProtectedHostHTTPS.swift */,
+				B712B74A309493AB00D52660 /* SubjectPublicKeyInfo.swift */,
 				B7759C352F6E62EA00829AC0 /* CertificateValidator.swift */,
 				B77B42102FD214FD00AB6019 /* CertificateFingerprint.swift */,
 			);
@@ -945,6 +965,11 @@
 				B77E54442F6E6A9000A055DA /* CertificateValidator.swift in Sources */,
 				B7D26EFC2F6E6EFF003568F0 /* Core.swift in Sources */,
 				B77E54482F6E6AAD00A055DA /* SecurityConfiguration.swift in Sources */,
+				B712B74B309493AB00D52660 /* ProtectedHostHTTPS.swift in Sources */,
+				B712B74C309493AB00D52660 /* PinnedDoHFetcher.swift in Sources */,
+				B712B74D309493AB00D52660 /* SubjectPublicKeyInfo.swift in Sources */,
+				B712B74E309493AB00D52660 /* DNSWire.swift in Sources */,
+				B712B74F309493AB00D52660 /* DNSSECVerifier.swift in Sources */,
 				B77E54462F6E6A9E00A055DA /* SecurityModelValidator.swift in Sources */,
 				B77B42122FD214FD00AB6019 /* CertificateFingerprint.swift in Sources */,
 			);
@@ -955,6 +980,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				B77E54472F6E6A9E00A055DA /* SecurityModelValidator.swift in Sources */,
+				B712B750309493AB00D52660 /* ProtectedHostHTTPS.swift in Sources */,
+				B712B751309493AB00D52660 /* PinnedDoHFetcher.swift in Sources */,
+				B712B752309493AB00D52660 /* SubjectPublicKeyInfo.swift in Sources */,
+				B712B753309493AB00D52660 /* DNSWire.swift in Sources */,
+				B712B754309493AB00D52660 /* DNSSECVerifier.swift in Sources */,
 				B77E54452F6E6A9000A055DA /* CertificateValidator.swift in Sources */,
 				B77B42112FD214FD00AB6019 /* CertificateFingerprint.swift in Sources */,
 				B77E54492F6E6AAD00A055DA /* SecurityConfiguration.swift in Sources */,

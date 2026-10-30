@@ -15,7 +15,9 @@ import Foundation
 /// against the authoritative fingerprints stored in ``SecurityConfiguration``.
 ///
 /// ## Key Responsibilities
-/// - Performs system trust evaluation (includes ATS SPKI pinning and chain validation).
+/// - Performs system trust evaluation, then the leaf DER pin. URLSession applies ATS
+///   before that challenge. ``validateStreamingServerTrust(_:host:)`` checks the
+///   Info.plist SPKI pin first because the verified-address path does not.
 /// - Verifies the leaf certificate's full DER SHA-256 fingerprint.
 /// - Caches **pin matches** for ``SecurityConfiguration/certificateValidationCacheDuration``
 ///   (10 minutes). A transition-window leniency accept is not a cache hit: the next
@@ -215,6 +217,28 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         
         return isValid
     }
+
+    /// Leaf pin plus the Info.plist SPKI pin for a connection that bypasses ATS.
+    ///
+    /// `NWConnection` does not apply `NSPinnedDomains`. An empty pin list for `host`
+    /// fails closed. A cache hit inside ``validateServerTrust(_:)`` still requires this
+    /// trust's SPKI to match before that hit is consulted.
+    ///
+    /// - Parameters:
+    ///   - serverTrust: Trust object from the TLS verify callback.
+    ///   - host: TLS peer name. The SSL policy is bound to this name.
+    /// - Returns: `true` when the SPKI pin matches and ``validateServerTrust(_:)`` accepts the leaf.
+    /// - SeeAlso: ``validateServerTrust(_:)``, ``<doc:Security-Invariants>`` Invariant 2 and 3
+    public func validateStreamingServerTrust(_ serverTrust: SecTrust, host: String) async -> Bool {
+        let policy = SecPolicyCreateSSL(true, host as CFString)
+        // SAFETY: SecTrustSetPolicies replaces the policy set on this handshake's trust object
+        // before evaluation. The hostname is the URL host, not the connected address.
+        SecTrustSetPolicies(serverTrust, [policy] as CFArray)
+        guard AppTransportSecurityPins.matches(trust: serverTrust, host: host) else {
+            return false
+        }
+        return await validateServerTrust(serverTrust)
+    }
     
     /// Performs proactive certificate validation for a stream URL using a HEAD request.
     ///
@@ -222,10 +246,10 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// and for periodic re-validation on the cadence of
     /// ``SecurityConfiguration/certificateValidationCacheDuration`` (10 minutes).
     ///
-    /// It obtains a secure `URLSessionConfiguration` (via ``SecurityConfiguration/makeSecureEphemeralConfiguration()``)
-    /// that enforces ``SecurityConfiguration/requiresDNSSECValidationForStreaming`` for the resolution step,
-    /// then creates an ephemeral `URLSession` with this actor as the delegate, issues a
-    /// `HEAD` request, and returns the result of the subsequent challenge evaluation.
+    /// The HEAD request goes through ``ProtectedHostHTTPS/data(for:host:configureFirst:delegate:delegateQueue:retryTimeout:)``.
+    /// The first attempt uses ``SecurityConfiguration/makeSecureEphemeralConfiguration()``
+    /// (``requiresDNSSECValidationForStreaming`` stays on). A DNSSEC-not-completed error may
+    /// retry once through verified addresses. This actor remains the trust delegate.
     /// The call is fully asynchronous and non-blocking.
     ///
     /// DNS resolution for the target host is authenticated via DNSSEC (when the policy is enabled)
@@ -252,13 +276,20 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         // Obtain configuration through Core single source of truth so that DNSSEC requirement
         // (and future secure networking policy) is applied uniformly for the HEAD validation
         // of the streaming endpoint.
-        let config = SecurityConfiguration.makeSecureEphemeralConfiguration()
-        let session = URLSession(configuration: config, delegate: self, delegateQueue: delegateQueue)
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
         
         do {
-            let (_, response) = try await session.data(for: request)  // ← modern async API
+            // First attempt keeps the secure factory (DNSSEC on, default 60 s request timeout).
+            // A DNSSEC-not-completed error may retry once through verified addresses.
+            let (_, response) = try await ProtectedHostHTTPS.data(
+                for: request,
+                host: url.host,
+                configureFirst: { _ in },
+                delegate: self,
+                delegateQueue: delegateQueue,
+                retryTimeout: 60
+            )
             
             // Challenge outcome, including a one-shot leniency accept. Do not read
             // `lastValidationResult` here: that flag is pin-match cache state and

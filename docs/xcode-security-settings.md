@@ -86,4 +86,4 @@ Settings considered but not enabled. Revisit only with an explicit owner request
 - `CLANG_WARN_COMPLETION_HANDLER_MISUSE`: Blocks / ObjC completion-handler warning; no first-party ObjC.
 - `CLANG_WARN_OBJC_REPEATED_USE_OF_WEAK`: ObjC-specific; no first-party ObjC.
 
-All targets, including `WidgetSurfaceTests` Debug/Release, keep `IPHONEOS_DEPLOYMENT_TARGET = 26.2` with the project and app. Do not raise the app (or this test bundle) to 27.0. Agent gates still use an iOS 27 simulator; that is the run destination, not the deployment target.
+All targets, including `WidgetSurfaceTests` Debug/Release, keep `IPHONEOS_DEPLOYMENT_TARGET = 26.2` with the project and app. Do not raise the app (or this test bundle) to 27.0. Agent gates still use the iOS 27.1 simulator SDK (`iphonesimulator27.1`); that SDK is the build input, and the destination `OS=` is the runtime discovery prints, not the deployment target.

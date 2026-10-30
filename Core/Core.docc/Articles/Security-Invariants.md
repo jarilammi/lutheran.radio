@@ -18,7 +18,7 @@ This document defines the **required security invariants** of the Lutheran Radio
 - The query uses `kDNSServiceFlagsValidate` (strict, not `ValidateOptional`). `dns_sd.h` may deliver the TXT RRset and the DNSSEC status in **separate** callbacks. A status callback is `kDNSServiceFlagsValidate` + `kDNSServiceFlagsAdd` with **zero-length rdata**; that callback is the validation signal, not an empty RRset. The Validate bit means status is available. ``SecurityModelValidator`` buffers the parsed TXT set and **accepts it only when `kDNSServiceFlagsSecure` is set**. Insecure, bogus, indeterminate, expired, and missing status are transient failures (never trusted). An empty set accepted under `kDNSServiceFlagsSecure` is still an authoritative answer.
 - Validation is performed exclusively by ``SecurityModelValidator``.
 - **Ordered host walk** (``SecurityModelValidator`` / ``securityModelDomains`` — do not weaken):
-  1. **Authoritative answer** = DNSSEC-validated TXT rdata accepted by the callback (including empty set).
+  1. **Authoritative answer** = DNSSEC-validated TXT rdata accepted by the callback (including an empty set), or a TXT set that ``DNSSECWalk`` verified from DNS wire data when the system query produced **zero callbacks**. A callback that already delivered Insecure, Bogus, Indeterminate, expired, or Validate-without-a-status-code is **not** replaced by that local verification.
   2. **Contains expected model** → success; **stop** (later hosts not queried).
   3. **Does not contain it** → permanent fail; **stop** (no fall-through).
   4. **Transient** (error, timeout, missing or non-Secure DNSSEC status, etc.) → next host; that host is **fully trusted** if it returns an authoritative allow-list containing the expected model.
@@ -36,7 +36,8 @@ This document defines the **required security invariants** of the Lutheran Radio
 - When ``SecurityConfiguration/requiresDNSSECValidationForStreaming`` is true (the default), `URLSessionConfiguration.requiresDNSSECValidation` is set. This causes the system resolver to be asked for DNSSEC-validated answers; unvalidated answers cause the session task to fail.
 - DNSSEC validation failures at this layer are **transient** (see `StreamErrorType` classification and player recovery paths). This keeps the requirement "opt-in safe".
 - This layer authenticates the mapping from hostname to IP address **before** TLS is attempted and before ``CertificateValidator`` sees any server trust object.
-- The low-level `kDNSServiceFlagsValidate` query and `kDNSServiceFlagsSecure` status check in ``SecurityModelValidator`` remain the only place used for TXT record policy fetches; the two mechanisms are complementary.
+- The low-level `kDNSServiceFlagsValidate` query and `kDNSServiceFlagsSecure` status check in ``SecurityModelValidator`` remain the TXT policy path. Local verification (``DNSSECWalk``, pinned HTTPS wire transport, ``SecurityConfiguration/ianaRootTrustAnchors``) runs only when that query delivers zero callbacks. It does not trust a DoH `AD` bit.
+- ``requiresDNSSECValidationForStreaming`` stays true. ``makeSecureEphemeralConfiguration()`` still sets the flag. ``makeVerifiedAddressRetryConfiguration()`` is the only factory that clears it, and only for one retry after `NSURLErrorDomain` -1001 with stream domain 4 / code -2102 when local A/AAAA verification of that host just succeeded. The retry connects only to those addresses. The TLS peer name stays the hostname. A redirect to another host starts a new DNSSEC-on request and does not reuse the address set. Cache and credential storage stay nil. The runtime leaf pin is unchanged.
 
 ## Invariant 3: Certificate Pinning (Runtime Full-Chain)
 
@@ -73,6 +74,9 @@ All of the following values exist **only** inside ``SecurityConfiguration`` and 
 - `certificateValidationCacheDuration` (runtime pin-result cache — 10 minutes; never reuse `modelCacheDuration`)
 - DNS TXT host list (`securityModelDomains` — siikkari primary, lutheranradio.eu secondary, sk backup; independent of media preference)
 - Streaming media apex (`preferredStreamingDomainSuffixes` — sole apex `siikkari.net`; use ``streamingHostCandidates(leadingLabel:)`` for host construction)
+- `ianaRootTrustAnchors` (current IANA root KeyDigests only)
+- `pinnedDoHResolvers` (pinned DNS-over-HTTPS hosts and SPKI pins)
+- `makeVerifiedAddressRetryConfiguration()` (the only session factory that clears `requiresDNSSECValidation`)
 
 **Media vs TXT separation:** Production media uses only `siikkari.net` (`european` / `livestream` / language hosts). DNS TXT allow-list queries use ordered `securityModelDomains` (`securitymodels.siikkari.net` primary → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk`) and are **independent** of the media apex list. Preserve the four-point ordered host walk in Invariant 1 when reordering hosts. Retired `lutheran.radio` media hosts are not protected streaming hosts in this binary.
 

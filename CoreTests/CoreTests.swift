@@ -28,6 +28,51 @@ struct CoreTests {
         #expect(SecurityConfiguration.hostRequiresDNSSECValidation("example.com") == false)
     }
 
+    /// The normal factory stays DNSSEC-on. The retry factory is the only one that clears the flag.
+    @Test func verifiedAddressRetryFactoryClearsDNSSECOnlyThere() {
+        let normal = SecurityConfiguration.makeSecureEphemeralConfiguration()
+        let retry = SecurityConfiguration.makeVerifiedAddressRetryConfiguration()
+        #expect(SecurityConfiguration.current.requiresDNSSECValidationForStreaming)
+        #expect(normal.requiresDNSSECValidation == true)
+        #expect(retry.requiresDNSSECValidation == false)
+        #expect(retry.urlCache == nil)
+        #expect(retry.urlCredentialStorage == nil)
+    }
+
+    /// The verify completion is invoked once through the copied block and then released.
+    ///
+    /// This is the lifetime `withoutActuallyEscaping` aborted inside the boringssl callback.
+    @Test func verifyCompletionInvokesTheCopiedBlockOnce() {
+        final class Flag { var value: Bool? }
+        let flag = Flag()
+        let block: @convention(block) (Bool) -> Void = { flag.value = $0 }
+        let raw = unsafe unsafeBitCast(block, to: UnsafeRawPointer.self)
+        let box = unsafe TLSVerifyCompletion(copying: raw)
+        unsafe box.call(true)
+        #expect(flag.value == true)
+        unsafe box.call(false)
+        #expect(flag.value == true)
+    }
+
+    /// Flag-off retry requires the DNSSEC-not-completed shape and a verified address.
+    @Test func flagOffRetryRequiresDNSSECNotCompletedAndAddresses() {
+        let silence = NSError(
+            domain: NSURLErrorDomain,
+            code: NSURLErrorTimedOut,
+            userInfo: [
+                "_kCFStreamErrorDomainKey": NSNumber(value: 4),
+                "_kCFStreamErrorCodeKey": NSNumber(value: -2102),
+            ]
+        )
+        let plain = NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
+        #expect(ProtectedHostHTTPS.allowsFlagOffRetry(error: silence, verifiedAddressCount: 1, alreadyRetried: false))
+        #expect(ProtectedHostHTTPS.allowsFlagOffRetry(error: silence, verifiedAddressCount: 0, alreadyRetried: false) == false)
+        #expect(ProtectedHostHTTPS.allowsFlagOffRetry(error: silence, verifiedAddressCount: 1, alreadyRetried: true) == false)
+        #expect(ProtectedHostHTTPS.allowsFlagOffRetry(error: plain, verifiedAddressCount: 2, alreadyRetried: false) == false)
+        let wrapped = NSError(domain: NSURLErrorDomain, code: NSURLErrorUnknown, userInfo: [NSUnderlyingErrorKey: silence])
+        #expect(ProtectedHostHTTPS.isSystemDNSSECNotCompleted(wrapped))
+    }
+
     /// Protects the invariant that DNS TXT success caching and runtime certificate
     /// pin-result caching use distinct durations (1 hour vs 10 minutes).
     ///

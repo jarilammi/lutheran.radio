@@ -470,13 +470,20 @@ extension DirectStreamingPlayer {
         // answers HTTP 200 only for `User-Agent: Lutheran Radio`; other agents
         // get 403, which this method records as a failed sample.
         // - SeeAlso: latencyProbeRequest(url:), SecurityConfiguration.makeSecureEphemeralConfiguration()
-        let config = SecurityConfiguration.makeSecureEphemeralConfiguration()
-        config.timeoutIntervalForRequest = 2.0
-        let session = URLSession(configuration: config)
         let request = Self.latencyProbeRequest(url: server.pingURL)
         
         do {
-            let (_, response) = try await session.data(for: request)
+            // First attempt stays at 2 s with DNSSEC required. The User-Agent on `request`
+            // is unchanged. A DNSSEC-not-completed error may retry once at a longer timeout.
+            let (_, response) = try await ProtectedHostHTTPS.data(
+                for: request,
+                host: server.pingURL.host,
+                configureFirst: { configuration in
+                    configuration.timeoutIntervalForRequest = 2.0
+                },
+                delegate: nil,
+                delegateQueue: nil
+            )
             let latency = Date().timeIntervalSince(startTime)
             
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {

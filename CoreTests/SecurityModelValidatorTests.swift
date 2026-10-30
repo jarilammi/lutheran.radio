@@ -7,6 +7,7 @@
 
 import Testing
 import Foundation
+import Synchronization
 @testable import Core
 
 /// Mirrors ``SecurityConfiguration/expectedSecurityModel`` for deterministic validator tests.
@@ -418,6 +419,69 @@ struct SecurityModelValidatorTests {
         await resetForDeterministicTest()
         await restoreRealClock()
     }
+
+    /// Zero callbacks plus a verified fixture containing the model is success.
+    /// Later hosts are not queried. The fixture is local; DoH is not opened.
+    @Test("Zero callbacks with a verified allow-list stop the host walk")
+    func zeroCallbacksVerifiedAllowListStopsWalk() async throws {
+        await resetForDeterministicTest()
+        await SecurityModelValidator._test_setCurrentDate { DNSSECFixtureBuilder.now }
+        let built = try DNSSECFixtureBuilder.allowList(
+            txt: "dallas,montereypark,\(testExpectedSecurityModel)"
+        )
+        let seen = Mutex<[String]>([])
+        await SecurityModelValidator._test_setSystemTXT { domain in
+            seen.withLock { $0.append(domain) }
+            return .noCallback
+        }
+        await SecurityModelValidator._test_setWireFetcher(built.fetcher)
+        await SecurityModelValidator._test_setTrustAnchors(built.anchors)
+        let accepted = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(accepted)
+        #expect(seen.withLock { $0 } == [SecurityConfiguration.current.securityModelDomains[0]])
+        await resetForDeterministicTest()
+        await restoreRealClock()
+    }
+
+    /// A verified set that omits the model is permanent. The next host is not consulted.
+    @Test("Zero callbacks with a verified omission are permanent")
+    func zeroCallbacksVerifiedOmissionIsPermanent() async throws {
+        await resetForDeterministicTest()
+        await SecurityModelValidator._test_setCurrentDate { DNSSECFixtureBuilder.now }
+        let built = try DNSSECFixtureBuilder.allowList(txt: "other-model")
+        let seen = Mutex<[String]>([])
+        await SecurityModelValidator._test_setSystemTXT { domain in
+            seen.withLock { $0.append(domain) }
+            return .noCallback
+        }
+        await SecurityModelValidator._test_setWireFetcher(built.fetcher)
+        await SecurityModelValidator._test_setTrustAnchors(built.anchors)
+        let accepted = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(accepted == false)
+        #expect(await SecurityModelValidator.shared.isPermanentlyInvalid)
+        #expect(seen.withLock { $0 } == [SecurityConfiguration.current.securityModelDomains[0]])
+        let queries = built.fetcher.queries.withLock { $0 }
+        #expect(queries.allSatisfy { !$0.contains("lutheranradio") })
+        await resetForDeterministicTest()
+        await restoreRealClock()
+    }
+
+    /// A delivered non-Secure status is not replaced by a fixture that would verify.
+    @Test("Insecure status is not replaced by local verification")
+    func insecureStatusIsNotReplaced() async throws {
+        await resetForDeterministicTest()
+        let built = try DNSSECFixtureBuilder.allowList(txt: testExpectedSecurityModel)
+        await SecurityModelValidator._test_setSystemTXT { _ in
+            .transient(NSError(domain: "dnssec", code: -1))
+        }
+        await SecurityModelValidator._test_setWireFetcher(built.fetcher)
+        await SecurityModelValidator._test_setTrustAnchors(built.anchors)
+        let accepted = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(accepted == false)
+        #expect(await SecurityModelValidator.shared.isPermanentlyInvalid == false)
+        #expect(built.fetcher.queries.withLock { $0 }.isEmpty)
+        await resetForDeterministicTest()
+    }
 }
 
 // MARK: - QueryContext claim-once (Mutex session, no DNS)
@@ -590,6 +654,19 @@ struct DNSSECStatusDeliveryTests {
             .alreadyFinished
         ])
         #expect(trace.completionCount == 1)
+    }
+
+    /// The watchdog distinguishes silence from a timeout after callbacks, and from a session that already finished.
+    @Test("Timeout kind is silence only when no callback arrived")
+    func timeoutKindDistinguishesSilence() {
+        #expect(SecurityModelValidator._test_timeoutKind(after: []) == .silence)
+        #expect(SecurityModelValidator._test_timeoutKind(after: [
+            .record(["kailuakona"], moreComing: false, includeValidateBit: false)
+        ]) == .afterCallbacks)
+        #expect(SecurityModelValidator._test_timeoutKind(after: [
+            .record(["kailuakona"], moreComing: false, includeValidateBit: false),
+            .secureStatus(moreComing: false)
+        ]) == .alreadyFinished)
     }
 }
 
