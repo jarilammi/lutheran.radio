@@ -177,7 +177,7 @@ openssl s_client -connect livestream.siikkari.net:443 -servername livestream.sii
 
 **4. Run the mandatory build & test gates (execute sequentially; see CODING_AGENT.md for mechanical-work exceptions):**
 
-First discover available simulators (use only a destination the listing actually prints; if `OS=27.0,name=…` is ambiguous, use `id=`):
+First discover available simulators (use only a destination the listing actually prints; if the `OS=` and name pair is ambiguous, use `id=`). The gate SDK is the iOS 27.1 simulator (`-sdk iphonesimulator27.1`). `OS=` is the runtime that listing prints:
 ```bash
 xcrun simctl list devices available
 xcodebuild -scheme "Lutheran Radio" -showdestinations
@@ -186,24 +186,24 @@ xcodebuild -scheme "Lutheran Radio" -showdestinations
 **Required (Xcode 27 or later — contributors, agents, local gates, App Store archives):**
 ```bash
 # Clean build (recommended reference)
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 \
   -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build-for-testing
 # Look for: ** TEST BUILD SUCCEEDED **
 
 # Full test suite (default `Lutheran Radio.xctestplan` includes
 # Lutheran RadioTests, Lutheran RadioUITests, CoreTests,
 # WidgetSurfaceTests, and LutheranRadioWidgetTests)
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 \
   -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' test-without-building
 # Look for: ** TEST EXECUTE SUCCEEDED **
 
 # Fast path (Core / security / networking)
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 \
   -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean test -only-testing:CoreTests
 # Look for: ** TEST SUCCEEDED **
 
 # Widget unit tests only (extension-profile + pure WidgetSurface)
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 \
   -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' \
   test-without-building \
   -only-testing:LutheranRadioWidgetTests \
@@ -211,7 +211,7 @@ xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
 # Look for: ** TEST EXECUTE SUCCEEDED **
 ```
 
-Prefer `iPhone 18 Pro` on iOS 27.0 when discovery lists it. Never invent a destination. The project minimum deployment target is iOS 26.2 (simulator OS is the run destination, not the deployment target). Do not use Xcode 26.6 / iOS 26.5 as a contributor, agent, or App Store gate. GitHub CodeQL remains on Xcode 26.6 and is not that gate. Canonical agent commands live in `CODING_AGENT.md`.
+Prefer `iPhone 18 Pro` when discovery lists it, and build with `-sdk iphonesimulator27.1`. Never invent a destination. The project minimum deployment target is iOS 26.2 (simulator OS is the run destination, not the deployment target). Do not use Xcode 26.6 / iOS 26.5 as a contributor, agent, or App Store gate. GitHub CodeQL remains on Xcode 26.6 and is not that gate. Canonical agent commands live in `CODING_AGENT.md`.
 
 **5. (Optional but recommended for security work) Build DocC for the best invariants/architecture reading experience:**
 
@@ -224,7 +224,7 @@ Cross-reference: "Current Security Snapshot" and "Single Sources of Truth — Ke
 ### Prerequisites
  - Xcode 27 or later (language mode `SWIFT_VERSION = 6`) — required for contributors, agents, local gates, and App Store archives
  - Minimum deployment target: iOS 26.2 (required for EMTE + MIE hardened memory protections). Simulator OS is the run destination, not the deployment target.
- - Required run destination: iPhone 18 Pro simulator on iOS 27.0 (discover with `xcrun simctl list devices available` / `-showdestinations`; never invent a destination)
+ - Required run destination: iPhone 18 Pro with the iOS 27.1 simulator SDK (`-sdk iphonesimulator27.1`). Set `OS=` from `xcrun simctl list devices available` / `-showdestinations`; never invent a destination.
  - GitHub CodeQL remains on Xcode 26.6 (`macos-26`) and is not the contributor or App Store toolchain
  - The iOS App Store binary also runs on Apple Silicon Mac as Designed for iPhone / iPad (`ProcessInfo.processInfo.isiOSAppOnMac`). That host is the same iOS binary (`LSMinimumSystemVersion` 26.5). Live Activities are unavailable there — ``RadioLiveActivityManager`` skips ActivityKit IPC. Keyboard and menu Play/Pause (Space) and previous/next language (⌘[ / ⌘]) are inserted by ``AppDelegate/buildMenu(with:)`` and call ``userRequestedPlay()`` / ``stop()`` via ``handleTogglePlayback()`` and ``handleLanguageSelection(at:)`` via ``handleAdjacentLanguageSelection(offset:)``. Hardware MIE/EMTE remains an iPhone 17-class claim; do not describe equivalent memory tagging on Mac.
 
@@ -251,13 +251,13 @@ To ensure a smooth development experience, follow these steps before contributin
 First run `xcrun simctl list devices available` and `xcodebuild -scheme "Lutheran Radio" -showdestinations` to confirm a suitable simulator.
 
 **Required path (Xcode 27):**
-1. **Verify Project Build:** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build```
+1. **Verify Project Build:** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean build```
    Ensure the output includes: **```** BUILD SUCCEEDED **```**
 
-2. **Run Test Suite:** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean test```
+2. **Run Test Suite:** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean test```
    Check that the output includes: **```** TEST SUCCEEDED **```**
 
-3. **Run Core Module Tests Only (Fast Path):** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean test -testPlan Core```
+3. **Run Core Module Tests Only (Fast Path):** ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.1 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 18 Pro' clean test -testPlan Core```
    Check that the output includes: **```** TEST SUCCEEDED **```**
 
 Canonical sequential gates (`build-for-testing` then `test-without-building`) are in `CODING_AGENT.md`.
@@ -477,7 +477,7 @@ Defense-in-depth uses **two complementary layers**:
 
 1. **Compile-time (Swift / Xcode)** — `SWIFT_STRICT_MEMORY_SAFETY = YES` on every target (SE-0458). The compiler flags unsafe memory operations, legacy `@preconcurrency` imports without `@unsafe`, and related patterns. Security-critical code in `Core/` uses explicit `unsafe { … }` only at C/Security framework boundaries (DNS-SD, `SecTrust`, hashing). Hot paths prefer `Span<UInt8>` / `UTF8Span` over `subdata` copies (DNS TXT rdata in `SecurityModelValidator` zero-copy borrows dns_sd `rdata` in the DNS-SD callback; DER hashing in `CertificateFingerprint` uses `Data.span`).
 
-2. **Runtime (iOS hardware)** — Memory Integrity Enforcement (MIE), including the Enhanced Memory Tagging Extension (EMTE), on compatible devices (e.g., iPhone 17 and later with A19 or newer chips). Local validation uses Xcode 27+ / iOS 27 simulator; deployment remains iOS 26.2+. This mitigates memory corruption, use-after-free, and similar issues via tagged allocations, bounds checking, and pointer authentication at runtime.
+2. **Runtime (iOS hardware)** — Memory Integrity Enforcement (MIE), including the Enhanced Memory Tagging Extension (EMTE), on compatible devices (e.g., iPhone 17 and later with A19 or newer chips). Local validation uses Xcode 27+ / the iOS 27.1 simulator SDK; deployment remains iOS 26.2+. This mitigates memory corruption, use-after-free, and similar issues via tagged allocations, bounds checking, and pointer authentication at runtime.
 
 These layers are independent: strict Swift checking hardens source before ship; MIE/EMTE hardens execution on supported hardware.
 
@@ -493,7 +493,7 @@ See also: [`CODING_AGENT.md`](CODING_AGENT.md) (Strict Memory Safety (SE-0458) +
 
 **Ordered host walk** (`securityModelDomains` — canonical detail in ``<doc:Security-Invariants>`` Invariant 1):
 
-1. **Authoritative answer** = DNSSEC-validated TXT rdata accepted by the callback (including empty set).
+1. **Authoritative answer** = DNSSEC-validated TXT rdata accepted by the callback (including an empty set), or a TXT set that local verification accepted from DNS wire data when the system query produced **zero callbacks**. A delivered non-Secure status is not replaced by that local verification.
 2. **Contains expected model** → success; **stop** (later hosts not queried).
 3. **Does not contain it** → permanent fail; **stop** (no fall-through).
 4. **Transient** (error, timeout, no validate bit, etc.) → next host; that host is **fully trusted** if it returns an authoritative allow-list containing the expected model.
@@ -533,7 +533,9 @@ The app performs the TXT query via `DNSServiceQueryRecord` **with `kDNSServiceFl
 - The buffered set is accepted only when `kDNSServiceFlagsSecure` is set. Insecure, bogus, indeterminate, expired, and missing status are transient failures: the next host is tried; if every host fails that way, the validator enters `.failedTransient` (subject to retry + 1h cache bypass).
 - An empty set accepted under `kDNSServiceFlagsSecure` is still an authoritative answer (permanent failure when the expected model is absent).
 
-This provides data integrity and authenticity protection for the security model allow-list using the zone's existing DNSSEC signatures (RRSIG) and Apple's resolver, with zero new dependencies.
+This provides data integrity and authenticity protection for the security model allow-list using the zone's existing DNSSEC signatures (RRSIG) and Apple's resolver.
+
+When the 5 s watchdog fires and **no callback arrived**, `SecurityModelValidator` verifies the same TXT RRset locally (`DNSSECWalk`) from DNS wire data fetched over pinned HTTPS (`pinnedDoHResolvers`: `cloudflare-dns.com` and `dns.google`). The root is checked against `ianaRootTrustAnchors` (current IANA KeyDigests only). A verified set is an authoritative answer for steps 2 and 3 above, including an empty set. Failed local verification is transient and the next host is tried. The DoH `AD` bit is not trusted. A callback that already delivered Insecure, Bogus, Indeterminate, expired, or Validate-without-a-status-code is not replaced. The watchdog is not lengthened, and `kDNSServiceFlagsValidateOptional` is not used.
 
 Unvalidated (or validation-failing) responses never result in a successful model list. Permanent failure only occurs when the expected model is provably absent from a validated response.
 
@@ -547,6 +549,7 @@ In addition to the hardened TXT lookup for the security model allow-list, the ap
 - This sets `URLSessionConfiguration.requiresDNSSECValidation = true` (session level).
 - The actual media bytes, HEAD probes used by `CertificateValidator`, and latency pings therefore obtain authenticated name-to-IP mappings before TLS + full-certificate pinning.
 - If the client's resolver cannot supply a validated answer, the request fails at the URLSession layer. These failures are classified as **transient** by `DirectStreamingPlayer.StreamErrorType` (allowing recreate + cluster fallback) so that the feature remains safe on networks where full DNSSEC validation is not yet available from the recursive resolver.
+- One exception: `NSURLErrorDomain` -1001 whose stream error is domain 4 and code -2102, after local A/AAAA verification of **that host** just succeeded. `SecurityConfiguration.makeVerifiedAddressRetryConfiguration()` is the only factory that clears `requiresDNSSECValidation`, and only for that one retry. The retry connects only to those addresses. The TLS peer name stays the hostname. A redirect to another host starts a new DNSSEC-on request and does not reuse the address set. Cache and credential storage stay nil. The runtime leaf pin is unchanged. `requiresDNSSECValidationForStreaming` stays true.
 
 This gives three orthogonal DNS/TLS layers:
 1. TXT allow-list (low-level dnssd + `kDNSServiceFlagsValidate`)
@@ -627,8 +630,8 @@ This feature enhances availability while maintaining the app's privacy-first pri
 
 | File / Symbol                                              | Responsibility                                                                 | Important notes for agents |
 |------------------------------------------------------------|--------------------------------------------------------------------------------|----------------------------|
-| `Core/Configuration/SecurityConfiguration.swift`           | Single source of truth for all policy and constants (`expectedSecurityModel`, sole live leaf via `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests`, `isInTransitionWindow`, `transitionWindow*`, `maxAllowedTimeSkew`, `modelCacheDuration`, `certificateValidationCacheDuration`, `securityModelDomains`, `preferredStreamingDomainSuffixes`, `streamingHostCandidates(leadingLabel:)`, `hostRequiresDNSSECValidation`, `requiresDNSSECValidationForStreaming`, `makeSecureEphemeralConfiguration`, `current`) | Never duplicate these values elsewhere. Colon-hex views (`pinnedLeafFingerprint`, `pinnedSiikkariLeafFingerprint`, `pinnedFingerprints`) are for README/openssl parity only. DNS model cache (1 h) and certificate pin-result cache (10 min) are **distinct** constants. Streaming media apex (`siikkari.net` only) is **independent** of DNS TXT host order. Do not keep retired leaf digests on the production acceptance list. The secure session factory is the central point for `requiresDNSSECValidation` + cache hardening on streaming sessions. |
-| `Core/Actors/SecurityModelValidator.swift`                 | Actor-isolated DNS TXT security model validation against ordered `securityModelDomains` (`siikkari.net` primary → `lutheranradio.eu` → `lutheranradio.sk`) | Uses `kDNSServiceFlagsValidate` (strict). Buffers TXT rdata until a separate status callback and accepts it only when `kDNSServiceFlagsSecure` is set. The Validate bit means status is available. `Span<UInt8>` / `UTF8Span` zero-copy rdata borrow in the `dns_sd` callback. 1-hour success-only cache via `modelCacheDuration`. A timestamp ahead of the device clock is discarded. `.failedPermanent` clears that timestamp and is not revived by the cache. Four-point ordered host walk (authoritative answer stops; only transient advances). Entry point: `validateSecurityModel()`. The **only** place DNS TXT logic is allowed. |
+| `Core/Configuration/SecurityConfiguration.swift`           | Single source of truth for all policy and constants (`expectedSecurityModel`, sole live leaf via `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests`, `isInTransitionWindow`, `transitionWindow*`, `maxAllowedTimeSkew`, `modelCacheDuration`, `certificateValidationCacheDuration`, `securityModelDomains`, `preferredStreamingDomainSuffixes`, `streamingHostCandidates(leadingLabel:)`, `hostRequiresDNSSECValidation`, `requiresDNSSECValidationForStreaming`, `makeSecureEphemeralConfiguration`, `ianaRootTrustAnchors`, `pinnedDoHResolvers`, `makeVerifiedAddressRetryConfiguration`, `current`) | Never duplicate these values elsewhere. Colon-hex views (`pinnedLeafFingerprint`, `pinnedSiikkariLeafFingerprint`, `pinnedFingerprints`) are for README/openssl parity only. DNS model cache (1 h) and certificate pin-result cache (10 min) are **distinct** constants. Streaming media apex (`siikkari.net` only) is **independent** of DNS TXT host order. Do not keep retired leaf digests on the production acceptance list. The secure session factory is the central point for `requiresDNSSECValidation` + cache hardening on streaming sessions. `makeVerifiedAddressRetryConfiguration()` is the only factory that clears that flag, and only for one verified-address retry. |
+| `Core/Actors/SecurityModelValidator.swift`                 | Actor-isolated DNS TXT security model validation against ordered `securityModelDomains` (`siikkari.net` primary → `lutheranradio.eu` → `lutheranradio.sk`) | Uses `kDNSServiceFlagsValidate` (strict). Buffers TXT rdata until a separate status callback and accepts it only when `kDNSServiceFlagsSecure` is set. The Validate bit means status is available. `Span<UInt8>` / `UTF8Span` zero-copy rdata borrow in the `dns_sd` callback. 1-hour success-only cache via `modelCacheDuration`. A timestamp ahead of the device clock is discarded. `.failedPermanent` clears that timestamp and is not revived by the cache. Four-point ordered host walk (authoritative answer stops; only transient advances). A zero-callback watchdog verifies the TXT RRset locally over pinned HTTPS and does not replace a delivered non-Secure status. Entry point: `validateSecurityModel()`. The **only** place DNS TXT logic is allowed. |
 | `Core/Security/CertificateFingerprint.swift`               | 32-byte SHA-256 DER digest type + stack-local hashing via `Data.span` + constant-time `constantTimeMatches` | Runtime code must never compare hex strings. Materializes colon-hex only for docs/tooling. |
 | `Core/Security/CertificateValidator.swift`                 | Runtime full-certificate (DER) pinning + 10-minute **pin-match** cache (`certificateValidationCacheDuration`) + transition window + device/server time-skew protection | Complements (does not replace) ATS SPKI pinning from `Info.plist`. Uses `pinnedFingerprintDigests`. Must **not** read `modelCacheDuration`. Leniency accepts are not cached. Time skew > 5 min latches leniency off for the process and does not re-enable it. |
 | `DirectStreamingPlayer.swift` (+ domain extensions; streaming delegates) | Main audio engine façade; embeds security model in stream URLs; domain files own catalog, server selection, attach, recovery, resource loader, periodic Core pin HEAD revalidation; consumes validators; resource-loader sessions via the Core secure factory | Consumes the Core single sources of truth (including DNSSEC-enabled sessions). No policy duplication. Error classification treats DNSSEC-unavailable cases as transient. Isolation map on the façade documents domain ownership. Connect readiness is AVPlayer item status + resource-loader timeouts (no adaptive handshake-budget Task). TLS trust is Core pin + ATS SPKI only. |

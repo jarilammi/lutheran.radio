@@ -12,7 +12,10 @@
 //  the TXT RRset. A status callback is `kDNSServiceFlagsValidate` +
 //  `kDNSServiceFlagsAdd` with zero-length rdata. The Validate bit means
 //  "status is available", not "validation succeeded". Acceptance is
-//  `kDNSServiceFlagsSecure` only. See ``<doc:Security-Invariants>`` Invariant 1.
+//  `kDNSServiceFlagsSecure` only. A watchdog with zero callbacks is not a
+//  delivered status: the actor then verifies the TXT RRset locally. A callback
+//  that already arrived is never replaced by that path.
+//  See ``<doc:Security-Invariants>`` Invariant 1.
 //
 //  Created by Jari Lammi on 19.3.2026.
 //
@@ -57,6 +60,9 @@ private struct DNSQuerySession: ~Copyable {
     var bufferedModels = Set<String>()
     /// `kDNSServiceFlagsSecure` was observed and has not been invalidated by a removal.
     var sawSecureStatus = false
+    /// Callbacks that took the mutex before the session finished.
+    /// Zero when the watchdog claims means the system validator never called back.
+    var callbackCount = 0
 }
 
 /// Low-level context for the DNS-SD TXT query callback and timeout watchdog.
@@ -138,22 +144,49 @@ private final class QueryContext: Sendable {
         }
     }
 
-    /// Timeout-win path: claim, deallocate, resume as transient `dnssd` / `-999`,
-    /// then balance `Unmanaged` on `processingQueue`.
+    /// Distinguishes a watchdog that won before any callback from one that won after.
+    ///
+    /// Does not deallocate or resume. ``handleTimeout()`` does that outside the mutex.
+    func claimTimeout() -> TimeoutClaim {
+        session.withLock { state in
+            if state.didFinish {
+                return TimeoutClaim.alreadyFinished
+            }
+            let silence = state.callbackCount == 0
+            switch takeFinishClaim(&state) {
+            case .alreadyFinished:
+                return TimeoutClaim.alreadyFinished
+            case .won(let bits):
+                if silence {
+                    return TimeoutClaim.silence(serviceRefBits: bits)
+                }
+                return TimeoutClaim.afterCallbacks(serviceRefBits: bits)
+            }
+        }
+    }
+
+    /// Timeout-win path. Zero callbacks resume ``SystemDNSSECValidatorSilence``.
+    /// A timeout after any callback stays transient `dnssd` / `-999` and is not verified locally.
+    /// Deallocate and resume run outside the mutex. `Unmanaged` is balanced on `processingQueue`.
     func handleTimeout() {
-        switch claimFinish() {
+        let failure: Error
+        let bits: UInt?
+        switch claimTimeout() {
         case .alreadyFinished:
             return
-        case .won(let bits):
-            deallocateDNSServiceRef(bits: bits)
-            completion(.failure(
-                NSError(domain: "dnssd", code: -999, userInfo: [NSLocalizedDescriptionKey: "DNS query timeout"])
-            ))
-            // Hop `Unmanaged.release` onto the dns_sd queue so a callback already
-            // queued there can still `takeUnretainedValue` and observe alreadyFinished.
-            processingQueue.async { [self] in
-                unsafe Unmanaged.passUnretained(self).release()
-            }
+        case .afterCallbacks(let serviceBits):
+            bits = serviceBits
+            failure = NSError(domain: "dnssd", code: -999, userInfo: [NSLocalizedDescriptionKey: "DNS query timeout"])
+        case .silence(let serviceBits):
+            bits = serviceBits
+            failure = SystemDNSSECValidatorSilence()
+        }
+        deallocateDNSServiceRef(bits: bits)
+        completion(.failure(failure))
+        // Hop `Unmanaged.release` onto the dns_sd queue so a callback already
+        // queued there can still `takeUnretainedValue` and observe alreadyFinished.
+        processingQueue.async { [self] in
+            unsafe Unmanaged.passUnretained(self).release()
         }
     }
 
@@ -179,6 +212,7 @@ private final class QueryContext: Sendable {
             if state.didFinish {
                 return SessionIngest.alreadyFinished
             }
+            state.callbackCount += 1
             if errorCode != kDNSServiceErr_NoError {
                 return finishClaim(&state, .failure(.dnssd(errorCode)))
             }
@@ -212,6 +246,7 @@ private final class QueryContext: Sendable {
             if state.didFinish {
                 return SessionIngest.alreadyFinished
             }
+            state.callbackCount += 1
             switch prepared {
             case .transportError(let code):
                 return finishClaim(&state, .failure(.dnssd(code)))
@@ -255,6 +290,24 @@ private func deallocateDNSServiceRef(bits: UInt?, extra: DNSServiceRef? = nil) {
     if let extra = unsafe extra {
         unsafe DNSServiceRefDeallocate(extra)
     }
+}
+
+/// Watchdog claim. `silence` means `callbackCount` was still zero.
+private enum TimeoutClaim: Sendable {
+    case alreadyFinished
+    case silence(serviceRefBits: UInt?)
+    case afterCallbacks(serviceRefBits: UInt?)
+}
+
+/// The system validator closed the 5 s watchdog without delivering any callback.
+/// This is not `dnssd` / `-999`. The host walk may verify the RRset locally.
+struct SystemDNSSECValidatorSilence: Error {}
+
+/// Result of the system TXT query before local verification is considered.
+enum SystemTXTOutcome: Sendable {
+    case authoritative(Set<String>)
+    case transient(NSError)
+    case noCallback
 }
 
 /// Why a DNS-SD callback failed. Transport errors stay on `dnssd`. Missing or
@@ -494,6 +547,12 @@ public actor SecurityModelValidator {
     /// Callers are responsible for also bypassing the 1-hour cache (see
     /// `_test_setTXTFetcher` which does this automatically).
     internal var _test_txtFetcher: (@Sendable (String) async throws -> Set<String>)?
+    /// When set, replaces the system TXT query. `.noCallback` runs local verification.
+    internal var _test_systemTXT: (@Sendable (String) -> SystemTXTOutcome)?
+    /// When set, local verification reads this fetcher instead of pinned DoH.
+    internal var _test_wireFetcher: (any DNSWireFetching)?
+    /// When set, replaces ``SecurityConfiguration/ianaRootTrustAnchors`` for local verification.
+    internal var _test_trustAnchors: [DNSSECTrustAnchor]?
     #endif
 
     private init() {
@@ -755,9 +814,101 @@ public actor SecurityModelValidator {
     ///   Failures (including insecure, bogus, indeterminate, or missing status)
     ///   are thrown and treated as transient by the caller. A Secure empty set
     ///   is returned, not thrown — the caller treats it as an authoritative answer.
-    /// - Important: Do not parse on the watchdog path. Timeout is transient (`dnssd` / `-999`).
-    /// - SeeAlso: ``<doc:Security-Invariants>`` (Invariant 1)
+    /// - Important: A watchdog with zero callbacks throws ``SystemDNSSECValidatorSilence``
+    ///   from ``systemDNSQuery(for:)``. This method then verifies the TXT RRset locally.
+    ///   A timeout after any callback stays `dnssd` / `-999` and does not verify locally.
+    ///   A delivered non-Secure status is not replaced.
+    /// - SeeAlso: ``<doc:Security-Invariants>`` (Invariant 1), ``DNSSECWalk``
     private func queryTXTRecord(for domain: String) async throws -> Set<String> {
+        let outcome: SystemTXTOutcome
+        #if DEBUG
+        if let probe = _test_systemTXT {
+            outcome = probe(domain)
+        } else {
+            outcome = await systemTXTOutcome(for: domain)
+        }
+        #else
+        outcome = await systemTXTOutcome(for: domain)
+        #endif
+        switch outcome {
+        case .authoritative(let models):
+            return models
+        case .transient(let error):
+            throw error
+        case .noCallback:
+            return try await locallyVerifiedTXTModels(for: domain)
+        }
+    }
+
+    /// Maps the DNS-SD query onto the three outcomes the host walk understands.
+    private func systemTXTOutcome(for domain: String) async -> SystemTXTOutcome {
+        do {
+            return .authoritative(try await systemDNSQuery(for: domain))
+        } catch is SystemDNSSECValidatorSilence {
+            return .noCallback
+        } catch {
+            return .transient(error as NSError)
+        }
+    }
+
+    /// Verifies the TXT RRset from DNS wire data. Failure is transient `dnssec` / `-2`.
+    ///
+    /// A verified set, including an empty one, is returned so the host walk can treat it
+    /// as an authoritative answer. `-UITestMode` does not open DoH.
+    private func locallyVerifiedTXTModels(for domain: String) async throws -> Set<String> {
+        if ProcessInfo.processInfo.arguments.contains("-UITestMode") {
+            throw NSError(
+                domain: "dnssec",
+                code: -2,
+                userInfo: [NSLocalizedDescriptionKey: "DNSSEC local verification skipped"]
+            )
+        }
+        guard let name = DNSName(presentation: domain) else {
+            throw NSError(
+                domain: "dnssec",
+                code: -2,
+                userInfo: [NSLocalizedDescriptionKey: "DNS name rejected"]
+            )
+        }
+        let fetcher: any DNSWireFetching
+        #if DEBUG
+        if let injected = _test_wireFetcher {
+            fetcher = injected
+        } else {
+            fetcher = PinnedDoHFetcher()
+        }
+        #else
+        fetcher = PinnedDoHFetcher()
+        #endif
+        let anchors: [DNSSECTrustAnchor]
+        #if DEBUG
+        anchors = _test_trustAnchors ?? config.ianaRootTrustAnchors
+        #else
+        anchors = config.ianaRootTrustAnchors
+        #endif
+        let walk = DNSSECWalk(
+            fetcher: fetcher,
+            anchors: anchors,
+            now: currentDate()
+        )
+        switch await walk.txtModels(name: name) {
+        case .verified(let models):
+            return models
+        case .failed:
+            throw NSError(
+                domain: "dnssec",
+                code: -2,
+                userInfo: [NSLocalizedDescriptionKey: "DNSSEC local verification failed"]
+            )
+        }
+    }
+
+    /// Performs the low-level DNS-SD TXT query using `DNSServiceQueryRecord`.
+    ///
+    /// The 5 s watchdog, callback, and setup-failure paths finish through `QueryContext`.
+    /// Zero callbacks resume ``SystemDNSSECValidatorSilence``. Any callback before the
+    /// watchdog keeps the historical `dnssd` / `-999` timeout.
+    private func systemDNSQuery(for domain: String) async throws -> Set<String> {
         try await withCheckedThrowingContinuation { continuation in
             let complete: @Sendable (Result<Set<String>, Error>) -> Void = { result in
                 continuation.resume(with: result)
@@ -906,7 +1057,7 @@ public actor SecurityModelValidator {
     /// Pure parsing logic – `static` (implicitly nonisolated on an actor) so it can be called
     /// safely from the C callback (background thread, non-isolated context).
     /// No actor state access, no `self.`, no isolation violations.
-    private static func parseInlineTXTRecord(_ data: Data) -> Set<String> {
+    static func parseInlineTXTRecord(_ data: Data) -> Set<String> {
         parseInlineTXTRecord(span: data.span)
     }
 
@@ -996,6 +1147,9 @@ public actor SecurityModelValidator {
         clearCache: Bool
     ) {
         _test_txtFetcher = fetcher
+        _test_systemTXT = nil
+        _test_wireFetcher = nil
+        _test_trustAnchors = nil
 
         if clearCache {
             inFlightValidation?.cancel()
@@ -1185,6 +1339,65 @@ public actor SecurityModelValidator {
         case .transportError(let code):
             return .transportError(code)
         }
+    }
+
+    /// Installs the system-query probe. Does not clear ``_test_wireFetcher``.
+    ///
+    /// Call ``_test_setTXTFetcher(_:)`` first when a test needs a clean cache: that reset
+    /// clears this probe.
+    static func _test_setSystemTXT(_ probe: (@Sendable (String) -> SystemTXTOutcome)?) async {
+        await shared._installSystemTXT(probe)
+    }
+
+    /// Installs the DNS wire fetcher used after a zero-callback outcome.
+    static func _test_setWireFetcher(_ fetcher: (any DNSWireFetching)?) async {
+        await shared._installWireFetcher(fetcher)
+    }
+
+    /// Replaces the root trust anchors for the next local verification in this process.
+    static func _test_setTrustAnchors(_ anchors: [DNSSECTrustAnchor]?) async {
+        await shared._installTrustAnchors(anchors)
+    }
+
+    /// Watchdog classification without `DNSServiceRef` and without resuming the silence path.
+    ///
+    /// Empty `events` is silence. A record that does not finish the session is `afterCallbacks`.
+    /// A Secure status that finishes the session is `alreadyFinished`.
+    public static func _test_timeoutKind(after events: [_TestDNSSECEvent]) -> _TestTimeoutKind {
+        let context = QueryContext { _ in }
+        for event in events {
+            let ingest = context.ingestPrepared(preparedDNSCallback(for: event))
+            if case .finish = ingest {
+                context.deliver(ingest)
+            }
+        }
+        switch context.claimTimeout() {
+        case .silence:
+            return .silence
+        case .afterCallbacks:
+            return .afterCallbacks
+        case .alreadyFinished:
+            return .alreadyFinished
+        }
+    }
+
+    /// Classification returned by ``_test_timeoutKind(after:)``.
+    public enum _TestTimeoutKind: Sendable, Equatable {
+        case silence
+        case afterCallbacks
+        case alreadyFinished
+    }
+
+    private func _installSystemTXT(_ probe: (@Sendable (String) -> SystemTXTOutcome)?) {
+        _test_systemTXT = probe
+    }
+
+    private func _installWireFetcher(_ fetcher: (any DNSWireFetching)?) {
+        _test_wireFetcher = fetcher
+    }
+
+    private func _installTrustAnchors(_ anchors: [DNSSECTrustAnchor]?) {
+        _test_trustAnchors = anchors
     }
 
     private func _installCurrentDateProvider(_ provider: @Sendable @escaping () -> Date) {

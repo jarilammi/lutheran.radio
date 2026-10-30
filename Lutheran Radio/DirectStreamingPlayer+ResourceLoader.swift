@@ -90,7 +90,9 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         
         // Create clean request with the HTTPS URL (no conversion needed)
         var modifiedRequest = URLRequest(url: url)
-        modifiedRequest.timeoutInterval = 60.0
+        // 14 s so a DNSSEC-not-completed timeout arrives before the 15 s hard cap.
+        // The hard cap finishes with a generic timeout and must not clear DNSSEC.
+        modifiedRequest.timeoutInterval = 14.0
         
         // Apply Icecast/Liquidsoap compatibility headers (centralised & future-proof)
         modifiedRequest = self.requestWithIcecastHeaders(from: modifiedRequest)
@@ -109,7 +111,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         // Enhanced configuration for SSL pinning + DNSSEC-protected name resolution.
         // All policy for secure networking flows through SecurityConfiguration (Core/ single source of truth).
         let config = SecurityConfiguration.makeSecureEphemeralConfiguration()
-        config.timeoutIntervalForRequest = 60.0
+        config.timeoutIntervalForRequest = 14.0
         config.timeoutIntervalForResource = 120.0
         
         // Additional streaming-specific tunables (DNSSEC + cache hardening already applied by factory).
@@ -124,6 +126,33 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         print("[DirectStreamingPlayer] [Resource Loader] Creating URLSession with SSL-forcing config")
         #endif
         
+        // Copy before the `@Sendable` retry closure. `modifiedRequest` is still mutated above.
+        let firstRequest = modifiedRequest
+        streamingDelegate.retryBeforeResponse = { [weak self, weak streamingDelegate] error in
+            guard let self, let streamingDelegate else { return false }
+            guard ProtectedHostHTTPS.isSystemDNSSECNotCompleted(error) else { return false }
+            // A cancel or hard-timeout during the address walk must not open the flag-off session.
+            guard !streamingDelegate.loadingRequest.isCancelled,
+                  !streamingDelegate.loadingRequest.isFinished else { return false }
+            self.loadingTimeoutWorkItem?.cancel()
+            let addresses = await DNSSECLocalVerification.verifiedAddresses(forHost: host)
+            guard !streamingDelegate.loadingRequest.isCancelled,
+                  !streamingDelegate.loadingRequest.isFinished else { return false }
+            guard ProtectedHostHTTPS.allowsFlagOffRetry(
+                error: error,
+                verifiedAddressCount: addresses.count,
+                alreadyRetried: false
+            ) else {
+                return false
+            }
+            return self.startVerifiedAddressRetry(
+                delegate: streamingDelegate,
+                request: firstRequest,
+                host: host,
+                addresses: addresses
+            )
+        }
+
         streamingDelegate.session = URLSession(configuration: config,
                                                delegate: streamingDelegate,
                                                delegateQueue: operationQueue)
@@ -221,7 +250,7 @@ extension DirectStreamingPlayer {
 extension DirectStreamingPlayer {
     // MARK: - Loading Request Hard Timeout (prevents eternal .unknown status)
 
-    func startLoadingRequestTimeout(for delegate: StreamingSessionDelegate) {
+    func startLoadingRequestTimeout(for delegate: StreamingSessionDelegate, seconds: TimeInterval = 15) {
         loadingTimeoutWorkItem?.cancel()
         
         let work = DispatchWorkItem { [weak self, weak delegate] in
@@ -230,7 +259,7 @@ extension DirectStreamingPlayer {
                   !delegate.loadingRequest.isFinished else { return }
             
             #if DEBUG
-            print("⏰ [Hard Timeout] Completing hung loading request after 15s – this should never happen only on unresponsive servers")
+            print("⏰ [Hard Timeout] Completing hung loading request after \(seconds)s – this should never happen only on unresponsive servers")
             #endif
             
             delegate.loadingRequest.finishLoading(with: URLError(.timedOut))
@@ -240,6 +269,47 @@ extension DirectStreamingPlayer {
         }
         
         loadingTimeoutWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 15.0, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+    }
+
+    /// Replaces a pre-response stream task with one session that uses only `addresses`.
+    ///
+    /// SECURITY: The configuration comes from ``SecurityConfiguration/makeVerifiedAddressRetryConfiguration()``,
+    /// which is the only factory that clears `requiresDNSSECValidation`. The peer name stays `host`.
+    /// The hard cap is restarted at 30 s for this attempt. Request and resource timeouts return to 60 / 120.
+    /// The DNSSEC-on session is finished so it cannot keep the delegate alive after the replacement task starts.
+    private func startVerifiedAddressRetry(
+        delegate: StreamingSessionDelegate,
+        request: URLRequest,
+        host: String,
+        addresses: [VerifiedSocketAddress]
+    ) -> Bool {
+        let config = SecurityConfiguration.makeVerifiedAddressRetryConfiguration()
+        config.timeoutIntervalForRequest = 60.0
+        config.timeoutIntervalForResource = 120.0
+        config.waitsForConnectivity = false
+        config.httpMaximumConnectionsPerHost = 1
+        let operationQueue = OperationQueue()
+        operationQueue.qualityOfService = .userInitiated
+        operationQueue.maxConcurrentOperationCount = 1
+        var retryRequest = request
+        retryRequest.timeoutInterval = 60.0
+        retryRequest = ProtectedHostHTTPS.requestByBindingVerifiedAddresses(
+            retryRequest,
+            host: host,
+            addresses: addresses
+        )
+        let retiredSession = delegate.session
+        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: operationQueue)
+        delegate.session = session
+        // The failed task has already completed. finishTasksAndInvalidate drops the session's
+        // retain of this delegate. invalidateAndCancel could race that completion callback.
+        if retiredSession !== session {
+            retiredSession?.finishTasksAndInvalidate()
+        }
+        delegate.dataTask = session.dataTask(with: retryRequest)
+        delegate.dataTask?.resume()
+        startLoadingRequestTimeout(for: delegate, seconds: 30)
+        return true
     }
 }

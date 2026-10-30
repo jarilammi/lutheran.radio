@@ -14,6 +14,9 @@
 //    apex: `siikkari.net`) and DNS TXT security-model host list
 //  - DNSSEC streaming policy (`requiresDNSSECValidationForStreaming`)
 //  - The factory `makeSecureEphemeralConfiguration()` used by all streaming paths
+//  - IANA root KeyDigest anchors and pinned DoH resolver SPKIs
+//  - `makeVerifiedAddressRetryConfiguration()`, the only factory that clears
+//    `requiresDNSSECValidation`, and only for addresses local verification accepted
 //
 //  AGENT NOTE: Any new security constant, DNS policy knob, streaming-domain
 //  preference, or secure-session helper must be added here (never duplicated in
@@ -466,10 +469,13 @@ public struct SecurityConfiguration: Sendable {
     ///   Typically an `.ephemeral` instance supplied by the caller so that per-call timeouts
     ///   and other tunables can still be set after this call.
     ///
-    /// - Important: After calling this, further customize timeouts etc. The DNSSEC flag must not
-    ///   be overridden back to false for protected hosts.
+    /// - Important: After calling this, further customize timeouts etc. Do not clear
+    ///   `requiresDNSSECValidation` on this configuration. The only session that clears it is
+    ///   ``makeVerifiedAddressRetryConfiguration()``, after local A/AAAA verification, for the
+    ///   single DNSSEC-not-completed retry.
     ///
-    /// - SeeAlso: ``makeSecureEphemeralConfiguration()``, ``hostRequiresDNSSECValidation(_:)``
+    /// - SeeAlso: ``makeSecureEphemeralConfiguration()``, ``makeVerifiedAddressRetryConfiguration()``,
+    ///   ``hostRequiresDNSSECValidation(_:)``
     public func applySecureNetworkingRequirements(to configuration: URLSessionConfiguration) {
         // Cache and credential hardening (defense-in-depth for security-sensitive sessions).
         configuration.urlCache = nil
@@ -507,6 +513,75 @@ public struct SecurityConfiguration: Sendable {
         current.applySecureNetworkingRequirements(to: config)
         return config
     }
+
+    /// Ephemeral configuration for the one verified-address retry.
+    ///
+    /// SECURITY: `requiresDNSSECValidation` is false only here. Callers may use this
+    /// after ``ProtectedHostHTTPS/allowsFlagOffRetry(error:verifiedAddressCount:alreadyRetried:)``
+    /// accepted the error and local verification returned the addresses bound to the request.
+    /// Cache and credential storage stay nil. ``requiresDNSSECValidationForStreaming`` is unchanged.
+    ///
+    /// - Returns: A configuration whose protocol list connects only to a verified address set.
+    /// - SeeAlso: ``makeSecureEphemeralConfiguration()``, ``<doc:Security-Invariants>`` Invariant 2
+    public static func makeVerifiedAddressRetryConfiguration() -> URLSessionConfiguration {
+        let config = URLSessionConfiguration.ephemeral
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.urlCredentialStorage = nil
+        config.requiresDNSSECValidation = false
+        config.protocolClasses = [VerifiedAddressHTTPSProtocol.self]
+        return config
+    }
+
+    /// Current IANA root KeyDigests (DS SHA-256). Not the DNSKEY public keys.
+    ///
+    /// `validFrom` is honored on the device clock. Retired anchors are not included.
+    /// An RRSIG is not extended by ``maxAllowedTimeSkew`` or the certificate transition window.
+    ///
+    /// - SeeAlso: ``DNSSECTrustAnchor``, ``<doc:Security-Invariants>`` Invariant 1
+    public let ianaRootTrustAnchors: [DNSSECTrustAnchor] = [
+        DNSSECTrustAnchor(
+            keyTag: 20326,
+            algorithm: 8,
+            digestType: 2,
+            digest: Data([
+                0xE0, 0x6D, 0x44, 0xB8, 0x0B, 0x8F, 0x1D, 0x39,
+                0xA9, 0x5C, 0x0B, 0x0D, 0x7C, 0x65, 0xD0, 0x84,
+                0x58, 0xE8, 0x80, 0x40, 0x9B, 0xBC, 0x68, 0x34,
+                0x57, 0x10, 0x42, 0x37, 0xC7, 0xF8, 0xEC, 0x8D,
+            ]),
+            validFrom: 1_485_993_600
+        ),
+        DNSSECTrustAnchor(
+            keyTag: 38696,
+            algorithm: 8,
+            digestType: 2,
+            digest: Data([
+                0x68, 0x3D, 0x2D, 0x0A, 0xCB, 0x8C, 0x9B, 0x71,
+                0x2A, 0x19, 0x48, 0xB2, 0x7F, 0x74, 0x12, 0x19,
+                0x29, 0x8D, 0x0A, 0x45, 0x0D, 0x61, 0x2C, 0x48,
+                0x3A, 0xF4, 0x44, 0xA4, 0xC0, 0xFB, 0x2B, 0x16,
+            ]),
+            validFrom: 1_721_260_800
+        ),
+    ]
+
+    /// Pinned DNS-over-HTTPS resolvers used when the system TXT query produces zero callbacks.
+    ///
+    /// SPKI values are SHA-256 of SubjectPublicKeyInfo, base64, measured the same way as the
+    /// media ATS pin. They are not a substitute for ``pinnedFingerprintDigests``.
+    ///
+    /// - SeeAlso: ``PinnedDoHResolver``, ``<doc:Security-Invariants>`` Invariant 1
+    public let pinnedDoHResolvers: [PinnedDoHResolver] = [
+        PinnedDoHResolver(
+            host: "cloudflare-dns.com",
+            spkiSHA256Base64: "ltQ6aXy3tqpNZKJdnevMD7oR+IsI5rNWbOssFDrl+Ew="
+        ),
+        PinnedDoHResolver(
+            host: "dns.google",
+            spkiSHA256Base64: "KqNGxFS8iQhImgoezWO+m52yL9fynH7xlDuIGRSq+h8="
+        ),
+    ]
     
     
     // MARK: - Convenience / Current Instance

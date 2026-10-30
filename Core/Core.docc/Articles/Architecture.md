@@ -23,13 +23,13 @@ The framework is deliberately split into three subdirectories, each with a singl
 |-----------------------------|---------------------------------|-----------------------------------------------------|------------------------|
 | **Configuration**           | `Core/Configuration/`           | Single source of truth for all constants and policy | Plain struct           |
 | **Actors**                  | `Core/Actors/`                  | DNS TXT security model validation                   | `actor` (strict isolation) |
-| **Security**                | `Core/Security/`                | Runtime full-certificate fingerprint pinning        | `actor` + URLSession delegate |
+| **Security**                | `Core/Security/`                | Runtime full-certificate fingerprint pinning, local DNSSEC chain checks, and the verified-address retry | `actor` + URLSession delegate |
 
 ### Why This Split?
 
 - **Configuration** owns every magic number, date, fingerprint, and domain. No other file is allowed to contain these values.
 - **Actors** provide the strong isolation guarantees required for security state machines that must not race.
-- **Security** owns the complex, stateful certificate validation logic (caching, time-skew detection, transition leniency) while remaining fully testable.
+- **Security** owns certificate validation (caching, time-skew detection, transition leniency) and local DNSSEC verification used when the system resolver delivers zero callbacks. Both stay inside this layer so they remain testable without duplicating policy.
 
 This design makes security review, testing, and future rotation of certificates or models straightforward and localized.
 
@@ -46,6 +46,8 @@ A plain `struct` (value type) that exposes only the minimal public surface requi
 - `preferredStreamingDomainSuffixes` / `preferredStreamingDomainSuffix` (sole media apex: `siikkari.net`)
 - `isProtectedStreamingHost(_:)` / `hostRequiresDNSSECValidation(_:)` / `streamingHostCandidates(leadingLabel:)` (DNSSEC host membership + host construction; no hard-coded apexes at call sites)
 - `requiresDNSSECValidationForStreaming` + `makeSecureEphemeralConfiguration()` / `applySecureNetworkingRequirements(to:)` (the single place that turns on `URLSessionConfiguration.requiresDNSSECValidation` and related hardening for streaming hosts)
+- `ianaRootTrustAnchors` and `pinnedDoHResolvers` (root KeyDigests and DoH SPKI pins for local verification)
+- `makeVerifiedAddressRetryConfiguration()` (the only factory that clears `requiresDNSSECValidation`, after a verified address set)
 - `current` (the canonical instance)
 
 DNS TXT allow-list hosts (`securityModelDomains`) remain an **independent** ordered list (`securitymodels.siikkari.net` primary, then `securitymodels.lutheranradio.eu`, then `securitymodels.lutheranradio.sk`) and are not assumed to share apexes with media preference.
@@ -61,7 +63,7 @@ An `actor` that:
 - Performs DNS-SD TXT queries with `kDNSServiceFlagsValidate` against the configured domains.
 - In the C callback: buffers TXT rdata until a separate DNSSEC status callback (`kDNSServiceFlagsValidate` + `kDNSServiceFlagsAdd`, zero-length rdata) and accepts the buffered set only when `kDNSServiceFlagsSecure` is set. The Validate bit means status is available, not that validation succeeded. Parses length-prefixed TXT rdata with `Span<UInt8>` and `UTF8Span` (zero-copy borrow of dns_sd `rdata` while the session mutex is held).
 - Implements a one-hour success-only cache persisted in `UserDefaults`. A timestamp ahead of the device clock is discarded. `.failedPermanent` clears that timestamp and is not revived by the cache.
-- Distinguishes **permanent** failures (model not in *validated* TXT → streaming must stay disabled) from **transient** failures (network/DNS/DNSSEC-unvalidated → safe to retry). Ordered host walk is the four-point contract in ``<doc:Security-Invariants>`` Invariant 1 (authoritative answer stops; only transient advances).
+- Distinguishes **permanent** failures (model not in *validated* TXT → streaming must stay disabled) from **transient** failures (network/DNS/DNSSEC-unvalidated → safe to retry). Ordered host walk is the four-point contract in ``<doc:Security-Invariants>`` Invariant 1 (authoritative answer stops; only transient advances). A watchdog with zero callbacks verifies the TXT RRset locally from DNS wire data over pinned HTTPS. A delivered non-Secure status is not replaced. The 5 s watchdog is not lengthened.
 - Exposes a tiny set of test seams under `#if DEBUG` that have zero production impact.
 
 The actor uses a carefully constructed non-isolated static C callback + `Unmanaged` context to satisfy Swift 6 strict concurrency while still using the classic `dnssd` API.
@@ -100,6 +102,7 @@ An `actor` that:
 - `SecurityModelValidator` and `CertificateValidator` both accept injectable time providers in DEBUG builds.
 - The TXT record parser is exposed via a static `_test_` method so that parsing logic can be exercised without network or DNS.
 - `QueryContext` claim-once (`claimFinish`) is exposed via DEBUG `_test_queryContextClaimFinishIsOnce` / `_test_queryContextConcurrentClaimWinnerCount` (no live `DNSServiceRef`).
+- DEBUG `_test_systemTXT`, `_test_wireFetcher`, and `_test_trustAnchors` exercise the zero-callback path without opening DoH. `_test_setTXTFetcher` clears those seams. `_test_timeoutKind(after:)` classifies silence versus a timeout after callbacks and does not call `handleTimeout`. Fixture chains in `DNSSECLocalVerificationTests` are self-signed and do not embed live RRSIGs.
 
 ## Documentation & Invariants
 
@@ -111,7 +114,7 @@ High-level operational details (DNSSEC status, certificate rotation procedures, 
 
 Any new security mechanism (additional pinning layers, OCSP, certificate transparency, stricter DNS requirements, etc.) must be added inside the appropriate subdirectory of `Core/` and exposed through the existing public types. Duplication outside `Core` is not permitted.
 
-The DNSSEC requirement for streaming (`requiresDNSSECValidationForStreaming`) is deliberately centralised here so that future changes (e.g. combining with swift-async-dns-resolver, adding AVAssetResourceLoaderDelegate custom-scheme protection for segmented media, or exposing a diagnostic flag) have exactly one place to update.
+The DNSSEC requirement for streaming (`requiresDNSSECValidationForStreaming`) is deliberately centralised here so that future changes have exactly one place to update. The system resolver stays first. Local verification uses wire data over pinned HTTPS and does not trust the `AD` bit. `makeVerifiedAddressRetryConfiguration()` is the only factory that clears the session flag, and only for addresses that verification just accepted.
 
 ---
 

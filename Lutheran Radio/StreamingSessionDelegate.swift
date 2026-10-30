@@ -43,6 +43,15 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
     
     /// Optional callback for error handling during the session.
     var onError: ((Error) -> Void)?
+
+    /// When set, one pre-response failure may start a replacement task before the loading request finishes.
+    ///
+    /// Return `true` when a new task is running. `nil` keeps completion synchronous for existing callers.
+    /// The closure is `@Sendable` because completion hops off the delegate queue to await address verification.
+    var retryBeforeResponse: (@Sendable (NSError) async -> Bool)?
+
+    /// The one pre-response retry has been offered. A second failure finishes the loading request.
+    private var attemptedPreResponseRetry = false
     
     /// Initializes the delegate with the given loading request.
     ///
@@ -179,6 +188,29 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
             #if DEBUG
             print("[StreamingSessionDelegate] [StreamingDelegate] Task completed with error: \(error.localizedDescription)")
             #endif
+            if !receivedResponse, !attemptedPreResponseRetry, retryBeforeResponse != nil {
+                attemptedPreResponseRetry = true
+                let queue = OperationQueue.current
+                // NSError is Sendable. The hop back onto the delegate queue finishes the loading request.
+                let nsError = error as NSError
+                Task { [weak self] in
+                    guard let self else { return }
+                    let retried = await self.retryBeforeResponse?(nsError) ?? false
+                    let finish: @Sendable () -> Void = { [weak self] in
+                        guard let self else { return }
+                        if !retried {
+                            self.onError?(nsError)
+                            self.loadingRequest.finishLoading(with: nsError)
+                        }
+                    }
+                    if let queue {
+                        queue.addOperation(finish)
+                    } else {
+                        DispatchQueue.main.async(execute: finish)
+                    }
+                }
+                return
+            }
             onError?(error)
             loadingRequest.finishLoading(with: error)
         } else {
