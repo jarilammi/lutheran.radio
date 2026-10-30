@@ -330,6 +330,10 @@ struct DNSSECLocalVerificationTests {
         #expect(DNSSECCrypto.verify(algorithm: 8, publicKey: short, signature: signature, message: message) == false)
     }
 
+    /// Order is KSK-2017 (20326), then KSK-2024 (38696). The timestamps are
+    /// `validFrom`, not the 11 October 2026 signing change.
+    ///
+    /// - SeeAlso: ``SecurityConfiguration/ianaRootTrustAnchors``
     @Test("The embedded root anchors are the two current KeyDigests")
     func embeddedAnchors() {
         let anchors = SecurityConfiguration.current.ianaRootTrustAnchors

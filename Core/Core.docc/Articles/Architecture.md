@@ -46,7 +46,7 @@ A plain `struct` (value type) that exposes only the minimal public surface requi
 - `preferredStreamingDomainSuffixes` / `preferredStreamingDomainSuffix` (sole media apex: `siikkari.net`)
 - `isProtectedStreamingHost(_:)` / `hostRequiresDNSSECValidation(_:)` / `streamingHostCandidates(leadingLabel:)` (DNSSEC host membership + host construction; no hard-coded apexes at call sites)
 - `requiresDNSSECValidationForStreaming` + `makeSecureEphemeralConfiguration()` / `applySecureNetworkingRequirements(to:)` (the single place that turns on `URLSessionConfiguration.requiresDNSSECValidation` and related hardening for streaming hosts)
-- `ianaRootTrustAnchors` and `pinnedDoHResolvers` (root KeyDigests and DoH SPKI pins for local verification)
+- `ianaRootTrustAnchors` and `pinnedDoHResolvers` (root KeyDigests and DoH SPKI pins for local verification). KSK-2024, key tag 38696, signs the root DNSKEY set as of 11 October 2026. The KSK-2017 overlap and revocation dates live on ``SecurityConfiguration/ianaRootTrustAnchors``.
 - `makeVerifiedAddressRetryConfiguration()` (the only factory that clears `requiresDNSSECValidation`, after a verified address set)
 - `current` (the canonical instance)
 

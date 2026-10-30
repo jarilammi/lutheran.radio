@@ -535,13 +535,25 @@ public struct SecurityConfiguration: Sendable {
 
     /// Current IANA root KeyDigests (DS SHA-256). Not the DNSKEY public keys.
     ///
-    /// `validFrom` is honored on the device clock. Retired anchors are not included.
-    /// An RRSIG is not extended by ``maxAllowedTimeSkew`` or the certificate transition window.
+    /// KSK-2024, key tag 38696, is the key that signs the root DNSKEY set as of
+    /// 11 October 2026. KSK-2017, key tag 20326, stopped signing on that date and
+    /// remains in this list while it is still published. IANA schedules its
+    /// revocation for 11 January 2027 and its removal from the zone for 22 March
+    /// 2027. The REVOKE bit changes the key tag, so this digest stops matching
+    /// at revocation.
     ///
-    /// - SeeAlso: ``DNSSECTrustAnchor``, ``<doc:Security-Invariants>`` Invariant 1
+    /// Either embedded anchor may still verify the DNSKEY set. `validFrom` is the
+    /// instant that anchor may be used on the device clock: 2 February 2017 UTC
+    /// for 20326, and 18 July 2024 UTC for 38696. It is not the date the signing
+    /// role changed. Root RRSIG inception and expiration are fetched live and are
+    /// not recorded here. Retired anchors are not included. An RRSIG is not
+    /// extended by ``maxAllowedTimeSkew`` or the certificate transition window.
+    ///
+    /// - SeeAlso: ``DNSSECTrustAnchor``, ``<doc:Security-Invariants>`` Invariant 1,
+    ///   ``<doc:Security-Invariants>`` Invariant 5
     public let ianaRootTrustAnchors: [DNSSECTrustAnchor] = [
         DNSSECTrustAnchor(
-            keyTag: 20326,
+            keyTag: 20326, // KSK-2017. Stopped signing the root DNSKEY set on 11 October 2026.
             algorithm: 8,
             digestType: 2,
             digest: Data([
@@ -550,10 +562,10 @@ public struct SecurityConfiguration: Sendable {
                 0x58, 0xE8, 0x80, 0x40, 0x9B, 0xBC, 0x68, 0x34,
                 0x57, 0x10, 0x42, 0x37, 0xC7, 0xF8, 0xEC, 0x8D,
             ]),
-            validFrom: 1_485_993_600
+            validFrom: 1_485_993_600 // 2017-02-02 00:00:00 UTC
         ),
         DNSSECTrustAnchor(
-            keyTag: 38696,
+            keyTag: 38696, // KSK-2024. Signs the root DNSKEY set as of 11 October 2026.
             algorithm: 8,
             digestType: 2,
             digest: Data([
@@ -562,7 +574,7 @@ public struct SecurityConfiguration: Sendable {
                 0x29, 0x8D, 0x0A, 0x45, 0x0D, 0x61, 0x2C, 0x48,
                 0x3A, 0xF4, 0x44, 0xA4, 0xC0, 0xFB, 0x2B, 0x16,
             ]),
-            validFrom: 1_721_260_800
+            validFrom: 1_721_260_800 // 2024-07-18 00:00:00 UTC
         ),
     ]
 

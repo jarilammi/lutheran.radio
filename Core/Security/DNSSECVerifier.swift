@@ -31,6 +31,9 @@ public struct DNSSECTrustAnchor: Sendable, Equatable {
     public var digestType: UInt8
     public var digest: Data
     /// Unix seconds. An anchor is ignored before this instant.
+    ///
+    /// This is the date the digest may be trusted. It is not the date that key
+    /// took over signing the root DNSKEY set.
     public var validFrom: TimeInterval
 
     public init(keyTag: UInt16, algorithm: UInt8, digestType: UInt8, digest: Data, validFrom: TimeInterval) {
