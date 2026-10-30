@@ -7,6 +7,7 @@
 
 import Testing
 import Foundation   // Required under MemberImportVisibility for URLSessionConfiguration properties
+@unsafe @preconcurrency import Security
 @testable import Core
 
 struct CoreTests {
@@ -39,19 +40,14 @@ struct CoreTests {
         #expect(retry.urlCredentialStorage == nil)
     }
 
-    /// The verify completion is invoked once through the copied block and then released.
+    /// The TLS verify completion is a Swift function, wider than a pointer.
     ///
-    /// This is the lifetime `withoutActuallyEscaping` aborted inside the boringssl callback.
-    @Test func verifyCompletionInvokesTheCopiedBlockOnce() {
-        final class Flag { var value: Bool? }
-        let flag = Flag()
-        let block: @convention(block) (Bool) -> Void = { flag.value = $0 }
-        let raw = unsafe unsafeBitCast(block, to: UnsafeRawPointer.self)
-        let box = unsafe TLSVerifyCompletion(copying: raw)
-        unsafe box.call(true)
-        #expect(flag.value == true)
-        unsafe box.call(false)
-        #expect(flag.value == true)
+    /// `unsafeBitCast` to `UnsafeRawPointer` traps at runtime
+    /// ("Can't unsafeBitCast between types of different sizes"). The verify
+    /// callback calls it before returning.
+    @Test func verifyCompletionIsWiderThanAPointer() {
+        // A pointer is one word. The imported completion is a Swift function, two words.
+        #expect(MemoryLayout<sec_protocol_verify_complete_t>.size == 2 * MemoryLayout<Int>.size)
     }
 
     /// Flag-off retry requires the DNSSEC-not-completed shape and a verified address.

@@ -17,6 +17,9 @@
 //
 //  `NWConnection` does not apply `NSPinnedDomains`. The verify block checks the
 //  Info.plist SPKI pin, then ``CertificateValidator/validateServerTrust(_:)``.
+//  The verify completion imports as a non-escaping Swift function, wider than a
+//  pointer. It is called before the verify callback returns. `unsafeBitCast` to
+//  `UnsafeRawPointer` traps ("Can't unsafeBitCast between types of different sizes").
 //
 //  - SeeAlso: ``DNSSECLocalVerification``, ``<doc:Security-Invariants>`` Invariant 2
 //
@@ -223,63 +226,6 @@ enum VerifiedAddressRegistry {
     }
 }
 
-/// Copies an ObjC block to the heap and returns a +1 reference.
-///
-/// SAFETY: `_Block_copy` is the Blocks runtime. The TLS verify completion is an
-/// ObjC block. Swift imports it as non-escaping, and storing that Swift closure
-/// makes `withoutActuallyEscaping` abort inside the verify callback.
-@_silgen_name("_Block_copy")
-@unsafe
-private func copyObjCBlock(_ block: UnsafeRawPointer) -> UnsafeRawPointer
-
-/// Drops one `_Block_copy` retain.
-@_silgen_name("_Block_release")
-@unsafe
-private func releaseObjCBlock(_ block: UnsafeRawPointer)
-
-/// Calls a copied ObjC block that takes one C `bool`, without handing it to ARC.
-///
-/// SAFETY: On 64-bit Apple platforms the block invoke function is at byte 16
-/// (`isa`, `flags`, `reserved`, then `invoke`). The pointer stays retained by
-/// the caller across this call. The argument is `UInt8` because C `bool` is one
-/// byte. This does not implement a cipher.
-@unsafe
-private func invokeBoolBlock(_ block: UnsafeRawPointer, accepted: Bool) {
-    typealias Invoke = @convention(c) (UnsafeRawPointer, UInt8) -> Void
-    let invoke = unsafe block.load(fromByteOffset: 16, as: Invoke.self)
-    unsafe invoke(block, accepted ? 1 : 0)
-}
-
-/// Holds one heap copy of the TLS verify completion until trust evaluation finishes.
-///
-/// SAFETY: `SecProtocolOptions.h` requires `complete` when verification finishes,
-/// which is after the verify callback returns. This object owns the `_Block_copy`
-/// retain and releases it once, either after the call or in `deinit` if the call
-/// never runs. The call only reports a Security.framework trust result. Boringssl
-/// keeps the TLS record protection. `ITSAppUsesNonExemptEncryption` stays false.
-/// The box is `@unchecked Sendable` so the completion can hop to the actor.
-@unsafe
-final class TLSVerifyCompletion: @unchecked Sendable {
-    private var heap: UnsafeRawPointer?
-
-    init(copying block: UnsafeRawPointer) {
-        unsafe heap = unsafe copyObjCBlock(block)
-    }
-
-    func call(_ accepted: Bool) {
-        guard let block = unsafe heap else { return }
-        unsafe self.heap = nil
-        unsafe invokeBoolBlock(block, accepted: accepted)
-        unsafe releaseObjCBlock(block)
-    }
-
-    deinit {
-        if let block = unsafe heap {
-            unsafe releaseObjCBlock(block)
-        }
-    }
-}
-
 /// HTTPS/1.1 to a verified address list. Registered only on the flag-off configuration.
 ///
 /// SAFETY: `URLProtocol` is not `Sendable`. Callbacks and `NWConnection` events hop to
@@ -426,21 +372,27 @@ final class VerifiedAddressHTTPSProtocol: URLProtocol, @unchecked Sendable {
         // only accepts or rejects the certificate. ATS SPKI is required because
         // NWConnection does not apply NSPinnedDomains. The leaf DER pin remains
         // CertificateValidator.validateServerTrust. No private cipher is added.
+        //
+        // `complete` is `sec_protocol_verify_complete_t`, imported as `(Bool) -> Void`.
+        // That value is wider than a pointer, so `unsafeBitCast` to `UnsafeRawPointer`
+        // traps. It is non-escaping, so it is called before this callback returns.
+        // Trust evaluation hops to the certificate actor, which does not use this queue.
         let peer = host
-        let verifyQueue = queue
         sec_protocol_options_set_verify_block(options, { _, trustRef, complete in
             // SAFETY: sec_trust_copy_ref returns a +1 SecTrust. The header omits
             // SEC_RETURNS_RETAINED, so Swift imports Unmanaged. takeRetainedValue balances that retain.
             let trust = unsafe sec_trust_copy_ref(trustRef).takeRetainedValue()
-            // SAFETY: Copy the block pointer. Do not store `complete` itself.
-            // See ``TLSVerifyCompletion``.
-            let finish = unsafe TLSVerifyCompletion(copying: unsafeBitCast(complete, to: UnsafeRawPointer.self))
+            let outcome = Mutex(false)
+            let done = DispatchSemaphore(value: 0)
             Task {
                 let accepted = await CertificateValidator.shared.validateStreamingServerTrust(trust, host: peer)
-                verifyQueue.async {
-                    unsafe finish.call(accepted)
-                }
+                outcome.withLock { $0 = accepted }
+                done.signal()
             }
+            // This queue is blocked only for the pin check. `complete` is then called
+            // on this turn, the same way Network.framework samples call it inline.
+            done.wait()
+            complete(outcome.withLock { $0 })
         }, queue)
     }
 
