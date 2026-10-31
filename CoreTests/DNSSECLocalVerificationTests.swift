@@ -55,7 +55,7 @@ enum DNSSECFixtureBuilder {
         var tag: UInt16
     }
 
-    static func allowList(txt: String, corruptTXT: Bool = false) throws -> Built {
+    static func allowList(txt: String, corruptTXT: Bool = false, omitTXTRecords: Bool = false) throws -> Built {
         let root = try zoneKey(name: .root)
         let net = try zoneKey(name: try name("net"))
         let apex = try zoneKey(name: try name("siikkari.net"))
@@ -96,13 +96,18 @@ enum DNSSECFixtureBuilder {
             signer: apex,
             corrupt: false
         )
-        responses[key(txtName, DNSType.txt)] = try signedMessage(
-            owner: txtName,
-            type: DNSType.txt,
-            rdata: txtRdata(txt),
-            signer: apex,
-            corrupt: corruptTXT
-        )
+        if omitTXTRecords {
+            // NOERROR with no TXT records. Absence is not a verified empty set.
+            responses[key(txtName, DNSType.txt)] = emptyAnswer(owner: txtName, type: DNSType.txt)
+        } else {
+            responses[key(txtName, DNSType.txt)] = try signedMessage(
+                owner: txtName,
+                type: DNSType.txt,
+                rdata: txtRdata(txt),
+                signer: apex,
+                corrupt: corruptTXT
+            )
+        }
         return Built(anchors: [anchor(for: root)], fetcher: MappedDNSFetcher(responses: responses))
     }
 
@@ -249,6 +254,19 @@ struct DNSSECLocalVerificationTests {
         let name = try #require(DNSName(presentation: "securitymodels.siikkari.net"))
         let outcome = await walk.txtModels(name: name)
         #expect(outcome == .verified(["dallas", "montereypark", "kailuakona"]))
+    }
+
+    /// A missing TXT RRset stays ``DNSSECVerifiedTXT/failed``. The host walk treats
+    /// that as a temporary failure. This walker does not prove absence, so the
+    /// outcome is not ``DNSSECVerifiedTXT/verified`` of an empty set.
+    ///
+    /// - SeeAlso: ``DNSSECWalk/txtModels(name:)``, ``<doc:Security-Invariants>`` Invariant 1
+    @Test("A missing TXT RRset is not a verified empty set")
+    func missingTXTIsNotVerifiedEmpty() async throws {
+        let built = try DNSSECFixtureBuilder.allowList(txt: "kailuakona", omitTXTRecords: true)
+        let walk = DNSSECWalk(fetcher: built.fetcher, anchors: built.anchors, now: DNSSECFixtureBuilder.now)
+        let name = try #require(DNSName(presentation: "securitymodels.siikkari.net"))
+        #expect(await walk.txtModels(name: name) == .failed)
     }
 
     @Test("A bad signature is not a verified set")

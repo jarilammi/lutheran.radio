@@ -853,8 +853,11 @@ public actor SecurityModelValidator {
 
     /// Verifies the TXT RRset from DNS wire data. Failure is transient `dnssec` / `-2`.
     ///
-    /// A verified set, including an empty one, is returned so the host walk can treat it
-    /// as an authoritative answer. `-UITestMode` does not open DoH.
+    /// A present, signed RRset is returned, including one whose text parses to no
+    /// names, so the host walk can treat that set as an authoritative answer.
+    /// ``DNSSECWalk/txtModels(name:)`` returns failure when the TXT records are
+    /// missing. There is no NSEC or NSEC3 proof of absence, so a missing set stays
+    /// a temporary failure and the next host is tried. `-UITestMode` does not open DoH.
     private func locallyVerifiedTXTModels(for domain: String) async throws -> Set<String> {
         if ProcessInfo.processInfo.arguments.contains("-UITestMode") {
             throw NSError(

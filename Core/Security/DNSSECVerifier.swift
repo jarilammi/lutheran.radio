@@ -63,7 +63,12 @@ protocol DNSWireFetching: Sendable {
     func response(toQuery wire: Data) async -> Data?
 }
 
-/// Outcome of a TXT lookup. `.verified` is an authoritative set, including empty.
+/// Outcome of a TXT lookup.
+///
+/// `.verified` is a TXT RRset that was present and whose signature checked.
+/// The name set is empty only when that present RRset parses to no tokens.
+/// A missing RRset is `.failed`. This walker does not prove absence: there is
+/// no NSEC or NSEC3 check, so a missing set stays a temporary failure.
 enum DNSSECVerifiedTXT: Sendable, Equatable {
     case verified(Set<String>)
     case failed
@@ -347,11 +352,20 @@ actor DNSSECWalk {
         self.now = now.timeIntervalSince1970
     }
 
+    /// Verifies the TXT RRset at `name`.
+    ///
+    /// A missing RRset, a non-zero rcode, or a signature that does not verify is
+    /// `.failed`. The host walk treats that as a temporary failure and tries the
+    /// next host. Absence is not an authoritative empty set. A present RRset
+    /// whose text parses to no names is `.verified` with an empty set.
+    ///
+    /// - SeeAlso: ``DNSSECVerifiedTXT``, ``<doc:Security-Invariants>`` Invariant 1
     func txtModels(name: DNSName) async -> DNSSECVerifiedTXT {
         guard let message = await fetch(name: name, type: DNSType.txt), message.rcode == 0 else {
             return .failed
         }
         let records = answers(message, name: name, type: DNSType.txt)
+        // A missing RRset is not a verified empty set. No NSEC or NSEC3 proof is attempted.
         guard !records.isEmpty else { return .failed }
         let signatures = answers(message, name: name, type: DNSType.rrsig)
         guard await verifyRRset(owner: name, type: DNSType.txt, records: records, signatures: signatures, message: message) else {
