@@ -858,6 +858,8 @@ public actor SecurityModelValidator {
     /// ``DNSSECWalk/txtModels(name:)`` returns failure when the TXT records are
     /// missing. There is no NSEC or NSEC3 proof of absence, so a missing set stays
     /// a temporary failure and the next host is tried. `-UITestMode` does not open DoH.
+    /// The walk uses ``RetiredRootAnchorStore/shared``, so a self-revoked root digest
+    /// stays suppressed for this process. That store is not `lastSecurityValidation`.
     private func locallyVerifiedTXTModels(for domain: String) async throws -> Set<String> {
         if ProcessInfo.processInfo.arguments.contains("-UITestMode") {
             throw NSError(
@@ -892,7 +894,8 @@ public actor SecurityModelValidator {
         let walk = DNSSECWalk(
             fetcher: fetcher,
             anchors: anchors,
-            now: currentDate()
+            now: currentDate(),
+            retiredAnchors: RetiredRootAnchorStore.shared
         )
         switch await walk.txtModels(name: name) {
         case .verified(let models):

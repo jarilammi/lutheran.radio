@@ -74,7 +74,7 @@ All of the following values exist **only** inside ``SecurityConfiguration`` and 
 - `certificateValidationCacheDuration` (runtime pin-result cache — 10 minutes; never reuse `modelCacheDuration`)
 - DNS TXT host list (`securityModelDomains` — siikkari primary, lutheranradio.eu secondary, sk backup; independent of media preference)
 - Streaming media apex (`preferredStreamingDomainSuffixes` — sole apex `siikkari.net`; use ``streamingHostCandidates(leadingLabel:)`` for host construction)
-- `ianaRootTrustAnchors` (current IANA root KeyDigests only). KSK-2024, key tag 38696, signs the root DNSKEY set as of 11 October 2026. KSK-2017, key tag 20326, remains listed until it leaves the zone. Signing role, revocation dates, and `validFrom` live on ``SecurityConfiguration/ianaRootTrustAnchors``.
+- `ianaRootTrustAnchors` (current IANA root KeyDigests only). KSK-2024, key tag 38696, signs the root DNSKEY set as of 11 October 2026. KSK-2017, key tag 20326, remains listed. Its stored digest stays trusted until ``DNSSECWalk`` observes a self-signed revoked form of that key. The revoked rdata does not match the digest, and the array still contains it after that. 11 January 2027 is not the signal. Signing role and `validFrom` live on ``SecurityConfiguration/ianaRootTrustAnchors``.
 - `pinnedDoHResolvers` (pinned DNS-over-HTTPS hosts and SPKI pins)
 - `makeVerifiedAddressRetryConfiguration()` (the only session factory that clears `requiresDNSSECValidation`)
 

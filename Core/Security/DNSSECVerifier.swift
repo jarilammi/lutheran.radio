@@ -17,8 +17,15 @@
 //  Every other signer, including the root, requires at least 2048 bits. A
 //  modulus shorter than 1024 bits fails for every signer.
 //
-//  - SeeAlso: ``DNSSECWalk``, ``SecurityConfiguration/ianaRootTrustAnchors``,
-//    ``<doc:Security-Invariants>`` Invariant 1 and Invariant 2
+//  A root trust anchor is suppressed after the signed root DNSKEY set shows
+//  that same key with the REVOKE bit set and that key signs the set. The
+//  bytes in ``SecurityConfiguration/ianaRootTrustAnchors`` stay. There is no
+//  hold-down and no trust-anchor add. A revoked key is not returned, so it
+//  cannot validate a child DS or any other RRset.
+//
+//  - SeeAlso: ``DNSSECWalk``, ``RetiredRootAnchorStore``,
+//    ``SecurityConfiguration/ianaRootTrustAnchors``,
+//    ``<doc:Security-Invariants>`` Invariant 1 and Invariant 5
 //
 
 import CryptoKit
@@ -336,7 +343,27 @@ private struct DNSKEYRecord {
     var publicKey: Data
     var keyTag: UInt16
 
-    var isZoneKey: Bool { (flags & 0x0100) != 0 && protocolNumber == 3 }
+    /// RFC 4034 zone-key flag (bit 7).
+    static let zoneFlag: UInt16 = 0x0100
+    /// RFC 5011 REVOKE flag (bit 8). Clearing it for an anchor comparison uses a copy.
+    static let revokeFlag: UInt16 = 0x0080
+
+    var isZoneKey: Bool { (flags & Self.zoneFlag) != 0 && protocolNumber == 3 }
+    var isRevoked: Bool { (flags & Self.revokeFlag) != 0 }
+
+    /// Copy of `rdata` with the REVOKE bit cleared.
+    ///
+    /// The published rdata stays intact. The signature covers those bytes, and
+    /// the RRSIG key tag is the tag of the revoked rdata, not of this copy.
+    static func rdataClearingRevokeBit(_ rdata: Data) -> Data? {
+        guard rdata.count >= 2 else { return nil }
+        var copy = Data(rdata)
+        let flags = UInt16(copy[0]) << 8 | UInt16(copy[1])
+        let cleared = flags & ~revokeFlag
+        copy[0] = UInt8(cleared >> 8)
+        copy[1] = UInt8(cleared & 0xFF)
+        return copy
+    }
 
     init?(rdata: Data) {
         guard rdata.count >= 5 else { return nil }
@@ -368,14 +395,125 @@ private enum AddressRRset {
     case failed
 }
 
+/// Digests of root trust anchors that have self-revoked.
+///
+/// A digest is added only after ``DNSSECWalk`` sees that key in one root DNSKEY
+/// message with the REVOKE bit set, a copy of the rdata with the bit cleared
+/// matches the anchor, the published key is still a zone key, and an RRSIG over
+/// every DNSKEY rdata in the answer verifies under that revoked key alone.
+/// A signature from a different anchor does not retire it. Copy the DNSKEY rdata
+/// before clearing the REVOKE bit: the signature covers the published bytes.
+///
+/// The actor only grows. There is no un-retire, no hold-down, and no trust-anchor
+/// add. ``shared`` reads and writes `UserDefaults.standard` under
+/// `retiredRootAnchorDigests` (raw concatenation of 32-byte digests). A length
+/// that is not a multiple of 32 is empty. ``memory()`` keeps the set in the actor
+/// and does not touch `UserDefaults`. The store does not call ``DNSSECWalk``.
+/// The main app and the widget extension each learn from the signed set their
+/// own process fetches. This is not the app-group suite and it is not
+/// `lastSecurityValidation`.
+///
+/// - SeeAlso: ``SecurityConfiguration/ianaRootTrustAnchors``, ``DNSSECWalk``,
+///   ``<doc:Security-Invariants>`` Invariant 5
+actor RetiredRootAnchorStore {
+    /// `UserDefaults` key for the concatenated digests. Not `lastSecurityValidation`.
+    static let storageKey = "retiredRootAnchorDigests"
+
+    /// Process-local store. The main app and the widget extension do not share it.
+    static let shared = RetiredRootAnchorStore(defaults: .standard)
+
+    /// In-memory store for tests. Does not read or write `UserDefaults`.
+    static func memory() -> RetiredRootAnchorStore {
+        RetiredRootAnchorStore(defaults: nil)
+    }
+
+    private let defaults: UserDefaults?
+    private var memoryDigests: [Data] = []
+
+    /// - Parameter defaults: Persistence suite. `nil` keeps the set in the actor.
+    ///   Production uses ``shared``. A test suite must not be `UserDefaults.standard`
+    ///   or the app-group suite.
+    init(defaults: UserDefaults?) {
+        self.defaults = defaults
+        if let defaults {
+            memoryDigests = Self.digests(from: defaults.data(forKey: Self.storageKey))
+        }
+    }
+
+    /// `true` when `digest` matches a stored digest.
+    ///
+    /// Comparison uses ``CertificateFingerprint/constantTimeMatches(_:)``.
+    func suppresses(_ digest: Data) -> Bool {
+        guard let candidate = Self.fingerprint(digest) else { return false }
+        for stored in memoryDigests {
+            guard let pinned = Self.fingerprint(stored) else { continue }
+            if candidate.constantTimeMatches(pinned) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Appends digests that are not already stored. A length other than 32 is ignored.
+    func retire(_ digests: [Data]) {
+        var changed = false
+        for digest in digests {
+            guard Self.fingerprint(digest) != nil, !suppresses(digest) else { continue }
+            memoryDigests.append(digest)
+            changed = true
+        }
+        guard changed, let defaults else { return }
+        var blob = Data()
+        blob.reserveCapacity(memoryDigests.count * CertificateFingerprint.byteCount)
+        for digest in memoryDigests {
+            blob.append(digest)
+        }
+        defaults.set(blob, forKey: Self.storageKey)
+    }
+
+    /// Digests currently suppressed, in the order they were stored.
+    func retiredDigests() -> [Data] {
+        memoryDigests
+    }
+
+    /// Length of the suite blob. Zero for an in-memory store or a missing key.
+    ///
+    /// A length that is not a multiple of 32 is still reported here. ``init(defaults:)``
+    /// treats that blob as empty and does not copy it into the actor.
+    func persistedOctetCount() -> Int {
+        defaults?.data(forKey: Self.storageKey)?.count ?? 0
+    }
+
+    private static func digests(from blob: Data?) -> [Data] {
+        let size = CertificateFingerprint.byteCount
+        guard let blob, blob.count.isMultiple(of: size) else { return [] }
+        var digests: [Data] = []
+        digests.reserveCapacity(blob.count / size)
+        var offset = 0
+        while offset < blob.count {
+            digests.append(blob.subdata(in: offset..<(offset + size)))
+            offset += size
+        }
+        return digests
+    }
+
+    private static func fingerprint(_ digest: Data) -> CertificateFingerprint? {
+        guard digest.count == CertificateFingerprint.byteCount else { return nil }
+        return CertificateFingerprint(bytes: [UInt8](digest))
+    }
+}
+
 /// Walks parent DS links from a name up to the configured root anchors.
 ///
 /// The actor owns the message cache and the fetch budget. It does not store an
 /// in-flight `Task` that awaits itself. A re-entrant fetch may repeat a query.
-/// That costs a budget slot and does not deadlock.
+/// That costs a budget slot and does not deadlock. Root-anchor retirement lives
+/// in ``RetiredRootAnchorStore``, which this walk awaits and which does not call
+/// back into the walk.
 actor DNSSECWalk {
     private let fetcher: any DNSWireFetching
     private let anchors: [DNSSECTrustAnchor]
+    private let retiredAnchors: RetiredRootAnchorStore
     private let now: TimeInterval
     private var messages: [String: DNSMessage] = [:]
     private var zones: [String: ZoneAuthentication] = [:]
@@ -383,10 +521,26 @@ actor DNSSECWalk {
     private let fetchCap = 32
     private let depthCap = 8
 
-    init(fetcher: any DNSWireFetching, anchors: [DNSSECTrustAnchor], now: Date) {
+    /// Creates a walk over one wire source and one anchor set.
+    ///
+    /// - Parameters:
+    ///   - fetcher: DNS wire source. Production posts queries to pinned DoH. Tests return fixtures.
+    ///   - anchors: Root KeyDigests. Production passes ``SecurityConfiguration/ianaRootTrustAnchors``.
+    ///   - now: Device clock for RRSIG lifetime and anchor `validFrom`. Not a retirement signal.
+    ///   - retiredAnchors: Digests already suppressed after a self-signed revocation.
+    ///     Production passes ``RetiredRootAnchorStore/shared``. There is no default.
+    ///     A default of the shared store would let a test write `UserDefaults.standard`.
+    /// - SeeAlso: ``RetiredRootAnchorStore``, ``<doc:Security-Invariants>`` Invariant 5
+    init(
+        fetcher: any DNSWireFetching,
+        anchors: [DNSSECTrustAnchor],
+        now: Date,
+        retiredAnchors: RetiredRootAnchorStore
+    ) {
         self.fetcher = fetcher
         self.anchors = anchors
         self.now = now.timeIntervalSince1970
+        self.retiredAnchors = retiredAnchors
     }
 
     /// Verifies the TXT RRset at `name`.
@@ -487,6 +641,29 @@ actor DNSSECWalk {
         return false
     }
 
+    /// Authenticates the DNSKEY RRset at `zone` and returns the zone keys that may sign other RRsets.
+    ///
+    /// At the root, retire embedded anchor A only when one DNSKEY in this answer
+    /// has the REVOKE bit set, a copy of that rdata with the bit cleared matches
+    /// A's key tag, algorithm, and DS digest, the published key is still a zone
+    /// key, and an RRSIG over every DNSKEY rdata verifies under that revoked key
+    /// alone. ``verifyWithKeys`` returns on the first match, so that check's key
+    /// list is the revoked key and no other. A signature from a different anchor
+    /// does not retire A. The retirement is committed when the self-signature
+    /// verifies, including when no other anchor remains, and it is not rolled back.
+    /// The zone then has to verify under an anchor that is not retired. If none
+    /// remain, or none of them sign this set, authentication fails.
+    ///
+    /// Copy the DNSKEY rdata before clearing the REVOKE bit. The published bytes
+    /// stay intact because the signature covers them. The RRSIG key tag is the
+    /// tag of the revoked rdata, which is not A's stored tag.
+    ///
+    /// A revoked key is omitted from the returned list at every zone, so it cannot
+    /// validate a child DS or any other RRset. Child zones do not retire root anchors.
+    /// There is no hold-down and no trust-anchor add.
+    ///
+    /// - SeeAlso: ``RetiredRootAnchorStore``, ``SecurityConfiguration/ianaRootTrustAnchors``,
+    ///   ``<doc:Security-Invariants>`` Invariant 5
     private func authenticate(zone: DNSName, depth: Int) async -> [DNSKEYRecord]? {
         if depth > depthCap { return nil }
         let cacheKey = zone.presentation
@@ -507,7 +684,12 @@ actor DNSSECWalk {
         }
         let trusted: [DNSKEYRecord]
         if zone.isRoot {
-            trusted = zoneKeys.filter { matchesAnchor($0, zone: zone) }
+            let retiring = selfRevokedAnchorDigests(keys: parsed, records: records, message: message, zone: zone)
+            if !retiring.isEmpty {
+                await retiredAnchors.retire(retiring)
+            }
+            let retired = await retiredAnchors.retiredDigests()
+            trusted = zoneKeys.filter { matchesAnchor($0, zone: zone, retired: retired) }
         } else {
             guard let parent = zone.parent(),
                   let parentKeys = await authenticate(zone: parent, depth: depth + 1),
@@ -547,8 +729,73 @@ actor DNSSECWalk {
             zones[cacheKey] = .failed
             return nil
         }
-        zones[cacheKey] = .keys(zoneKeys)
-        return zoneKeys
+        // A revoked key stays out of the returned set for every zone.
+        let usable = zoneKeys.filter { !$0.isRevoked }
+        zones[cacheKey] = .keys(usable)
+        return usable
+    }
+
+    /// Digests of embedded anchors whose published revoked form signs this DNSKEY set.
+    ///
+    /// The REVOKE bit is cleared only on a copy. `keys` may include non-zone keys;
+    /// a REVOKE bit with the zone bit clear is ignored. The signature check passes
+    /// only the revoked key, over every DNSKEY rdata in `records`.
+    private func selfRevokedAnchorDigests(
+        keys: [DNSKEYRecord],
+        records: [DNSRR],
+        message: DNSMessage,
+        zone: DNSName
+    ) -> [Data] {
+        var found: [Data] = []
+        let signatures = answers(message, name: zone, type: DNSType.rrsig)
+        for key in keys {
+            guard key.isRevoked, key.isZoneKey else { continue }
+            guard let clearedRdata = DNSKEYRecord.rdataClearingRevokeBit(key.rdata),
+                  let cleared = DNSKEYRecord(rdata: clearedRdata),
+                  let digest = anchorDigest(matching: cleared, zone: zone) else {
+                continue
+            }
+            // verifyWithKeys returns on the first match. Another anchor's signature
+            // must not retire this key, so the list contains the revoked key alone.
+            guard verifyWithKeys(
+                owner: zone,
+                type: DNSType.dnskey,
+                records: records,
+                signatures: signatures,
+                message: message,
+                keys: [key],
+                requiredSigner: zone
+            ) else {
+                continue
+            }
+            if !found.contains(where: { digestsMatch($0, digest) }) {
+                found.append(digest)
+            }
+        }
+        return found
+    }
+
+    /// Stored digest of the anchor whose tag, algorithm, and DS digest match `key`.
+    ///
+    /// This names the anchor. It does not apply the retired-digest skip.
+    private func anchorDigest(matching key: DNSKEYRecord, zone: DNSName) -> Data? {
+        let digest = DNSSECCrypto.dsDigest(owner: zone, dnskeyRdata: key.rdata)
+        guard digest.count == 32 else { return nil }
+        let actual = CertificateFingerprint(bytes: [UInt8](digest))
+        for anchor in anchors {
+            guard anchor.digestType == 2,
+                  anchor.digest.count == 32,
+                  anchor.algorithm == key.algorithm,
+                  anchor.keyTag == key.keyTag,
+                  now >= anchor.validFrom else {
+                continue
+            }
+            let expected = CertificateFingerprint(bytes: [UInt8](anchor.digest))
+            if actual.constantTimeMatches(expected) {
+                return anchor.digest
+            }
+        }
+        return nil
     }
 
     private func verifyWithKeys(
@@ -594,9 +841,15 @@ actor DNSSECWalk {
         return false
     }
 
-    private func matchesAnchor(_ key: DNSKEYRecord, zone: DNSName) -> Bool {
+    /// `true` when `key` matches an anchor whose digest is not in `retired`.
+    ///
+    /// A retired digest does not match, including when `key` is the old unrevoked rdata.
+    private func matchesAnchor(_ key: DNSKEYRecord, zone: DNSName, retired: [Data]) -> Bool {
         let digest = DNSSECCrypto.dsDigest(owner: zone, dnskeyRdata: key.rdata)
         guard digest.count == 32 else { return false }
+        if retired.contains(where: { digestsMatch(digest, $0) }) {
+            return false
+        }
         // ``CertificateFingerprint/init(bytes:)`` preconditions on 32 bytes. The count check is the guard.
         let actual = CertificateFingerprint(bytes: [UInt8](digest))
         for anchor in anchors {
@@ -613,6 +866,13 @@ actor DNSSECWalk {
             }
         }
         return false
+    }
+
+    private func digestsMatch(_ left: Data, _ right: Data) -> Bool {
+        guard left.count == 32, right.count == 32 else { return false }
+        let actual = CertificateFingerprint(bytes: [UInt8](left))
+        let expected = CertificateFingerprint(bytes: [UInt8](right))
+        return actual.constantTimeMatches(expected)
     }
 
     private func dsMatches(_ rdata: Data, key: DNSKEYRecord, owner: DNSName) -> Bool {
@@ -681,7 +941,8 @@ public enum DNSSECLocalVerification {
     ///
     /// Empty when the name is malformed, either present RRset fails, or no
     /// address survived. A verified A with AAAA absent is success. `-UITestMode`
-    /// returns empty and does not open DoH.
+    /// returns empty and does not open DoH. A root digest this process has
+    /// already seen self-revoke stays suppressed.
     ///
     /// - Parameter host: Hostname, without a port.
     /// - Returns: Verified addresses in encounter order.
@@ -694,7 +955,8 @@ public enum DNSSECLocalVerification {
         let walk = DNSSECWalk(
             fetcher: PinnedDoHFetcher(),
             anchors: SecurityConfiguration.current.ianaRootTrustAnchors,
-            now: Date()
+            now: Date(),
+            retiredAnchors: RetiredRootAnchorStore.shared
         )
         return await walk.addresses(for: name)
     }
