@@ -11,12 +11,14 @@
 //  Signature times use the device clock as given. ``maxAllowedTimeSkew`` and the
 //  certificate transition window do not stretch an RRSIG.
 //
-//  Algorithms this chain uses: RSA-SHA256 (8) and ECDSA P-256 (13). RSA moduli
-//  shorter than 1024 bits are rejected. The `.eu` DS RRset is signed by a
-//  1024-bit ZSK, so that size is the floor.
+//  Algorithms this chain uses: RSA-SHA256 (8) and ECDSA P-256 (13). An RSA
+//  modulus shorter than 2048 bits verifies only when the RRSIG signer is `eu`.
+//  That zone's signing key is 1024 bits and signs the `lutheranradio.eu` DS.
+//  Every other signer, including the root, requires at least 2048 bits. A
+//  modulus shorter than 1024 bits fails for every signer.
 //
 //  - SeeAlso: ``DNSSECWalk``, ``SecurityConfiguration/ianaRootTrustAnchors``,
-//    ``<doc:Security-Invariants>`` Invariant 1
+//    ``<doc:Security-Invariants>`` Invariant 1 and Invariant 2
 //
 
 import CryptoKit
@@ -77,7 +79,10 @@ enum DNSSECVerifiedTXT: Sendable, Equatable {
 enum DNSSECCrypto {
     static let rsaSHA256: UInt8 = 8
     static let ecdsaP256SHA256: UInt8 = 13
+    /// Absolute RSA floor, 1024 bits. Only the RRSIG signer `eu` may use a modulus this short.
     static let minimumRSAModulusBytes = 128
+    /// RSA floor for every signer other than `eu`, 2048 bits.
+    static let standardRSAModulusBytes = 256
 
     static func keyTag(_ rdata: Data) -> UInt16 {
         var accumulator: UInt32 = 0
@@ -149,12 +154,31 @@ enum DNSSECCrypto {
         return nowSeconds >= inception && nowSeconds <= expiration
     }
 
-    static func verify(algorithm: UInt8, publicKey: Data, signature: Data, message: Data) -> Bool {
+    /// Checks one DNSSEC signature.
+    ///
+    /// Algorithm 13 ignores `signer`. Algorithm 8 applies the modulus floors in the file header:
+    /// 1024 bits only for the signer `eu`, and 2048 bits for every other signer.
+    ///
+    /// - Parameters:
+    ///   - algorithm: DNSSEC algorithm number. 8 and 13 are the accepted values.
+    ///   - publicKey: RFC 3110 RSA public key, or the raw 64-byte P-256 point.
+    ///   - signature: RRSIG signature bytes.
+    ///   - message: Canonical signed material (RFC 4034 §6).
+    ///   - signer: RRSIG signer name. The 1024-bit RSA exception is the name `eu` alone.
+    /// - Returns: `true` when the signature checks and the RSA modulus policy allows the key.
+    /// - SeeAlso: ``DNSSECWalk``, ``<doc:Security-Invariants>`` Invariant 2
+    static func verify(
+        algorithm: UInt8,
+        publicKey: Data,
+        signature: Data,
+        message: Data,
+        signer: DNSName
+    ) -> Bool {
         switch algorithm {
         case ecdsaP256SHA256:
             return verifyP256(publicKey: publicKey, signature: signature, message: message)
         case rsaSHA256:
-            return verifyRSA(publicKey: publicKey, signature: signature, message: message)
+            return verifyRSA(publicKey: publicKey, signature: signature, message: message, signer: signer)
         default:
             return false
         }
@@ -179,8 +203,9 @@ enum DNSSECCrypto {
         return key.isValidSignature(parsed, for: message)
     }
 
-    private static func verifyRSA(publicKey: Data, signature: Data, message: Data) -> Bool {
-        guard let (exponent, modulus) = rfc3110(publicKey), modulus.count >= minimumRSAModulusBytes else {
+    private static func verifyRSA(publicKey: Data, signature: Data, message: Data, signer: DNSName) -> Bool {
+        guard let (exponent, modulus) = rfc3110(publicKey),
+              rsaModulusIsAllowed(modulus, signer: signer) else {
             return false
         }
         let der = pkcs1PublicKey(modulus: modulus, exponent: exponent)
@@ -189,7 +214,7 @@ enum DNSSECCrypto {
             kSecAttrKeyClass: kSecAttrKeyClassPublic,
         ]
         // SAFETY: SecKeyCreateWithData borrows `der` for the call and returns a +1 key.
-        // The modulus floor rejects keys shorter than the `.eu` ZSK.
+        // The modulus floor is 2048 bits, except the signer `eu`, which may use 1024 bits.
         guard let key = SecKeyCreateWithData(der as CFData, attributes as CFDictionary, nil) else {
             return false
         }
@@ -201,6 +226,18 @@ enum DNSSECCrypto {
             signature as CFData,
             nil
         )
+    }
+
+    /// RFC 3110 octet length. A 1024-bit modulus is 128 bytes. A 2048-bit modulus is 256 bytes.
+    private static func rsaModulusIsAllowed(_ modulus: Data, signer: DNSName) -> Bool {
+        if modulus.count >= standardRSAModulusBytes { return true }
+        return modulus.count >= minimumRSAModulusBytes && signerAllowsShortRSA(signer)
+    }
+
+    /// The short-key exception is the zone name `eu`, not a name under that zone.
+    private static func signerAllowsShortRSA(_ signer: DNSName) -> Bool {
+        guard signer.labels.count == 1, let label = signer.labels.first else { return false }
+        return label == Data("eu".utf8)
     }
 
     private static func rfc3110(_ key: Data) -> (exponent: Data, modulus: Data)? {
@@ -440,7 +477,8 @@ actor DNSSECWalk {
                     algorithm: key.algorithm,
                     publicKey: key.publicKey,
                     signature: parsed.signature,
-                    message: material
+                    message: material,
+                    signer: parsed.signer
                   ) else {
                 continue
             }
@@ -547,7 +585,8 @@ actor DNSSECWalk {
                 algorithm: key.algorithm,
                 publicKey: key.publicKey,
                 signature: parsed.signature,
-                message: material
+                message: material,
+                signer: parsed.signer
             ) {
                 return true
             }

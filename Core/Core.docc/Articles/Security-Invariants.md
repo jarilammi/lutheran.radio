@@ -36,7 +36,7 @@ This document defines the **required security invariants** of the Lutheran Radio
 - When ``SecurityConfiguration/requiresDNSSECValidationForStreaming`` is true (the default), `URLSessionConfiguration.requiresDNSSECValidation` is set. This causes the system resolver to be asked for DNSSEC-validated answers; unvalidated answers cause the session task to fail.
 - DNSSEC validation failures at this layer are **transient** (see `StreamErrorType` classification and player recovery paths). This keeps the requirement "opt-in safe".
 - This layer authenticates the mapping from hostname to IP address **before** TLS is attempted and before ``CertificateValidator`` sees any server trust object.
-- The low-level `kDNSServiceFlagsValidate` query and `kDNSServiceFlagsSecure` status check in ``SecurityModelValidator`` remain the TXT policy path. Local verification (``DNSSECWalk``, pinned HTTPS wire transport, ``SecurityConfiguration/ianaRootTrustAnchors``) runs only when that query delivers zero callbacks. It does not trust a DoH `AD` bit.
+- The low-level `kDNSServiceFlagsValidate` query and `kDNSServiceFlagsSecure` status check in ``SecurityModelValidator`` remain the TXT policy path. Local verification (``DNSSECWalk``, pinned HTTPS wire transport, ``SecurityConfiguration/ianaRootTrustAnchors``) runs only when that query delivers zero callbacks. It does not trust a DoH `AD` bit. An RSA modulus shorter than 2048 bits verifies only when the RRSIG signer is `eu` (the 1024-bit `.eu` zone-signing key). A modulus shorter than 1024 bits fails for every signer.
 - ``requiresDNSSECValidationForStreaming`` stays true. ``makeSecureEphemeralConfiguration()`` still sets the flag. ``makeVerifiedAddressRetryConfiguration()`` is the only factory that clears it, and only for one retry after `NSURLErrorDomain` -1001 with stream domain 4 / code -2102 when local A/AAAA verification of that host just succeeded. The retry connects only to those addresses. The TLS peer name stays the hostname. A redirect to another host starts a new DNSSEC-on request and does not reuse the address set. Cache and credential storage stay nil. The runtime leaf pin is unchanged.
 
 ## Invariant 3: Certificate Pinning (Runtime Full-Chain)
@@ -63,7 +63,7 @@ This document defines the **required security invariants** of the Lutheran Radio
 
 All of the following values exist **only** inside ``SecurityConfiguration`` and are never hard-coded elsewhere:
 
-- `expectedSecurityModel` ("kailuakona")
+- `expectedSecurityModel` ("sunshinecoast")
 - `pinnedLeafFingerprintDigest` (sole production 32-byte pin — live `*.siikkari.net`; ``CertificateFingerprint``)
 - `pinnedSiikkariLeafFingerprintDigest` (alias of the sole live preferred-apex pin)
 - `pinnedFingerprintDigests` (acceptable digests for ``CertificateValidator`` — sole live siikkari leaf; append only during deliberate rotation overlap)

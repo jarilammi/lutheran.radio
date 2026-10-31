@@ -341,7 +341,7 @@ Those `simctl` commands do not erase the available simulator you still run tests
 
 | Item                          | Value / Note                                                                                                                                                                                                 | Source (always use via `Core/`)                                                    |
 |-------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
-| `expectedSecurityModel`       | `"kailuakona"` (must be present in the live TXT for streaming to be allowed). | `SecurityConfiguration.swift` (via `SecurityConfiguration.current`)                |
+| `expectedSecurityModel`       | `"sunshinecoast"` (must be present in the live TXT for streaming to be allowed). | `SecurityConfiguration.swift` (via `SecurityConfiguration.current`)                |
 | Live active models (DNS TXT)  | `dallas,montereypark,kailuakona` (live on primary; secondary/backup mirror for transient fallback).                                                                                | `dig +short +dnssec TXT securitymodels.siikkari.net`                               |
 | Streaming media apex          | Sole apex: `siikkari.net` (`european.siikkari.net`, `livestream.siikkari.net`, language hosts). Use `preferredStreamingDomainSuffixes` / `streamingHostCandidates(leadingLabel:)` — never hard-code. | `SecurityConfiguration.current`                                                    |
 | DNS TXT model hosts (order)   | `securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk` (ordered host walk: authoritative answer stops; only transient advances — see Security Model Validation) | `securityModelDomains`                                                             |
@@ -353,7 +353,7 @@ Those `simctl` commands do not erase the available simulator you still run tests
 | Model validation cache        | 1 hour (3600 s), success-only, in `UserDefaults` (`modelCacheDuration`). Failures always re-query. Distinct from certificate pin-result caching.                                                              | `SecurityConfiguration` + `SecurityModelValidator`                                 |
 | Certificate validation cache  | 10 minutes (600 s), success reuse in `CertificateValidator` (`certificateValidationCacheDuration`). Periodic HEAD revalidation in `DirectStreamingPlayer` uses the same constant.                             | `SecurityConfiguration` + `CertificateValidator`                                   |
 
-**AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The `kailuakona` row is the embedded model for this build (previous models are retained for the historical record and to prevent name reuse).
+**AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The `sunshinecoast` row is the embedded model for this build (previous models are retained for the historical record and to prevent name reuse). Valid From and the introducing app version for that row stay `(pending)` until the App Store publication date is known.
 
 ### Media Apex Cutover & SSL Certificate Rotation (siikkari.net)
 
@@ -504,7 +504,7 @@ The app performs security model validation to confirm that the version in use ma
    **Secondary domain:** `securitymodels.lutheranradio.eu` (transient-only mirror of the allow-list)
    **Backup domain:** `securitymodels.lutheranradio.sk` (final transient fallback)
 2. **Mechanism:** Queries DNS TXT records (via `DNSServiceQueryRecord` + `kDNSServiceFlagsValidate`) from the ordered list of domains, applying the ordered host walk above.
-3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"kailuakona"`, always read via `SecurityConfiguration.current`)
+3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"sunshinecoast"`, always read via `SecurityConfiguration.current`)
 4. **Location:** Enforced by the actor `Core/Actors/SecurityModelValidator.swift` (single source of truth for validation — see the Key Files table)
 5. **Behavior:** If the app’s security model isn’t in an **authoritative** TXT set from a responding host, playback is permanently disabled with a user-facing error message (no fall-through).
 
@@ -535,7 +535,7 @@ The app performs the TXT query via `DNSServiceQueryRecord` **with `kDNSServiceFl
 
 This provides data integrity and authenticity protection for the security model allow-list using the zone's existing DNSSEC signatures (RRSIG) and Apple's resolver.
 
-When the 5 s watchdog fires and **no callback arrived**, `SecurityModelValidator` verifies the same TXT RRset locally (`DNSSECWalk`) from DNS wire data fetched over pinned HTTPS (`pinnedDoHResolvers`: `cloudflare-dns.com` and `dns.google`). The root is checked against `ianaRootTrustAnchors` (current IANA KeyDigests only). KSK-2024, key tag 38696, signs the root DNSKEY set as of 11 October 2026. The KSK-2017 overlap and revocation dates are on that property. A present, signed RRset is an authoritative answer for steps 2 and 3 above, including one whose text parses to no names. A missing TXT RRset is not a verified empty set: `txtModels` returns failure, there is no NSEC or NSEC3 proof of absence, and that failure stays temporary so the next host is tried. Failed local verification is transient and the next host is tried. The DoH `AD` bit is not trusted. A callback that already delivered Insecure, Bogus, Indeterminate, expired, or Validate-without-a-status-code is not replaced. The watchdog is not lengthened, and `kDNSServiceFlagsValidateOptional` is not used.
+When the 5 s watchdog fires and **no callback arrived**, `SecurityModelValidator` verifies the same TXT RRset locally (`DNSSECWalk`) from DNS wire data fetched over pinned HTTPS (`pinnedDoHResolvers`: `cloudflare-dns.com` and `dns.google`). The root is checked against `ianaRootTrustAnchors` (current IANA KeyDigests only). KSK-2024, key tag 38696, signs the root DNSKEY set as of 11 October 2026. An RSA modulus shorter than 2048 bits verifies only when the RRSIG signer is `eu` (the 1024-bit `.eu` zone-signing key, which signs the `lutheranradio.eu` DS). A modulus shorter than 1024 bits fails for every signer. The KSK-2017 overlap and revocation dates are on that property. A present, signed RRset is an authoritative answer for steps 2 and 3 above, including one whose text parses to no names. A missing TXT RRset is not a verified empty set: `txtModels` returns failure, there is no NSEC or NSEC3 proof of absence, and that failure stays temporary so the next host is tried. Failed local verification is transient and the next host is tried. The DoH `AD` bit is not trusted. A callback that already delivered Insecure, Bogus, Indeterminate, expired, or Validate-without-a-status-code is not replaced. The watchdog is not lengthened, and `kDNSServiceFlagsValidateOptional` is not used.
 
 Unvalidated (or validation-failing) responses never result in a successful model list. Permanent failure only occurs when the expected model is provably absent from a validated response.
 
@@ -590,7 +590,7 @@ Example primary output (captured live; always re-verify with `dig` before relyin
 TXT 13 3 600 20261012090932 20261010070932 34505 siikkari.net. OEJm2BYrW1hvsARH00OUm6T2sp2S88HO9V5z/T6LXOF2tNCO0wfHT5GZ 6TX/NTrcHYEyEbNvBuCiZJj58Ytugg==
 ```
 
-Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```kailuakona```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed on a **validated** responding host, validation fails permanently for that host (no fall-through on permanent absence). To update the allow-list: publish / update the TXT on ```securitymodels.siikkari.net``` (primary) and keep secondary/backup (```securitymodels.lutheranradio.eu```, ```securitymodels.lutheranradio.sk```) consistent.
+Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```sunshinecoast```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed on a **validated** responding host, validation fails permanently for that host (no fall-through on permanent absence). To update the allow-list: publish / update the TXT on ```securitymodels.siikkari.net``` (primary) and keep secondary/backup (```securitymodels.lutheranradio.eu```, ```securitymodels.lutheranradio.sk```) consistent.
 
 See also: ``<doc:Security-Invariants>`` (Invariant 1), [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules).
 
@@ -758,6 +758,7 @@ This table is the source of truth for the historical record of security models (
 | `dallas`            | August 1, 2026     | (ongoing)          | 26.6.0                 |
 | `montereypark`      | October 3, 2026    | (ongoing)          | 27.0.1                 |
 | `kailuakona`        | October 31, 2026   | (ongoing)          | 27.2.0                 |
+| `sunshinecoast`     | (pending)          | (pending)          | (pending)              |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
@@ -776,7 +777,7 @@ When introducing a new security model (requires security review + documentation 
 6. Improve surrounding documentation per the Documentation & Comment Standards in [`CODING_AGENT.md`](CODING_AGENT.md) (add "Why", Security Invariant callouts, cross-links to ``<doc:Security-Invariants>`` and the Architecture article, update agent checklist context if needed).
 7. Run the mandatory find command + build/test gates. Include security impact assessment in the PR.
 
-See also: ``<doc:Security-Invariants>`` (Invariant 1 and "Enforcement"), "Verifying the Security Model" section above, [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules + "Current model = kailuakona" + response style requirements).
+See also: ``<doc:Security-Invariants>`` (Invariant 1 and "Enforcement"), "Verifying the Security Model" section above, [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules + "Current model = sunshinecoast" + response style requirements).
 
 ### Why Track Security Model Names?
 

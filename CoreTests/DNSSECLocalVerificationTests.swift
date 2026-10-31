@@ -323,29 +323,50 @@ struct DNSSECLocalVerificationTests {
         #expect(await walk.addresses(for: host) == [])
     }
 
-    @Test("RSA-SHA256 verifies a 1024-bit key and rejects a shorter modulus")
+    /// A 1024-bit RSA modulus verifies only when the RRSIG signer is `eu`.
+    /// That zone-signing key signs the `lutheranradio.eu` DS. The root and any
+    /// other name require 2048 bits. A modulus under 1024 bits fails for every signer.
+    ///
+    /// - SeeAlso: ``DNSSECCrypto/verify(algorithm:publicKey:signature:message:signer:)``,
+    ///   ``<doc:Security-Invariants>`` Invariant 2
+    @Test("RSA-SHA256 verifies a 1024-bit key only for the eu signer")
     func rsaRoundTrip() throws {
-        let attributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
-            kSecAttrKeySizeInBits as String: 1024,
-        ]
-        var error: Unmanaged<CFError>?
-        // SAFETY: `&error` is an unsafe pointer to Unmanaged. The key is +1 and stays in this function.
-        let privateKey = try #require(unsafe SecKeyCreateRandomKey(attributes as CFDictionary, &error))
-        let publicKey = try #require(SecKeyCopyPublicKey(privateKey))
-        let pkcs1 = try #require(SecKeyCopyExternalRepresentation(publicKey, nil) as Data?)
-        let rfc3110 = try #require(Self.rfc3110PublicKey(pkcs1: pkcs1))
         let message = Data("lutheran-radio-dnssec".utf8)
-        let signature = try #require(
-            SecKeyCreateSignature(privateKey, .rsaSignatureMessagePKCS1v15SHA256, message as CFData, nil) as Data?
-        )
-        #expect(DNSSECCrypto.verify(algorithm: 8, publicKey: rfc3110, signature: signature, message: message))
-        var broken = signature
+        let eu = try #require(DNSName(presentation: "eu"))
+        let root = DNSName.root
+        let child = try #require(DNSName(presentation: "lutheranradio.eu"))
+        let narrow = try Self.rsaKey(bits: 1024)
+        let narrowSignature = try narrow.signature(for: message)
+        #expect(DNSSECCrypto.verify(
+            algorithm: 8, publicKey: narrow.publicKey, signature: narrowSignature, message: message, signer: eu
+        ))
+        #expect(DNSSECCrypto.verify(
+            algorithm: 8, publicKey: narrow.publicKey, signature: narrowSignature, message: message, signer: root
+        ) == false)
+        #expect(DNSSECCrypto.verify(
+            algorithm: 8, publicKey: narrow.publicKey, signature: narrowSignature, message: message, signer: child
+        ) == false)
+        var broken = narrowSignature
         broken[0] ^= 0xFF
-        #expect(DNSSECCrypto.verify(algorithm: 8, publicKey: rfc3110, signature: broken, message: message) == false)
+        #expect(DNSSECCrypto.verify(
+            algorithm: 8, publicKey: narrow.publicKey, signature: broken, message: message, signer: eu
+        ) == false)
         var short = Data([1, 0x01])
         short.append(Data(repeating: 0x11, count: 64))
-        #expect(DNSSECCrypto.verify(algorithm: 8, publicKey: short, signature: signature, message: message) == false)
+        #expect(DNSSECCrypto.verify(
+            algorithm: 8, publicKey: short, signature: narrowSignature, message: message, signer: eu
+        ) == false)
+        #expect(DNSSECCrypto.verify(
+            algorithm: 8, publicKey: short, signature: narrowSignature, message: message, signer: root
+        ) == false)
+        let wide = try Self.rsaKey(bits: 2048)
+        let wideSignature = try wide.signature(for: message)
+        #expect(DNSSECCrypto.verify(
+            algorithm: 8, publicKey: wide.publicKey, signature: wideSignature, message: message, signer: root
+        ))
+        #expect(DNSSECCrypto.verify(
+            algorithm: 8, publicKey: wide.publicKey, signature: wideSignature, message: message, signer: eu
+        ))
     }
 
     /// Order is KSK-2017 (20326), then KSK-2024 (38696). The timestamps are
@@ -361,6 +382,30 @@ struct DNSSECLocalVerificationTests {
         #expect(anchors[1].validFrom == 1_721_260_800)
         let resolvers = SecurityConfiguration.current.pinnedDoHResolvers
         #expect(resolvers.map(\.host) == ["cloudflare-dns.com", "dns.google"])
+    }
+
+    private struct RSAKey {
+        var publicKey: Data
+        var privateKey: SecKey
+
+        func signature(for message: Data) throws -> Data {
+            try #require(
+                SecKeyCreateSignature(privateKey, .rsaSignatureMessagePKCS1v15SHA256, message as CFData, nil) as Data?
+            )
+        }
+    }
+
+    private static func rsaKey(bits: Int) throws -> RSAKey {
+        let attributes: [String: Any] = [
+            kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
+            kSecAttrKeySizeInBits as String: bits,
+        ]
+        var error: Unmanaged<CFError>?
+        // SAFETY: `&error` is an unsafe pointer to Unmanaged. The key is +1 and stays in this function.
+        let privateKey = try #require(unsafe SecKeyCreateRandomKey(attributes as CFDictionary, &error))
+        let publicKey = try #require(SecKeyCopyPublicKey(privateKey))
+        let pkcs1 = try #require(SecKeyCopyExternalRepresentation(publicKey, nil) as Data?)
+        return RSAKey(publicKey: try #require(rfc3110PublicKey(pkcs1: pkcs1)), privateKey: privateKey)
     }
 
     private static func rfc3110PublicKey(pkcs1: Data) -> Data? {

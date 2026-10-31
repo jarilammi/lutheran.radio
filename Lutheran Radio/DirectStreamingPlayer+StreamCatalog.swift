@@ -117,7 +117,7 @@ extension DirectStreamingPlayer {
     //   https://<language-slug>-<region>.<preferredStreamingDomainSuffix>/lutheranradio.mp3?security_model=<model>
     //
     // Today preferredStreamingDomainSuffix == "siikkari.net", so e.g.:
-    //   https://finnish-eu.siikkari.net/lutheranradio.mp3?security_model=kailuakona
+    //   https://finnish-eu.siikkari.net/lutheranradio.mp3?security_model=sunshinecoast
     //
     // Breakdown:
     // • <language-slug>  → StreamCatalog.languageSlug(for:)
