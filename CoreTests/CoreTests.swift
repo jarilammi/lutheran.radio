@@ -40,6 +40,76 @@ struct CoreTests {
         #expect(retry.urlCredentialStorage == nil)
     }
 
+    /// The verified-address pin wait rejects when it expires, and it ends before the
+    /// shortest flag-off request timeout so `stopLoading` can run on the same queue.
+    ///
+    /// Ten seconds is not the 5 s DNS TXT watchdog and not the 10-minute pin cache.
+    @Test func verifiedAddressPinEvaluationLimitFitsInsideTheFlagOffRequestTimeout() {
+        let limit = SecurityConfiguration.current.verifiedAddressPinEvaluationLimit
+        #expect(limit == 10)
+        #expect(limit > 5)
+        #expect(limit < ProtectedHostHTTPS.defaultRetryTimeout)
+        #expect(limit != SecurityConfiguration.current.certificateValidationCacheDuration)
+    }
+
+    /// A finished accept is the only `true`. A finished rejection returns without waiting out the deadline.
+    @Test func pinGateReturnsTheFinishedBoolean() {
+        let accepted = VerifiedAddressPinGate()
+        accepted.finish(true)
+        #expect(accepted.waitForResult(until: .now() + .seconds(2)) == true)
+
+        let rejected = VerifiedAddressPinGate()
+        let started = ContinuousClock.now
+        rejected.finish(false)
+        #expect(rejected.waitForResult(until: .now() + .seconds(2)) == false)
+        #expect(started.duration(to: .now) < .milliseconds(500))
+    }
+
+    /// Expiry is `false`. A later `finish(true)` must not become a second wait's accept.
+    ///
+    /// The production callback calls `complete` with the first result and returns.
+    /// The semaphore has to stay alive for that late finish, and the stored decision stays expired.
+    @Test func pinGateExpiryIgnoresALateAccept() {
+        let gate = VerifiedAddressPinGate()
+        #expect(gate.waitForResult(until: .now() + .milliseconds(40)) == false)
+        gate.finish(true)
+        #expect(gate.waitForResult(until: .now() + .milliseconds(40)) == false)
+    }
+
+    /// An accept that arrives while the waiter is blocked is the handshake's result.
+    ///
+    /// The finisher is a GCD queue. The waiter must not be a Swift task blocked on this
+    /// semaphore: production waits on `radio.lutheran.verified-address`.
+    @Test func pinGateReadsAnAcceptThatArrivesWhileWaiting() {
+        let gate = VerifiedAddressPinGate()
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + .milliseconds(30)) {
+            gate.finish(true)
+        }
+        #expect(gate.waitForResult(until: .now() + .seconds(2)) == true)
+    }
+
+    /// An empty chain fails closed. The verify callback then calls `complete(false)` without waiting.
+    @Test func isolatedServerTrustRejectsAnEmptyChain() {
+        let empty: [SecCertificate] = []
+        #expect(IsolatedServerTrust.make(certificates: empty as CFArray) == nil)
+    }
+
+    /// The copy is a different `SecTrust` with the same leaf. The pin check reads that leaf's SPKI.
+    ///
+    /// The fixture is the unpinned example leaf used by the certificate tests. This test does not
+    /// evaluate trust and does not open the network.
+    @Test func isolatedServerTrustCopiesTheLeafOntoANewObject() throws {
+        let handshake = try trustFromHex(unpinnedLeafDERHex)
+        let isolated = try #require(IsolatedServerTrust.make(from: handshake))
+        #expect(isolated !== handshake)
+        let handshakeLeaf = try #require(leafDER(handshake))
+        let isolatedLeaf = try #require(leafDER(isolated))
+        #expect(isolatedLeaf == handshakeLeaf)
+        let handshakeSPKI = try #require(SubjectPublicKeyInfo.leafFingerprint(trust: handshake))
+        let isolatedSPKI = try #require(SubjectPublicKeyInfo.leafFingerprint(trust: isolated))
+        #expect(isolatedSPKI == handshakeSPKI)
+    }
+
     /// The TLS verify completion is a Swift function, wider than a pointer.
     ///
     /// `unsafeBitCast` to `UnsafeRawPointer` traps at runtime
@@ -180,6 +250,45 @@ struct CoreTests {
         #expect(policy.isInTransitionWindow(at: expectedStart.addingTimeInterval(86_400)))
         #expect(!policy.isInTransitionWindow(at: expectedStart.addingTimeInterval(-1)))
         #expect(!policy.isInTransitionWindow(at: expectedEnd.addingTimeInterval(1)))
+    }
+
+    /// Leaf that is not on ``pinnedFingerprintDigests``. Copied here so the trust-isolation
+    /// test does not evaluate it and does not depend on the app-target helper.
+    private var unpinnedLeafDERHex: String {
+        "308201573081ffa003020102021412b1fc2cbbb59f804f114f22940b299505a0ce3b300a06082a8648ce3d040302301b3119301706035504030c10756e70696e6e65642e6578616d706c65301e170d3230303130313030303030305a170d3336303130313030303030305a301b3119301706035504030c10756e70696e6e65642e6578616d706c653059301306072a8648ce3d020106082a8648ce3d03010703420004f412bb1f6ced16551cc21240b88b96694a7ab0f15c81307a95535f0b2e912121a6a049cc120df6ab1872a7006968f8683819cc66fdef483c72ced1290f91931ca321301f301d0603551d0e041604141b7d4bc13886be706bbd1a6a4d22a0056acc13f6300a06082a8648ce3d040302034700304402207bdac94c3923bdd5c44ab314455022b4b6ecf080e9607b1833ea9a4823f39b50022056280733f1df43c126f2d3baa9409f42dede3910cb846a13b4e95912ea6acab8"
+    }
+
+    private func derFromHex(_ hex: String) -> Data? {
+        guard hex.count.isMultiple(of: 2) else { return nil }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(hex.count / 2)
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let next = hex.index(index, offsetBy: 2)
+            guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        return Data(bytes)
+    }
+
+    private func trustFromHex(_ hex: String) throws -> SecTrust {
+        let der = try #require(derFromHex(hex))
+        let certificate = try #require(SecCertificateCreateWithData(nil, der as CFData))
+        let policy = SecPolicyCreateBasicX509()
+        var trust: SecTrust?
+        // SAFETY: SecTrustCreateWithCertificates writes a +1 trust through `trust` for this fixture.
+        let status = unsafe SecTrustCreateWithCertificates(certificate, policy, &trust)
+        #expect(status == errSecSuccess)
+        return try #require(trust)
+    }
+
+    private func leafDER(_ trust: SecTrust) -> Data? {
+        guard let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+              let leaf = chain.first else {
+            return nil
+        }
+        return SecCertificateCopyData(leaf) as Data
     }
 
 }

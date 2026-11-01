@@ -48,6 +48,7 @@ A plain `struct` (value type) that exposes only the minimal public surface requi
 - `requiresDNSSECValidationForStreaming` + `makeSecureEphemeralConfiguration()` / `applySecureNetworkingRequirements(to:)` (the single place that turns on `URLSessionConfiguration.requiresDNSSECValidation` and related hardening for streaming hosts)
 - `ianaRootTrustAnchors` and `pinnedDoHResolvers` (root KeyDigests and DoH SPKI pins for local verification). KSK-2024, key tag 38696, signs the root DNSKEY set as of 11 October 2026. KSK-2017 stays in that list until ``DNSSECWalk`` observes a self-signed revoked form of the key; the dates on ``SecurityConfiguration/ianaRootTrustAnchors`` are not that signal.
 - `makeVerifiedAddressRetryConfiguration()` (the only factory that clears `requiresDNSSECValidation`, after a verified address set)
+- `verifiedAddressPinEvaluationLimit` (10 s cap on that retry's TLS verify wait; expiry rejects; the peer certificates are evaluated on a private `SecTrust`)
 - `current` (the canonical instance)
 
 DNS TXT allow-list hosts (`securityModelDomains`) remain an **independent** ordered list (`securitymodels.siikkari.net` primary, then `securitymodels.lutheranradio.eu`, then `securitymodels.lutheranradio.sk`) and are not assumed to share apexes with media preference.
@@ -114,7 +115,7 @@ High-level operational details (DNSSEC status, certificate rotation procedures, 
 
 Any new security mechanism (additional pinning layers, OCSP, certificate transparency, stricter DNS requirements, etc.) must be added inside the appropriate subdirectory of `Core/` and exposed through the existing public types. Duplication outside `Core` is not permitted.
 
-The DNSSEC requirement for streaming (`requiresDNSSECValidationForStreaming`) is deliberately centralised here so that future changes have exactly one place to update. The system resolver stays first. Local verification uses wire data over pinned HTTPS and does not trust the `AD` bit. `makeVerifiedAddressRetryConfiguration()` is the only factory that clears the session flag, and only for addresses that verification just accepted.
+The DNSSEC requirement for streaming (`requiresDNSSECValidationForStreaming`) is deliberately centralised here so that future changes have exactly one place to update. The system resolver stays first. Local verification uses wire data over pinned HTTPS and does not trust the `AD` bit. `makeVerifiedAddressRetryConfiguration()` is the only factory that clears the session flag, and only for addresses that verification just accepted. That retry's TLS verify callback copies the peer certificates into a private trust and waits at most `verifiedAddressPinEvaluationLimit`. Expiry rejects the handshake.
 
 ---
 

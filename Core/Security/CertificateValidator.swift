@@ -224,15 +224,24 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// fails closed. A cache hit inside ``validateServerTrust(_:)`` still requires this
     /// trust's SPKI to match before that hit is consulted.
     ///
+    /// The verified-address path passes a private trust copied from the handshake
+    /// certificates. This method sets the SSL policy on that object. It does not
+    /// borrow Network.framework's trust. A caller that already rejected the handshake
+    /// on ``SecurityConfiguration/verifiedAddressPinEvaluationLimit`` still lets this
+    /// method finish, so a real pin match can refresh the 10-minute cache. That
+    /// late result does not accept the handshake that already completed with false.
+    ///
     /// - Parameters:
-    ///   - serverTrust: Trust object from the TLS verify callback.
+    ///   - serverTrust: Private trust copied from the TLS verify callback, or the
+    ///     trust object of a path that still owns it for the whole call.
     ///   - host: TLS peer name. The SSL policy is bound to this name.
     /// - Returns: `true` when the SPKI pin matches and ``validateServerTrust(_:)`` accepts the leaf.
     /// - SeeAlso: ``validateServerTrust(_:)``, ``<doc:Security-Invariants>`` Invariant 2 and 3
     public func validateStreamingServerTrust(_ serverTrust: SecTrust, host: String) async -> Bool {
         let policy = SecPolicyCreateSSL(true, host as CFString)
-        // SAFETY: SecTrustSetPolicies replaces the policy set on this handshake's trust object
-        // before evaluation. The hostname is the URL host, not the connected address.
+        // SAFETY: SecTrustSetPolicies replaces the policy set on this trust object
+        // before evaluation. The verified-address caller passes a private copy.
+        // The hostname is the URL host, not the connected address.
         SecTrustSetPolicies(serverTrust, [policy] as CFArray)
         guard AppTransportSecurityPins.matches(trust: serverTrust, host: host) else {
             return false

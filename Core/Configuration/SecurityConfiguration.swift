@@ -17,6 +17,7 @@
 //  - IANA root KeyDigest anchors and pinned DoH resolver SPKIs
 //  - `makeVerifiedAddressRetryConfiguration()`, the only factory that clears
 //    `requiresDNSSECValidation`, and only for addresses local verification accepted
+//  - `verifiedAddressPinEvaluationLimit`, the cap on that retry's TLS verify wait
 //
 //  AGENT NOTE: Any new security constant, DNS policy knob, streaming-domain
 //  preference, or secure-session helper must be added here (never duplicated in
@@ -203,6 +204,29 @@ public struct SecurityConfiguration: Sendable {
     /// - SeeAlso: ``CertificateValidator``, ``modelCacheDuration``, ``<doc:Security-Invariants>``,
     ///   ``<doc:Architecture>``
     public let certificateValidationCacheDuration: TimeInterval = 600  // 10 minutes
+
+    /// How long the verified-address TLS verify callback waits for the pin check.
+    ///
+    /// ``VerifiedAddressHTTPSProtocol`` blocks `radio.lutheran.verified-address` until
+    /// ``CertificateValidator/validateStreamingServerTrust(_:host:)`` finishes or this
+    /// interval elapses. `sec_protocol_verify_complete_t` is non-escaping and wider
+    /// than a pointer, so the callback cannot store it and resume later. Expiry
+    /// rejects that handshake. The peer certificates are copied into a private
+    /// `SecTrust` before the wait. A result that arrives after expiry does not
+    /// accept the handshake.
+    ///
+    /// Ten seconds is inside the shortest flag-off request timeout
+    /// (``ProtectedHostHTTPS/defaultRetryTimeout``, 15 s). `stopLoading` uses the
+    /// same serial queue as the verify callback, so the wait has to end first.
+    /// Streaming retries use a longer request timeout. This value is not the 5 s
+    /// DNS TXT watchdog in ``SecurityModelValidator`` and not
+    /// ``certificateValidationCacheDuration``.
+    ///
+    /// - Important: Do not lengthen this to match a 60 s streaming request timeout.
+    ///   The queue stays blocked for this long.
+    /// - SeeAlso: ``makeVerifiedAddressRetryConfiguration()``,
+    ///   ``certificateValidationCacheDuration``, ``<doc:Security-Invariants>`` Invariant 2
+    public let verifiedAddressPinEvaluationLimit: TimeInterval = 10
     
     /// Live leaf DER SHA-256 for the sole production media apex (`CN=*.siikkari.net`).
     ///

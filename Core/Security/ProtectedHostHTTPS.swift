@@ -21,6 +21,12 @@
 //  pointer. It is called before the verify callback returns. `unsafeBitCast` to
 //  `UnsafeRawPointer` traps ("Can't unsafeBitCast between types of different sizes").
 //
+//  The callback copies the peer certificates into a private `SecTrust` and waits
+//  at most ``SecurityConfiguration/verifiedAddressPinEvaluationLimit``. `SecTrust`
+//  is not safe for concurrent use, and Network.framework keeps the handshake
+//  object. Expiry calls the completion with false. A result that arrives later
+//  does not accept that handshake.
+//
 //  - SeeAlso: ``DNSSECLocalVerification``, ``<doc:Security-Invariants>`` Invariant 2
 //
 
@@ -32,6 +38,16 @@ import Synchronization
 public enum ProtectedHostHTTPS {
     /// Error domain when a flag-off connection is asked to follow a different host.
     public static let dnssecRedirectDomain = "radio.lutheran.dnssec-redirect"
+
+    /// Request timeout for a flag-off attempt when the caller does not pass one.
+    ///
+    /// Stays above ``SecurityConfiguration/verifiedAddressPinEvaluationLimit``.
+    /// The verify callback and `stopLoading` share `radio.lutheran.verified-address`.
+    /// The pin wait ends first so cancellation can run on that queue.
+    ///
+    /// - SeeAlso: ``SecurityConfiguration/verifiedAddressPinEvaluationLimit``,
+    ///   ``<doc:Security-Invariants>`` Invariant 2
+    public static let defaultRetryTimeout: TimeInterval = 15
 
     /// `true` for the URLSession timeout that means the system DNSSEC validator did not finish.
     ///
@@ -73,6 +89,8 @@ public enum ProtectedHostHTTPS {
     ///   - delegate: Forwarded to both sessions. The retry's TLS check runs inside the custom protocol.
     ///   - delegateQueue: Queue for `delegate`. Nil uses URLSession's default.
     ///   - retryTimeout: Request timeout for the flag-off attempt. The first attempt keeps `configureFirst`.
+    ///     The default is ``defaultRetryTimeout``, which stays above
+    ///     ``SecurityConfiguration/verifiedAddressPinEvaluationLimit``.
     /// - Returns: The response body and URL response.
     /// - Throws: The original error when the retry is not allowed or itself fails. A cross-host redirect
     ///   starts a new DNSSEC-on load for that host (one restart).
@@ -83,7 +101,7 @@ public enum ProtectedHostHTTPS {
         configureFirst: (URLSessionConfiguration) -> Void,
         delegate: (any URLSessionTaskDelegate)?,
         delegateQueue: OperationQueue?,
-        retryTimeout: TimeInterval = 15
+        retryTimeout: TimeInterval = defaultRetryTimeout
     ) async throws -> (Data, URLResponse) {
         try await load(
             request,
@@ -226,11 +244,114 @@ enum VerifiedAddressRegistry {
     }
 }
 
+/// A `SecTrust` that holds the handshake certificates and nothing of Network.framework's object.
+///
+/// `SecTrust` is not safe for concurrent use. The verify callback copies the chain
+/// while it still owns the handshake turn, then evaluates only the copy. Expiry can
+/// return `complete(false)` while ``CertificateValidator`` is still inside
+/// `SecTrustEvaluateWithError` on this object.
+///
+/// - SeeAlso: ``VerifiedAddressPinGate``, ``CertificateValidator/validateStreamingServerTrust(_:host:)``,
+///   ``<doc:Security-Invariants>`` Invariant 2
+enum IsolatedServerTrust {
+    /// Copies `handshake`'s certificates into a new trust.
+    ///
+    /// - Parameter handshake: The +1 trust from `sec_trust_copy_ref` on the verify callback.
+    /// - Returns: Nil when the chain is missing, empty, or a new trust cannot be created.
+    ///   The callback rejects the handshake.
+    static func make(from handshake: SecTrust) -> SecTrust? {
+        guard let chain = SecTrustCopyCertificateChain(handshake) else { return nil }
+        return make(certificates: chain)
+    }
+
+    /// Builds a trust from `certificates`. An empty array fails closed.
+    ///
+    /// - Parameter certificates: Leaf first, as `SecTrustCopyCertificateChain` returns them.
+    /// - Returns: Nil when `certificates` is empty or `SecTrustCreateWithCertificates` fails.
+    ///   A nil policy leaves the default. ``CertificateValidator/validateStreamingServerTrust(_:host:)``
+    ///   replaces it with the SSL policy for the peer name before evaluation.
+    static func make(certificates: CFArray) -> SecTrust? {
+        guard CFArrayGetCount(certificates) > 0 else { return nil }
+        var created: SecTrust?
+        // SAFETY: SecTrustCreateWithCertificates writes a +1 trust through `created`.
+        // The optional takes that retain. The certificates array is an input, not the
+        // handshake trust, so this call does not alias Network.framework's object.
+        let status = unsafe SecTrustCreateWithCertificates(certificates, nil, &created)
+        guard status == errSecSuccess else { return nil }
+        return created
+    }
+}
+
+/// One pin-check result for the verified-address TLS verify callback.
+///
+/// The callback calls `sec_protocol_verify_complete_t` before it returns. The
+/// certificate actor does not run on `radio.lutheran.verified-address`, so the
+/// callback waits here. The semaphore lives in this object: a late `finish` after
+/// expiry must not signal a semaphore the callback has already released, and it
+/// must not replace the rejection.
+///
+/// One waiter. `waitForResult(until:)` is not a replay. On expiry it returns
+/// `false` without reading a boolean `finish` stored.
+///
+/// - SeeAlso: ``IsolatedServerTrust``, ``SecurityConfiguration/verifiedAddressPinEvaluationLimit``,
+///   ``<doc:Security-Invariants>`` Invariant 2
+final class VerifiedAddressPinGate: @unchecked Sendable {
+    // SAFETY: `decision` is a Mutex and `done` is a DispatchSemaphore. `finish` and
+    // `waitForResult` are the only mutations. The verify callback and the pin-check
+    // task share this object so a late finish still has a live semaphore. A safer
+    // isolated box cannot hold the semaphore: the callback has to wait on it, and
+    // the task has to signal it after the callback may have returned.
+    private enum Decision {
+        case pending
+        case accepted(Bool)
+        case expired
+    }
+
+    private let decision = Mutex(Decision.pending)
+    private let done = DispatchSemaphore(value: 0)
+
+    /// Records `accepted` when the gate is still pending, then wakes the waiter.
+    ///
+    /// A call after expiry, or after an earlier finish, does not signal and does
+    /// not replace the stored decision.
+    func finish(_ accepted: Bool) {
+        let shouldSignal = decision.withLock { current -> Bool in
+            guard case .pending = current else { return false }
+            current = .accepted(accepted)
+            return true
+        }
+        if shouldSignal {
+            done.signal()
+        }
+    }
+
+    /// Blocks until `finish` or `deadline`.
+    ///
+    /// - Parameter deadline: Absolute time. Production adds
+    ///   ``SecurityConfiguration/verifiedAddressPinEvaluationLimit`` to `.now()`.
+    /// - Returns: The finished boolean, or `false` when the wait expired or the
+    ///   stored decision is not an accept. Expiry does not read a late accept.
+    func waitForResult(until deadline: DispatchTime) -> Bool {
+        guard done.wait(timeout: deadline) == .success else {
+            decision.withLock { current in
+                if case .pending = current {
+                    current = .expired
+                }
+            }
+            return false
+        }
+        return decision.withLock { current in
+            guard case .accepted(let value) = current else { return false }
+            return value
+        }
+    }
+}
+
 /// HTTPS/1.1 to a verified address list. Registered only on the flag-off configuration.
 ///
 /// SAFETY: `URLProtocol` is not `Sendable`. Callbacks and `NWConnection` events hop to
-/// `queue`. The TLS verify block does not capture this instance; it captures the hostname
-/// and the trust object.
+/// `queue`. The TLS verify block does not capture this instance. It captures the hostname.
+/// The pin-check task captures the private trust, not Network.framework's handshake object.
 /// Internal: only ``SecurityConfiguration/makeVerifiedAddressRetryConfiguration()`` registers it.
 final class VerifiedAddressHTTPSProtocol: URLProtocol, @unchecked Sendable {
     private let queue = DispatchQueue(label: "radio.lutheran.verified-address")
@@ -371,28 +492,42 @@ final class VerifiedAddressHTTPSProtocol: URLProtocol, @unchecked Sendable {
         // SECURITY: Boringssl still performs the TLS record protection. This block
         // only accepts or rejects the certificate. ATS SPKI is required because
         // NWConnection does not apply NSPinnedDomains. The leaf DER pin remains
-        // CertificateValidator.validateServerTrust. No private cipher is added.
+        // CertificateValidator.validateStreamingServerTrust (SPKI, then the leaf).
+        // No private cipher is added.
         //
         // `complete` is `sec_protocol_verify_complete_t`, imported as `(Bool) -> Void`.
         // That value is wider than a pointer, so `unsafeBitCast` to `UnsafeRawPointer`
         // traps. It is non-escaping, so it is called before this callback returns.
         // Trust evaluation hops to the certificate actor, which does not use this queue.
+        //
+        // The handshake `SecTrust` is copied before the wait and is not captured by
+        // the task. Expiry calls `complete(false)` once. It does not read a result
+        // that arrives later. The waiter stays on this GCD queue. The pin-check task
+        // is what runs on the cooperative pool.
         let peer = host
+        let limit = SecurityConfiguration.current.verifiedAddressPinEvaluationLimit
         sec_protocol_options_set_verify_block(options, { _, trustRef, complete in
             // SAFETY: sec_trust_copy_ref returns a +1 SecTrust. The header omits
-            // SEC_RETURNS_RETAINED, so Swift imports Unmanaged. takeRetainedValue balances that retain.
-            let trust = unsafe sec_trust_copy_ref(trustRef).takeRetainedValue()
-            let outcome = Mutex(false)
-            let done = DispatchSemaphore(value: 0)
-            Task {
-                let accepted = await CertificateValidator.shared.validateStreamingServerTrust(trust, host: peer)
-                outcome.withLock { $0 = accepted }
-                done.signal()
+            // SEC_RETURNS_RETAINED, so Swift imports Unmanaged. takeRetainedValue
+            // balances that retain. The handshake object dies with this scope. The
+            // task evaluates `isolated` only.
+            let isolated: SecTrust? = {
+                let handshake = unsafe sec_trust_copy_ref(trustRef).takeRetainedValue()
+                return IsolatedServerTrust.make(from: handshake)
+            }()
+            guard let isolated else {
+                complete(false)
+                return
             }
-            // This queue is blocked only for the pin check. `complete` is then called
-            // on this turn, the same way Network.framework samples call it inline.
-            done.wait()
-            complete(outcome.withLock { $0 })
+            let gate = VerifiedAddressPinGate()
+            // userInitiated: this queue is blocked in the semaphore for the playback
+            // retry. The pin check should not sit behind utility work.
+            Task(priority: .userInitiated) {
+                let accepted = await CertificateValidator.shared.validateStreamingServerTrust(isolated, host: peer)
+                gate.finish(accepted)
+            }
+            let accepted = gate.waitForResult(until: .now() + limit)
+            complete(accepted)
         }, queue)
     }
 

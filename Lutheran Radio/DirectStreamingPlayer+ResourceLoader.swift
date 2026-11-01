@@ -277,6 +277,8 @@ extension DirectStreamingPlayer {
     /// SECURITY: The configuration comes from ``SecurityConfiguration/makeVerifiedAddressRetryConfiguration()``,
     /// which is the only factory that clears `requiresDNSSECValidation`. The peer name stays `host`.
     /// The hard cap is restarted at 30 s for this attempt. Request and resource timeouts return to 60 / 120.
+    /// Both sit above ``SecurityConfiguration/verifiedAddressPinEvaluationLimit``, so a stuck pin check
+    /// releases `radio.lutheran.verified-address` before this cap and before the request timeout.
     /// The DNSSEC-on session is finished so it cannot keep the delegate alive after the replacement task starts.
     private func startVerifiedAddressRetry(
         delegate: StreamingSessionDelegate,
