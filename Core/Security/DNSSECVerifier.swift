@@ -23,6 +23,12 @@
 //  hold-down and no trust-anchor add. A revoked key is not returned, so it
 //  cannot validate a child DS or any other RRset.
 //
+//  An RRSIG key tag is not unique. Verification tries every key in the list
+//  it was given that shares the tag and algorithm, and fails that signature
+//  only after each of those keys has been tried. A key that was not in the
+//  list is not added. Root-anchor retirement still passes the revoked key
+//  alone, so another anchor's signature cannot retire it.
+//
 //  One ``DNSSECWalk`` uses one fetcher and keeps that fetcher's cached messages.
 //  ``DNSSECResolverWalk`` abandons the walk when the signature or the chain
 //  does not verify, and starts a new walk bound to the next pinned resolver
@@ -534,10 +540,12 @@ actor RetiredRootAnchorStore {
 /// and starts another. A re-entrant fetch may repeat a query. That costs a
 /// budget slot and does not deadlock. Root-anchor retirement lives in
 /// ``RetiredRootAnchorStore``, which this walk awaits and which does not call
-/// back into the walk.
+/// back into the walk. An RRSIG key tag is not unique. Each key in the
+/// authenticated set that shares the tag and algorithm is tried. The set is
+/// not widened. The retirement check still passes the revoked key alone.
 ///
 /// - SeeAlso: ``DNSSECResolverWalk``, ``RetiredRootAnchorStore``,
-///   ``<doc:Security-Invariants>`` Invariant 1
+///   ``<doc:Security-Invariants>`` Invariant 1 and Invariant 2
 actor DNSSECWalk {
     private let fetcher: any DNSWireFetching
     private let anchors: [DNSSECTrustAnchor]
@@ -680,8 +688,11 @@ actor DNSSECWalk {
     }
 
     /// Checks one RRset. A bad signature is `.unverified` only after every
-    /// structurally valid signature has been tried. Transport failure while
-    /// loading zone keys, with no rejected signature, is `.unavailable`.
+    /// structurally valid signature has been tried. For one signature, every
+    /// key in the authenticated set that shares the RRSIG key tag and algorithm
+    /// is tried. That signature fails only after each of those keys fails.
+    /// The set is not widened. Transport failure while loading zone keys, with
+    /// no rejected signature, is `.unavailable`.
     private func verifyRRset(
         owner: DNSName,
         type: UInt16,
@@ -709,30 +720,27 @@ actor DNSSECWalk {
                 unavailable = true
                 continue
             }
-            guard let key = keys.first(where: { $0.keyTag == parsed.keyTag && $0.algorithm == parsed.algorithm }),
-                  let material = DNSSECCrypto.signedMaterial(
-                    owner: owner,
-                    type: type,
-                    algorithm: parsed.algorithm,
-                    labels: parsed.labels,
-                    originalTTL: parsed.originalTTL,
-                    expiration: parsed.expiration,
-                    inception: parsed.inception,
-                    keyTag: parsed.keyTag,
-                    signer: parsed.signer,
-                    rdatas: records.map(\.rdata)
-                  ),
-                  DNSSECCrypto.verify(
-                    algorithm: key.algorithm,
-                    publicKey: key.publicKey,
-                    signature: parsed.signature,
-                    message: material,
-                    signer: parsed.signer
-                  ) else {
+            guard let material = DNSSECCrypto.signedMaterial(
+                owner: owner,
+                type: type,
+                algorithm: parsed.algorithm,
+                labels: parsed.labels,
+                originalTTL: parsed.originalTTL,
+                expiration: parsed.expiration,
+                inception: parsed.inception,
+                keyTag: parsed.keyTag,
+                signer: parsed.signer,
+                rdatas: records.map(\.rdata)
+            ) else {
                 unverified = true
                 continue
             }
-            return .passed
+            // `keys` is already the zone's usable set. Do not add a key that
+            // authenticate did not return. A shared tag tries each of them.
+            if signatureVerifies(parsed: parsed, keys: keys, material: material, requireZoneKey: false) {
+                return .passed
+            }
+            unverified = true
         }
         if unverified { return .unverified }
         if unavailable { return .unavailable }
@@ -745,9 +753,11 @@ actor DNSSECWalk {
     /// has the REVOKE bit set, a copy of that rdata with the bit cleared matches
     /// A's key tag, algorithm, and DS digest, the published key is still a zone
     /// key, and an RRSIG over every DNSKEY rdata verifies under that revoked key
-    /// alone. ``verifyWithKeys`` returns on the first match, so that check's key
-    /// list is the revoked key and no other. A signature from a different anchor
-    /// does not retire A. The retirement is committed when the self-signature
+    /// alone. ``verifyWithKeys`` tries every key in the list it was given that
+    /// shares the RRSIG key tag and algorithm, so that check's list is the
+    /// revoked key and no other. A signature from a different anchor does not
+    /// retire A, including when that anchor's key tag collides with the revoked
+    /// rdata. The retirement is committed when the self-signature
     /// verifies, including when no other anchor remains, and it is not rolled back.
     /// The zone then has to verify under an anchor that is not retired. If none
     /// remain, or none of them sign this set, authentication fails.
@@ -856,7 +866,8 @@ actor DNSSECWalk {
     ///
     /// The REVOKE bit is cleared only on a copy. `keys` may include non-zone keys;
     /// a REVOKE bit with the zone bit clear is ignored. The signature check passes
-    /// only the revoked key, over every DNSKEY rdata in `records`.
+    /// only the revoked key, over every DNSKEY rdata in `records`. Another key
+    /// that shares the revoked rdata's tag is not added to that list.
     private func selfRevokedAnchorDigests(
         keys: [DNSKEYRecord],
         records: [DNSRR],
@@ -872,8 +883,9 @@ actor DNSSECWalk {
                   let digest = anchorDigest(matching: cleared, zone: zone) else {
                 continue
             }
-            // verifyWithKeys returns on the first match. Another anchor's signature
-            // must not retire this key, so the list contains the revoked key alone.
+            // verifyWithKeys tries every listed key that shares the RRSIG tag and
+            // algorithm. Another anchor's signature must not retire this key, so
+            // the list contains the revoked key alone.
             guard verifyWithKeys(
                 owner: zone,
                 type: DNSType.dnskey,
@@ -915,6 +927,15 @@ actor DNSSECWalk {
         return nil
     }
 
+    /// `true` when one signature over `records` verifies under a key in `keys`.
+    ///
+    /// Every zone key in `keys` that shares the RRSIG key tag and algorithm is
+    /// tried, in list order. A key that was not passed in is not added. The
+    /// first verified key returns. When none verify, the next signature is tried.
+    /// The root-anchor retirement call passes a one-key list so another anchor
+    /// is not tried, including when the key tags collide.
+    ///
+    /// - SeeAlso: ``<doc:Security-Invariants>`` Invariant 2 and Invariant 5
     private func verifyWithKeys(
         owner: DNSName,
         type: UInt16,
@@ -930,7 +951,6 @@ actor DNSSECWalk {
                   parsed.typeCovered == type,
                   parsed.signer == requiredSigner,
                   DNSSECCrypto.signatureIsCurrent(inception: parsed.inception, expiration: parsed.expiration, now: now),
-                  let key = keys.first(where: { $0.keyTag == parsed.keyTag && $0.algorithm == parsed.algorithm && $0.isZoneKey }),
                   let material = DNSSECCrypto.signedMaterial(
                     owner: owner,
                     type: type,
@@ -943,6 +963,31 @@ actor DNSSECWalk {
                     signer: parsed.signer,
                     rdatas: rdatas
                   ) else {
+                continue
+            }
+            if signatureVerifies(parsed: parsed, keys: keys, material: material, requireZoneKey: true) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// `true` when one key in `keys` verifies `parsed` over `material`.
+    ///
+    /// Only keys that share the RRSIG key tag and algorithm are tried, in list
+    /// order. `requireZoneKey` is the DNSKEY and DS path. The TXT and address
+    /// path already holds zone keys from ``authenticate(zone:depth:)``. The list
+    /// is not widened. `false` when every matching key fails, or none match.
+    private func signatureVerifies(
+        parsed: ParsedRRSIG,
+        keys: [DNSKEYRecord],
+        material: Data,
+        requireZoneKey: Bool
+    ) -> Bool {
+        for key in keys {
+            guard key.keyTag == parsed.keyTag,
+                  key.algorithm == parsed.algorithm,
+                  !requireZoneKey || key.isZoneKey else {
                 continue
             }
             if DNSSECCrypto.verify(

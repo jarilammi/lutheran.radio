@@ -10,6 +10,9 @@
 //  A self-signed revoked root DNSKEY suppresses that anchor's digest.
 //  P-256 fixtures are not the IANA 20326 or 38696 key bytes.
 //  One chain uses RSA-SHA256 at the root and a 1024-bit key only for the signer `eu`.
+//  Two zone keys that share a key tag are both tried. A signature from a key
+//  that is not in that list still fails. A colliding tag does not let another
+//  anchor retire a root digest.
 //  Resolver-walk fixtures use two local fetchers. They do not open DoH.
 //
 //  - SeeAlso: ``DNSSECWalk``, ``DNSSECResolverWalk``, ``RetiredRootAnchorStore``, ``<doc:Security-Invariants>`` Invariant 1
@@ -404,6 +407,52 @@ enum DNSSECFixtureBuilder {
         var corrupt: Bool = false
         var inception: UInt32 = DNSSECFixtureBuilder.inception
         var expiration: UInt32 = DNSSECFixtureBuilder.expiration
+    }
+
+    /// Two keys for `name` whose DNSKEY rdata shares one key tag.
+    ///
+    /// The first element was generated earlier. Tests list it first so a verifier
+    /// that stops on the first tag match rejects a signature from the second.
+    /// The search is bounded. A miss is a fixture failure.
+    private static func pairSharingTag(name: DNSName) throws -> (ZoneKey, ZoneKey) {
+        var byTag: [UInt16: ZoneKey] = [:]
+        for _ in 0..<4096 {
+            let key = try zoneKey(name: name)
+            if let earlier = byTag[key.tag] {
+                return (earlier, key)
+            }
+            byTag[key.tag] = key
+        }
+        throw FixtureError.material
+    }
+
+    /// Root keys where one key's revoked form shares the other key's tag.
+    ///
+    /// That key's tag without the REVOKE bit stays different, so the two anchors
+    /// are not one key. The search is bounded. A miss is a fixture failure.
+    /// The first tuple element is the key that gains the REVOKE bit.
+    private static func revokedTagMatchesOtherAnchor() throws -> (revokedKey: ZoneKey, other: ZoneKey) {
+        struct Entry {
+            var key: ZoneKey
+            var revokedTag: UInt16
+        }
+        var byUnrevokedTag: [UInt16: Entry] = [:]
+        var byRevokedTag: [UInt16: Entry] = [:]
+        for _ in 0..<4096 {
+            let key = try zoneKey(name: .root)
+            let revokedTag = DNSSECCrypto.keyTag(revokedRdata(key.dnskey))
+            if key.tag == revokedTag { continue }
+            if let other = byUnrevokedTag[revokedTag], other.key.tag != key.tag {
+                return (key, other.key)
+            }
+            if let earlier = byRevokedTag[key.tag], earlier.key.tag != key.tag {
+                return (earlier.key, key)
+            }
+            let entry = Entry(key: key, revokedTag: revokedTag)
+            byUnrevokedTag[key.tag] = entry
+            byRevokedTag[revokedTag] = entry
+        }
+        throw FixtureError.material
     }
 
     /// Two root keys whose tags stay distinct after A's rdata gains the REVOKE bit.
@@ -886,6 +935,183 @@ enum DNSSECFixtureBuilder {
         "\(name.presentation)|\(type)"
     }
 
+    struct SharedTagWalk: Sendable {
+        var laterKey: Built
+        var earlierKey: Built
+        var brokenSignature: Built
+        var unlistedSigner: Built
+        var txtName: DNSName
+        var sharedTag: UInt16
+    }
+
+    /// Child zone `example` publishes two keys with one tag. The decoy is listed
+    /// first. `laterKey` is signed by the second key. `earlierKey` is signed by
+    /// the first. `brokenSignature` damages the TXT signature. `unlistedSigner`
+    /// publishes only the decoy and signs the TXT with the key that was left out.
+    /// Both listed keys have a DS, so the DNSKEY check and the TXT check each see
+    /// the pair. The fixture does not open DoH.
+    static func sharedKeyTag() throws -> SharedTagWalk {
+        let root = try zoneKey(name: .root)
+        let zoneName = try name("example")
+        let (decoy, signer) = try pairSharingTag(name: zoneName)
+        guard decoy.tag == signer.tag else { throw FixtureError.material }
+        let txtName = try name("models.example")
+        let anchors = [anchor(for: root)]
+        let rootMessage = try dnskeyMessage(
+            owner: .root,
+            rdatas: [root.dnskey],
+            signatures: [RRSIGSpec(signer: root, keyTag: root.tag)]
+        )
+        let bothDS = try signedRRset(
+            owner: zoneName,
+            type: DNSType.ds,
+            rdatas: [dsRecord(child: decoy), dsRecord(child: signer)],
+            signer: root,
+            corrupt: false
+        )
+        let laterKeys = try dnskeyMessage(
+            owner: zoneName,
+            rdatas: [decoy.dnskey, signer.dnskey],
+            signatures: [RRSIGSpec(signer: signer, keyTag: signer.tag)]
+        )
+        let earlierKeys = try dnskeyMessage(
+            owner: zoneName,
+            rdatas: [decoy.dnskey, signer.dnskey],
+            signatures: [RRSIGSpec(signer: decoy, keyTag: decoy.tag)]
+        )
+        let laterText = try signedMessage(
+            owner: txtName,
+            type: DNSType.txt,
+            rdata: txtRdata("kailuakona"),
+            signer: signer,
+            corrupt: false
+        )
+        let earlierText = try signedMessage(
+            owner: txtName,
+            type: DNSType.txt,
+            rdata: txtRdata("kailuakona"),
+            signer: decoy,
+            corrupt: false
+        )
+        let brokenText = try signedMessage(
+            owner: txtName,
+            type: DNSType.txt,
+            rdata: txtRdata("kailuakona"),
+            signer: signer,
+            corrupt: true
+        )
+        let onlyDecoyDS = try signedMessage(
+            owner: zoneName,
+            type: DNSType.ds,
+            rdata: dsRecord(child: decoy),
+            signer: root,
+            corrupt: false
+        )
+        let onlyDecoyKeys = try dnskeyMessage(
+            owner: zoneName,
+            rdatas: [decoy.dnskey],
+            signatures: [RRSIGSpec(signer: decoy, keyTag: decoy.tag)]
+        )
+        func built(ds: Data, keys: Data, text: Data) -> Built {
+            Built(
+                anchors: anchors,
+                fetcher: MappedDNSFetcher(responses: [
+                    key(.root, DNSType.dnskey): rootMessage,
+                    key(zoneName, DNSType.ds): ds,
+                    key(zoneName, DNSType.dnskey): keys,
+                    key(txtName, DNSType.txt): text,
+                ])
+            )
+        }
+        return SharedTagWalk(
+            laterKey: built(ds: bothDS, keys: laterKeys, text: laterText),
+            earlierKey: built(ds: bothDS, keys: earlierKeys, text: earlierText),
+            brokenSignature: built(ds: bothDS, keys: laterKeys, text: brokenText),
+            unlistedSigner: built(ds: onlyDecoyDS, keys: onlyDecoyKeys, text: laterText),
+            txtName: txtName,
+            sharedTag: decoy.tag
+        )
+    }
+
+    struct CollidingTagRevocationWalk: Sendable {
+        var presented: Built
+        /// Later walk: that key alone, without the REVOKE bit.
+        var unrevokedKeyAlone: Built
+        /// Digest of the key that gains the REVOKE bit. Retirement must leave it trusted.
+        var revokedKeyDigest: Data
+        var childName: DNSName
+        var revokedTag: UInt16
+        var otherTag: UInt16
+        /// Tag of that key before the REVOKE bit. It stays different from `otherTag`.
+        var unrevokedTag: UInt16
+    }
+
+    /// One key's revoked tag equals the other anchor's tag. Only the other
+    /// anchor signs the root DNSKEY set. A later walk is that key alone,
+    /// without the REVOKE bit.
+    static func revokedTagCollidesWithOtherAnchor() throws -> CollidingTagRevocationWalk {
+        let (revokedKey, other) = try revokedTagMatchesOtherAnchor()
+        let revoked = revokedRdata(revokedKey.dnskey)
+        let revokedTag = DNSSECCrypto.keyTag(revoked)
+        guard revokedTag == other.tag, revokedKey.tag != other.tag else { throw FixtureError.material }
+        let anchors = [anchor(for: revokedKey), anchor(for: other)]
+        let presentedRoot = try dnskeyMessage(
+            owner: .root,
+            rdatas: [other.dnskey, revoked],
+            signatures: [RRSIGSpec(signer: other, keyTag: other.tag)]
+        )
+        let child = try zoneKey(name: try name("example"))
+        let childName = try name("models.example")
+        let presented = try delegation(
+            rootMessage: presentedRoot,
+            dsSigner: other,
+            child: child,
+            anchors: anchors,
+            txtName: childName
+        )
+        let unrevokedRoot = try dnskeyMessage(
+            owner: .root,
+            rdatas: [revokedKey.dnskey],
+            signatures: [RRSIGSpec(signer: revokedKey, keyTag: revokedKey.tag)]
+        )
+        let unrevokedKeyAlone = try delegation(
+            rootMessage: unrevokedRoot,
+            dsSigner: revokedKey,
+            child: child,
+            anchors: anchors,
+            txtName: childName
+        )
+        return CollidingTagRevocationWalk(
+            presented: presented,
+            unrevokedKeyAlone: unrevokedKeyAlone,
+            revokedKeyDigest: anchors[0].digest,
+            childName: childName,
+            revokedTag: revokedTag,
+            otherTag: other.tag,
+            unrevokedTag: revokedKey.tag
+        )
+    }
+
+    /// Signs every rdata in one RRset. The RRSIG key tag is the signer's tag.
+    private static func signedRRset(
+        owner: DNSName,
+        type: UInt16,
+        rdatas: [Data],
+        signer: ZoneKey,
+        corrupt: Bool
+    ) throws -> Data {
+        let spec = RRSIGSpec(signer: signer, keyTag: signer.tag, corrupt: corrupt)
+        let rrsig = try rrsigRdata(owner: owner, type: type, rdatas: rdatas, spec: spec)
+        var answers: [DNSRR] = []
+        answers.reserveCapacity(rdatas.count + 1)
+        for rdata in rdatas {
+            answers.append(DNSRR(name: owner, type: type, klass: DNSType.internet, ttl: ttl, rdata: rdata))
+        }
+        answers.append(DNSRR(name: owner, type: DNSType.rrsig, klass: DNSType.internet, ttl: ttl, rdata: rrsig))
+        let question = DNSQuestion(name: owner, type: type, klass: DNSType.internet)
+        return DNSMessage.response(id: 0, rcode: 0, question: question, answers: answers)
+    }
+
     private enum FixtureError: Error {
         case material
     }
@@ -1294,6 +1520,96 @@ struct DNSSECLocalVerificationTests {
             retiredAnchors: RetiredRootAnchorStore.memory()
         )
         #expect(await walk.txtModels(name: name) == .failed)
+    }
+
+    /// Two P-256 zone keys share one key tag. The decoy is listed first. The DNSKEY
+    /// set and the TXT RRset are signed by the later key, and both keys match a DS.
+    /// The tag match on the decoy is not enough: the later key has to be tried.
+    /// The fixture does not open DoH.
+    ///
+    /// - SeeAlso: ``DNSSECWalk``, ``<doc:Security-Invariants>`` Invariant 2
+    @Test("A later key with the same tag verifies the RRset")
+    func sharedKeyTagLaterKeyVerifies() async throws {
+        let fixture = try DNSSECFixtureBuilder.sharedKeyTag()
+        let walk = DNSSECWalk(
+            fetcher: fixture.laterKey.fetcher,
+            anchors: fixture.laterKey.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(await walk.txtModels(name: fixture.txtName) == .verified(["kailuakona"]))
+    }
+
+    /// The earlier key signs. The later key shares the tag and does not have to
+    /// verify. Acceptance is any one listed key, not every listed key.
+    @Test("The earlier key still verifies when a later key shares its tag")
+    func sharedKeyTagEarlierKeyVerifies() async throws {
+        let fixture = try DNSSECFixtureBuilder.sharedKeyTag()
+        let walk = DNSSECWalk(
+            fetcher: fixture.earlierKey.fetcher,
+            anchors: fixture.earlierKey.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(await walk.txtModels(name: fixture.txtName) == .verified(["kailuakona"]))
+    }
+
+    /// The TXT signature is damaged. Both keys share the tag. Neither verifies,
+    /// so the RRset fails. A tag match alone is not acceptance.
+    @Test("A shared key tag fails closed when no listed key verifies")
+    func sharedKeyTagFailsClosed() async throws {
+        let fixture = try DNSSECFixtureBuilder.sharedKeyTag()
+        let walk = DNSSECWalk(
+            fetcher: fixture.brokenSignature.fetcher,
+            anchors: fixture.brokenSignature.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(await walk.txtModels(name: fixture.txtName) == .failed)
+    }
+
+    /// The TXT signature was made by a key that is not in the DNSKEY set. That
+    /// key's tag collides with the published key. The published key does not
+    /// verify the signature, and the missing key is not added.
+    @Test("A colliding key that is not in the set does not verify")
+    func sharedKeyTagIgnoresAnUnlistedKey() async throws {
+        let fixture = try DNSSECFixtureBuilder.sharedKeyTag()
+        let walk = DNSSECWalk(
+            fetcher: fixture.unlistedSigner.fetcher,
+            anchors: fixture.unlistedSigner.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(await walk.txtModels(name: fixture.txtName) == .failed)
+    }
+
+    /// The revoked key's tag equals the other anchor's tag. Only the other anchor
+    /// signs the DNSKEY set. The retirement check passes the revoked key alone, so
+    /// the other signature is checked against that public key and does not retire
+    /// the digest. A later walk signed by the unrevoked key still succeeds.
+    ///
+    /// - SeeAlso: ``RetiredRootAnchorStore``, ``<doc:Security-Invariants>`` Invariant 5
+    @Test("A colliding key tag does not let another anchor retire a digest")
+    func collidingKeyTagDoesNotRetireAnotherAnchor() async throws {
+        let fixture = try DNSSECFixtureBuilder.revokedTagCollidesWithOtherAnchor()
+        #expect(fixture.revokedTag == fixture.otherTag)
+        #expect(fixture.unrevokedTag != fixture.otherTag)
+        let store = RetiredRootAnchorStore.memory()
+        let presented = DNSSECWalk(
+            fetcher: fixture.presented.fetcher,
+            anchors: fixture.presented.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: store
+        )
+        #expect(await presented.txtModels(name: fixture.childName) == .verified(["kailuakona"]))
+        #expect(await store.suppresses(fixture.revokedKeyDigest) == false)
+        let unrevokedKeyAlone = DNSSECWalk(
+            fetcher: fixture.unrevokedKeyAlone.fetcher,
+            anchors: fixture.unrevokedKeyAlone.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: store
+        )
+        #expect(await unrevokedKeyAlone.txtModels(name: fixture.childName) == .verified(["kailuakona"]))
     }
 
     /// A signature failure drops the first walk. The second fetcher is asked for the
