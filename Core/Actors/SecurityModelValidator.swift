@@ -855,11 +855,17 @@ public actor SecurityModelValidator {
     ///
     /// A present, signed RRset is returned, including one whose text parses to no
     /// names, so the host walk can treat that set as an authoritative answer.
-    /// ``DNSSECWalk/txtModels(name:)`` returns failure when the TXT records are
-    /// missing. There is no NSEC or NSEC3 proof of absence, so a missing set stays
-    /// a temporary failure and the next host is tried. `-UITestMode` does not open DoH.
-    /// The walk uses ``RetiredRootAnchorStore/shared``, so a self-revoked root digest
+    /// That verified set stops. A set that omits ``SecurityConfiguration/expectedSecurityModel``
+    /// is still verified, and the next resolver is not asked. A signature or chain
+    /// failure drops the walk, including its cached messages, and
+    /// ``DNSSECResolverWalk`` starts a new walk bound to the next pinned resolver
+    /// alone. A missing TXT RRset is not a verified empty set. There is no NSEC
+    /// or NSEC3 proof of absence, so a missing set on every resolver stays a
+    /// temporary failure and the next host is tried. `-UITestMode` does not open DoH.
+    /// The walks share ``RetiredRootAnchorStore/shared``, so a self-revoked root digest
     /// stays suppressed for this process. That store is not `lastSecurityValidation`.
+    ///
+    /// - SeeAlso: ``DNSSECResolverWalk``, ``<doc:Security-Invariants>`` Invariant 1
     private func locallyVerifiedTXTModels(for domain: String) async throws -> Set<String> {
         if ProcessInfo.processInfo.arguments.contains("-UITestMode") {
             throw NSError(
@@ -875,15 +881,15 @@ public actor SecurityModelValidator {
                 userInfo: [NSLocalizedDescriptionKey: "DNS name rejected"]
             )
         }
-        let fetcher: any DNSWireFetching
+        let fetchers: [any DNSWireFetching]
         #if DEBUG
         if let injected = _test_wireFetcher {
-            fetcher = injected
+            fetchers = [injected]
         } else {
-            fetcher = PinnedDoHFetcher()
+            fetchers = PinnedDoHFetcher.resolverWalkFetchers()
         }
         #else
-        fetcher = PinnedDoHFetcher()
+        fetchers = PinnedDoHFetcher.resolverWalkFetchers()
         #endif
         let anchors: [DNSSECTrustAnchor]
         #if DEBUG
@@ -891,13 +897,13 @@ public actor SecurityModelValidator {
         #else
         anchors = config.ianaRootTrustAnchors
         #endif
-        let walk = DNSSECWalk(
-            fetcher: fetcher,
+        switch await DNSSECResolverWalk.txtModels(
+            name: name,
+            fetchers: fetchers,
             anchors: anchors,
             now: currentDate(),
             retiredAnchors: RetiredRootAnchorStore.shared
-        )
-        switch await walk.txtModels(name: name) {
+        ) {
         case .verified(let models):
             return models
         case .failed:

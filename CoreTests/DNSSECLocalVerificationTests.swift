@@ -9,8 +9,10 @@
 //  Bad signature, expired RRSIG, and a wrong trust anchor must still fail.
 //  A self-signed revoked root DNSKEY suppresses that anchor's digest.
 //  P-256 fixtures are not the IANA 20326 or 38696 key bytes.
+//  One chain uses RSA-SHA256 at the root and a 1024-bit key only for the signer `eu`.
+//  Resolver-walk fixtures use two local fetchers. They do not open DoH.
 //
-//  - SeeAlso: ``DNSSECWalk``, ``RetiredRootAnchorStore``, ``<doc:Security-Invariants>`` Invariant 1
+//  - SeeAlso: ``DNSSECWalk``, ``DNSSECResolverWalk``, ``RetiredRootAnchorStore``, ``<doc:Security-Invariants>`` Invariant 1
 //
 
 import CryptoKit
@@ -62,62 +64,164 @@ enum DNSSECFixtureBuilder {
         let net = try zoneKey(name: try name("net"))
         let apex = try zoneKey(name: try name("siikkari.net"))
         let txtName = try name("securitymodels.siikkari.net")
+        let responses = try allowListResponses(
+            root: root, net: net, apex: apex, txtName: txtName,
+            txt: txt, corruptTXT: corruptTXT, omitTXTRecords: omitTXTRecords
+        )
+        return Built(anchors: [anchor(for: root)], fetcher: MappedDNSFetcher(responses: responses))
+    }
+
+    /// Two fetchers over one key set. A resolver-walk test can fail the first chain
+    /// without giving the second fetcher a different trust anchor.
+    static func pairedAllowLists(
+        firstTXT: String,
+        secondTXT: String,
+        corruptFirstTXT: Bool = false,
+        omitFirstTXT: Bool = false
+    ) throws -> (anchors: [DNSSECTrustAnchor], first: MappedDNSFetcher, second: MappedDNSFetcher) {
+        let root = try zoneKey(name: .root)
+        let net = try zoneKey(name: try name("net"))
+        let apex = try zoneKey(name: try name("siikkari.net"))
+        let txtName = try name("securitymodels.siikkari.net")
+        let first = try allowListResponses(
+            root: root, net: net, apex: apex, txtName: txtName,
+            txt: firstTXT, corruptTXT: corruptFirstTXT, omitTXTRecords: omitFirstTXT
+        )
+        let second = try allowListResponses(
+            root: root, net: net, apex: apex, txtName: txtName,
+            txt: secondTXT, corruptTXT: false, omitTXTRecords: false
+        )
+        return ([anchor(for: root)], MappedDNSFetcher(responses: first), MappedDNSFetcher(responses: second))
+    }
+
+    static func addressFixture(corruptAAAA: Bool = false, address: Data = Data([203, 0, 113, 10])) throws -> (Built, DNSName) {
+        let root = try zoneKey(name: .root)
+        let apex = try zoneKey(name: try name("example"))
+        let host = try name("www.example")
+        let responses = try addressResponses(root: root, apex: apex, host: host, address: address, corruptAAAA: corruptAAAA)
+        return (Built(anchors: [anchor(for: root)], fetcher: MappedDNSFetcher(responses: responses)), host)
+    }
+
+    /// Two address fetchers over one key set. `secondAddress` is the A rdata the later walk would return.
+    static func pairedAddressFixtures(
+        firstCorruptAAAA: Bool,
+        secondAddress: Data
+    ) throws -> (anchors: [DNSSECTrustAnchor], host: DNSName, first: MappedDNSFetcher, second: MappedDNSFetcher) {
+        let root = try zoneKey(name: .root)
+        let apex = try zoneKey(name: try name("example"))
+        let host = try name("www.example")
+        let first = try addressResponses(
+            root: root, apex: apex, host: host, address: Data([203, 0, 113, 10]), corruptAAAA: firstCorruptAAAA
+        )
+        let second = try addressResponses(
+            root: root, apex: apex, host: host, address: secondAddress, corruptAAAA: false
+        )
+        return ([anchor(for: root)], host, MappedDNSFetcher(responses: first), MappedDNSFetcher(responses: second))
+    }
+
+    /// RSA-SHA256 root, 1024-bit `eu` signer, P-256 `lutheranradio.eu` child.
+    ///
+    /// The 1024-bit key signs the child DS. `rootBits` of 1024 builds a root the
+    /// modulus floor must reject. `corruptEUDS` flips the `eu` DS signature.
+    /// The fixture does not open DoH.
+    static func rsaAllowList(txt: String, corruptEUDS: Bool = false, rootBits: Int = 2048) throws -> (Built, DNSName) {
+        let root = try rsaZoneKey(name: .root, bits: rootBits)
+        let eu = try rsaZoneKey(name: try name("eu"), bits: 1024)
+        let child = try zoneKey(name: try name("lutheranradio.eu"))
+        let txtName = try name("securitymodels.lutheranradio.eu")
+        var responses: [String: Data] = [:]
+        responses[key(root.name, DNSType.dnskey)] = try rsaSignedMessage(
+            owner: root.name, type: DNSType.dnskey, rdata: root.dnskey, signer: root, corrupt: false
+        )
+        responses[key(eu.name, DNSType.ds)] = try rsaSignedMessage(
+            owner: eu.name, type: DNSType.ds, rdata: dsRecord(owner: eu.name, dnskey: eu.dnskey), signer: root, corrupt: false
+        )
+        responses[key(eu.name, DNSType.dnskey)] = try rsaSignedMessage(
+            owner: eu.name, type: DNSType.dnskey, rdata: eu.dnskey, signer: eu, corrupt: false
+        )
+        responses[key(child.name, DNSType.ds)] = try rsaSignedMessage(
+            owner: child.name, type: DNSType.ds, rdata: dsRecord(child: child), signer: eu, corrupt: corruptEUDS
+        )
+        responses[key(child.name, DNSType.dnskey)] = try signedMessage(
+            owner: child.name, type: DNSType.dnskey, rdata: child.dnskey, signer: child, corrupt: false
+        )
+        responses[key(txtName, DNSType.txt)] = try signedMessage(
+            owner: txtName, type: DNSType.txt, rdata: txtRdata(txt), signer: child, corrupt: false
+        )
+        let built = Built(anchors: [rsaAnchor(for: root)], fetcher: MappedDNSFetcher(responses: responses))
+        return (built, txtName)
+    }
+
+    /// RSA material for ``rsaRoundTrip``. The chain fixture uses ``rsaZoneKey(name:bits:)``.
+    struct RSASigningKey {
+        var publicKey: Data
+        var privateKey: SecKey
+
+        func signature(for message: Data) throws -> Data {
+            // SAFETY: SecKeyCreateSignature borrows `message` for the call. Algorithm 8 is PKCS#1 v1.5 SHA-256.
+            // The error out-parameter stays nil; a nil signature is the failure.
+            try #require(
+                SecKeyCreateSignature(privateKey, .rsaSignatureMessagePKCS1v15SHA256, message as CFData, nil) as Data?
+            )
+        }
+    }
+
+    static func rsaSigningKey(bits: Int) throws -> RSASigningKey {
+        let attributes: [String: Any] = [
+            kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
+            kSecAttrKeySizeInBits as String: bits,
+        ]
+        var error: Unmanaged<CFError>?
+        // SAFETY: `&error` is an unsafe pointer to Unmanaged. The key is +1 and stays in this value.
+        let privateKey = try #require(unsafe SecKeyCreateRandomKey(attributes as CFDictionary, &error))
+        let publicKey = try #require(SecKeyCopyPublicKey(privateKey))
+        let pkcs1 = try #require(SecKeyCopyExternalRepresentation(publicKey, nil) as Data?)
+        return RSASigningKey(publicKey: try #require(rfc3110PublicKey(pkcs1: pkcs1)), privateKey: privateKey)
+    }
+
+    private static func allowListResponses(
+        root: ZoneKey,
+        net: ZoneKey,
+        apex: ZoneKey,
+        txtName: DNSName,
+        txt: String,
+        corruptTXT: Bool,
+        omitTXTRecords: Bool
+    ) throws -> [String: Data] {
         var responses: [String: Data] = [:]
         responses[key(root.name, DNSType.dnskey)] = try signedMessage(
-            owner: root.name,
-            type: DNSType.dnskey,
-            rdata: root.dnskey,
-            signer: root,
-            corrupt: false
+            owner: root.name, type: DNSType.dnskey, rdata: root.dnskey, signer: root, corrupt: false
         )
         responses[key(net.name, DNSType.ds)] = try signedMessage(
-            owner: net.name,
-            type: DNSType.ds,
-            rdata: dsRecord(child: net),
-            signer: root,
-            corrupt: false
+            owner: net.name, type: DNSType.ds, rdata: dsRecord(child: net), signer: root, corrupt: false
         )
         responses[key(net.name, DNSType.dnskey)] = try signedMessage(
-            owner: net.name,
-            type: DNSType.dnskey,
-            rdata: net.dnskey,
-            signer: net,
-            corrupt: false
+            owner: net.name, type: DNSType.dnskey, rdata: net.dnskey, signer: net, corrupt: false
         )
         responses[key(apex.name, DNSType.ds)] = try signedMessage(
-            owner: apex.name,
-            type: DNSType.ds,
-            rdata: dsRecord(child: apex),
-            signer: net,
-            corrupt: false
+            owner: apex.name, type: DNSType.ds, rdata: dsRecord(child: apex), signer: net, corrupt: false
         )
         responses[key(apex.name, DNSType.dnskey)] = try signedMessage(
-            owner: apex.name,
-            type: DNSType.dnskey,
-            rdata: apex.dnskey,
-            signer: apex,
-            corrupt: false
+            owner: apex.name, type: DNSType.dnskey, rdata: apex.dnskey, signer: apex, corrupt: false
         )
         if omitTXTRecords {
             // NOERROR with no TXT records. Absence is not a verified empty set.
             responses[key(txtName, DNSType.txt)] = emptyAnswer(owner: txtName, type: DNSType.txt)
         } else {
             responses[key(txtName, DNSType.txt)] = try signedMessage(
-                owner: txtName,
-                type: DNSType.txt,
-                rdata: txtRdata(txt),
-                signer: apex,
-                corrupt: corruptTXT
+                owner: txtName, type: DNSType.txt, rdata: txtRdata(txt), signer: apex, corrupt: corruptTXT
             )
         }
-        return Built(anchors: [anchor(for: root)], fetcher: MappedDNSFetcher(responses: responses))
+        return responses
     }
 
-    static func addressFixture(corruptAAAA: Bool = false) throws -> (Built, DNSName) {
-        let root = try zoneKey(name: .root)
-        let apex = try zoneKey(name: try name("example"))
-        let host = try name("www.example")
-        let address = Data([203, 0, 113, 10])
+    private static func addressResponses(
+        root: ZoneKey,
+        apex: ZoneKey,
+        host: DNSName,
+        address: Data,
+        corruptAAAA: Bool
+    ) throws -> [String: Data] {
         var responses: [String: Data] = [:]
         responses[key(root.name, DNSType.dnskey)] = try signedMessage(
             owner: root.name, type: DNSType.dnskey, rdata: root.dnskey, signer: root, corrupt: false
@@ -141,7 +245,121 @@ enum DNSSECFixtureBuilder {
                 corrupt: true
             )
         }
-        return (Built(anchors: [anchor(for: root)], fetcher: MappedDNSFetcher(responses: responses)), host)
+        return responses
+    }
+
+    private struct RSAZoneKey {
+        var name: DNSName
+        var signingKey: RSASigningKey
+        var dnskey: Data
+        var tag: UInt16
+    }
+
+    private static func rsaZoneKey(name: DNSName, bits: Int) throws -> RSAZoneKey {
+        let material = try rsaSigningKey(bits: bits)
+        var rdata = Data()
+        rdata.appendU16(0x0101)
+        rdata.append(3)
+        rdata.append(DNSSECCrypto.rsaSHA256)
+        rdata.append(material.publicKey)
+        return RSAZoneKey(name: name, signingKey: material, dnskey: rdata, tag: DNSSECCrypto.keyTag(rdata))
+    }
+
+    private static func rsaAnchor(for zone: RSAZoneKey) -> DNSSECTrustAnchor {
+        DNSSECTrustAnchor(
+            keyTag: zone.tag,
+            algorithm: DNSSECCrypto.rsaSHA256,
+            digestType: 2,
+            digest: DNSSECCrypto.dsDigest(owner: zone.name, dnskeyRdata: zone.dnskey),
+            validFrom: 0
+        )
+    }
+
+    private static func rsaSignedMessage(
+        owner: DNSName,
+        type: UInt16,
+        rdata: Data,
+        signer: RSAZoneKey,
+        corrupt: Bool
+    ) throws -> Data {
+        let labels = UInt8(owner.labelCount)
+        guard let material = DNSSECCrypto.signedMaterial(
+            owner: owner,
+            type: type,
+            algorithm: DNSSECCrypto.rsaSHA256,
+            labels: labels,
+            originalTTL: ttl,
+            expiration: expiration,
+            inception: inception,
+            keyTag: signer.tag,
+            signer: signer.name,
+            rdatas: [rdata]
+        ) else {
+            throw FixtureError.material
+        }
+        var signature = try signer.signingKey.signature(for: material)
+        if corrupt, !signature.isEmpty {
+            signature[signature.index(before: signature.endIndex)] ^= 0xFF
+        }
+        var rrsig = Data()
+        rrsig.appendU16(type)
+        rrsig.append(DNSSECCrypto.rsaSHA256)
+        rrsig.append(labels)
+        rrsig.appendU32(ttl)
+        rrsig.appendU32(expiration)
+        rrsig.appendU32(inception)
+        rrsig.appendU16(signer.tag)
+        rrsig.append(signer.name.canonicalWire)
+        rrsig.append(signature)
+        let question = DNSQuestion(name: owner, type: type, klass: DNSType.internet)
+        let record = DNSRR(name: owner, type: type, klass: DNSType.internet, ttl: ttl, rdata: rdata)
+        let signatureRR = DNSRR(name: owner, type: DNSType.rrsig, klass: DNSType.internet, ttl: ttl, rdata: rrsig)
+        return DNSMessage.response(id: 0, rcode: 0, question: question, answers: [record, signatureRR])
+    }
+
+    private static func rfc3110PublicKey(pkcs1: Data) -> Data? {
+        guard pkcs1.first == 0x30, pkcs1.count > 2 else { return nil }
+        var offset = 2
+        if pkcs1[1] & 0x80 != 0 {
+            offset = 2 + Int(pkcs1[1] & 0x7F)
+        }
+        guard let modulus = derInteger(pkcs1, offset: &offset),
+              let exponent = derInteger(pkcs1, offset: &offset) else {
+            return nil
+        }
+        var body = Data()
+        if exponent.count < 256 {
+            body.append(UInt8(exponent.count))
+        } else {
+            body.append(0)
+            body.append(UInt8((exponent.count >> 8) & 0xFF))
+            body.append(UInt8(exponent.count & 0xFF))
+        }
+        body.append(exponent)
+        body.append(modulus)
+        return body
+    }
+
+    private static func derInteger(_ data: Data, offset: inout Int) -> Data? {
+        guard offset < data.count, data[offset] == 0x02 else { return nil }
+        offset += 1
+        guard offset < data.count else { return nil }
+        var length = Int(data[offset])
+        offset += 1
+        if length & 0x80 != 0 {
+            let count = length & 0x7F
+            length = 0
+            guard offset + count <= data.count else { return nil }
+            for _ in 0..<count {
+                length = (length << 8) | Int(data[offset])
+                offset += 1
+            }
+        }
+        guard offset + length <= data.count else { return nil }
+        var bytes = data.subdata(in: offset..<(offset + length))
+        offset += length
+        if bytes.first == 0 { bytes.removeFirst() }
+        return bytes
     }
 
     private static func zoneKey(name: DNSName) throws -> ZoneKey {
@@ -768,7 +986,7 @@ struct DNSSECLocalVerificationTests {
         let eu = try #require(DNSName(presentation: "eu"))
         let root = DNSName.root
         let child = try #require(DNSName(presentation: "lutheranradio.eu"))
-        let narrow = try Self.rsaKey(bits: 1024)
+        let narrow = try DNSSECFixtureBuilder.rsaSigningKey(bits: 1024)
         let narrowSignature = try narrow.signature(for: message)
         #expect(DNSSECCrypto.verify(
             algorithm: 8, publicKey: narrow.publicKey, signature: narrowSignature, message: message, signer: eu
@@ -792,7 +1010,7 @@ struct DNSSECLocalVerificationTests {
         #expect(DNSSECCrypto.verify(
             algorithm: 8, publicKey: short, signature: narrowSignature, message: message, signer: root
         ) == false)
-        let wide = try Self.rsaKey(bits: 2048)
+        let wide = try DNSSECFixtureBuilder.rsaSigningKey(bits: 2048)
         let wideSignature = try wide.signature(for: message)
         #expect(DNSSECCrypto.verify(
             algorithm: 8, publicKey: wide.publicKey, signature: wideSignature, message: message, signer: root
@@ -1012,6 +1230,207 @@ struct DNSSECLocalVerificationTests {
         #expect(await live.txtModels(name: fixture.txtName) == .verified(["kailuakona"]))
     }
 
+    /// The root is RSA-SHA256. The 1024-bit key signs only as `eu`. ``DNSSECWalk``
+    /// checks the DNSKEY RRset and the DS. The fixture does not open DoH.
+    ///
+    /// - SeeAlso: ``DNSSECWalk``, ``DNSSECCrypto/verify(algorithm:publicKey:signature:message:signer:)``,
+    ///   ``<doc:Security-Invariants>`` Invariant 2
+    @Test("An RSA root chain verifies through DNSSECWalk")
+    func rsaChainVerifies() async throws {
+        let (built, name) = try DNSSECFixtureBuilder.rsaAllowList(txt: "dallas,montereypark,kailuakona")
+        let walk = DNSSECWalk(
+            fetcher: built.fetcher,
+            anchors: built.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(built.anchors[0].algorithm == 8)
+        #expect(await walk.txtModels(name: name) == .verified(["dallas", "montereypark", "kailuakona"]))
+    }
+
+    /// The `eu` DS signature is damaged after the 2048-bit root has signed its own DNSKEY set.
+    @Test("A bad RSA signature is not a verified set")
+    func rsaBadSignatureFails() async throws {
+        let (built, name) = try DNSSECFixtureBuilder.rsaAllowList(txt: "kailuakona", corruptEUDS: true)
+        let walk = DNSSECWalk(
+            fetcher: built.fetcher,
+            anchors: built.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(await walk.txtModels(name: name) == .failed)
+    }
+
+    @Test("The wrong RSA anchor is not a verified set")
+    func rsaWrongAnchorFails() async throws {
+        let (built, name) = try DNSSECFixtureBuilder.rsaAllowList(txt: "kailuakona")
+        var digest = Data(built.anchors[0].digest)
+        digest[0] ^= 0xFF
+        let wrong = DNSSECTrustAnchor(
+            keyTag: built.anchors[0].keyTag,
+            algorithm: built.anchors[0].algorithm,
+            digestType: 2,
+            digest: digest,
+            validFrom: 0
+        )
+        let walk = DNSSECWalk(
+            fetcher: built.fetcher,
+            anchors: [wrong],
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(await walk.txtModels(name: name) == .failed)
+    }
+
+    /// A 1024-bit root signature can be mathematically valid and still fail the walk.
+    /// The short-key exception is the signer `eu` alone.
+    @Test("A 1024-bit RSA root does not verify")
+    func rsaShortRootFails() async throws {
+        let (built, name) = try DNSSECFixtureBuilder.rsaAllowList(txt: "kailuakona", rootBits: 1024)
+        let walk = DNSSECWalk(
+            fetcher: built.fetcher,
+            anchors: built.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(await walk.txtModels(name: name) == .failed)
+    }
+
+    /// A signature failure drops the first walk. The second fetcher is asked for the
+    /// root DNSKEY, so the first walk's cached RRsets are not reused.
+    ///
+    /// - SeeAlso: ``DNSSECResolverWalk``, ``<doc:Security-Invariants>`` Invariant 1
+    @Test("A signature failure starts a new walk on the next resolver")
+    func signatureFailureStartsNewWalk() async throws {
+        let paired = try DNSSECFixtureBuilder.pairedAllowLists(
+            firstTXT: "other-model",
+            secondTXT: "sunshinecoast",
+            corruptFirstTXT: true
+        )
+        let name = try #require(DNSName(presentation: "securitymodels.siikkari.net"))
+        let outcome = await DNSSECResolverWalk.txtModels(
+            name: name,
+            fetchers: [paired.first, paired.second],
+            anchors: paired.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(outcome == .verified(["sunshinecoast"]))
+        #expect(Self.sawRootDNSKEY(paired.first))
+        #expect(Self.sawRootDNSKEY(paired.second))
+    }
+
+    /// A verified omission is a successful verification. The resolver that would
+    /// have answered `sunshinecoast` is not asked.
+    @Test("A verified TXT omission does not ask the next resolver")
+    func verifiedOmissionDoesNotAskNextResolver() async throws {
+        let paired = try DNSSECFixtureBuilder.pairedAllowLists(
+            firstTXT: "other-model",
+            secondTXT: "sunshinecoast"
+        )
+        let name = try #require(DNSName(presentation: "securitymodels.siikkari.net"))
+        let outcome = await DNSSECResolverWalk.txtModels(
+            name: name,
+            fetchers: [paired.first, paired.second],
+            anchors: paired.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(outcome == .verified(["other-model"]))
+        #expect(paired.second.queries.withLock { $0 }.isEmpty)
+    }
+
+    /// A missing TXT RRset is unverified, so the next resolver's signed set can still be accepted.
+    @Test("A missing TXT on the first resolver does not stop the next walk")
+    func missingTXTAsksNextResolver() async throws {
+        let paired = try DNSSECFixtureBuilder.pairedAllowLists(
+            firstTXT: "other-model",
+            secondTXT: "sunshinecoast",
+            omitFirstTXT: true
+        )
+        let name = try #require(DNSName(presentation: "securitymodels.siikkari.net"))
+        let outcome = await DNSSECResolverWalk.txtModels(
+            name: name,
+            fetchers: [paired.first, paired.second],
+            anchors: paired.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(outcome == .verified(["sunshinecoast"]))
+        #expect(Self.sawRootDNSKEY(paired.second))
+    }
+
+    /// No message is a transport miss. The first fetcher already represents that miss,
+    /// so the later fetcher is not started.
+    @Test("A transport failure does not start another walk")
+    func transportFailureDoesNotStartAnotherWalk() async throws {
+        let good = try DNSSECFixtureBuilder.allowList(txt: "sunshinecoast")
+        let silent = MappedDNSFetcher(responses: [:])
+        let name = try #require(DNSName(presentation: "securitymodels.siikkari.net"))
+        let outcome = await DNSSECResolverWalk.txtModels(
+            name: name,
+            fetchers: [silent, good.fetcher],
+            anchors: good.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(outcome == .failed)
+        let txtKey = "securitymodels.siikkari.net|\(DNSType.txt)"
+        #expect(silent.queries.withLock { $0.contains(txtKey) })
+        #expect(good.fetcher.queries.withLock { $0 }.isEmpty)
+    }
+
+    /// A failed AAAA signature drops the first walk's A record. The next walk's address is the result.
+    @Test("A failed address signature drops the first walk")
+    func failedAddressSignatureDropsFirstWalk() async throws {
+        let paired = try DNSSECFixtureBuilder.pairedAddressFixtures(
+            firstCorruptAAAA: true,
+            secondAddress: Data([203, 0, 113, 99])
+        )
+        let addresses = await DNSSECResolverWalk.addresses(
+            for: paired.host,
+            fetchers: [paired.first, paired.second],
+            anchors: paired.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(addresses.map(\.presentation) == ["203.0.113.99"])
+        #expect(Self.sawRootDNSKEY(paired.second))
+    }
+
+    /// A verified A with AAAA absent stops. The other resolver's address is not merged in.
+    @Test("A verified address set does not ask the next resolver")
+    func verifiedAddressDoesNotAskNextResolver() async throws {
+        let paired = try DNSSECFixtureBuilder.pairedAddressFixtures(
+            firstCorruptAAAA: false,
+            secondAddress: Data([203, 0, 113, 99])
+        )
+        let addresses = await DNSSECResolverWalk.addresses(
+            for: paired.host,
+            fetchers: [paired.first, paired.second],
+            anchors: paired.anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(addresses.map(\.presentation) == ["203.0.113.10"])
+        #expect(paired.second.queries.withLock { $0 }.isEmpty)
+    }
+
+    /// Production order is the full pinned list, then `dns.google` alone.
+    @Test("The resolver walk binds the later fetcher to one resolver")
+    func resolverWalkBindsLaterFetcher() {
+        let fetchers = PinnedDoHFetcher.resolverWalkFetchers()
+        #expect(fetchers.map { $0.resolvers?.map(\.host) } == [
+            ["cloudflare-dns.com", "dns.google"],
+            ["dns.google"],
+        ])
+    }
+
+    private static func sawRootDNSKEY(_ fetcher: MappedDNSFetcher) -> Bool {
+        let key = "\(DNSName.root.presentation)|\(DNSType.dnskey)"
+        return fetcher.queries.withLock { $0.contains(key) }
+    }
+
     private func expectRejectedRevocation(_ fixture: DNSSECFixtureBuilder.RejectedRevocationWalk) async throws {
         let store = RetiredRootAnchorStore.memory()
         let presented = DNSSECWalk(
@@ -1032,72 +1451,4 @@ struct DNSSECLocalVerificationTests {
         #expect(await onlyCandidate.txtModels(name: fixture.childName) == .verified(["kailuakona"]))
     }
 
-    private struct RSAKey {
-        var publicKey: Data
-        var privateKey: SecKey
-
-        func signature(for message: Data) throws -> Data {
-            try #require(
-                SecKeyCreateSignature(privateKey, .rsaSignatureMessagePKCS1v15SHA256, message as CFData, nil) as Data?
-            )
-        }
-    }
-
-    private static func rsaKey(bits: Int) throws -> RSAKey {
-        let attributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
-            kSecAttrKeySizeInBits as String: bits,
-        ]
-        var error: Unmanaged<CFError>?
-        // SAFETY: `&error` is an unsafe pointer to Unmanaged. The key is +1 and stays in this function.
-        let privateKey = try #require(unsafe SecKeyCreateRandomKey(attributes as CFDictionary, &error))
-        let publicKey = try #require(SecKeyCopyPublicKey(privateKey))
-        let pkcs1 = try #require(SecKeyCopyExternalRepresentation(publicKey, nil) as Data?)
-        return RSAKey(publicKey: try #require(rfc3110PublicKey(pkcs1: pkcs1)), privateKey: privateKey)
-    }
-
-    private static func rfc3110PublicKey(pkcs1: Data) -> Data? {
-        guard pkcs1.first == 0x30, pkcs1.count > 2 else { return nil }
-        var offset = 2
-        if pkcs1[1] & 0x80 != 0 {
-            offset = 2 + Int(pkcs1[1] & 0x7F)
-        }
-        guard let modulus = derInteger(pkcs1, offset: &offset),
-              let exponent = derInteger(pkcs1, offset: &offset) else {
-            return nil
-        }
-        var body = Data()
-        if exponent.count < 256 {
-            body.append(UInt8(exponent.count))
-        } else {
-            body.append(0)
-            body.append(UInt8((exponent.count >> 8) & 0xFF))
-            body.append(UInt8(exponent.count & 0xFF))
-        }
-        body.append(exponent)
-        body.append(modulus)
-        return body
-    }
-
-    private static func derInteger(_ data: Data, offset: inout Int) -> Data? {
-        guard offset < data.count, data[offset] == 0x02 else { return nil }
-        offset += 1
-        guard offset < data.count else { return nil }
-        var length = Int(data[offset])
-        offset += 1
-        if length & 0x80 != 0 {
-            let count = length & 0x7F
-            length = 0
-            guard offset + count <= data.count else { return nil }
-            for _ in 0..<count {
-                length = (length << 8) | Int(data[offset])
-                offset += 1
-            }
-        }
-        guard offset + length <= data.count else { return nil }
-        var bytes = data.subdata(in: offset..<(offset + length))
-        offset += length
-        if bytes.first == 0 { bytes.removeFirst() }
-        return bytes
-    }
 }

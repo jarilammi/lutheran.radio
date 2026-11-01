@@ -23,7 +23,13 @@
 //  hold-down and no trust-anchor add. A revoked key is not returned, so it
 //  cannot validate a child DS or any other RRset.
 //
-//  - SeeAlso: ``DNSSECWalk``, ``RetiredRootAnchorStore``,
+//  One ``DNSSECWalk`` uses one fetcher and keeps that fetcher's cached messages.
+//  ``DNSSECResolverWalk`` abandons the walk when the signature or the chain
+//  does not verify, and starts a new walk bound to the next pinned resolver
+//  alone. A verified RRset stops, including one that omits the expected model.
+//  The two resolvers' RRsets are not merged. The AD bit is not an input.
+//
+//  - SeeAlso: ``DNSSECWalk``, ``DNSSECResolverWalk``, ``RetiredRootAnchorStore``,
 //    ``SecurityConfiguration/ianaRootTrustAnchors``,
 //    ``<doc:Security-Invariants>`` Invariant 1 and Invariant 5
 //
@@ -386,13 +392,30 @@ private func readU32(_ data: Data, _ offset: Int) -> UInt32 {
 
 private enum ZoneAuthentication {
     case keys([DNSKEYRecord])
-    case failed
+    /// A message arrived and the signature or the chain did not verify.
+    case unverified
+    /// No acceptable message. The fetcher already skipped resolvers for pin, transport, and shape.
+    case unavailable
 }
 
-private enum AddressRRset {
+/// Why one walk stopped. ``DNSSECResolverWalk`` continues only after ``unverified``.
+private enum DNSSECWalkAttempt<Value: Sendable>: Sendable {
+    case verified(Value)
+    case unverified
+    case unavailable
+}
+
+private enum RRsetCheck {
+    case passed
+    case unverified
+    case unavailable
+}
+
+private enum AddressOutcome {
     case absent
     case verified([Data])
-    case failed
+    case unverified
+    case unavailable
 }
 
 /// Digests of root trust anchors that have self-revoked.
@@ -505,11 +528,16 @@ actor RetiredRootAnchorStore {
 
 /// Walks parent DS links from a name up to the configured root anchors.
 ///
-/// The actor owns the message cache and the fetch budget. It does not store an
-/// in-flight `Task` that awaits itself. A re-entrant fetch may repeat a query.
-/// That costs a budget slot and does not deadlock. Root-anchor retirement lives
-/// in ``RetiredRootAnchorStore``, which this walk awaits and which does not call
+/// The actor owns the message cache and the fetch budget for one fetcher.
+/// It does not switch resolvers after a signature or chain failure: that
+/// cache would mix the two answers. ``DNSSECResolverWalk`` drops the actor
+/// and starts another. A re-entrant fetch may repeat a query. That costs a
+/// budget slot and does not deadlock. Root-anchor retirement lives in
+/// ``RetiredRootAnchorStore``, which this walk awaits and which does not call
 /// back into the walk.
+///
+/// - SeeAlso: ``DNSSECResolverWalk``, ``RetiredRootAnchorStore``,
+///   ``<doc:Security-Invariants>`` Invariant 1
 actor DNSSECWalk {
     private let fetcher: any DNSWireFetching
     private let anchors: [DNSSECTrustAnchor]
@@ -549,37 +577,100 @@ actor DNSSECWalk {
     /// `.failed`. The host walk treats that as a temporary failure and tries the
     /// next host. Absence is not an authoritative empty set. A present RRset
     /// whose text parses to no names is `.verified` with an empty set.
+    /// This walk does not ask another resolver. ``DNSSECResolverWalk`` does,
+    /// and only after the attempt is unverified.
     ///
-    /// - SeeAlso: ``DNSSECVerifiedTXT``, ``<doc:Security-Invariants>`` Invariant 1
+    /// - SeeAlso: ``DNSSECVerifiedTXT``, ``DNSSECResolverWalk``, ``<doc:Security-Invariants>`` Invariant 1
     func txtModels(name: DNSName) async -> DNSSECVerifiedTXT {
-        guard let message = await fetch(name: name, type: DNSType.txt), message.rcode == 0 else {
+        switch await txtAttempt(name: name) {
+        case .verified(let models):
+            return .verified(models)
+        case .unverified, .unavailable:
             return .failed
+        }
+    }
+
+    /// TXT outcome that tells ``DNSSECResolverWalk`` whether another resolver can be asked.
+    ///
+    /// `.verified` includes a present RRset that parses to no names. A missing
+    /// RRset is `.unverified`: this walker does not prove absence. `.unavailable`
+    /// means the fetcher returned no acceptable message.
+    fileprivate func txtAttempt(name: DNSName) async -> DNSSECWalkAttempt<Set<String>> {
+        guard let message = await fetch(name: name, type: DNSType.txt) else {
+            return .unavailable
+        }
+        guard message.rcode == 0 else {
+            return .unverified
         }
         let records = answers(message, name: name, type: DNSType.txt)
         // A missing RRset is not a verified empty set. No NSEC or NSEC3 proof is attempted.
-        guard !records.isEmpty else { return .failed }
+        guard !records.isEmpty else { return .unverified }
         let signatures = answers(message, name: name, type: DNSType.rrsig)
-        guard await verifyRRset(owner: name, type: DNSType.txt, records: records, signatures: signatures, message: message) else {
-            return .failed
+        switch await verifyRRset(owner: name, type: DNSType.txt, records: records, signatures: signatures, message: message) {
+        case .passed:
+            var models = Set<String>()
+            for record in records {
+                models.formUnion(SecurityModelValidator.parseInlineTXTRecord(record.rdata))
+            }
+            return .verified(models)
+        case .unverified:
+            return .unverified
+        case .unavailable:
+            return .unavailable
         }
-        var models = Set<String>()
-        for record in records {
-            models.formUnion(SecurityModelValidator.parseInlineTXTRecord(record.rdata))
-        }
-        return .verified(models)
     }
 
     func addresses(for name: DNSName) async -> [VerifiedSocketAddress] {
-        let ipv4 = await addressRRset(name: name, type: DNSType.a)
-        let ipv6 = await addressRRset(name: name, type: DNSType.aaaa)
-        if case .failed = ipv4 { return [] }
-        if case .failed = ipv6 { return [] }
+        switch await addressAttempt(for: name) {
+        case .verified(let addresses):
+            return addresses
+        case .unverified, .unavailable:
+            return []
+        }
+    }
+
+    /// Address outcome for one walk. A failed A or AAAA drops the whole set.
+    ///
+    /// `.verified` may be empty when both RRsets are absent. That is a verified
+    /// answer. `.unverified` is a signature or chain failure, so the caller
+    /// must not keep a partial address list from this walk.
+    fileprivate func addressAttempt(for name: DNSName) async -> DNSSECWalkAttempt<[VerifiedSocketAddress]> {
+        let ipv4 = await addressOutcome(name: name, type: DNSType.a)
+        let ipv6 = await addressOutcome(name: name, type: DNSType.aaaa)
+        switch (ipv4, ipv6) {
+        case (.unverified, _), (_, .unverified):
+            return .unverified
+        case (.unavailable, _), (_, .unavailable):
+            return .unavailable
+        default:
+            return .verified(Self.collectedAddresses(ipv4: ipv4, ipv6: ipv6))
+        }
+    }
+
+    private func addressOutcome(name: DNSName, type: UInt16) async -> AddressOutcome {
+        guard let message = await fetch(name: name, type: type) else { return .unavailable }
+        if message.rcode == 3 { return .absent }
+        guard message.rcode == 0 else { return .unverified }
+        let records = answers(message, name: name, type: type)
+        if records.isEmpty { return .absent }
+        let signatures = answers(message, name: name, type: DNSType.rrsig)
+        switch await verifyRRset(owner: name, type: type, records: records, signatures: signatures, message: message) {
+        case .passed:
+            return .verified(records.map(\.rdata))
+        case .unverified:
+            return .unverified
+        case .unavailable:
+            return .unavailable
+        }
+    }
+
+    private static func collectedAddresses(ipv4: AddressOutcome, ipv6: AddressOutcome) -> [VerifiedSocketAddress] {
         var found: [VerifiedSocketAddress] = []
         if case .verified(let rdatas) = ipv4 {
-            found.append(contentsOf: rdatas.compactMap(Self.address(ipv4:)))
+            found.append(contentsOf: rdatas.compactMap(address(ipv4:)))
         }
         if case .verified(let rdatas) = ipv6 {
-            found.append(contentsOf: rdatas.compactMap(Self.address(ipv6:)))
+            found.append(contentsOf: rdatas.compactMap(address(ipv6:)))
         }
         var unique: [VerifiedSocketAddress] = []
         for address in found where !unique.contains(address) {
@@ -588,33 +679,37 @@ actor DNSSECWalk {
         return unique
     }
 
-    private func addressRRset(name: DNSName, type: UInt16) async -> AddressRRset {
-        guard let message = await fetch(name: name, type: type) else { return .failed }
-        if message.rcode == 3 { return .absent }
-        guard message.rcode == 0 else { return .failed }
-        let records = answers(message, name: name, type: type)
-        if records.isEmpty { return .absent }
-        let signatures = answers(message, name: name, type: DNSType.rrsig)
-        guard await verifyRRset(owner: name, type: type, records: records, signatures: signatures, message: message) else {
-            return .failed
-        }
-        return .verified(records.map(\.rdata))
-    }
-
+    /// Checks one RRset. A bad signature is `.unverified` only after every
+    /// structurally valid signature has been tried. Transport failure while
+    /// loading zone keys, with no rejected signature, is `.unavailable`.
     private func verifyRRset(
         owner: DNSName,
         type: UInt16,
         records: [DNSRR],
         signatures: [DNSRR],
         message: DNSMessage
-    ) async -> Bool {
+    ) async -> RRsetCheck {
+        var unverified = false
+        var unavailable = false
         for signature in signatures {
             guard let parsed = ParsedRRSIG(record: signature, message: message.raw),
                   parsed.typeCovered == type,
                   DNSSECCrypto.signatureIsCurrent(inception: parsed.inception, expiration: parsed.expiration, now: now),
-                  owner.isInZone(parsed.signer),
-                  let keys = await authenticate(zone: parsed.signer, depth: 0),
-                  let key = keys.first(where: { $0.keyTag == parsed.keyTag && $0.algorithm == parsed.algorithm }),
+                  owner.isInZone(parsed.signer) else {
+                continue
+            }
+            let keys: [DNSKEYRecord]
+            switch await authenticate(zone: parsed.signer, depth: 0) {
+            case .keys(let found):
+                keys = found
+            case .unverified:
+                unverified = true
+                continue
+            case .unavailable:
+                unavailable = true
+                continue
+            }
+            guard let key = keys.first(where: { $0.keyTag == parsed.keyTag && $0.algorithm == parsed.algorithm }),
                   let material = DNSSECCrypto.signedMaterial(
                     owner: owner,
                     type: type,
@@ -634,11 +729,14 @@ actor DNSSECWalk {
                     message: material,
                     signer: parsed.signer
                   ) else {
+                unverified = true
                 continue
             }
-            return true
+            return .passed
         }
-        return false
+        if unverified { return .unverified }
+        if unavailable { return .unavailable }
+        return .unverified
     }
 
     /// Authenticates the DNSKEY RRset at `zone` and returns the zone keys that may sign other RRsets.
@@ -664,23 +762,26 @@ actor DNSSECWalk {
     ///
     /// - SeeAlso: ``RetiredRootAnchorStore``, ``SecurityConfiguration/ianaRootTrustAnchors``,
     ///   ``<doc:Security-Invariants>`` Invariant 5
-    private func authenticate(zone: DNSName, depth: Int) async -> [DNSKEYRecord]? {
-        if depth > depthCap { return nil }
+    private func authenticate(zone: DNSName, depth: Int) async -> ZoneAuthentication {
+        if depth > depthCap { return .unavailable }
         let cacheKey = zone.presentation
         if let cached = zones[cacheKey] {
-            if case .keys(let keys) = cached { return keys }
-            return nil
+            return cached
         }
-        guard let message = await fetch(name: zone, type: DNSType.dnskey), message.rcode == 0 else {
-            zones[cacheKey] = .failed
-            return nil
+        guard let message = await fetch(name: zone, type: DNSType.dnskey) else {
+            zones[cacheKey] = .unavailable
+            return .unavailable
+        }
+        guard message.rcode == 0 else {
+            zones[cacheKey] = .unverified
+            return .unverified
         }
         let records = answers(message, name: zone, type: DNSType.dnskey)
         let parsed = records.compactMap { DNSKEYRecord(rdata: $0.rdata) }
         let zoneKeys = parsed.filter(\.isZoneKey)
         guard !zoneKeys.isEmpty else {
-            zones[cacheKey] = .failed
-            return nil
+            zones[cacheKey] = .unverified
+            return .unverified
         }
         let trusted: [DNSKEYRecord]
         if zone.isRoot {
@@ -691,12 +792,28 @@ actor DNSSECWalk {
             let retired = await retiredAnchors.retiredDigests()
             trusted = zoneKeys.filter { matchesAnchor($0, zone: zone, retired: retired) }
         } else {
-            guard let parent = zone.parent(),
-                  let parentKeys = await authenticate(zone: parent, depth: depth + 1),
-                  let dsMessage = await fetch(name: zone, type: DNSType.ds),
-                  dsMessage.rcode == 0 else {
-                zones[cacheKey] = .failed
-                return nil
+            guard let parent = zone.parent() else {
+                zones[cacheKey] = .unverified
+                return .unverified
+            }
+            let parentKeys: [DNSKEYRecord]
+            switch await authenticate(zone: parent, depth: depth + 1) {
+            case .keys(let keys):
+                parentKeys = keys
+            case .unverified:
+                zones[cacheKey] = .unverified
+                return .unverified
+            case .unavailable:
+                zones[cacheKey] = .unavailable
+                return .unavailable
+            }
+            guard let dsMessage = await fetch(name: zone, type: DNSType.ds) else {
+                zones[cacheKey] = .unavailable
+                return .unavailable
+            }
+            guard dsMessage.rcode == 0 else {
+                zones[cacheKey] = .unverified
+                return .unverified
             }
             let dsRecords = answers(dsMessage, name: zone, type: DNSType.ds)
             guard !dsRecords.isEmpty,
@@ -709,8 +826,8 @@ actor DNSSECWalk {
                     keys: parentKeys,
                     requiredSigner: parent
                   ) else {
-                zones[cacheKey] = .failed
-                return nil
+                zones[cacheKey] = .unverified
+                return .unverified
             }
             trusted = zoneKeys.filter { key in
                 dsRecords.contains { dsMatches($0.rdata, key: key, owner: zone) }
@@ -726,13 +843,13 @@ actor DNSSECWalk {
                 keys: trusted,
                 requiredSigner: zone
               ) else {
-            zones[cacheKey] = .failed
-            return nil
+            zones[cacheKey] = .unverified
+            return .unverified
         }
         // A revoked key stays out of the returned set for every zone.
         let usable = zoneKeys.filter { !$0.isRevoked }
         zones[cacheKey] = .keys(usable)
-        return usable
+        return .keys(usable)
     }
 
     /// Digests of embedded anchors whose published revoked form signs this DNSKEY set.
@@ -935,29 +1052,129 @@ actor DNSSECWalk {
     }
 }
 
+/// Runs one fresh ``DNSSECWalk`` per fetcher until a verified answer stops it.
+///
+/// The first fetcher may post to every pinned resolver. A pin, transport, or
+/// message-shape failure skips to the next resolver inside that one query.
+/// A signature or chain failure does not. This type drops that walk, including
+/// every cached message, and the next fetcher is one later resolver alone.
+/// A verified answer stops. A TXT set that omits
+/// ``SecurityConfiguration/expectedSecurityModel`` is still verified, so the
+/// later resolver is not asked. RRsets from two resolvers are not merged.
+/// The AD bit is not read. ``retiredAnchors`` is shared so a self-revocation
+/// observed on an earlier walk stays suppressed. It is not a message cache.
+///
+/// - SeeAlso: ``DNSSECWalk``, ``PinnedDoHFetcher``, ``<doc:Security-Invariants>`` Invariant 1
+enum DNSSECResolverWalk {
+    /// Verifies the TXT RRset at `name`.
+    ///
+    /// - Parameters:
+    ///   - name: Owner name of the TXT RRset.
+    ///   - fetchers: One walk each. The first may cover every resolver. Each later
+    ///     fetcher is one resolver, and it runs only after the previous walk was unverified.
+    ///   - anchors: Root KeyDigests.
+    ///   - now: Device clock for RRSIG lifetime and anchor `validFrom`.
+    ///   - retiredAnchors: Digests already suppressed. Shared across the walks.
+    /// - Returns: The first verified set, or ``DNSSECVerifiedTXT/failed`` when every walk fails.
+    ///   A missing RRset is not a verified empty set. A present RRset that parses
+    ///   to no names is verified and stops the later fetchers.
+    /// - SeeAlso: ``DNSSECVerifiedTXT``, ``<doc:Security-Invariants>`` Invariant 1
+    static func txtModels(
+        name: DNSName,
+        fetchers: [any DNSWireFetching],
+        anchors: [DNSSECTrustAnchor],
+        now: Date,
+        retiredAnchors: RetiredRootAnchorStore
+    ) async -> DNSSECVerifiedTXT {
+        for (index, fetcher) in fetchers.enumerated() {
+            let walk = DNSSECWalk(
+                fetcher: fetcher,
+                anchors: anchors,
+                now: now,
+                retiredAnchors: retiredAnchors
+            )
+            switch await walk.txtAttempt(name: name) {
+            case .verified(let models):
+                return .verified(models)
+            case .unverified:
+                continue
+            case .unavailable:
+                // The first fetcher already skipped resolvers for pin, transport, and shape.
+                // A later fetcher exists for a signature failure, not for a repeated transport miss.
+                if index == 0 { return .failed }
+                continue
+            }
+        }
+        return .failed
+    }
+
+    /// Verifies A and AAAA for `name`.
+    ///
+    /// A verified answer stops, including a verified set with no addresses.
+    /// A signature failure drops that walk's addresses. The next fetcher's
+    /// addresses are not merged with them.
+    ///
+    /// - Parameters:
+    ///   - name: Hostname, without a port.
+    ///   - fetchers: Same order as ``txtModels(name:fetchers:anchors:now:retiredAnchors:)``.
+    ///   - anchors: Root KeyDigests.
+    ///   - now: Device clock for RRSIG lifetime and anchor `validFrom`.
+    ///   - retiredAnchors: Digests already suppressed. Shared across the walks.
+    /// - Returns: Addresses from the first verified walk, or an empty array when every walk fails.
+    /// - SeeAlso: ``DNSSECLocalVerification``, ``<doc:Security-Invariants>`` Invariant 2
+    static func addresses(
+        for name: DNSName,
+        fetchers: [any DNSWireFetching],
+        anchors: [DNSSECTrustAnchor],
+        now: Date,
+        retiredAnchors: RetiredRootAnchorStore
+    ) async -> [VerifiedSocketAddress] {
+        for (index, fetcher) in fetchers.enumerated() {
+            let walk = DNSSECWalk(
+                fetcher: fetcher,
+                anchors: anchors,
+                now: now,
+                retiredAnchors: retiredAnchors
+            )
+            switch await walk.addressAttempt(for: name) {
+            case .verified(let found):
+                return found
+            case .unverified:
+                continue
+            case .unavailable:
+                if index == 0 { return [] }
+                continue
+            }
+        }
+        return []
+    }
+}
+
 /// Address entry used by the streaming retry. TXT verification stays on ``SecurityModelValidator``.
 public enum DNSSECLocalVerification {
     /// A and AAAA addresses whose RRsets verified under the root anchors.
     ///
     /// Empty when the name is malformed, either present RRset fails, or no
-    /// address survived. A verified A with AAAA absent is success. `-UITestMode`
-    /// returns empty and does not open DoH. A root digest this process has
-    /// already seen self-revoke stays suppressed.
+    /// address survived. A verified A with AAAA absent is success and does not
+    /// ask the next resolver. A signature or chain failure drops that walk and
+    /// tries the next pinned resolver alone. `-UITestMode` returns empty and
+    /// does not open DoH. A root digest this process has already seen self-revoke
+    /// stays suppressed.
     ///
     /// - Parameter host: Hostname, without a port.
     /// - Returns: Verified addresses in encounter order.
-    /// - SeeAlso: ``ProtectedHostHTTPS``, ``<doc:Security-Invariants>`` Invariant 2
+    /// - SeeAlso: ``DNSSECResolverWalk``, ``ProtectedHostHTTPS``, ``<doc:Security-Invariants>`` Invariant 2
     public static func verifiedAddresses(forHost host: String) async -> [VerifiedSocketAddress] {
         if ProcessInfo.processInfo.arguments.contains("-UITestMode") {
             return []
         }
         guard let name = DNSName(presentation: host) else { return [] }
-        let walk = DNSSECWalk(
-            fetcher: PinnedDoHFetcher(),
+        return await DNSSECResolverWalk.addresses(
+            for: name,
+            fetchers: PinnedDoHFetcher.resolverWalkFetchers(),
             anchors: SecurityConfiguration.current.ianaRootTrustAnchors,
             now: Date(),
             retiredAnchors: RetiredRootAnchorStore.shared
         )
-        return await walk.addresses(for: name)
     }
 }

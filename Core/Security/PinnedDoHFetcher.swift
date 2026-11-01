@@ -10,10 +10,13 @@
 //  validator never calls back. The AD bit on the DNS message is not read.
 //
 //  Pin failure, a redirect, a truncated message, or any rcode other than
-//  NOERROR / NXDOMAIN skips that resolver. The first well-formed message is the
-//  one ``DNSSECWalk`` verifies. A later resolver is not asked for a second opinion.
+//  NOERROR / NXDOMAIN skips that resolver inside this one query. The first
+//  well-formed message is what the current ``DNSSECWalk`` verifies. This
+//  fetcher does not ask another resolver for a second opinion on that message.
+//  A signature or chain failure is a new walk in ``DNSSECResolverWalk``, bound
+//  to the next resolver alone. The AD bit is not read.
 //
-//  - SeeAlso: ``DNSSECWalk``, ``SecurityConfiguration/pinnedDoHResolvers``,
+//  - SeeAlso: ``DNSSECWalk``, ``DNSSECResolverWalk``, ``SecurityConfiguration/pinnedDoHResolvers``,
 //    ``<doc:Security-Invariants>`` Invariant 1
 //
 
@@ -31,13 +34,39 @@ public struct PinnedDoHResolver: Sendable, Equatable {
     }
 }
 
-/// Posts one DNS query to ``SecurityConfiguration/pinnedDoHResolvers`` in order.
+/// Posts one DNS query to pinned resolvers in order.
+///
+/// `resolvers` nil reads ``SecurityConfiguration/pinnedDoHResolvers`` when the
+/// query runs. A non-nil list is the only set this fetcher may post to.
+/// ``resolverWalkFetchers()`` is the production order: the full list, then one
+/// fetcher per later resolver.
+///
+/// - SeeAlso: ``DNSSECResolverWalk``, ``<doc:Security-Invariants>`` Invariant 1
 struct PinnedDoHFetcher: DNSWireFetching {
+    /// Resolvers this fetcher may post to. Nil reads ``SecurityConfiguration/pinnedDoHResolvers`` at query time.
+    let resolvers: [PinnedDoHResolver]?
+
+    init(resolvers: [PinnedDoHResolver]? = nil) {
+        self.resolvers = resolvers
+    }
+
+    /// First fetcher posts to every pinned resolver. Each later fetcher posts to one remaining resolver.
+    static func resolverWalkFetchers() -> [PinnedDoHFetcher] {
+        let resolvers = SecurityConfiguration.current.pinnedDoHResolvers
+        guard !resolvers.isEmpty else { return [] }
+        var fetchers = [PinnedDoHFetcher(resolvers: resolvers)]
+        for resolver in resolvers.dropFirst() {
+            fetchers.append(PinnedDoHFetcher(resolvers: [resolver]))
+        }
+        return fetchers
+    }
+
     func response(toQuery wire: Data) async -> Data? {
         if ProcessInfo.processInfo.arguments.contains("-UITestMode") {
             return nil
         }
-        for resolver in SecurityConfiguration.current.pinnedDoHResolvers {
+        let list = resolvers ?? SecurityConfiguration.current.pinnedDoHResolvers
+        for resolver in list {
             if let message = await post(wire, resolver: resolver), isWellFormed(message, query: wire) {
                 return message
             }
