@@ -127,6 +127,15 @@ struct SecurityModelValidatorTests {
     private func restoreRealClock() async {
         await SecurityModelValidator._test_setCurrentDate { Date() }
     }
+
+    /// The three TXT hosts in ``SecurityConfiguration/securityModelDomains`` order.
+    ///
+    /// Suffixes stay on that list. Index 0 is the primary, 1 the secondary, 2 the backup.
+    private func orderedTXTHosts() throws -> [String] {
+        let domains = SecurityConfiguration.current.securityModelDomains
+        try #require(domains.count == 3)
+        return domains
+    }
     
     // MARK: - Success Paths
     
@@ -464,6 +473,152 @@ struct SecurityModelValidatorTests {
         #expect(queries.allSatisfy { !$0.contains("lutheranradio") })
         await resetForDeterministicTest()
         await restoreRealClock()
+    }
+
+    // MARK: - Authoritative stop (DEBUG TXT fetcher)
+
+    // A returned set is the authoritative answer, including an empty set.
+    // A throw is transient and advances. These four tests do not install a wire fetcher.
+
+    /// Invariant 1 point 3. The primary returns a non-empty set of other names
+    /// and omits ``expectedSecurityModel``. The secondary would return a set
+    /// that contains the model, and the backup would throw. The walk stops on
+    /// the primary: permanent failure, and the fetcher is entered only for
+    /// ``securityModelDomains[0]``.
+    ///
+    /// - SeeAlso: ``SecurityModelValidator``, ``<doc:Security-Invariants>``
+    @Test("Primary omission does not ask the secondary")
+    func authoritativeOmissionOnPrimaryDoesNotAskSecondary() async throws {
+        await resetForDeterministicTest()
+        let domains = try orderedTXTHosts()
+        let omission: Set<String> = ["other-model", "legacy-model"]
+        try #require(omission.isEmpty == false)
+        try #require(omission.contains(testExpectedSecurityModel) == false)
+        let seen = Mutex<[String]>([])
+        await SecurityModelValidator._test_setTXTFetcher { domain in
+            seen.withLock { $0.append(domain) }
+            if domain == domains[0] {
+                return omission
+            }
+            if domain == domains[1] {
+                return [testExpectedSecurityModel]
+            }
+            throw NSError(domain: "test.dns", code: -1001)
+        }
+
+        let accepted = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(accepted == false)
+        #expect(await SecurityModelValidator.shared.currentState == .failedPermanent)
+        #expect(await SecurityModelValidator.shared.isPermanentlyInvalid)
+        #expect(seen.withLock { $0 } == [domains[0]])
+        await resetForDeterministicTest()
+    }
+
+    /// Invariant 1 points 1 and 3. The primary returns an empty set. That return
+    /// is an authoritative empty answer. The secondary would return a set that
+    /// contains ``expectedSecurityModel``. The walk stops on the primary:
+    /// permanent failure, and the fetcher is entered only for
+    /// ``securityModelDomains[0]``.
+    ///
+    /// - SeeAlso: ``SecurityModelValidator``, ``<doc:Security-Invariants>``
+    @Test("Primary empty set does not ask the secondary")
+    func authoritativeEmptyOnPrimaryDoesNotAskSecondary() async throws {
+        await resetForDeterministicTest()
+        let domains = try orderedTXTHosts()
+        let seen = Mutex<[String]>([])
+        await SecurityModelValidator._test_setTXTFetcher { domain in
+            seen.withLock { $0.append(domain) }
+            if domain == domains[0] {
+                return []
+            }
+            if domain == domains[1] {
+                return [testExpectedSecurityModel]
+            }
+            throw NSError(domain: "test.dns", code: -1001)
+        }
+
+        let accepted = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(accepted == false)
+        #expect(await SecurityModelValidator.shared.currentState == .failedPermanent)
+        #expect(await SecurityModelValidator.shared.isPermanentlyInvalid)
+        #expect(seen.withLock { $0 } == [domains[0]])
+        await resetForDeterministicTest()
+    }
+
+    /// Invariant 1 points 4 then 3. The primary throws. The secondary returns a
+    /// non-empty set that omits ``expectedSecurityModel``. The backup would
+    /// return a set that contains the model. The walk stops on the secondary:
+    /// permanent failure, and the fetcher is entered only for the first two
+    /// ``securityModelDomains``.
+    ///
+    /// - SeeAlso: ``SecurityModelValidator``, ``<doc:Security-Invariants>``
+    @Test("Secondary omission does not ask the backup")
+    func authoritativeOmissionOnSecondaryDoesNotAskBackup() async throws {
+        await resetForDeterministicTest()
+        let domains = try orderedTXTHosts()
+        let omission: Set<String> = ["other-model", "legacy-model"]
+        try #require(omission.isEmpty == false)
+        try #require(omission.contains(testExpectedSecurityModel) == false)
+        let seen = Mutex<[String]>([])
+        await SecurityModelValidator._test_setTXTFetcher { domain in
+            seen.withLock { $0.append(domain) }
+            if domain == domains[0] {
+                throw NSError(domain: "test.dns", code: -1001)
+            }
+            if domain == domains[1] {
+                return omission
+            }
+            if domain == domains[2] {
+                return [testExpectedSecurityModel]
+            }
+            throw NSError(domain: "test.dns", code: -1001)
+        }
+
+        let accepted = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(accepted == false)
+        #expect(await SecurityModelValidator.shared.currentState == .failedPermanent)
+        #expect(await SecurityModelValidator.shared.isPermanentlyInvalid)
+        #expect(seen.withLock { $0 } == Array(domains.prefix(2)))
+        await resetForDeterministicTest()
+    }
+
+    /// Invariant 1 points 4 then 2. The primary throws. The secondary returns a
+    /// set that contains ``expectedSecurityModel`` and an extra name. The backup
+    /// would return a different set that also contains the model. Success is
+    /// membership in the secondary set. The fetcher is entered only for the
+    /// first two ``securityModelDomains``.
+    ///
+    /// - SeeAlso: ``SecurityModelValidator``, ``<doc:Security-Invariants>``
+    @Test("The first authoritative allow-list stops the walk")
+    func firstAuthoritativeAllowListStopsBeforeBackup() async throws {
+        await resetForDeterministicTest()
+        let domains = try orderedTXTHosts()
+        let secondaryAllowList: Set<String> = [testExpectedSecurityModel, "other-model"]
+        let backupAllowList: Set<String> = [testExpectedSecurityModel, "backup-only-model"]
+        try #require(secondaryAllowList.contains(testExpectedSecurityModel))
+        try #require(backupAllowList.contains(testExpectedSecurityModel))
+        try #require(secondaryAllowList != backupAllowList)
+        let seen = Mutex<[String]>([])
+        await SecurityModelValidator._test_setTXTFetcher { domain in
+            seen.withLock { $0.append(domain) }
+            if domain == domains[0] {
+                throw NSError(domain: "test.dns", code: -1001)
+            }
+            if domain == domains[1] {
+                return secondaryAllowList
+            }
+            if domain == domains[2] {
+                return backupAllowList
+            }
+            throw NSError(domain: "test.dns", code: -1001)
+        }
+
+        let accepted = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(accepted == true)
+        #expect(await SecurityModelValidator.shared.currentState == .success)
+        #expect(await SecurityModelValidator.shared.isPermanentlyInvalid == false)
+        #expect(seen.withLock { $0 } == Array(domains.prefix(2)))
+        await resetForDeterministicTest()
     }
 
     /// A delivered non-Secure status is not replaced by a fixture that would verify.
