@@ -342,7 +342,7 @@ Those `simctl` commands do not erase the available simulator you still run tests
 | Item                          | Value / Note                                                                                                                                                                                                 | Source (always use via `Core/`)                                                    |
 |-------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
 | `expectedSecurityModel`       | `"sunshinecoast"` (must be present in the live TXT for streaming to be allowed). | `SecurityConfiguration.swift` (via `SecurityConfiguration.current`)                |
-| Live active models (DNS TXT)  | `dallas,montereypark,kailuakona` (live on primary; secondary/backup mirror for transient fallback).                                                                                | `dig +short +dnssec TXT securitymodels.siikkari.net`                               |
+| Live active models (DNS TXT)  | `dallas,montereypark,kailuakona,sunshinecoast` (live on primary; secondary/backup mirror for transient fallback).                                                                                | `dig +short +dnssec TXT securitymodels.siikkari.net`                               |
 | Streaming media apex          | Sole apex: `siikkari.net` (`european.siikkari.net`, `livestream.siikkari.net`, language hosts). Use `preferredStreamingDomainSuffixes` / `streamingHostCandidates(leadingLabel:)` — never hard-code. | `SecurityConfiguration.current`                                                    |
 | DNS TXT model hosts (order)   | `securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk` (ordered host walk: authoritative answer stops; only transient advances — see Security Model Validation) | `securityModelDomains`                                                             |
 | Runtime leaf pins (authoritative) | `CertificateFingerprint` digests (raw 32-byte SHA-256 of leaf DER). Never compare hex strings at runtime. Validator accepts **any** entry in the list.                                                     | `pinnedFingerprintDigests`                                                         |
@@ -353,7 +353,7 @@ Those `simctl` commands do not erase the available simulator you still run tests
 | Model validation cache        | 1 hour (3600 s), success-only, in `UserDefaults` (`modelCacheDuration`). Failures always re-query. Distinct from certificate pin-result caching.                                                              | `SecurityConfiguration` + `SecurityModelValidator`                                 |
 | Certificate validation cache  | 10 minutes (600 s), success reuse in `CertificateValidator` (`certificateValidationCacheDuration`). Periodic HEAD revalidation in `DirectStreamingPlayer` uses the same constant.                             | `SecurityConfiguration` + `CertificateValidator`                                   |
 
-**AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The `sunshinecoast` row is the embedded model for this build (previous models are retained for the historical record and to prevent name reuse). Valid From and the introducing app version for that row stay `(pending)` until the App Store publication date is known.
+**AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The `sunshinecoast` row is the embedded model for this build (previous models are retained for the historical record and to prevent name reuse). Valid From and Valid Until for that row stay `(pending)`.
 
 ### Media Apex Cutover & SSL Certificate Rotation (siikkari.net)
 
@@ -520,7 +520,7 @@ DNS TXT hosts on the ordered `securityModelDomains` list are expected to be unde
 
 When primary (or a fallback host) is queried with the DO (DNSSEC OK) bit set (e.g. `dig +dnssec`), the response includes:
 - The TXT record containing the comma-separated list of valid models:
-  `"dallas,montereypark,kailuakona"`
+  `"dallas,montereypark,kailuakona,sunshinecoast"`
 - An accompanying **RRSIG** signature.
 
 In current observed recursive responses, the **AD (Authenticated Data)** flag may **not** be set (`;; flags: qr rd ra` / `qr aa rd ra`), indicating that the recursive resolver did not perform (or did not assert) full DNSSEC validation when answering the query. Re-check primary and fallbacks with the Agent Verification Commands after any DNS publish.
@@ -586,8 +586,8 @@ dig +short +dnssec TXT securitymodels.lutheranradio.sk
 Example primary output (captured live; always re-verify with `dig` before relying on it):
 
 ```
-"dallas,montereypark,kailuakona"
-TXT 13 3 600 20261012090932 20261010070932 34505 siikkari.net. OEJm2BYrW1hvsARH00OUm6T2sp2S88HO9V5z/T6LXOF2tNCO0wfHT5GZ 6TX/NTrcHYEyEbNvBuCiZJj58Ytugg==
+"dallas,montereypark,kailuakona,sunshinecoast"
+TXT 13 3 600 20261104190421 20261102170421 34505 siikkari.net. jcUnZXsW0aAcdBN4akQ9WCk+Hg0Zxv99uhz/n/aH755vpYPUgy7ImRC2 qbYGaMgObxl1jODStKMPZSM8X2HD4A==
 ```
 
 Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```sunshinecoast```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed on a **validated** responding host, validation fails permanently for that host (no fall-through on permanent absence). To update the allow-list: publish / update the TXT on ```securitymodels.siikkari.net``` (primary) and keep secondary/backup (```securitymodels.lutheranradio.eu```, ```securitymodels.lutheranradio.sk```) consistent.
@@ -730,7 +730,7 @@ See [docs/Widget-Presentation-Dataflow.md](docs/Widget-Presentation-Dataflow.md)
 
 ### Security Model TXT Record Usage
 
-Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
+Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 45-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
 
 ### Security Model History
 
@@ -758,7 +758,7 @@ This table is the source of truth for the historical record of security models (
 | `dallas`            | August 1, 2026     | (ongoing)          | 26.6.0                 |
 | `montereypark`      | October 3, 2026    | (ongoing)          | 27.0.1                 |
 | `kailuakona`        | October 31, 2026   | (ongoing)          | 27.2.0                 |
-| `sunshinecoast`     | (pending)          | (pending)          | (pending)              |
+| `sunshinecoast`     | (pending)          | (pending)          | 27.2.1                 |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
@@ -781,7 +781,7 @@ See also: ``<doc:Security-Invariants>`` (Invariant 1 and "Enforcement"), "Verify
 
 ### Why Track Security Model Names?
 
-Security model names (e.g., ```dallas```, ```montereypark```, ```kailuakona```) are embedded in the app and validated against the DNS TXT record before any streaming is permitted. Once a name is used, it becomes part of the app's permanent history and may still exist in older App Store versions. Reusing a name could allow an older version to pass validation in some cases.
+Security model names (e.g., ```dallas```, ```montereypark```, ```kailuakona```, ```sunshinecoast```) are embedded in the app and validated against the DNS TXT record before any streaming is permitted. Once a name is used, it becomes part of the app's permanent history and may still exist in older App Store versions. Reusing a name could allow an older version to pass validation in some cases.
 
 **Why this matters (explicit invariant):** The DNS TXT mechanism plus the history table together provide a forward-only, collision-resistant way to rotate the approved security implementation without breaking the "no bypass" rule or requiring clients to trust arbitrary future names.
 
