@@ -102,6 +102,33 @@ struct CertificateValidatorTests {
         #expect(isValid == false)
     }
 
+    /// Invariant 3: a pin-cache hit may skip ``SecTrustEvaluateWithError`` only
+    /// when the leaf just presented matches ``pinnedFingerprintDigests``.
+    ///
+    /// The device clock stays before the transition window so leniency cannot
+    /// accept the other leaf. Each call builds a new `SecTrust`. Reusing one
+    /// value across `await` is a sending violation.
+    @Test("Pin-cache reuse still requires the leaf just presented")
+    func pinCacheReuseRequiresPresentedLeaf() async {
+        let beforeWindow = SecurityConfiguration.current.transitionWindowStart.addingTimeInterval(-86_400)
+        let validator = CertificateValidator(currentDate: { beforeWindow })
+
+        let primed = await validator.validateServerTrust(createMockSecTrust())
+        #expect(primed == true)
+        let primedFromCache = await validator._test_lastChallengeServedFromPinCache
+        #expect(primedFromCache == false, "The first pin match fills the cache; it is not itself a hit")
+
+        let sameLeaf = await validator.validateServerTrust(createMockSecTrust())
+        #expect(sameLeaf == true)
+        let sameLeafFromCache = await validator._test_lastChallengeServedFromPinCache
+        #expect(sameLeafFromCache == true, "The same pinned leaf inside the interval is a pin-cache hit")
+
+        let otherLeaf = await validator.validateServerTrust(createUnpinnedSecTrust())
+        #expect(otherLeaf == false, "A different leaf must not inherit the cached accept")
+        let otherFromCache = await validator._test_lastChallengeServedFromPinCache
+        #expect(otherFromCache == false, "A leaf miss is not reported as a pin-cache hit")
+    }
+
     /// Invariant 3 and 4: a leniency accept is not a 10-minute pin-cache hit.
     /// After the latch drops, the next challenge must re-evaluate the leaf.
     @Test("Leniency accept is not reused after the latch turns off")

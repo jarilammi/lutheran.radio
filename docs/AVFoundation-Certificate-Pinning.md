@@ -32,7 +32,7 @@ Expected: `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`
 - Colon-hex (operator / docs only; never compared at runtime):
   `32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD`
 - Comparison: `CertificateFingerprint.constantTimeMatches` (constant-time). Colon-hex strings are never used for runtime decisions.
-- Success cache: `certificateValidationCacheDuration` (10 minutes). Independent of DNS TXT `modelCacheDuration` (1 hour).
+- Success cache: `certificateValidationCacheDuration` (10 minutes). A hit skips system trust evaluation only when the leaf just presented matches `pinnedFingerprintDigests`. A different leaf is evaluated again. Independent of DNS TXT `modelCacheDuration` (1 hour).
 - Call sites: `StreamingSessionDelegate` (per-request trust) and `DirectStreamingPlayer` (initial + periodic HEAD revalidation using the same cache duration).
 
 Verify leaf DER SHA-256 (copy-paste):

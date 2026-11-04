@@ -20,10 +20,13 @@ import Foundation
 ///   Info.plist SPKI pin first because the verified-address path does not.
 /// - Verifies the leaf certificate's full DER SHA-256 fingerprint.
 /// - Caches **pin matches** for ``SecurityConfiguration/certificateValidationCacheDuration``
-///   (10 minutes). A transition-window leniency accept is not a cache hit: the next
-///   challenge re-checks the leaf. This cache is separate from the 1-hour DNS TXT
-///   model cache (``SecurityConfiguration/modelCacheDuration``). A cached pin timestamp
-///   ahead of the device clock is not reused.
+///   (10 minutes). A hit may skip ``SecTrustEvaluateWithError`` only when the leaf
+///   just presented matches ``SecurityConfiguration/pinnedFingerprintDigests``.
+///   A different leaf is evaluated again, including the transition window and the
+///   one-way leniency latch. A leniency accept is not a cache hit. This cache is
+///   separate from the 1-hour DNS TXT model cache
+///   (``SecurityConfiguration/modelCacheDuration``). A cached pin timestamp ahead
+///   of the device clock is not reused.
 /// - Enforces the certificate transition window with device/server time-skew protection
 ///   (see ``<doc:Security-Invariants>``). ``allowTransitionLeniency`` starts `true` and
 ///   latches `false` for the rest of the process; a later `Date` header must not turn it back on.
@@ -56,12 +59,14 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// Timestamp of the last **pin-match** cache entry (or of a hard failure).
     ///
     /// A leniency accept does not refresh this. Combined with ``lastValidationResult``,
-    /// the early return in ``validateServerTrust(_:)`` reuses only pin matches whose
-    /// age is in `0 ..< certificateValidationCacheDuration`.
+    /// ``validateServerTrust(_:)`` may skip ``SecTrustEvaluateWithError`` only for a
+    /// pin match whose age is in `0 ..< certificateValidationCacheDuration` and whose
+    /// leaf digest still matches the trust just passed in.
     private var lastValidationTime: Date?
     
-    /// How long a successful pin result may be reused without re-evaluation.
+    /// How long a pin match may skip ``SecTrustEvaluateWithError``.
     ///
+    /// The leaf digest is still compared on every call. A miss is not a hit.
     /// AGENT NOTE: Single source of truth is
     /// ``SecurityConfiguration/certificateValidationCacheDuration``. Never point this at
     /// ``SecurityConfiguration/modelCacheDuration`` (DNS TXT only).
@@ -80,6 +85,17 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// The HEAD `Date` header is not available until after the challenge, and a leniency
     /// accept is intentionally absent from the pin-result cache.
     private var lastChallengeAccepted = false
+
+    #if DEBUG
+    /// Whether the latest ``validateServerTrust(_:)`` returned from the pin-match
+    /// cache after the presented leaf matched ``pinnedFingerprintDigests``.
+    ///
+    /// Compiled out of Release. A miss, a full evaluation, and a leniency accept
+    /// all leave this `false`, including while the cached interval is still open.
+    ///
+    /// - SeeAlso: ``validateServerTrust(_:)``, ``<doc:Security-Invariants>`` Invariant 3
+    var _test_lastChallengeServedFromPinCache = false
+    #endif
     
     /// Formatter for parsing HTTP Date headers (RFC 7231 format: "EEE, dd MMM yyyy HH:mm:ss zzz").
     private lazy var httpDateFormatter: DateFormatter = {
@@ -129,7 +145,12 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// while respecting the current transition window and time-skew policy.
     ///
     /// Pin matches are cached for ``SecurityConfiguration/certificateValidationCacheDuration``
-    /// (10 minutes). Transition-window leniency accepts are not cached. The device
+    /// (10 minutes). A hit may skip ``SecTrustEvaluateWithError`` only when
+    /// ``validateCertificateChain(serverTrust:)`` matches
+    /// ``SecurityConfiguration/pinnedFingerprintDigests`` on `serverTrust`.
+    /// A different leaf falls through to system trust evaluation, the transition
+    /// window, and the one-way leniency latch. The cached `true` is not returned
+    /// for that leaf. Transition-window leniency accepts are not cached. The device
     /// clock is ``currentDate`` (production: `Date()`), including for the window test
     /// ``SecurityConfiguration/isInTransitionWindow(at:)``. The method is safe to call
     /// from any context; all state access is actor-isolated.
@@ -137,9 +158,12 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// - Parameter serverTrust: The `SecTrust` from an `NSURLAuthenticationMethodServerTrust` challenge.
     /// - Returns: `true` if the server should be trusted, `false` if the connection must be rejected.
     ///
-    /// - SeeAlso: ``validateServerCertificate(for:)``, ``<doc:Security-Invariants>``,
-    ///   ``SecurityConfiguration/certificateValidationCacheDuration``
+    /// - SeeAlso: ``validateCertificateChain(serverTrust:)``, ``validateServerCertificate(for:)``,
+    ///   ``<doc:Security-Invariants>`` Invariant 3, ``SecurityConfiguration/certificateValidationCacheDuration``
     public func validateServerTrust(_ serverTrust: SecTrust) async -> Bool {
+        #if DEBUG
+        _test_lastChallengeServedFromPinCache = false
+        #endif
         // `currentDate` is the device clock for this actor (production: `Date()`).
         // A negative age means the cached instant is ahead of that clock; reusing it
         // would stretch the 10-minute pin cache until the clock catches up.
@@ -147,11 +171,19 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         if let lastTime = lastValidationTime {
             let age = now.timeIntervalSince(lastTime)
             if age >= 0, age < validationInterval, lastValidationResult {
-                #if DEBUG
-                print("[CertificateValidator] Using cached pin match from \(lastTime)")
-                #endif
-                lastChallengeAccepted = true
-                return true
+                // The cached accept names one leaf. Skip system trust evaluation
+                // only when this trust still carries that pin. Any other leaf
+                // continues below so the transition window and the leniency
+                // latch see it. Returning the cached true here would accept a
+                // certificate the pin list does not name.
+                if validateCertificateChain(serverTrust: serverTrust) {
+                    #if DEBUG
+                    print("[CertificateValidator] Using cached pin match from \(lastTime)")
+                    _test_lastChallengeServedFromPinCache = true
+                    #endif
+                    lastChallengeAccepted = true
+                    return true
+                }
             }
         }
         
@@ -221,8 +253,9 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// Leaf pin plus the Info.plist SPKI pin for a connection that bypasses ATS.
     ///
     /// `NWConnection` does not apply `NSPinnedDomains`. An empty pin list for `host`
-    /// fails closed. A cache hit inside ``validateServerTrust(_:)`` still requires this
-    /// trust's SPKI to match before that hit is consulted.
+    /// fails closed. This method checks the Info.plist SPKI before
+    /// ``validateServerTrust(_:)``. A pin-cache hit inside that call still requires
+    /// the leaf just presented to match ``pinnedFingerprintDigests``.
     ///
     /// The verified-address path passes a private trust copied from the handshake
     /// certificates. This method sets the SSL policy on that object. It does not

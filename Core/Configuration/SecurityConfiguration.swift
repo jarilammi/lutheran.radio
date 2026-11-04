@@ -192,12 +192,15 @@ public struct SecurityConfiguration: Sendable {
     
     // MARK: - Certificate Pinning (runtime full-chain validation)
     
-    /// How long a **successful** runtime full-certificate pin result may be reused.
+    /// How long a **successful** runtime full-certificate pin result may skip system trust evaluation.
     ///
-    /// ``CertificateValidator`` returns the cached success for this interval without
-    /// re-evaluating trust / leaf digest. Failures are not treated as long-lived success.
-    /// Periodic HEAD revalidation in the streaming engine (``DirectStreamingPlayer``)
-    /// uses the same duration so proactive checks and challenge-path caching stay aligned.
+    /// ``CertificateValidator`` may skip ``SecTrustEvaluateWithError`` for this
+    /// interval only when the leaf just presented still matches
+    /// ``pinnedFingerprintDigests``. A different leaf is evaluated again, including
+    /// the transition window. Failures and transition-window leniency accepts are
+    /// not reused as a pin match. Periodic HEAD revalidation in the streaming
+    /// engine (``DirectStreamingPlayer``) uses the same duration so proactive
+    /// checks and challenge-path caching stay aligned.
     ///
     /// - Note: Independent of ``modelCacheDuration`` (DNS TXT success cache = 1 hour).
     /// - Important: Never hard-code 600 / 10 minutes at call sites; read this constant.
