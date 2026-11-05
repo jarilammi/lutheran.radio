@@ -5,7 +5,7 @@
 //  Single source of truth for every security constant and networking policy.
 //
 //  This file owns:
-//  - The embedded `expectedSecurityModel` ("sunshinecoast")
+//  - The embedded `expectedSecurityModel` ("maryborough")
 //  - Authoritative certificate fingerprints (DER digest form)
 //  - Transition window + time-skew parameters
 //  - Distinct cache durations: `modelCacheDuration` (DNS TXT success, 1 h) and
@@ -50,14 +50,18 @@ public struct SecurityConfiguration: Sendable {
     
     /// The embedded security model this app build enforces.
     ///
-    /// This value **must** appear in the comma-separated TXT record returned by the domains
-    /// listed in ``securityModelDomains`` (queried by ``SecurityModelValidator``).
+    /// This build's name is `maryborough`. It **must** appear as a whole token in the
+    /// comma-separated TXT record returned by ``securityModelDomains``
+    /// (queried by ``SecurityModelValidator``). Older names stay in the README
+    /// history table and must not be reused. Valid From, Valid Until, and the
+    /// introducing version for `maryborough` stay pending until the App Store
+    /// publication commit. A DNS listing is not that date.
     ///
     /// If validation fails permanently, streaming is disabled for the lifetime of the process.
     ///
     /// - SeeAlso: ``<doc:Security-Invariants>``, ``SecurityModelValidator/validateSecurityModel()``,
     ///   README Security Model History
-    public let expectedSecurityModel: String = "sunshinecoast"
+    public let expectedSecurityModel: String = "maryborough"
     
     /// Primary domain queried for TXT record containing valid models (comma-separated).
     ///

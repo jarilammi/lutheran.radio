@@ -5,6 +5,7 @@
 //  Created by Jari Lammi on 30.10.2026.
 //
 //  Fixture chains only. No sockets, no DoH, no live DNS.
+//  The session-reuse test builds `URLSession` objects and does not call `data(for:)`.
 //  The chain is signed with the same canonical bytes ``DNSSECCrypto/signedMaterial`` verifies.
 //  Bad signature, expired RRSIG, and a wrong trust anchor must still fail.
 //  A self-signed revoked root DNSKEY suppresses that anchor's digest.
@@ -1740,6 +1741,59 @@ struct DNSSECLocalVerificationTests {
             ["cloudflare-dns.com", "dns.google"],
             ["dns.google"],
         ])
+    }
+
+    /// One fetcher reuses one ephemeral session per resolver host. The configuration
+    /// has a nil cache, nil credential storage, and leaves `requiresDNSSECValidation`
+    /// unset. A second fetcher has a different session for the same host. The two
+    /// hosts do not share a session. ``DNSSECResolverWalk/invalidateProductionSessions(_:)``
+    /// drops the production fetcher and does not touch a fixture fetcher.
+    /// No query is posted, so this test opens no socket.
+    ///
+    /// - SeeAlso: ``PinnedDoHFetcher/sessionConfiguration()``, ``<doc:Security-Invariants>`` Invariant 1
+    @Test("A DoH fetcher reuses one ephemeral session per resolver")
+    func dohFetcherReusesOneSessionPerResolver() {
+        let configuration = PinnedDoHFetcher.sessionConfiguration()
+        #expect(configuration.urlCache == nil)
+        #expect(configuration.urlCredentialStorage == nil)
+        #expect(configuration.requestCachePolicy == .reloadIgnoringLocalAndRemoteCacheData)
+        #expect(configuration.requiresDNSSECValidation == false)
+        #expect(configuration.timeoutIntervalForRequest == 4)
+        #expect(configuration.timeoutIntervalForResource == 4)
+        #expect(configuration.httpCookieStorage.map { $0 === HTTPCookieStorage.shared } == false)
+
+        let pin = Data(repeating: 0xAB, count: CertificateFingerprint.byteCount).base64EncodedString()
+        let cloudflare = PinnedDoHResolver(host: "cloudflare-dns.com", spkiSHA256Base64: pin)
+        let google = PinnedDoHResolver(host: "dns.google", spkiSHA256Base64: pin)
+        let first = PinnedDoHFetcher(resolvers: [cloudflare, google])
+        let second = PinnedDoHFetcher(resolvers: [cloudflare])
+        defer {
+            DNSSECResolverWalk.invalidateProductionSessions(first)
+            DNSSECResolverWalk.invalidateProductionSessions(second)
+        }
+
+        let cloudflareFirst = first._test_sessionIdentifier(for: cloudflare)
+        let cloudflareAgain = first._test_sessionIdentifier(for: cloudflare)
+        let googleSession = first._test_sessionIdentifier(for: google)
+        let otherFetcher = second._test_sessionIdentifier(for: cloudflare)
+        let badPin = PinnedDoHResolver(host: "bad.example", spkiSHA256Base64: "aaaa")
+        #expect(cloudflareFirst != nil)
+        #expect(cloudflareFirst == cloudflareAgain)
+        #expect(googleSession != nil)
+        #expect(googleSession != cloudflareFirst)
+        #expect(otherFetcher != nil)
+        #expect(otherFetcher != cloudflareFirst)
+        #expect(first._test_sessionIdentifier(for: badPin) == nil)
+        #expect(first._test_openSessionCount == 2)
+        #expect(second._test_openSessionCount == 1)
+
+        DNSSECResolverWalk.invalidateProductionSessions(first)
+        #expect(first._test_openSessionCount == 0)
+        #expect(second._test_openSessionCount == 1)
+        let fixture = MappedDNSFetcher(responses: [:])
+        DNSSECResolverWalk.invalidateProductionSessions(fixture)
+        #expect(fixture.queries.withLock { $0 }.isEmpty)
+        #expect(second._test_openSessionCount == 1)
     }
 
     private static func sawRootDNSKEY(_ fetcher: MappedDNSFetcher) -> Bool {

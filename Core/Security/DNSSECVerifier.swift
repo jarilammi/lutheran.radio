@@ -34,6 +34,10 @@
 //  does not verify, and starts a new walk bound to the next pinned resolver
 //  alone. A verified RRset stops, including one that omits the expected model.
 //  The two resolvers' RRsets are not merged. The AD bit is not an input.
+//  Each ``PinnedDoHFetcher`` reuses one ephemeral URLSession per resolver host
+//  for that walk. ``DNSSECResolverWalk`` finishes those sessions when the
+//  attempt returns, before the next fetcher runs. `requiresDNSSECValidation`
+//  stays unset on that session.
 //
 //  - SeeAlso: ``DNSSECWalk``, ``DNSSECResolverWalk``, ``RetiredRootAnchorStore``,
 //    ``SecurityConfiguration/ianaRootTrustAnchors``,
@@ -1108,6 +1112,9 @@ actor DNSSECWalk {
 /// later resolver is not asked. RRsets from two resolvers are not merged.
 /// The AD bit is not read. ``retiredAnchors`` is shared so a self-revocation
 /// observed on an earlier walk stays suppressed. It is not a message cache.
+/// When the attempt returns, ``invalidateProductionSessions(_:)`` finishes a
+/// ``PinnedDoHFetcher``'s sessions before the next fetcher runs. A fixture
+/// fetcher is left alone. ``DNSWireFetching`` has no close method.
 ///
 /// - SeeAlso: ``DNSSECWalk``, ``PinnedDoHFetcher``, ``<doc:Security-Invariants>`` Invariant 1
 enum DNSSECResolverWalk {
@@ -1132,6 +1139,8 @@ enum DNSSECResolverWalk {
         retiredAnchors: RetiredRootAnchorStore
     ) async -> DNSSECVerifiedTXT {
         for (index, fetcher) in fetchers.enumerated() {
+            // Production sessions end with this attempt, including on return.
+            defer { invalidateProductionSessions(fetcher) }
             let walk = DNSSECWalk(
                 fetcher: fetcher,
                 anchors: anchors,
@@ -1175,6 +1184,7 @@ enum DNSSECResolverWalk {
         retiredAnchors: RetiredRootAnchorStore
     ) async -> [VerifiedSocketAddress] {
         for (index, fetcher) in fetchers.enumerated() {
+            defer { invalidateProductionSessions(fetcher) }
             let walk = DNSSECWalk(
                 fetcher: fetcher,
                 anchors: anchors,
@@ -1193,6 +1203,21 @@ enum DNSSECResolverWalk {
         }
         return []
     }
+
+    /// Finishes sessions owned by a ``PinnedDoHFetcher``. Other fetchers are unchanged.
+    ///
+    /// Called when a walk attempt returns, before the next fetcher runs and
+    /// before ``txtModels(name:fetchers:anchors:now:retiredAnchors:)`` or
+    /// ``addresses(for:fetchers:anchors:now:retiredAnchors:)`` returns.
+    /// The two resolvers do not share a session, and the next fetcher does not
+    /// inherit this one. ``requiresDNSSECValidation`` was never set.
+    ///
+    /// - Parameter fetcher: The fetcher whose attempt just returned.
+    /// - SeeAlso: ``PinnedDoHFetcher/invalidateSessions()``, ``<doc:Security-Invariants>`` Invariant 1
+    static func invalidateProductionSessions(_ fetcher: any DNSWireFetching) {
+        guard let pinned = fetcher as? PinnedDoHFetcher else { return }
+        pinned.invalidateSessions()
+    }
 }
 
 /// Address entry used by the streaming retry. TXT verification stays on ``SecurityModelValidator``.
@@ -1202,9 +1227,11 @@ public enum DNSSECLocalVerification {
     /// Empty when the name is malformed, either present RRset fails, or no
     /// address survived. A verified A with AAAA absent is success and does not
     /// ask the next resolver. A signature or chain failure drops that walk and
-    /// tries the next pinned resolver alone. `-UITestMode` returns empty and
-    /// does not open DoH. A root digest this process has already seen self-revoke
-    /// stays suppressed.
+    /// tries the next pinned resolver alone. Each production fetcher reuses one
+    /// ephemeral URLSession per resolver host; those sessions are finished when
+    /// the attempt returns. `requiresDNSSECValidation` stays unset.
+    /// `-UITestMode` returns empty and does not open DoH. A root digest this
+    /// process has already seen self-revoke stays suppressed.
     ///
     /// - Parameter host: Hostname, without a port.
     /// - Returns: Verified addresses in encounter order.

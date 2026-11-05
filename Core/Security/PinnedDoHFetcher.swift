@@ -9,6 +9,13 @@
 //  `requiresDNSSECValidation`: that flag is what stalls when the system
 //  validator never calls back. The AD bit on the DNS message is not read.
 //
+//  One ``PinnedDoHFetcher`` keeps one ephemeral `URLSession` per resolver host
+//  and reuses it for every query that fetcher posts. `cloudflare-dns.com` and
+//  `dns.google` do not share a session. ``resolverWalkFetchers()`` gives the
+//  next fetcher its own sessions. ``DNSSECResolverWalk`` finishes them when
+//  that walk attempt returns, before the next fetcher runs. A later walk does
+//  not inherit the connection or cookies.
+//
 //  Pin failure, a redirect, a truncated message, or any rcode other than
 //  NOERROR / NXDOMAIN skips that resolver inside this one query. The first
 //  well-formed message is what the current ``DNSSECWalk`` verifies. This
@@ -21,6 +28,12 @@
 //
 
 import Foundation
+// ``PinnedDoHSessionOwner`` holds the host-to-session map in a `Mutex`.
+// Copies of one ``PinnedDoHFetcher`` share that owner. ``session(for:)`` and
+// ``invalidate()`` stay synchronous, and `deinit` calls
+// `finishTasksAndInvalidate()` before the owner is released. That call runs
+// after `withLock` returns: this mutex is not recursive.
+import Synchronization
 @unsafe @preconcurrency import Security
 
 /// One pinned DNS-over-HTTPS resolver. The host and SPKI live only in ``SecurityConfiguration``.
@@ -34,7 +47,14 @@ public struct PinnedDoHResolver: Sendable, Equatable {
     }
 }
 
-/// Posts one DNS query to pinned resolvers in order.
+/// Posts DNS queries to pinned resolvers in order.
+///
+/// One value keeps one ephemeral `URLSession` per resolver host and reuses it
+/// across the queries that value makes. The two hosts do not share a session.
+/// ``resolverWalkFetchers()`` gives the next fetcher a new session owner, so a
+/// later walk does not inherit the connection or cookies.
+/// ``DNSSECResolverWalk`` calls ``invalidateSessions()`` when that walk attempt
+/// returns, before the next fetcher runs.
 ///
 /// `resolvers` nil reads ``SecurityConfiguration/pinnedDoHResolvers`` when the
 /// query runs. A non-nil list is the only set this fetcher may post to.
@@ -45,9 +65,41 @@ public struct PinnedDoHResolver: Sendable, Equatable {
 struct PinnedDoHFetcher: DNSWireFetching {
     /// Resolvers this fetcher may post to. Nil reads ``SecurityConfiguration/pinnedDoHResolvers`` at query time.
     let resolvers: [PinnedDoHResolver]?
+    /// Sessions for this fetcher only. Copies of this value share the owner. A new value does not.
+    private let sessions = PinnedDoHSessionOwner()
 
     init(resolvers: [PinnedDoHResolver]? = nil) {
         self.resolvers = resolvers
+    }
+
+    /// Ephemeral configuration for one resolver's reused DoH session.
+    ///
+    /// Cache and credential storage are nil. The request cache policy ignores
+    /// local and remote caches. Request and resource timeouts are 4 seconds.
+    /// `requiresDNSSECValidation` is left unset (the property defaults to false).
+    /// This fetch exists because that flag produced no callback.
+    ///
+    /// - Returns: A new configuration. Each `URLSession` copies it.
+    /// - SeeAlso: ``DNSSECResolverWalk``, ``<doc:Security-Invariants>`` Invariant 1
+    static func sessionConfiguration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        configuration.urlCredentialStorage = nil
+        configuration.timeoutIntervalForRequest = 4
+        configuration.timeoutIntervalForResource = 4
+        // SECURITY: Do not set requiresDNSSECValidation. The default is false.
+        // Setting it is the stall this fetch exists to avoid. Authenticate the resolver by SPKI.
+        return configuration
+    }
+
+    /// Finishes every session this fetcher opened.
+    ///
+    /// ``DNSSECResolverWalk`` calls this when the walk attempt returns, before
+    /// the next fetcher runs. A second call does nothing. ``DNSWireFetching``
+    /// has no close method, so fixture fetchers are unchanged.
+    func invalidateSessions() {
+        sessions.invalidate()
     }
 
     /// First fetcher posts to every pinned resolver. Each later fetcher posts to one remaining resolver.
@@ -75,23 +127,10 @@ struct PinnedDoHFetcher: DNSWireFetching {
     }
 
     private func post(_ wire: Data, resolver: PinnedDoHResolver) async -> Data? {
-        guard let pin = pinFingerprint(resolver.spkiSHA256Base64),
-              let url = URL(string: "https://\(resolver.host)/dns-query") else {
+        guard let url = URL(string: "https://\(resolver.host)/dns-query"),
+              let session = sessions.session(for: resolver) else {
             return nil
         }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        configuration.urlCredentialStorage = nil
-        configuration.timeoutIntervalForRequest = 4
-        configuration.timeoutIntervalForResource = 4
-        // SECURITY: Do not set requiresDNSSECValidation here. This fetch exists
-        // because that flag produced no callback. Authenticate the resolver by SPKI.
-        let delegate = DoHPinDelegate(pin: pin)
-        let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
-        // The task has finished before this function returns. Without this, the session
-        // keeps the pin delegate for the process lifetime (one session per chain fetch).
-        defer { session.finishTasksAndInvalidate() }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/dns-message", forHTTPHeaderField: "Content-Type")
@@ -112,13 +151,6 @@ struct PinnedDoHFetcher: DNSWireFetching {
         }
     }
 
-    private func pinFingerprint(_ base64: String) -> CertificateFingerprint? {
-        guard let bytes = Data(base64Encoded: base64), bytes.count == CertificateFingerprint.byteCount else {
-            return nil
-        }
-        return CertificateFingerprint(bytes: [UInt8](bytes))
-    }
-
     private func isWellFormed(_ response: Data, query: Data) -> Bool {
         guard let queryMessage = DNSMessage.parse(query),
               let message = DNSMessage.parse(response),
@@ -130,6 +162,96 @@ struct PinnedDoHFetcher: DNSWireFetching {
         }
         return true
     }
+
+    /// Builds the pinned session for `resolver`. Nil when the SPKI pin is not 32 bytes.
+    /// The caller stores one session per host and does not build another for that host.
+    fileprivate static func makeSession(for resolver: PinnedDoHResolver) -> URLSession? {
+        guard let pin = pinFingerprint(resolver.spkiSHA256Base64) else { return nil }
+        let delegate = DoHPinDelegate(pin: pin)
+        return URLSession(configuration: sessionConfiguration(), delegate: delegate, delegateQueue: nil)
+    }
+
+    private static func pinFingerprint(_ base64: String) -> CertificateFingerprint? {
+        guard let bytes = Data(base64Encoded: base64), bytes.count == CertificateFingerprint.byteCount else {
+            return nil
+        }
+        return CertificateFingerprint(bytes: [UInt8](bytes))
+    }
+
+    #if DEBUG
+    /// Opens the reused session for `resolver` without posting a query.
+    /// The same host on this fetcher returns the same object. A bad pin returns nil.
+    func _test_sessionIdentifier(for resolver: PinnedDoHResolver) -> ObjectIdentifier? {
+        sessions.identifier(for: resolver)
+    }
+
+    /// Sessions this fetcher still holds. Zero after ``invalidateSessions()``.
+    var _test_openSessionCount: Int { sessions.openCount }
+    #endif
+}
+
+/// One ephemeral `URLSession` per resolver host for a single ``PinnedDoHFetcher``.
+///
+/// Copies of the fetcher share this owner. The host map is the only mutable
+/// state. A `Mutex` (`import Synchronization`) makes this class `Sendable`
+/// and keeps ``session(for:)`` and ``invalidate()`` synchronous, including the
+/// `deinit` backstop. `finishTasksAndInvalidate()` runs after `withLock`
+/// returns: the mutex is not recursive, and invalidation can call the delegate.
+/// ``DNSSECWalk`` awaits each query before the next. An overlapping
+/// ``session(for:)`` still returns the session already stored for that host.
+/// `URLSession` is `Sendable`. The network await stays outside the lock.
+///
+/// ``DNSSECResolverWalk`` calls ``invalidate()`` when the walk attempt returns,
+/// before the next fetcher runs. `deinit` calls it again when the fetcher is
+/// released without that call. A later walk does not inherit the connection
+/// or cookies. There is no process-lifetime session.
+///
+/// - SeeAlso: ``PinnedDoHFetcher``, ``DNSSECResolverWalk``, ``<doc:Security-Invariants>`` Invariant 1
+private final class PinnedDoHSessionOwner: Sendable {
+    private let sessions = Mutex<[String: URLSession]>([:])
+
+    /// The session already stored for `resolver.host`, or a new one.
+    /// A pin that is not 32 bytes stores nothing.
+    func session(for resolver: PinnedDoHResolver) -> URLSession? {
+        sessions.withLock { map in
+            if let existing = map[resolver.host] {
+                return existing
+            }
+            guard let created = PinnedDoHFetcher.makeSession(for: resolver) else {
+                return nil
+            }
+            map[resolver.host] = created
+            return created
+        }
+    }
+
+    /// Finishes every stored session and drops the references.
+    /// A second call finds an empty map.
+    func invalidate() {
+        let open = sessions.withLock { map -> [URLSession] in
+            let values = Array(map.values)
+            map.removeAll()
+            return values
+        }
+        for session in open {
+            session.finishTasksAndInvalidate()
+        }
+    }
+
+    deinit {
+        invalidate()
+    }
+
+    #if DEBUG
+    var openCount: Int {
+        sessions.withLock { $0.count }
+    }
+
+    func identifier(for resolver: PinnedDoHResolver) -> ObjectIdentifier? {
+        guard let session = session(for: resolver) else { return nil }
+        return ObjectIdentifier(session)
+    }
+    #endif
 }
 
 /// Accepts a DoH handshake only when system trust succeeds and the leaf SPKI matches.
@@ -137,6 +259,8 @@ struct PinnedDoHFetcher: DNSWireFetching {
 /// Redirects are refused. A pin mismatch cancels the challenge so the caller tries
 /// the other resolver. This delegate does not call ``CertificateValidator``: that
 /// actor's leaf pin is the media certificate, not the resolver.
+// SAFETY: `pin` is an immutable value. The delegate methods do not mutate instance
+// state. `NSObject` is not `Sendable`, so the conformance is unchecked.
 private final class DoHPinDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let pin: CertificateFingerprint
 

@@ -861,7 +861,10 @@ public actor SecurityModelValidator {
     /// ``DNSSECResolverWalk`` starts a new walk bound to the next pinned resolver
     /// alone. A missing TXT RRset is not a verified empty set. There is no NSEC
     /// or NSEC3 proof of absence, so a missing set on every resolver stays a
-    /// temporary failure and the next host is tried. `-UITestMode` does not open DoH.
+    /// temporary failure and the next host is tried. Each production fetcher
+    /// reuses one ephemeral URLSession per resolver host, and
+    /// ``DNSSECResolverWalk`` finishes those sessions when the attempt returns.
+    /// `requiresDNSSECValidation` stays unset. `-UITestMode` does not open DoH.
     /// The walks share ``RetiredRootAnchorStore/shared``, so a self-revoked root digest
     /// stays suppressed for this process. That store is not `lastSecurityValidation`.
     ///

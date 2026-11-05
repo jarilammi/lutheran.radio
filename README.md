@@ -341,8 +341,8 @@ Those `simctl` commands do not erase the available simulator you still run tests
 
 | Item                          | Value / Note                                                                                                                                                                                                 | Source (always use via `Core/`)                                                    |
 |-------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
-| `expectedSecurityModel`       | `"sunshinecoast"` (must be present in the live TXT for streaming to be allowed). | `SecurityConfiguration.swift` (via `SecurityConfiguration.current`)                |
-| Live active models (DNS TXT)  | `dallas,montereypark,kailuakona,sunshinecoast` (live on primary; secondary/backup mirror for transient fallback).                                                                                | `dig +short +dnssec TXT securitymodels.siikkari.net`                               |
+| `expectedSecurityModel`       | `"maryborough"` (must be present in the live TXT for streaming to be allowed). | `SecurityConfiguration.swift` (via `SecurityConfiguration.current`)                |
+| Live active models (DNS TXT)  | `dallas,montereypark,kailuakona,sunshinecoast,maryborough` (live on primary; secondary/backup mirror for transient fallback).                                                                                | `dig +short +dnssec TXT securitymodels.siikkari.net`                               |
 | Streaming media apex          | Sole apex: `siikkari.net` (`european.siikkari.net`, `livestream.siikkari.net`, language hosts). Use `preferredStreamingDomainSuffixes` / `streamingHostCandidates(leadingLabel:)` — never hard-code. | `SecurityConfiguration.current`                                                    |
 | DNS TXT model hosts (order)   | `securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk` (ordered host walk: authoritative answer stops; only transient advances — see Security Model Validation) | `securityModelDomains`                                                             |
 | Runtime leaf pins (authoritative) | `CertificateFingerprint` digests (raw 32-byte SHA-256 of leaf DER). Never compare hex strings at runtime. Validator accepts **any** entry in the list.                                                     | `pinnedFingerprintDigests`                                                         |
@@ -353,7 +353,7 @@ Those `simctl` commands do not erase the available simulator you still run tests
 | Model validation cache        | 1 hour (3600 s), success-only, in `UserDefaults` (`modelCacheDuration`). Failures always re-query. Distinct from certificate pin-result caching.                                                              | `SecurityConfiguration` + `SecurityModelValidator`                                 |
 | Certificate validation cache  | 10 minutes (600 s) in `CertificateValidator` (`certificateValidationCacheDuration`). A hit skips system trust evaluation only when the leaf just presented matches `pinnedFingerprintDigests`. A different leaf is evaluated again. Periodic HEAD revalidation in `DirectStreamingPlayer` uses the same constant. | `SecurityConfiguration` + `CertificateValidator`                                   |
 
-**AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The `sunshinecoast` row is the embedded model for this build (previous models are retained for the historical record and to prevent name reuse). Valid From and Valid Until for that row stay `(pending)`.
+**AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The `maryborough` row is the embedded model for this build (previous models are retained for the historical record and to prevent name reuse). Valid From, Valid Until, and App Version Introduced for that row stay `(pending)` until the App Store publication commit. A DNS listing is not that date. `sunshinecoast` stays the published 27.2.1 row (Valid From November 5, 2026, Valid Until ongoing).
 
 ### Media Apex Cutover & SSL Certificate Rotation (siikkari.net)
 
@@ -504,7 +504,7 @@ The app performs security model validation to confirm that the version in use ma
    **Secondary domain:** `securitymodels.lutheranradio.eu` (transient-only mirror of the allow-list)
    **Backup domain:** `securitymodels.lutheranradio.sk` (final transient fallback)
 2. **Mechanism:** Queries DNS TXT records (via `DNSServiceQueryRecord` + `kDNSServiceFlagsValidate`) from the ordered list of domains, applying the ordered host walk above.
-3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"sunshinecoast"`, always read via `SecurityConfiguration.current`)
+3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"maryborough"`, always read via `SecurityConfiguration.current`)
 4. **Location:** Enforced by the actor `Core/Actors/SecurityModelValidator.swift` (single source of truth for validation — see the Key Files table)
 5. **Behavior:** If the app’s security model isn’t in an **authoritative** TXT set from a responding host, playback is permanently disabled with a user-facing error message (no fall-through).
 
@@ -520,7 +520,7 @@ DNS TXT hosts on the ordered `securityModelDomains` list are expected to be unde
 
 When primary (or a fallback host) is queried with the DO (DNSSEC OK) bit set (e.g. `dig +dnssec`), the response includes:
 - The TXT record containing the comma-separated list of valid models:
-  `"dallas,montereypark,kailuakona,sunshinecoast"`
+  `"dallas,montereypark,kailuakona,sunshinecoast,maryborough"`
 - An accompanying **RRSIG** signature.
 
 In current observed recursive responses, the **AD (Authenticated Data)** flag may **not** be set (`;; flags: qr rd ra` / `qr aa rd ra`), indicating that the recursive resolver did not perform (or did not assert) full DNSSEC validation when answering the query. Re-check primary and fallbacks with the Agent Verification Commands after any DNS publish.
@@ -535,7 +535,7 @@ The app performs the TXT query via `DNSServiceQueryRecord` **with `kDNSServiceFl
 
 This provides data integrity and authenticity protection for the security model allow-list using the zone's existing DNSSEC signatures (RRSIG) and Apple's resolver.
 
-When the 5 s watchdog fires and **no callback arrived**, `SecurityModelValidator` verifies the same TXT RRset locally (`DNSSECWalk`) from DNS wire data fetched over pinned HTTPS (`pinnedDoHResolvers`: `cloudflare-dns.com` and `dns.google`). A signature or chain failure drops that walk, including every cached message, and starts a new walk bound to the next pinned resolver alone (`dns.google` after `cloudflare-dns.com`). A verified RRset stops, including one that omits the expected model. The two answers are not merged. A pin, transport, or message-shape failure still skips to the next resolver inside one query. The root is checked against `ianaRootTrustAnchors` (current IANA KeyDigests only). KSK-2024, key tag 38696, signs the root DNSKEY set as of 11 October 2026. An RSA modulus shorter than 2048 bits verifies only when the RRSIG signer is `eu` (the 1024-bit `.eu` zone-signing key, which signs the `lutheranradio.eu` DS). A modulus shorter than 1024 bits fails for every signer. When more than one key in the set being checked shares an RRSIG key tag and algorithm, each of those keys is tried. The RRset fails only after every one of them fails. A key that was not in that set is not added. The root-anchor retirement check still passes the revoked key alone. A stored root digest stays trusted until `DNSSECWalk` observes that key's self-signed revoked DNSKEY; the revoked rdata does not match the digest, both digests remain in `ianaRootTrustAnchors`, and 11 January 2027 is not the signal. A present, signed RRset is an authoritative answer for steps 2 and 3 above, including one whose text parses to no names. A missing TXT RRset is not a verified empty set: `txtModels` returns failure, there is no NSEC or NSEC3 proof of absence, and that failure stays temporary so the next host is tried. Failed local verification is transient and the next host is tried. The DoH `AD` bit is not trusted. A callback that already delivered Insecure, Bogus, Indeterminate, expired, or Validate-without-a-status-code is not replaced. The watchdog is not lengthened, and `kDNSServiceFlagsValidateOptional` is not used.
+When the 5 s watchdog fires and **no callback arrived**, `SecurityModelValidator` verifies the same TXT RRset locally (`DNSSECWalk`) from DNS wire data fetched over pinned HTTPS (`pinnedDoHResolvers`: `cloudflare-dns.com` and `dns.google`). A signature or chain failure drops that walk, including every cached message, and starts a new walk bound to the next pinned resolver alone (`dns.google` after `cloudflare-dns.com`). A verified RRset stops, including one that omits the expected model. The two answers are not merged. Each production fetcher reuses one ephemeral URLSession per resolver host for that walk and finishes it when the attempt returns, before the next fetcher runs. `cloudflare-dns.com` and `dns.google` do not share a session. `requiresDNSSECValidation` stays unset. Cache and credential storage are nil. A pin, transport, or message-shape failure still skips to the next resolver inside one query. The root is checked against `ianaRootTrustAnchors` (current IANA KeyDigests only). KSK-2024, key tag 38696, signs the root DNSKEY set as of 11 October 2026. An RSA modulus shorter than 2048 bits verifies only when the RRSIG signer is `eu` (the 1024-bit `.eu` zone-signing key, which signs the `lutheranradio.eu` DS). A modulus shorter than 1024 bits fails for every signer. When more than one key in the set being checked shares an RRSIG key tag and algorithm, each of those keys is tried. The RRset fails only after every one of them fails. A key that was not in that set is not added. The root-anchor retirement check still passes the revoked key alone. A stored root digest stays trusted until `DNSSECWalk` observes that key's self-signed revoked DNSKEY; the revoked rdata does not match the digest, both digests remain in `ianaRootTrustAnchors`, and 11 January 2027 is not the signal. A present, signed RRset is an authoritative answer for steps 2 and 3 above, including one whose text parses to no names. A missing TXT RRset is not a verified empty set: `txtModels` returns failure, there is no NSEC or NSEC3 proof of absence, and that failure stays temporary so the next host is tried. Failed local verification is transient and the next host is tried. The DoH `AD` bit is not trusted. A callback that already delivered Insecure, Bogus, Indeterminate, expired, or Validate-without-a-status-code is not replaced. The watchdog is not lengthened, and `kDNSServiceFlagsValidateOptional` is not used.
 
 Unvalidated (or validation-failing) responses never result in a successful model list. Permanent failure only occurs when the expected model is provably absent from a validated response.
 
@@ -549,7 +549,7 @@ In addition to the hardened TXT lookup for the security model allow-list, the ap
 - This sets `URLSessionConfiguration.requiresDNSSECValidation = true` (session level).
 - The actual media bytes, HEAD probes used by `CertificateValidator`, and latency pings therefore obtain authenticated name-to-IP mappings before TLS + full-certificate pinning.
 - If the client's resolver cannot supply a validated answer, the request fails at the URLSession layer. These failures are classified as **transient** by `DirectStreamingPlayer.StreamErrorType` (allowing recreate + cluster fallback) so that the feature remains safe on networks where full DNSSEC validation is not yet available from the recursive resolver.
-- One exception: `NSURLErrorDomain` -1001 whose stream error is domain 4 and code -2102, after local A/AAAA verification of **that host** just succeeded. That verification follows the same next-resolver rule as the TXT walk: a signature or chain failure starts a new walk on the next pinned resolver alone, and a verified address set stops. `SecurityConfiguration.makeVerifiedAddressRetryConfiguration()` is the only factory that clears `requiresDNSSECValidation`, and only for that one retry. The retry connects only to those addresses. The TLS peer name stays the hostname. A redirect to another host starts a new DNSSEC-on request and does not reuse the address set. Cache and credential storage stay nil. The runtime leaf pin is unchanged. The verified-address verify callback copies the peer certificates into a private trust and waits at most `verifiedAddressPinEvaluationLimit` (10 s). Expiry rejects the handshake. A later pin result does not accept it. That wait is not the 5 s DNS TXT watchdog. `requiresDNSSECValidationForStreaming` stays true.
+- One exception: `NSURLErrorDomain` -1001 whose stream error is domain 4 and code -2102, after local A/AAAA verification of **that host** just succeeded. That verification follows the same next-resolver rule as the TXT walk: a signature or chain failure starts a new walk on the next pinned resolver alone, and a verified address set stops. That walk reuses one ephemeral URLSession per resolver host and finishes it when the attempt returns, with `requiresDNSSECValidation` left unset. `SecurityConfiguration.makeVerifiedAddressRetryConfiguration()` is the only factory that clears `requiresDNSSECValidation`, and only for that one retry. The retry connects only to those addresses. The TLS peer name stays the hostname. A redirect to another host starts a new DNSSEC-on request and does not reuse the address set. Cache and credential storage stay nil. The runtime leaf pin is unchanged. The verified-address verify callback copies the peer certificates into a private trust and waits at most `verifiedAddressPinEvaluationLimit` (10 s). Expiry rejects the handshake. A later pin result does not accept it. That wait is not the 5 s DNS TXT watchdog. `requiresDNSSECValidationForStreaming` stays true.
 
 This gives three orthogonal DNS/TLS layers:
 1. TXT allow-list (low-level dnssd + `kDNSServiceFlagsValidate`)
@@ -586,11 +586,11 @@ dig +short +dnssec TXT securitymodels.lutheranradio.sk
 Example primary output (captured live; always re-verify with `dig` before relying on it):
 
 ```
-"dallas,montereypark,kailuakona,sunshinecoast"
-TXT 13 3 600 20261104190421 20261102170421 34505 siikkari.net. jcUnZXsW0aAcdBN4akQ9WCk+Hg0Zxv99uhz/n/aH755vpYPUgy7ImRC2 qbYGaMgObxl1jODStKMPZSM8X2HD4A==
+"dallas,montereypark,kailuakona,sunshinecoast,maryborough"
+TXT 13 3 600 20261106191834 20261104171834 34505 siikkari.net. AosTHqWcR4N1+cIatgVQIvc1Ps3zRvg3VRKjrELg0mJmOJqw9TOv5dgz 1XhAxCttqZ/eqV85fbb85plw4EvY+A==
 ```
 
-Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```sunshinecoast```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed on a **validated** responding host, validation fails permanently for that host (no fall-through on permanent absence). To update the allow-list: publish / update the TXT on ```securitymodels.siikkari.net``` (primary) and keep secondary/backup (```securitymodels.lutheranradio.eu```, ```securitymodels.lutheranradio.sk```) consistent.
+Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```maryborough```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed on a **validated** responding host, validation fails permanently for that host (no fall-through on permanent absence). To update the allow-list: publish / update the TXT on ```securitymodels.siikkari.net``` (primary) and keep secondary/backup (```securitymodels.lutheranradio.eu```, ```securitymodels.lutheranradio.sk```) consistent.
 
 See also: ``<doc:Security-Invariants>`` (Invariant 1), [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules).
 
@@ -730,7 +730,7 @@ See [docs/Widget-Presentation-Dataflow.md](docs/Widget-Presentation-Dataflow.md)
 
 ### Security Model TXT Record Usage
 
-Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 45-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
+Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 57-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
 
 ### Security Model History
 
@@ -759,12 +759,13 @@ This table is the source of truth for the historical record of security models (
 | `montereypark`      | October 3, 2026    | (ongoing)          | 27.0.1                 |
 | `kailuakona`        | October 31, 2026   | (ongoing)          | 27.2.0                 |
 | `sunshinecoast`     | November 5, 2026   | (ongoing)          | 27.2.1                 |
+| `maryborough`       | (pending)          | (pending)          | (pending)              |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
 - **Valid Until:** The date when the security model was deprecated (or "(ongoing)" if still active).
 - **App Version Introduced:** The app version where this security model was first implemented.
-- **Valid From Dates:** Reflect the App Store publication date for the app version introducing the security model, ensuring alignment with public availability.
+- **Valid From Dates:** Reflect the App Store publication date for the app version introducing the security model, ensuring alignment with public availability. The `maryborough` row stays `(pending)` in all three cells until that publication commit. DNS listing is not that date. Do not put 27.2.1 on that row: 27.2.1 is the published `sunshinecoast` build.
 - Cross-check live TXT (via the Agent Verification Commands) for the set of currently active models. This table is the historical source of truth.
 
 When introducing a new security model (requires security review + documentation upgrade):
@@ -772,16 +773,16 @@ When introducing a new security model (requires security review + documentation 
 1. Choose a unique name not listed in the table (e.g., a distinct city or codename). Confirm it has never been used.
 2. Update `expectedSecurityModel` in `Core/Configuration/SecurityConfiguration.swift` (the only allowed location).
 3. Add the new name to the DNS TXT record for `securitymodels.siikkari.net` (primary) and keep secondary/backup (`securitymodels.lutheranradio.eu`, `securitymodels.lutheranradio.sk`) consistent.
-4. Append a new row to the table above with the current date, app version, and name.
-5. Update the "Current Security Snapshot" and any live example outputs in this README.
+4. Append a new row. Leave Valid From, Valid Until, and App Version Introduced as `(pending)` until the App Store publication commit. Do not date the row from a DNS listing. Do not reuse the previous row's published version: 27.2.1 is the `sunshinecoast` build.
+5. Update the "Current Security Snapshot" and any live example outputs in this README only after `dig` shows the new name on the primary TXT host.
 6. Improve surrounding documentation per the Documentation & Comment Standards in [`CODING_AGENT.md`](CODING_AGENT.md) (add "Why", Security Invariant callouts, cross-links to ``<doc:Security-Invariants>`` and the Architecture article, update agent checklist context if needed).
 7. Run the mandatory find command + build/test gates. Include security impact assessment in the PR.
 
-See also: ``<doc:Security-Invariants>`` (Invariant 1 and "Enforcement"), "Verifying the Security Model" section above, [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules + "Current model = sunshinecoast" + response style requirements).
+See also: ``<doc:Security-Invariants>`` (Invariant 1 and "Enforcement"), "Verifying the Security Model" section above, [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules + "Current model = maryborough" + response style requirements).
 
 ### Why Track Security Model Names?
 
-Security model names (e.g., ```dallas```, ```montereypark```, ```kailuakona```, ```sunshinecoast```) are embedded in the app and validated against the DNS TXT record before any streaming is permitted. Once a name is used, it becomes part of the app's permanent history and may still exist in older App Store versions. Reusing a name could allow an older version to pass validation in some cases.
+Security model names (e.g., ```dallas```, ```montereypark```, ```kailuakona```, ```sunshinecoast```, ```maryborough```) are embedded in the app and validated against the DNS TXT record before any streaming is permitted. Once a name is used, it becomes part of the app's permanent history and may still exist in older App Store versions. Reusing a name could allow an older version to pass validation in some cases.
 
 **Why this matters (explicit invariant):** The DNS TXT mechanism plus the history table together provide a forward-only, collision-resistant way to rotate the approved security implementation without breaking the "no bypass" rule or requiring clients to trust arbitrary future names.
 
