@@ -9,7 +9,7 @@ The `Core` framework is the **single source of truth** for all security policy, 
 The framework enforces three fundamental security mechanisms:
 
 - **Security model validation** via DNS TXT records on ordered ``SecurityConfiguration/securityModelDomains`` (`securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk`)
-- **Runtime full-certificate SHA-256 digest pinning** against ``pinnedFingerprintDigests`` (sole production leaf: live preferred-apex `*.siikkari.net`; ``CertificateFingerprint`` + constant-time comparison) with transition support
+- **Runtime full-certificate SHA-256 digest pinning** against ``pinnedFingerprintDigests`` (sole production leaf: live preferred-apex `*.siikkari.net`; ``CertificateFingerprint`` + constant-time comparison) with transition support. The media leaf SPKI is ``SecurityConfiguration/pinnedMediaLeafSPKISHA256Base64`` (same bytes as the app `Info.plist` ATS pin).
 - **Time-skew detection** to protect transition windows from clock manipulation
 - **Streaming media apex policy** via ``preferredStreamingDomainSuffixes`` (sole apex `siikkari.net`) — independent of DNS TXT host order
 

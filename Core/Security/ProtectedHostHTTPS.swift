@@ -15,8 +15,10 @@
 //  Cache and credentials stay nil. A redirect to another host does not reuse the
 //  address set; the caller starts a DNSSEC-on request for the new host.
 //
-//  `NWConnection` does not apply `NSPinnedDomains`. The verify block checks the
-//  Info.plist SPKI pin, then ``CertificateValidator/validateServerTrust(_:)``.
+//  `NWConnection` does not apply `NSPinnedDomains`. The verify block checks
+//  ``SecurityConfiguration/pinnedMediaLeafSPKISHA256Base64``, then
+//  ``CertificateValidator/validateServerTrust(_:)``. That check does not read
+//  `Bundle.main`. The app `Info.plist` keeps the same SPKI bytes for ATS.
 //  The verify completion imports as a non-escaping Swift function, wider than a
 //  pointer. It is called before the verify callback returns. `unsafeBitCast` to
 //  `UnsafeRawPointer` traps ("Can't unsafeBitCast between types of different sizes").
@@ -490,9 +492,10 @@ final class VerifiedAddressHTTPSProtocol: URLProtocol, @unchecked Sendable {
 
     private func installVerify(options: sec_protocol_options_t, host: String) {
         // SECURITY: Boringssl still performs the TLS record protection. This block
-        // only accepts or rejects the certificate. ATS SPKI is required because
-        // NWConnection does not apply NSPinnedDomains. The leaf DER pin remains
-        // CertificateValidator.validateStreamingServerTrust (SPKI, then the leaf).
+        // only accepts or rejects the certificate. The media SPKI constant is
+        // required because NWConnection does not apply NSPinnedDomains. The leaf
+        // DER pin remains CertificateValidator.validateStreamingServerTrust
+        // (pinnedMediaLeafSPKISHA256Base64, then the leaf).
         // No private cipher is added.
         //
         // `complete` is `sec_protocol_verify_complete_t`, imported as `(Bool) -> Void`.

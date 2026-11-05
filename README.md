@@ -157,7 +157,7 @@ dig +short +dnssec TXT securitymodels.lutheranradio.eu
 **3. Verify pinned certificate material (SPKI for ATS + leaf for runtime parity):**
 
 ```bash
-# SPKI (matches Info.plist NSPinnedLeafIdentities for siikkari.net)
+# SPKI (matches pinnedMediaLeafSPKISHA256Base64 and Info.plist NSPinnedLeafIdentities for siikkari.net)
 openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null 2>/dev/null \
 | openssl x509 -pubkey -noout \
 | openssl pkey -pubin -inform pem -outform der \
@@ -384,7 +384,7 @@ The app implements certificate pinning to prevent man-in-the-middle (MITM) attac
 2. **Pinned Values (runtime):** SHA-256 digests of acceptable leaf certificate DERs (32 bytes each), stored as ```CertificateFingerprint``` values in ```Core/Configuration/SecurityConfiguration.swift``` as ```pinnedFingerprintDigests``` (sole production entry: live `*.siikkari.net` via ```pinnedLeafFingerprintDigest``` / ```pinnedSiikkariLeafFingerprintDigest``` alias)
 3. **Pinned Values (operator / docs):** OpenSSL-style colon-hex (uppercase), derived from the digests —
    - Sole production leaf (`*.siikkari.net`): ```32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD```
-4. **Location:** SPKI in ```Info.plist``` (```NSAppTransportSecurity > NSPinnedDomains```); runtime digest policy in ```SecurityConfiguration```; comparison in ```Core/Security/CertificateValidator.swift``` via ```Core/Security/CertificateFingerprint.swift```
+4. **Location:** Media SPKI base64 in ```SecurityConfiguration.pinnedMediaLeafSPKISHA256Base64```, with the same bytes in the app ```Info.plist``` (```NSAppTransportSecurity > NSPinnedDomains```) so ATS enforces them. The Swift check does not read `Bundle.main`. Runtime leaf digest policy stays in ```SecurityConfiguration```; comparison in ```Core/Security/CertificateValidator.swift``` via ```Core/Security/CertificateFingerprint.swift```.
 
 See also: ``<doc:Security-Invariants>`` (Invariant 2), the "Current Security Snapshot" table, "Single Sources of Truth" table, and [`CODING_AGENT.md`](CODING_AGENT.md) (pinned fingerprint rules + never bypass full-certificate pinning).
 
@@ -392,12 +392,13 @@ See also: ``<doc:Security-Invariants>`` (Invariant 2), the "Current Security Sna
 
 For enhanced security, the app uses two complementary pinning approaches:
 
-1. **SPKI Pinning (via Info.plist - Primary ATS Enforcement)**:
+1. **SPKI Pinning (media public key)**:
    - Pins the SHA-256 fingerprint of the certificate's public key (SPKI) in Base64 format.
-   - Enforced by App Transport Security (ATS) for every apex listed under `NSAppTransportSecurity > NSPinnedDomains` (subdomains included when `NSIncludesSubdomains` is true).
-   - Sole media apex (`siikkari.net`) is pinned so the production data plane stays defendable at the TLS layer.
+   - Swift source of truth: `SecurityConfiguration.pinnedMediaLeafSPKISHA256Base64`. `AppTransportSecurityPins` compares the leaf SPKI with that constant for a host under `preferredStreamingDomainSuffixes`. An empty match set fails closed. The check does not read `Bundle.main`.
+   - The app `Info.plist` keeps the same bytes under `NSAppTransportSecurity > NSPinnedDomains` (`NSIncludesSubdomains` true) so ATS enforces them on URLSession. The widget plist has no `NSPinnedDomains`.
+   - Sole media apex (`siikkari.net`) is pinned so the production data plane stays defendable at the TLS layer. DoH resolver SPKIs in `pinnedDoHResolvers` are different keys.
    - Allows certificate rotations without app updates, as long as the public key remains consistent.
-   - Current Pinned SPKI Fingerprints (from `Info.plist`):
+   - Current media SPKI (`pinnedMediaLeafSPKISHA256Base64`, equal to the app `Info.plist` entry):
      - `siikkari.net` (streaming; includes `european.siikkari.net`, `livestream.siikkari.net`, language hosts):
        - `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`
    - Verification: Use `openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64` and match against the `siikkari.net` pin above.
@@ -457,7 +458,7 @@ openssl s_client -connect livestream.siikkari.net:443 -servername livestream.sii
 | base64
 ```
 
-Match against the ```SPKI-SHA256-BASE64``` value for `siikkari.net` in ```Info.plist``` (currently `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`).
+Match against ```SecurityConfiguration.pinnedMediaLeafSPKISHA256Base64``` and the ```SPKI-SHA256-BASE64``` value for `siikkari.net` in the app ```Info.plist``` (both `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`).
 
 **Leaf DER SHA-256** (runtime / `pinnedSiikkariLeafFingerprintDigest`):
 
@@ -467,7 +468,7 @@ openssl s_client -connect livestream.siikkari.net:443 -servername livestream.sii
 | openssl dgst -sha256
 ```
 
-Match the lowercase hex against ```pinnedSiikkariLeafFingerprintDigest``` (colon-hex in the snapshot table: `32:82:5E:97:…:70:CD`). When rotating, update **both** the SPKI in `Info.plist` and the digest(s) in `SecurityConfiguration.pinnedFingerprintDigests` in the same change, then re-run CoreTests pin membership tests.
+Match the lowercase hex against ```pinnedSiikkariLeafFingerprintDigest``` (colon-hex in the snapshot table: `32:82:5E:97:…:70:CD`). When rotating the public key, update `pinnedMediaLeafSPKISHA256Base64` and the app `Info.plist` SPKI together. When rotating the leaf, update the digest(s) in `SecurityConfiguration.pinnedFingerprintDigests` in the same change. Then re-run CoreTests pin membership tests.
 
 Also verify `european.siikkari.net` presents the same leaf when the cert is a shared wildcard (`CN=*.siikkari.net`).
 
@@ -630,10 +631,10 @@ This feature enhances availability while maintaining the app's privacy-first pri
 
 | File / Symbol                                              | Responsibility                                                                 | Important notes for agents |
 |------------------------------------------------------------|--------------------------------------------------------------------------------|----------------------------|
-| `Core/Configuration/SecurityConfiguration.swift`           | Single source of truth for all policy and constants (`expectedSecurityModel`, sole live leaf via `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests`, `isInTransitionWindow`, `transitionWindow*`, `maxAllowedTimeSkew`, `modelCacheDuration`, `certificateValidationCacheDuration`, `securityModelDomains`, `preferredStreamingDomainSuffixes`, `streamingHostCandidates(leadingLabel:)`, `hostRequiresDNSSECValidation`, `requiresDNSSECValidationForStreaming`, `makeSecureEphemeralConfiguration`, `ianaRootTrustAnchors`, `pinnedDoHResolvers`, `makeVerifiedAddressRetryConfiguration`, `verifiedAddressPinEvaluationLimit`, `current`) | Never duplicate these values elsewhere. Colon-hex views (`pinnedLeafFingerprint`, `pinnedSiikkariLeafFingerprint`, `pinnedFingerprints`) are for README/openssl parity only. DNS model cache (1 h) and certificate pin-result cache (10 min) are **distinct** constants. Streaming media apex (`siikkari.net` only) is **independent** of DNS TXT host order. Do not keep retired leaf digests on the production acceptance list. The secure session factory is the central point for `requiresDNSSECValidation` + cache hardening on streaming sessions. `makeVerifiedAddressRetryConfiguration()` is the only factory that clears that flag, and only for one verified-address retry. |
+| `Core/Configuration/SecurityConfiguration.swift`           | Single source of truth for all policy and constants (`expectedSecurityModel`, sole live leaf via `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests`, `isInTransitionWindow`, `transitionWindow*`, `maxAllowedTimeSkew`, `modelCacheDuration`, `certificateValidationCacheDuration`, `securityModelDomains`, `preferredStreamingDomainSuffixes`, `streamingHostCandidates(leadingLabel:)`, `hostRequiresDNSSECValidation`, `requiresDNSSECValidationForStreaming`, `makeSecureEphemeralConfiguration`, `ianaRootTrustAnchors`, `pinnedDoHResolvers`, `pinnedMediaLeafSPKISHA256Base64`, `makeVerifiedAddressRetryConfiguration`, `verifiedAddressPinEvaluationLimit`, `current`) | Never duplicate these values elsewhere. The app `Info.plist` `NSPinnedDomains` SPKI must stay equal to `pinnedMediaLeafSPKISHA256Base64` so ATS enforces the same media key. That constant is not a DoH pin. Colon-hex views (`pinnedLeafFingerprint`, `pinnedSiikkariLeafFingerprint`, `pinnedFingerprints`) are for README/openssl parity only. DNS model cache (1 h) and certificate pin-result cache (10 min) are **distinct** constants. Streaming media apex (`siikkari.net` only) is **independent** of DNS TXT host order. Do not keep retired leaf digests on the production acceptance list. The secure session factory is the central point for `requiresDNSSECValidation` + cache hardening on streaming sessions. `makeVerifiedAddressRetryConfiguration()` is the only factory that clears that flag, and only for one verified-address retry. |
 | `Core/Actors/SecurityModelValidator.swift`                 | Actor-isolated DNS TXT security model validation against ordered `securityModelDomains` (`siikkari.net` primary → `lutheranradio.eu` → `lutheranradio.sk`) | Uses `kDNSServiceFlagsValidate` (strict). Buffers TXT rdata until a separate status callback and accepts it only when `kDNSServiceFlagsSecure` is set. The Validate bit means status is available. `Span<UInt8>` / `UTF8Span` zero-copy rdata borrow in the `dns_sd` callback. 1-hour success-only cache via `modelCacheDuration`. A timestamp ahead of the device clock is discarded. `.failedPermanent` clears that timestamp and is not revived by the cache. Four-point ordered host walk (authoritative answer stops; only transient advances). A zero-callback watchdog verifies the TXT RRset locally over pinned HTTPS and does not replace a delivered non-Secure status. Entry point: `validateSecurityModel()`. The **only** place DNS TXT logic is allowed. |
 | `Core/Security/CertificateFingerprint.swift`               | 32-byte SHA-256 DER digest type + stack-local hashing via `Data.span` + constant-time `constantTimeMatches` | Runtime code must never compare hex strings. Materializes colon-hex only for docs/tooling. |
-| `Core/Security/CertificateValidator.swift`                 | Runtime full-certificate (DER) pinning + 10-minute **pin-match** cache (`certificateValidationCacheDuration`) + transition window + device/server time-skew protection | Complements (does not replace) ATS SPKI pinning from `Info.plist`. Uses `pinnedFingerprintDigests`. A pin-cache hit still requires that digest on the trust just presented. Must **not** read `modelCacheDuration`. Leniency accepts are not cached. Time skew > 5 min latches leniency off for the process and does not re-enable it. |
+| `Core/Security/CertificateValidator.swift`                 | Runtime full-certificate (DER) pinning + 10-minute **pin-match** cache (`certificateValidationCacheDuration`) + transition window + device/server time-skew protection | Complements (does not replace) ATS SPKI pinning from the app `Info.plist`. The URLSession challenge handler passes the host into `validateStreamingServerTrust(_:host:)`, which checks `pinnedMediaLeafSPKISHA256Base64` before the leaf digest. A missing host fails closed. Uses `pinnedFingerprintDigests`. A pin-cache hit still requires that digest on the trust just presented. Must **not** read `modelCacheDuration`. Leniency accepts are not cached. Time skew > 5 min latches leniency off for the process and does not re-enable it. |
 | `DirectStreamingPlayer.swift` (+ domain extensions; streaming delegates) | Main audio engine façade; embeds security model in stream URLs; domain files own catalog, server selection, attach, recovery, resource loader, periodic Core pin HEAD revalidation; consumes validators; resource-loader sessions via the Core secure factory | Consumes the Core single sources of truth (including DNSSEC-enabled sessions). No policy duplication. Error classification treats DNSSEC-unavailable cases as transient. Isolation map on the façade documents domain ownership. Connect readiness is AVPlayer item status + resource-loader timeouts (no adaptive handshake-budget Task). TLS trust is Core pin + ATS SPKI only. |
 
 **Core Framework Surface Area (mandatory rule):** Any new security logic, certificate handling, or validation must be added inside `Core/` under the appropriate subdirectory (`Configuration/`, `Actors/`, or `Security/`) and exposed through the existing public types. Duplication in the main app, `LutheranRadioWidget/`, or elsewhere is not permitted.

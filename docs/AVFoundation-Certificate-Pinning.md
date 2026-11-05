@@ -10,11 +10,14 @@ Do not duplicate pin values outside `SecurityConfiguration`. Do not keep retired
 
 ## Two complementary layers
 
-### 1. ATS SPKI pinning (`Info.plist`)
+### 1. Media SPKI pinning
 
-- Enforced by App Transport Security for every apex under `NSAppTransportSecurity > NSPinnedDomains` (subdomains included when `NSIncludesSubdomains` is true).
+- Swift source of truth: `SecurityConfiguration.pinnedMediaLeafSPKISHA256Base64`. `AppTransportSecurityPins` compares the leaf SPKI with that constant for a host under `preferredStreamingDomainSuffixes`. An empty match set fails closed. The check does not read `Bundle.main`.
+- The app `Info.plist` keeps the same bytes under `NSAppTransportSecurity > NSPinnedDomains` (`NSIncludesSubdomains` is true) so ATS enforces them on URLSession. The widget plist has no `NSPinnedDomains`.
 - Sole media apex: `siikkari.net` (covers `european.siikkari.net`, `livestream.siikkari.net`, language hosts).
+- `CertificateValidator.urlSession(_:task:didReceive:)` passes the challenge host into `validateStreamingServerTrust(_:host:)`. A missing host fails closed.
 - Current SPKI-SHA256-BASE64: `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`
+- DoH resolver pins in `pinnedDoHResolvers` are different keys. Do not reuse one as the media pin.
 
 Verify (copy-paste):
 
@@ -23,7 +26,7 @@ openssl s_client -connect livestream.siikkari.net:443 -servername livestream.sii
   | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64
 ```
 
-Expected: `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`
+Expected: `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=` (`pinnedMediaLeafSPKISHA256Base64` and the app `Info.plist` entry).
 
 ### 2. Runtime full-certificate DER pinning (`CertificateValidator`)
 
@@ -67,7 +70,7 @@ Review and update the window on each leaf rotation via app release.
 ## What this is not
 
 - There is no `currentCertHash` string. Runtime pins are `CertificateFingerprint` digests in `pinnedFingerprintDigests`.
-- SPKI pinning is ATS-only in `Info.plist`. Do not reimplement SPKI comparison in Swift.
+- The media SPKI comparison in Swift reads `pinnedMediaLeafSPKISHA256Base64`. Do not read `Bundle.main` for that pin. ATS still enforces the matching app `Info.plist` entry.
 - Retired pre-cutover leaves (for example former `CC:F7:…:3D:CC`) are **not** on the acceptance list. Obsolete pins enlarge the set of certificates the runtime will accept.
 
 ## Earlier approach (historical)

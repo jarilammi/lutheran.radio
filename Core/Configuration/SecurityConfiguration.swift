@@ -15,6 +15,9 @@
 //  - DNSSEC streaming policy (`requiresDNSSECValidationForStreaming`)
 //  - The factory `makeSecureEphemeralConfiguration()` used by all streaming paths
 //  - IANA root KeyDigest anchors and pinned DoH resolver SPKIs
+//  - The media leaf SPKI (`pinnedMediaLeafSPKISHA256Base64`) for hosts under
+//    `preferredStreamingDomainSuffixes`. The app Info.plist ATS entry must
+//    equal it. It is not a DoH resolver pin.
 //  - `makeVerifiedAddressRetryConfiguration()`, the only factory that clears
 //    `requiresDNSSECValidation`, and only for addresses local verification accepted
 //  - `verifiedAddressPinEvaluationLimit`, the cap on that retry's TLS verify wait
@@ -129,8 +132,9 @@ public struct SecurityConfiguration: Sendable {
     /// `DirectStreamingPlayer`, resource loader, or tests — read this SSOT.
     ///
     /// **Operational requirements** for the media apex: leaf (or multi-SAN) coverage
-    /// for `*.siikkari.net`, matching `NSPinnedDomains` SPKI for that apex in
-    /// Info.plist, and the live leaf DER in ``pinnedFingerprintDigests``.
+    /// for `*.siikkari.net`, ``pinnedMediaLeafSPKISHA256Base64`` (the same bytes
+    /// as the `NSPinnedDomains` SPKI for that apex in the app Info.plist), and
+    /// the live leaf DER in ``pinnedFingerprintDigests``.
     ///
     /// - SeeAlso: ``securityModelDomains``, ``hostRequiresDNSSECValidation(_:)``,
     ///   ``streamingHostCandidates(leadingLabel:)``, ``<doc:Security-Invariants>``
@@ -251,7 +255,7 @@ public struct SecurityConfiguration: Sendable {
     /// Expected lowercase hex: `32825e978cf71ff10cf6809d2d15c81daa856528f467d6e51b6f7a5fb21870cd`
     ///
     /// - SeeAlso: ``pinnedFingerprintDigests``, ``preferredStreamingDomainSuffixes``,
-    ///   Info.plist `NSPinnedDomains` (`siikkari.net` SPKI)
+    ///   ``pinnedMediaLeafSPKISHA256Base64``
     private static let pinnedLeafFingerprintHex =
         "32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD"
     
@@ -613,8 +617,9 @@ public struct SecurityConfiguration: Sendable {
 
     /// Pinned DNS-over-HTTPS resolvers used when the system TXT query produces zero callbacks.
     ///
-    /// SPKI values are SHA-256 of SubjectPublicKeyInfo, base64, measured the same way as the
-    /// media ATS pin. They are not a substitute for ``pinnedFingerprintDigests``.
+    /// SPKI values are SHA-256 of SubjectPublicKeyInfo, base64, measured the same way as
+    /// ``pinnedMediaLeafSPKISHA256Base64``. They are not that media pin and not a
+    /// substitute for ``pinnedFingerprintDigests``.
     ///
     /// - SeeAlso: ``PinnedDoHResolver``, ``<doc:Security-Invariants>`` Invariant 1
     public let pinnedDoHResolvers: [PinnedDoHResolver] = [
@@ -627,6 +632,26 @@ public struct SecurityConfiguration: Sendable {
             spkiSHA256Base64: "KqNGxFS8iQhImgoezWO+m52yL9fynH7xlDuIGRSq+h8="
         ),
     ]
+
+    /// SHA-256 of the media leaf SubjectPublicKeyInfo, base64.
+    ///
+    /// This is the streaming public key for every host under
+    /// ``preferredStreamingDomainSuffixes`` (`*.siikkari.net`, including the
+    /// bare apex). It is the same bytes ATS stores as `SPKI-SHA256-BASE64` for
+    /// `siikkari.net` in the app `Info.plist`. Those two copies must stay equal.
+    /// ATS still reads the plist. ``AppTransportSecurityPins`` reads this
+    /// constant and does not read `Bundle.main`. The widget bundle has no
+    /// `NSPinnedDomains`.
+    ///
+    /// This key is not an entry of ``pinnedDoHResolvers`` and it is not
+    /// ``pinnedFingerprintDigests``. A leaf reissue that keeps this public key
+    /// does not change this value. A new public key does.
+    ///
+    /// - Important: Do not substitute a DoH resolver pin for this value.
+    /// - SeeAlso: ``pinnedDoHResolvers``, ``preferredStreamingDomainSuffixes``,
+    ///   ``CertificateValidator/validateStreamingServerTrust(_:host:)``,
+    ///   ``<doc:Security-Invariants>`` Invariant 2
+    public let pinnedMediaLeafSPKISHA256Base64: String = "7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE="
     
     
     // MARK: - Convenience / Current Instance

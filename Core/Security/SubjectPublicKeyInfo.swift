@@ -10,8 +10,8 @@
 //
 //  The walker skips an optional `[0] EXPLICIT` version, then five TBS fields
 //  (serial, signature, issuer, validity, subject). The next SEQUENCE is the SPKI.
-//  DoH pins and the streaming ATS check both use this. They are not the media
-//  leaf DER pin.
+//  DoH pins and ``SecurityConfiguration/pinnedMediaLeafSPKISHA256Base64`` both
+//  use this hash. They are not the media leaf DER pin, and they are not each other.
 //
 //  - SeeAlso: ``PinnedDoHResolver``, ``CertificateValidator/validateStreamingServerTrust(_:host:)``,
 //    ``<doc:Security-Invariants>`` Invariant 2
@@ -89,12 +89,50 @@ enum SubjectPublicKeyInfo {
     }
 }
 
-/// Info.plist `NSPinnedDomains` SPKI pins. An empty match set fails closed.
-/// `NWConnection` does not apply ATS, so the verified-address retry checks this
-/// list itself before ``CertificateValidator/validateServerTrust(_:)``.
+/// Media leaf SPKI check for a host under ``SecurityConfiguration/preferredStreamingDomainSuffixes``.
+///
+/// The pin is ``SecurityConfiguration/pinnedMediaLeafSPKISHA256Base64``. This
+/// type does not read `Bundle.main`. The app `Info.plist` keeps the same bytes
+/// so ATS can enforce them on URLSession. The widget bundle has no
+/// `NSPinnedDomains`. An empty or undecodable pin set fails closed.
+///
+/// `NWConnection` does not apply ATS, so
+/// ``CertificateValidator/validateStreamingServerTrust(_:host:)`` calls this
+/// before ``CertificateValidator/validateServerTrust(_:)``.
+///
+/// - SeeAlso: ``SecurityConfiguration/pinnedMediaLeafSPKISHA256Base64``,
+///   ``<doc:Security-Invariants>`` Invariant 2
 enum AppTransportSecurityPins {
+    /// Leaf SPKI matches the media pin for a protected streaming host.
+    ///
+    /// - Parameters:
+    ///   - trust: Trust whose leaf certificate supplies the SPKI.
+    ///   - host: TLS peer name. A trailing dot is ignored. An empty name fails closed.
+    /// - Returns: `true` only when the leaf SPKI equals ``SecurityConfiguration/pinnedMediaLeafSPKISHA256Base64``
+    ///   and `host` is under ``SecurityConfiguration/preferredStreamingDomainSuffixes``.
+    /// - SeeAlso: ``SecurityConfiguration/pinnedMediaLeafSPKISHA256Base64``,
+    ///   ``CertificateValidator/validateStreamingServerTrust(_:host:)``
     static func matches(trust: SecTrust, host: String) -> Bool {
-        let fingerprints = pins(for: host)
+        matches(
+            trust: trust,
+            host: host,
+            mediaSPKISHA256Base64: SecurityConfiguration.current.pinnedMediaLeafSPKISHA256Base64
+        )
+    }
+
+    /// Same check with an explicit pin string.
+    ///
+    /// Production passes ``SecurityConfiguration/pinnedMediaLeafSPKISHA256Base64``.
+    /// An empty string, or base64 that is not 32 bytes, is an empty set and
+    /// returns `false`. This method does not read `Bundle.main`.
+    ///
+    /// - Parameters:
+    ///   - trust: Trust whose leaf certificate supplies the SPKI.
+    ///   - host: TLS peer name.
+    ///   - mediaSPKISHA256Base64: Pin to compare. Not a DoH resolver pin.
+    /// - Returns: `true` only when the leaf SPKI matches that pin for a protected streaming host.
+    static func matches(trust: SecTrust, host: String, mediaSPKISHA256Base64: String) -> Bool {
+        let fingerprints = pins(for: host, mediaSPKISHA256Base64: mediaSPKISHA256Base64)
         guard !fingerprints.isEmpty,
               let leaf = SubjectPublicKeyInfo.leafFingerprint(trust: trust) else {
             return false
@@ -102,36 +140,17 @@ enum AppTransportSecurityPins {
         return fingerprints.contains { $0.constantTimeMatches(leaf) }
     }
 
-    private static func pins(for host: String) -> [CertificateFingerprint] {
-        guard let info = Bundle.main.infoDictionary,
-              let ats = info["NSAppTransportSecurity"] as? [String: Any],
-              let domains = ats["NSPinnedDomains"] as? [String: Any] else {
+    /// Pin set for `host`. Empty unless `host` is a protected streaming host and
+    /// the pin decodes to 32 bytes.
+    private static func pins(for host: String, mediaSPKISHA256Base64: String) -> [CertificateFingerprint] {
+        let normalized = host.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        guard SecurityConfiguration.current.isProtectedStreamingHost(normalized) else {
             return []
         }
-        var matched: [CertificateFingerprint] = []
-        for (domain, value) in domains {
-            guard let entry = value as? [String: Any] else { continue }
-            let includesSubdomains = (entry["NSIncludesSubdomains"] as? Bool) ?? false
-            guard hostMatches(host, domain: domain, includesSubdomains: includesSubdomains),
-                  let identities = entry["NSPinnedLeafIdentities"] as? [[String: Any]] else {
-                continue
-            }
-            for identity in identities {
-                guard let base64 = identity["SPKI-SHA256-BASE64"] as? String,
-                      let bytes = Data(base64Encoded: base64),
-                      bytes.count == CertificateFingerprint.byteCount else {
-                    continue
-                }
-                matched.append(CertificateFingerprint(bytes: [UInt8](bytes)))
-            }
+        guard let bytes = Data(base64Encoded: mediaSPKISHA256Base64),
+              bytes.count == CertificateFingerprint.byteCount else {
+            return []
         }
-        return matched
-    }
-
-    private static func hostMatches(_ host: String, domain: String, includesSubdomains: Bool) -> Bool {
-        let normalizedHost = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        let normalizedDomain = domain.lowercased()
-        if normalizedHost == normalizedDomain { return true }
-        return includesSubdomains && normalizedHost.hasSuffix("." + normalizedDomain)
+        return [CertificateFingerprint(bytes: [UInt8](bytes))]
     }
 }

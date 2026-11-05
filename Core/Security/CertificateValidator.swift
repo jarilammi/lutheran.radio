@@ -16,8 +16,10 @@ import Foundation
 ///
 /// ## Key Responsibilities
 /// - Performs system trust evaluation, then the leaf DER pin. URLSession applies ATS
-///   before that challenge. ``validateStreamingServerTrust(_:host:)`` checks the
-///   Info.plist SPKI pin first because the verified-address path does not.
+///   before that challenge. ``validateStreamingServerTrust(_:host:)`` checks
+///   ``SecurityConfiguration/pinnedMediaLeafSPKISHA256Base64`` first. `NWConnection`
+///   does not apply ATS, and this delegate passes the challenge host into that
+///   method so the check does not read `Bundle.main`.
 /// - Verifies the leaf certificate's full DER SHA-256 fingerprint.
 /// - Caches **pin matches** for ``SecurityConfiguration/certificateValidationCacheDuration``
 ///   (10 minutes). A hit may skip ``SecTrustEvaluateWithError`` only when the leaf
@@ -250,10 +252,13 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         return isValid
     }
 
-    /// Leaf pin plus the Info.plist SPKI pin for a connection that bypasses ATS.
+    /// Media SPKI pin, then the leaf pin, for a connection that may bypass ATS.
     ///
     /// `NWConnection` does not apply `NSPinnedDomains`. An empty pin list for `host`
-    /// fails closed. This method checks the Info.plist SPKI before
+    /// fails closed, including a missing host. The SPKI bytes are
+    /// ``SecurityConfiguration/pinnedMediaLeafSPKISHA256Base64``, not `Bundle.main`.
+    /// The app `Info.plist` keeps the same bytes so ATS still enforces them on
+    /// URLSession. This method checks that constant before
     /// ``validateServerTrust(_:)``. A pin-cache hit inside that call still requires
     /// the leaf just presented to match ``pinnedFingerprintDigests``.
     ///
@@ -361,12 +366,15 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     
     /// Handles server trust authentication challenges (modern async `URLSessionTaskDelegate`).
     ///
-    /// This is the Swift 6+ async challenge handler. It is invoked automatically by
-    /// `URLSession` when a server trust challenge occurs. The implementation delegates
-    /// to ``validateServerTrust(_:)`` and either supplies credentials or cancels the challenge.
+    /// Passes ``URLProtectionSpace/host`` into ``validateStreamingServerTrust(_:host:)``.
+    /// That checks ``SecurityConfiguration/pinnedMediaLeafSPKISHA256Base64``, then
+    /// the leaf digest. An empty host cancels the challenge. A challenge that is
+    /// not server trust keeps default handling. ATS still enforces the same SPKI
+    /// from the app `Info.plist` on this session.
     ///
     /// - Note: This method is `nonisolated` because it is part of the `URLSessionTaskDelegate`
     ///   protocol contract, but it immediately hops to the actor via the `await` call.
+    /// - SeeAlso: ``validateStreamingServerTrust(_:host:)``, ``<doc:Security-Invariants>`` Invariant 2
     public nonisolated func urlSession(_ session: URLSession,
                                 task: URLSessionTask,
                                 didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
@@ -374,8 +382,15 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
               let serverTrust = challenge.protectionSpace.serverTrust else {
             return (.performDefaultHandling, nil)
         }
-        
-        let isValid = await validateServerTrust(serverTrust)
+
+        // An empty host is not a protected streaming name. Fail closed rather
+        // than accepting the leaf pin with no SPKI host check.
+        let host = challenge.protectionSpace.host
+        guard !host.isEmpty else {
+            return (.cancelAuthenticationChallenge, nil)
+        }
+
+        let isValid = await validateStreamingServerTrust(serverTrust, host: host)
         if isValid {
             return (.useCredential, URLCredential(trust: serverTrust))
         } else {

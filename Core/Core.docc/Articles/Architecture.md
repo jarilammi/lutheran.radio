@@ -47,6 +47,7 @@ A plain `struct` (value type) that exposes only the minimal public surface requi
 - `isProtectedStreamingHost(_:)` / `hostRequiresDNSSECValidation(_:)` / `streamingHostCandidates(leadingLabel:)` (DNSSEC host membership + host construction; no hard-coded apexes at call sites)
 - `requiresDNSSECValidationForStreaming` + `makeSecureEphemeralConfiguration()` / `applySecureNetworkingRequirements(to:)` (the single place that turns on `URLSessionConfiguration.requiresDNSSECValidation` and related hardening for streaming hosts)
 - `ianaRootTrustAnchors` and `pinnedDoHResolvers` (root KeyDigests and DoH SPKI pins for local verification). KSK-2024, key tag 38696, signs the root DNSKEY set as of 11 October 2026. KSK-2017 stays in that list until ``DNSSECWalk`` observes a self-signed revoked form of the key; the dates on ``SecurityConfiguration/ianaRootTrustAnchors`` are not that signal.
+- `pinnedMediaLeafSPKISHA256Base64` (media leaf SPKI for hosts under `preferredStreamingDomainSuffixes`). The app `Info.plist` `NSPinnedDomains` entry must stay equal so ATS enforces the same key. The Swift check does not read `Bundle.main`. This value is not a `pinnedDoHResolvers` pin.
 - `makeVerifiedAddressRetryConfiguration()` (the only factory that clears `requiresDNSSECValidation`, after a verified address set)
 - `verifiedAddressPinEvaluationLimit` (10 s cap on that retry's TLS verify wait; expiry rejects; the peer certificates are evaluated on a private `SecTrust`)
 - `current` (the canonical instance)
@@ -84,7 +85,7 @@ A `Sendable` value type that:
 
 An `actor` that:
 
-- Implements `URLSessionTaskDelegate` for modern async challenge handling.
+- Implements `URLSessionTaskDelegate` for modern async challenge handling. The handler passes the challenge host into ``validateStreamingServerTrust(_:host:)``. A missing host fails closed. That path checks ``SecurityConfiguration/pinnedMediaLeafSPKISHA256Base64`` before the leaf digest.
 - Performs full SHA-256 DER leaf certificate digest validation against ``SecurityConfiguration/pinnedFingerprintDigests``.
 - Maintains a **pin-match** cache for ``SecurityConfiguration/certificateValidationCacheDuration`` (**10 minutes**). A hit skips system trust evaluation only when the leaf just presented matches ``SecurityConfiguration/pinnedFingerprintDigests``. Any other leaf is evaluated again, including the transition window. Leniency accepts are not cached. This constant is separate from ``SecurityConfiguration/modelCacheDuration`` (DNS TXT success cache = 1 hour). A cached pin timestamp ahead of the device clock is not reused.
 - Implements the transition window + device/server time-skew protection logic. `allowTransitionLeniency` latches off for the process and is never turned back on.
