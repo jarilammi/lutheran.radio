@@ -19,8 +19,10 @@ Older drafts of this file used legacy aliases. Prefer the live names below; trea
 | `write_file` | `write` |
 | `file_path` on read | `target_file` (on `read_file`) |
 | `browse_page` | `open_page` / `web_fetch` (whichever the session exposes) |
+| `timeout` on `run_terminal_command` | `block_until_ms` |
+| `background: true` on `run_terminal_command` | `block_until_ms: 0` (no `background` parameter) |
 
-Timeouts on `run_terminal_command` are typically **milliseconds**, not seconds. Long `xcodebuild test` runs often need several minutes — raise `timeout`, or use `background: true` and fetch output later. Quiet stretches of 5–15 minutes can still be real work; do not cancel or restart early (see `CODING_AGENT.md` test patience).
+`run_terminal_command` waits with `block_until_ms` (**milliseconds**). The session default is 30 seconds (`30000`). When that wait ends, a command that is still running moves to the background and keeps running. For `test-without-building`, set `block_until_ms` to at least `900000` (15 minutes), or set `0` to background it immediately and wait for the finish notice. Early output is `get_command_or_subagent_output`. Stopping the command is `kill_command_or_subagent`. Quiet stretches of 5–15 minutes can still be the suite. Leave a running `xcodebuild` alone until it finishes (see `CODING_AGENT.md` test patience). A second `xcodebuild` while the first still holds the build database produces "build database locked" / "two concurrent builds".
 
 ## Core Coding Tools (Primary for iOS/Swift Work)
 
@@ -40,9 +42,8 @@ Run any command in the environment's shell (typically zsh or bash on macOS with 
 
 **Parameters** (typical; session schema is authoritative):
 - `command` (string, required): The shell command to execute. Prefer single-line or `&&`-chained. Use proper quoting.
-- `timeout` (integer, optional): **Milliseconds** before a still-running command may be cancelled so the agent can continue (session default applies if omitted).
-- `background` (boolean, optional): Run in background (returns a task id immediately for long builds/tests).
-- `description` (string): Short why for logs / UX.
+- `block_until_ms` (integer, optional): Milliseconds to wait before a still-running command moves to the background. `0` backgrounds it immediately. Default is typically `30000`. Maximum is typically `36000000`. For `test-without-building`, use at least `900000` or `0`.
+- `description` (string, required): Short why for logs / UX.
 
 **Example — Verify security model + live SSL pins (copy-paste ready)**:
 ```bash
@@ -143,18 +144,30 @@ Rarely needed unless researching Lutheran radio mentions or community feedback. 
 
 ### Skills (Advanced)
 Grok has access to **skills** (bundled capabilities). To use one:
-1. `read_file` the skill's `SKILL.md` (typical paths: `~/.grok/skills/<skill>/SKILL.md` or a session-bundled skill root)
+1. `read_file` the `SKILL.md` path printed in the session skill list. Do not invent a path. Bundled skills live under `~/.grok/bundled/skills/`; installed skills live under `~/.grok/skills/`.
 2. Follow the instructions in that skill file
 
-**Often relevant on this project** (when installed): `check-work`, `review`, `device-interaction`, `modernize-tests`, `audit-xcode-security-settings`, `swiftui-specialist`, `swiftui-whats-new-27`. Physical-iPhone SpringBoard / Live Activity eyes-on: follow **Device eyes-on (physical iPhone)** in `CODING_AGENT.md`. That section is vendor-path-free; this file is the Grok-side pointer to load the session’s `device-interaction` skill when present.
+**Often relevant on this project** (load `SKILL.md` when the task matches; skip a skill that is not installed):
+
+- A local, branch, or PR diff: `review`.
+- Device or simulator checks that need screenshots, hierarchy, or taps: `device-interaction`.
+- SwiftUI view work: `swiftui-specialist` and `swiftui-whats-new-27`.
+- Physical-iPhone SpringBoard / Live Activity eyes-on: follow **Device eyes-on (physical iPhone)** in `CODING_AGENT.md`, and load `device-interaction` when that skill is present. That section is vendor-path-free; this file is the Grok-side pointer.
+- App Intents (`WidgetInteractiveIntents`, shortcuts, `supportedModes`): read `app-intents-specialist`. For iOS 26/27 APIs (`supportedModes`, the `openAppWhenRun` deprecation), also read `app-intents-whats-new-27`. Project contract stays ``supportedModes`` = `.background` and ``openAppWhenRun`` false. Siri phrases stay in `Lutheran Radio/AppShortcuts.xcstrings`. Other user-visible strings stay `String(localized:)` / `NSLocalizedString` with table `"Localizable"`. Leave shipped intent type names, `AppEnum` raw values, and phrases unchanged.
+- `audit-xcode-security-settings`: the decision record is `docs/xcode-security-settings.md`. Point the skill plan `Path:` there. Follow the invariants in that file (`ENABLE_C_BOUNDS_SAFETY` stays off, `dns_sd.h` stays unannotated, `com.apple.security.hardened-process*` stays, `ENABLE_POINTER_AUTHENTICATION` stays on). DNS TXT validation, certificate pinning, and ATS stay in `Core/` and `Info.plist`. The skill's `Xcode*` tools exist only when that MCP server is connected; otherwise read the decision record with `read_file`.
+- `modernize-tests` and `AppIntentsTesting`: only when the user asks for a migration. Player-event, Live Activity, and widget suites stay on the XCTest patterns in `CODING_AGENT.md`. `WidgetSurfaceTests` and `CoreTests` already use Swift Testing.
+- `xctrace`: profiling or hang triage only.
+- `app-resizability`: only for an actual resize, Stage Manager, or foldable-window task. iPhone Duo work in this repo is the DNS security-lock path.
+- `adopt-c-bounds-safety` and `building-document-based-swiftui-applications` do not apply here: this tree has no first-party C, and the app is not document-based.
+- `check-work` is not installed. Leave it out.
 
 `review` is for a local, branch, or PR **diff**. Proof-reading already-shipped mainline is `read_file` / `grep` / a read-only explore pass — do not run `/review` against a clean tree to re-audit commits already on `master`.
 
 For day-to-day Lutheran Radio coding the default remains disciplined use of `run_terminal_command` + `read_file` / `search_replace` / `grep`.
 
 ### Subagents / plan / MCP (when available)
-- Explore / plan / general-purpose subagents for large read-only sweeps or parallel work
-- If MCP servers are connected, discover tools with the session's MCP search/use path before calling — do not guess schemas. Never use MCP to bypass Core security policy.
+- `spawn_subagent` for a large read-only sweep or parallel work. The tool has no agent-type parameter; put the role in the prompt. `isolation: "worktree"` keeps the child's edits off this working tree.
+- If MCP servers are connected, discover tools with `search_tool`, then call them with `use_tool`. Do not guess schemas. Never use MCP to bypass Core security policy.
 
 ### Render Components (Final Response Only)
 These are **not** tools for gathering information or editing code. They are used only in your *final* response to the user when the session defines them (e.g. inline citations, generated-image display helpers).
