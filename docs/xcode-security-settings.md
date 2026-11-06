@@ -6,7 +6,9 @@ This file is the single source of truth for `audit-xcode-security-settings` cata
 
 **Inventory (2026-08-31):** Project-level Debug/Release configurations `B7AFC6D82CCD7D0C00BDDD83` / `B7AFC6D92CCD7D0C00BDDD83`. No `.xcconfig`. Tracked first-party C / Objective-C / C++ sources: none. `LutheranRadio-Bridging-Header.h` imports Apple `<dns_sd.h>` only; the DNS walk lives in `SecurityModelValidator`.
 
-**Security Invariant:** Do not weaken `expectedSecurityModel`, the ordered DNS TXT host walk, `kDNSServiceFlagsValidate`, `pinnedFingerprintDigests`, ATS SPKI, media apex `siikkari.net`, device/server time-skew, or MIE/EMTE. Do not strip `com.apple.security.hardened-process*` keys (including already-ON `checked-allocations` / `enable-pure-data` / `no-tagged-receive`). Do not flip `ENABLE_POINTER_AUTHENTICATION` off. Do not enable `ENABLE_C_BOUNDS_SAFETY`. Do not annotate `dns_sd.h`. `Core/` remains the only DNS / cert / security-model place.
+**Record update (2026-11-06):** The 2026-08-31 inventory omitted two settings that were already enabled. This file now names `ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE` and `com.apple.security.hardened-process.checked-allocations.enforce-checked-pointer-arithmetic-overflow`.
+
+**Security Invariant:** Do not weaken `expectedSecurityModel`, the ordered DNS TXT host walk, `kDNSServiceFlagsValidate`, `pinnedFingerprintDigests`, ATS SPKI, media apex `siikkari.net`, device/server time-skew, or MIE/EMTE. Do not strip `com.apple.security.hardened-process*` keys (including already-ON `checked-allocations` / `enable-pure-data` / `no-tagged-receive` / `enforce-checked-pointer-arithmetic-overflow`). Do not flip `ENABLE_POINTER_AUTHENTICATION` or `ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE` off. Do not enable `ENABLE_C_BOUNDS_SAFETY`. Do not annotate `dns_sd.h`. `Core/` remains the only DNS / cert / security-model place.
 
 - SeeAlso: ``<doc:Security-Invariants>``, ``<doc:Architecture>``, [README.md](../README.md) (Swift Build Settings + Memory Safety), [CODING_AGENT.md](../CODING_AGENT.md) (Security Model + Core Framework Surface Area), `SecurityConfiguration`, `SecurityModelValidator`, `CertificateValidator`.
 
@@ -16,6 +18,7 @@ This file is the single source of truth for `audit-xcode-security-settings` cata
 
 - `ENABLE_ENHANCED_SECURITY` to `YES` (project Debug + Release; also restated on the main app and widget extension targets). Cascades `GCC_WARN_SHADOW`, `ENABLE_SECURITY_COMPILER_WARNINGS`, typed-allocator support, and libc++ hardening — those cascaded keys are not set by hand.
 - `ENABLE_POINTER_AUTHENTICATION` to `YES` (project Debug + Release; restated on the main app and widget extension). First-party `Core` + `WidgetSurface` + Apple SDK only; no unsigned vendor binaries, xcframeworks, or Swift packages. Do not override to `NO` on arm64e-capable iOS targets.
+- `ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE` to `YES` (project Debug + Release, and restated on every target, including `Core`, `WidgetSurface`, the widget extension, and the test bundles). `ENABLE_ENHANCED_SECURITY` does not cascade this setting, so it stays explicit. It appends the `arm64e.x1` slice that carries checked pointer arithmetic. Leave it on together with the enforcement entitlement below. Do not set it to `NO`.
 
 ### Enhanced Security (entitlements)
 
@@ -31,8 +34,9 @@ Supported product type in this project is the main application only (`com.apple.
 - `com.apple.security.hardened-process.checked-allocations`
 - `com.apple.security.hardened-process.checked-allocations.enable-pure-data`
 - `com.apple.security.hardened-process.checked-allocations.no-tagged-receive`
+- `com.apple.security.hardened-process.checked-allocations.enforce-checked-pointer-arithmetic-overflow`
 
-Deprecated keys (`…platform-restrictions`, `…enhanced-security-version`) are absent. Soft-mode (`…checked-allocations.soft-mode`) is not present — production enforcement, not simulated crashes.
+Deprecated keys (`…platform-restrictions`, `…enhanced-security-version`) are absent. Soft-mode (`…checked-allocations.soft-mode`) is not present — production enforcement, not simulated crashes. Checked pointer arithmetic enforcement is present and has no soft mode; memory-tagging soft mode does not cover those faults. Leave the enforcement key on with `ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE`. Run-time checks apply on iOS hardware with an A20 Pro chip or later (and on watchOS with an S11 chip or later). Simulator builds drop the `arm64e.x1` slice.
 
 **LutheranRadioWidgetExtension** (`LutheranRadioWidget/LutheranRadioWidget.entitlements`) — same key set as the app. Skill catalog would skip this product type on apply; do not strip extra-on keys to “match the catalog.”
 
