@@ -763,7 +763,7 @@ This table is the source of truth for the historical record of security models (
 | `montereypark`      | October 3, 2026    | (ongoing)          | 27.0.1                 |
 | `kailuakona`        | October 31, 2026   | (ongoing)          | 27.2.0                 |
 | `sunshinecoast`     | November 5, 2026   | (ongoing)          | 27.2.1                 |
-| `maryborough`       | (pending)          | (pending)          | (pending)              |
+| `maryborough`       | (pending)          | (pending)          | 27.2.2                 |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
