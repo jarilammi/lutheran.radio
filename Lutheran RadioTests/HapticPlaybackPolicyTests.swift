@@ -100,10 +100,94 @@ final class HapticPlaybackPolicyTests: XCTestCase {
         )
     }
 
-    func testLatchClearsOnEveryNonPlayingStatus() {
-        XCTAssertTrue(HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(status: .stopped))
-        XCTAssertTrue(HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(status: .paused))
-        XCTAssertTrue(HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(status: .connecting))
-        XCTAssertFalse(HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(status: .playing))
+    /// One light confirmation per audible start when buffering sits between the two playing callbacks.
+    ///
+    /// ``DirectStreamingPlayer/invokeStatusCallbacks(isPlaying:reasonKey:)`` delivers
+    /// `status_buffering` and `status_connecting` as coarse ``PlayerStatus/stopped``.
+    /// That delivery must not clear ``hasPlayedHapticForCurrentAudibleStart`` after
+    /// the first `status_playing`, or the stable `status_playing` plays again.
+    /// A real pause, stop, failure, or interruption still clears the latch.
+    /// Interruption resume (`reasonKey == nil` with `.playing`) can then fire once.
+    /// `status_connecting` / `status_buffering` on a `.playing` status still do not
+    /// themselves fire (``testNonPlayingStatusAndOtherKeysDoNotFireConfirmation``).
+    func testBufferingBetweenPlayingCallbacksDoesNotClearLatch() {
+        XCTAssertTrue(
+            HapticPlaybackPolicy.shouldPlayPlayingConfirmation(
+                status: .playing,
+                reasonKey: "status_playing",
+                alreadyPlayedForCurrentAudibleStart: false
+            )
+        )
+
+        XCTAssertFalse(
+            HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(
+                status: .stopped,
+                reasonKey: "status_buffering"
+            )
+        )
+        XCTAssertFalse(
+            HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(
+                status: .stopped,
+                reasonKey: "status_connecting"
+            )
+        )
+        XCTAssertFalse(
+            HapticPlaybackPolicy.shouldPlayPlayingConfirmation(
+                status: .playing,
+                reasonKey: "status_playing",
+                alreadyPlayedForCurrentAudibleStart: true
+            )
+        )
+
+        XCTAssertTrue(
+            HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(
+                status: .stopped,
+                reasonKey: "status_stopped"
+            )
+        )
+        XCTAssertTrue(
+            HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(
+                status: .stopped,
+                reasonKey: "status_failed"
+            )
+        )
+        XCTAssertTrue(
+            HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(
+                status: .paused,
+                reasonKey: "status_paused"
+            )
+        )
+        XCTAssertTrue(
+            HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(
+                status: .paused,
+                reasonKey: "Interruption"
+            )
+        )
+        XCTAssertTrue(
+            HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(
+                status: .connecting,
+                reasonKey: nil
+            )
+        )
+        XCTAssertFalse(
+            HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(
+                status: .playing,
+                reasonKey: "status_playing"
+            )
+        )
+        XCTAssertFalse(
+            HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(
+                status: .playing,
+                reasonKey: nil
+            )
+        )
+
+        XCTAssertTrue(
+            HapticPlaybackPolicy.shouldPlayPlayingConfirmation(
+                status: .playing,
+                reasonKey: nil,
+                alreadyPlayedForCurrentAudibleStart: false
+            )
+        )
     }
 }

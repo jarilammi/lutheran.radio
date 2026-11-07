@@ -205,9 +205,16 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     var lastAppliedVisualState: PlayerVisualState?
     var hasShownSecurityAlert = false
     var hasEverPlayed = false
-    /// Latch for the became-playing confirmation haptic (one buzz per audible start).
-    /// Cleared on non-`.playing` status and on privacy clear.
-    /// - SeeAlso: ``HapticPlaybackPolicy``
+    /// Latch for the became-playing confirmation haptic (one light impact per audible start).
+    ///
+    /// Stays set across `status_buffering` and `status_connecting` delivered as
+    /// coarse ``PlayerStatus/stopped`` by
+    /// ``DirectStreamingPlayer/invokeStatusCallbacks(isPlaying:reasonKey:)``.
+    /// A real pause, stop, failure, or interruption clears it so the next start
+    /// can buzz once. Privacy clear also clears it before the heavy impact.
+    ///
+    /// - SeeAlso: ``HapticPlaybackPolicy/shouldClearAudibleStartHapticLatch(status:reasonKey:)``,
+    ///   ``HapticPlaybackPolicy/shouldPlayPlayingConfirmation(status:reasonKey:alreadyPlayedForCurrentAudibleStart:)``
     var hasPlayedHapticForCurrentAudibleStart = false
     /// Multi-cast ``PlayerEvent`` observer that paints in-app chrome from visual SSOT
     /// transitions (``visualStateDidChange``) without requiring a status emission.

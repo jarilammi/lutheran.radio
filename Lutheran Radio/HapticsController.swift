@@ -42,8 +42,11 @@ enum HapticPlaybackPolicy {
     ///   - reasonKey: Exact Localizable key, or `nil` on interruption resume.
     ///   - alreadyPlayedForCurrentAudibleStart: Latch so a later `nil` resume
     ///     plus `status_playing` (or duplicate adapter deliveries) do not buzz twice.
+    ///     ``shouldClearAudibleStartHapticLatch(status:reasonKey:)`` keeps this set
+    ///     across `status_buffering` and `status_connecting`.
     /// - Returns: `true` for the first `.playing` + (`status_playing` or `nil`) of a start.
-    /// - SeeAlso: ``shouldClearAudibleStartHapticLatch(status:)``
+    /// - SeeAlso: ``shouldClearAudibleStartHapticLatch(status:reasonKey:)``,
+    ///   ``DirectStreamingPlayer/invokeStatusCallbacks(isPlaying:reasonKey:)``
     static func shouldPlayPlayingConfirmation(
         status: PlayerStatus,
         reasonKey: String?,
@@ -53,12 +56,40 @@ enum HapticPlaybackPolicy {
         return reasonKey == nil || reasonKey == "status_playing"
     }
 
-    /// Whether the became-playing latch must clear so the next audible start can haptic.
+    /// Whether ``hasPlayedHapticForCurrentAudibleStart`` must clear so the next audible start can haptic.
     ///
-    /// - Parameter status: Engine status from the streaming delegate.
-    /// - Returns: `true` for every non-`.playing` status.
-    static func shouldClearAudibleStartHapticLatch(status: PlayerStatus) -> Bool {
-        status != .playing
+    /// ``invokeStatusCallbacks(isPlaying:reasonKey:)`` maps every non-playing delegate
+    /// delivery to coarse ``PlayerStatus/stopped`` and keeps the Localizable key.
+    /// `status_buffering` and `status_connecting` sit between the race-lead
+    /// `status_playing` and the stable `status_playing` of the same start.
+    /// ``handleStatusChange(_:reasonKey:)`` awaits visual and intent before this
+    /// latch, so a buffering handler can run after the first impact has already
+    /// set it. Clearing on those keys plays a second light impact. The callback
+    /// is still delivered; chrome and the status adapter use it.
+    ///
+    /// A real pause, stop, failure, or interruption still clears. Soft resume can
+    /// become audible with no later `status_connecting`, so the pause itself has
+    /// to clear the latch. Interruption resume is `reasonKey == nil` with
+    /// ``PlayerStatus/playing`` and does not clear.
+    ///
+    /// - Parameters:
+    ///   - status: Coarse engine status. Non-playing deliveries from
+    ///     ``invokeStatusCallbacks(isPlaying:reasonKey:)`` are `.stopped`.
+    ///   - reasonKey: Exact Localizable key, or `nil` on interruption resume.
+    /// - Returns: `false` when `reasonKey` is `status_buffering` or
+    ///   `status_connecting`, and when `status` is `.playing`. `true` for every
+    ///   other non-playing status.
+    /// - SeeAlso: ``shouldPlayPlayingConfirmation(status:reasonKey:alreadyPlayedForCurrentAudibleStart:)``,
+    ///   ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
+    ///   ``DirectStreamingPlayer/invokeStatusCallbacks(isPlaying:reasonKey:)``
+    static func shouldClearAudibleStartHapticLatch(
+        status: PlayerStatus,
+        reasonKey: String?
+    ) -> Bool {
+        if reasonKey == "status_buffering" || reasonKey == "status_connecting" {
+            return false
+        }
+        return status != .playing
     }
 }
 

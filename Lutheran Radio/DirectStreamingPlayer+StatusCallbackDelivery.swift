@@ -284,7 +284,12 @@ extension DirectStreamingPlayer {
 
         onStatusChange?(isPlaying, localizedStatus)
 
-        // Pass the raw key to the delegate (ViewController expects the key, not the translated text)
+        // Pass the raw key to the delegate (ViewController expects the key, not the translated text).
+        // Coarse status is only `.playing` or `.stopped`. Transient `status_buffering`
+        // and `status_connecting` arrive as `.stopped` with the key intact.
+        // ``HapticPlaybackPolicy/shouldClearAudibleStartHapticLatch(status:reasonKey:)``
+        // keeps ``hasPlayedHapticForCurrentAudibleStart`` across those keys.
+        // Do not drop this callback: chrome and the status adapter still consume it.
         delegate?.onStatusChange(isPlaying ? .playing : .stopped, reasonKey: reasonKey)
 
         #if DEBUG

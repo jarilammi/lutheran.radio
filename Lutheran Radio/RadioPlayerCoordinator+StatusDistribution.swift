@@ -399,6 +399,16 @@ extension RadioPlayerCoordinator {
     ///    ``markPlaybackStoppedByStreamFailure``, became-playing haptic
     ///    (``HapticPlaybackPolicy`` on `status_playing` / `nil`), background flush, widget save.
     ///
+    /// **Audible-start haptic:** The light impact fires once per start, when
+    /// ``HapticPlaybackPolicy/shouldPlayPlayingConfirmation(status:reasonKey:alreadyPlayedForCurrentAudibleStart:)``
+    /// sees the first `.playing` plus `status_playing` or `nil`, and sets
+    /// ``hasPlayedHapticForCurrentAudibleStart``. This method awaits visual and
+    /// intent before that latch. `status_buffering` and `status_connecting` are
+    /// still delivered — ``invokeStatusCallbacks(isPlaying:reasonKey:)`` maps them
+    /// to coarse `.stopped` — and must not clear the latch, or the stable
+    /// `status_playing` plays a second impact. A real pause, stop, failure, or
+    /// interruption still clears it.
+    ///
     /// Chrome mapping for the race-lead branch is solely
     /// ``RadioPlayerChromeVisualResolver/resolve(status:reasonKey:visualState:playbackIntent:engineIsActuallyPlaying:)``.
     /// Before paint, SPM visual/intent are re-sampled and pure policy re-resolved so a concurrent
@@ -607,7 +617,14 @@ extension RadioPlayerCoordinator {
             }
         }
 
-        if HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(status: status) {
+        // Runs after the SPM awaits above. A buffering handler can therefore
+        // reach this latch after the race-lead `status_playing` already set it.
+        // `status_buffering` / `status_connecting` must not clear it; the
+        // callback is still delivered for chrome.
+        if HapticPlaybackPolicy.shouldClearAudibleStartHapticLatch(
+            status: status,
+            reasonKey: reasonKey
+        ) {
             hasPlayedHapticForCurrentAudibleStart = false
         }
 
