@@ -8,7 +8,7 @@
 //
 //  Invariant: every phrase in `LutheranRadioShortcuts` is extracted as
 //  `Play ${applicationName}` (etc.) and `AppShortcuts.xcstrings` ships a
-//  translated value for every UI language in README Localizations (the 51
+//  translated value for every UI language in README Localizations (the 54
 //  language codes). Every value keeps
 //  `${applicationName}`; parameterized phrases also keep `${language}`.
 //  Xcode binds only the first phrase of each `AppShortcut` initializer, so
@@ -28,12 +28,12 @@ import XCTest
 final class AppShortcutsLocalizationTests: XCTestCase {
 
     /// UI catalog languages: README Localizations / Localizable + AppShortcuts coverage
-    /// (the 51 language codes). Playback catalog remains the five radio streams.
+    /// (the 54 language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
-        "af", "am", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
+        "af", "am", "bg", "bn", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "ha", "haw", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
-        "lv", "mg", "nb", "ng", "nl", "nn", "om", "pl", "pt", "pt-BR", "ro", "ru",
-        "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "ti", "uk", "yo", "zu",
+        "lv", "mg", "nb", "ng", "nl", "nn", "ny", "om", "pl", "pt", "pt-BR", "ro", "ru",
+        "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "ti", "tr", "uk", "yo", "zu",
         "zh-Hans", "zh-Hant",
     ]
 
@@ -454,6 +454,75 @@ final class AppShortcutsLocalizationTests: XCTestCase {
         XCTAssertEqual(
             compiledPhrase("Switch ${applicationName} to ${language}", language: "hi"),
             "${applicationName} को ${language} में बदलें"
+        )
+    }
+
+    /// Compiled Nyanja phrases stay Malawian Chichewa and keep the Siri tokens.
+    ///
+    /// The every-language check only rejects an English fallback. These strings
+    /// are the catalog values for locale `ny`.
+    func testCompiledNyanjaPlayAndPausePhrasesAreNative() {
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName}", language: "ny"),
+            "Sewerani ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Pause ${applicationName}", language: "ny"),
+            "Imitsani ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName} in ${language}", language: "ny"),
+            "Sewerani ${applicationName} m'chinenero ${language}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Switch ${applicationName} to ${language}", language: "ny"),
+            "Sinthani ${applicationName} kukhala ${language}"
+        )
+    }
+
+    /// Compiled Bengali phrases stay Bangladeshi Bangla and keep the Siri tokens.
+    ///
+    /// The every-language check only rejects an English fallback. These strings
+    /// are the catalog values for locale `bn`.
+    func testCompiledBengaliPlayAndPausePhrasesAreNative() {
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName}", language: "bn"),
+            "${applicationName} চালান"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Pause ${applicationName}", language: "bn"),
+            "${applicationName} বিরতি দিন"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName} in ${language}", language: "bn"),
+            "${applicationName} ${language} ভাষায় চালান"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Switch ${applicationName} to ${language}", language: "bn"),
+            "${applicationName} ${language} ভাষায় বদলান"
+        )
+    }
+
+    /// Compiled Turkish phrases stay Turkey Turkish and keep the Siri tokens.
+    ///
+    /// The every-language check only rejects an English fallback. These strings
+    /// are the catalog values for locale `tr`.
+    func testCompiledTurkishPlayAndPausePhrasesAreNative() {
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName}", language: "tr"),
+            "${applicationName} uygulamasını oynat"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Pause ${applicationName}", language: "tr"),
+            "${applicationName} uygulamasını duraklat"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName} in ${language}", language: "tr"),
+            "${applicationName} uygulamasını ${language} dilinde oynat"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Switch ${applicationName} to ${language}", language: "tr"),
+            "${applicationName} uygulamasını ${language} diline geçir"
         )
     }
 
