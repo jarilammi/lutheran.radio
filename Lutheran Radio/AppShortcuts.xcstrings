@@ -22,6 +22,12 @@
             "value" : "Пауза на ${applicationName}"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} বিরতি দিন"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -190,6 +196,12 @@
             "value" : "Set ${applicationName} på pause"
           }
         },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imitsani ${applicationName}"
+          }
+        },
         "om" : {
           "stringUnit" : {
             "state" : "translated",
@@ -280,6 +292,12 @@
             "value" : "${applicationName} ኣቋርጽ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} uygulamasını duraklat"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -331,6 +349,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пусни ${applicationName}"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} চালান"
           }
         },
         "cs" : {
@@ -501,6 +525,12 @@
             "value" : "Spel ${applicationName}"
           }
         },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sewerani ${applicationName}"
+          }
+        },
         "om" : {
           "stringUnit" : {
             "state" : "translated",
@@ -591,6 +621,12 @@
             "value" : "${applicationName} ተጻወት"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} uygulamasını oynat"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -642,6 +678,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пусни ${applicationName} на ${language}"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ${language} ভাষায় চালান"
           }
         },
         "cs" : {
@@ -812,6 +854,12 @@
             "value" : "Spel ${applicationName} på ${language}"
           }
         },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sewerani ${applicationName} m'chinenero ${language}"
+          }
+        },
         "om" : {
           "stringUnit" : {
             "state" : "translated",
@@ -902,6 +950,12 @@
             "value" : "${applicationName} ብ${language} ተጻወት"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} uygulamasını ${language} dilinde oynat"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -953,6 +1007,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Стартирай ${applicationName}"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} শুরু করুন"
           }
         },
         "cs" : {
@@ -1123,6 +1183,12 @@
             "value" : "Start ${applicationName}"
           }
         },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yambitsani ${applicationName}"
+          }
+        },
         "om" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1213,6 +1279,12 @@
             "value" : "${applicationName} ጀምር"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} uygulamasını başlat"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1264,6 +1336,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Спри ${applicationName}"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} থামান"
           }
         },
         "cs" : {
@@ -1434,6 +1512,12 @@
             "value" : "Stopp ${applicationName}"
           }
         },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lekani ${applicationName}"
+          }
+        },
         "om" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1524,6 +1608,12 @@
             "value" : "${applicationName} ኣቁም"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} uygulamasını durdur"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1575,6 +1665,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Превключи ${applicationName} към ${language}"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ${language} ভাষায় বদলান"
           }
         },
         "cs" : {
@@ -1745,6 +1841,12 @@
             "value" : "Byt ${applicationName} til ${language}"
           }
         },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sinthani ${applicationName} kukhala ${language}"
+          }
+        },
         "om" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1833,6 +1935,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} ናብ ${language} ቀይር"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} uygulamasını ${language} diline geçir"
           }
         },
         "uk" : {

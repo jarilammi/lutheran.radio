@@ -9,7 +9,7 @@
 //  interpolation so Foundation can select the CLDR category.
 //
 //  Coverage is both catalog structure and compiled runtime for every README
-//  Localizations language (51 codes), not a 10-locale subset. A missing or
+//  Localizations language (54 codes), not a 10-locale subset. A missing or
 //  wrong Slovak `few` string, a dropped Northern Sami `two`, or a missing
 //  Latvian `zero` must fail CI. Integer-unreachable `many` (cs, sk, lt) and
 //  decimal-only `other` (pl, ru, uk) are catalog-gated; integer probes skip them.
@@ -36,13 +36,13 @@ final class CatalogPluralizationTests: XCTestCase {
     /// a Polish `.lproj` without `locale: "pl"` still applies Finnish one/other rules.
     private let appBundle = Bundle(for: PlayerViewModel.self)
 
-    /// UI catalog languages: README Localizations / Localizable coverage (the 51
+    /// UI catalog languages: README Localizations / Localizable coverage (the 54
     /// language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
-        "af", "am", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
+        "af", "am", "bg", "bn", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "ha", "haw", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
-        "lv", "mg", "nb", "ng", "nl", "nn", "om", "pl", "pt", "pt-BR", "ro", "ru",
-        "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "ti", "uk", "yo", "zu",
+        "lv", "mg", "nb", "ng", "nl", "nn", "ny", "om", "pl", "pt", "pt-BR", "ro", "ru",
+        "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "ti", "tr", "uk", "yo", "zu",
         "zh-Hans", "zh-Hant",
     ]
 
@@ -64,6 +64,7 @@ final class CatalogPluralizationTests: XCTestCase {
         "af": ["one", "other"],
         "am": ["one", "other"],
         "bg": ["one", "other"],
+        "bn": ["one", "other"],
         "cs": ["one", "few", "many", "other"],
         "da": ["one", "other"],
         "de": ["one", "other"],
@@ -92,6 +93,7 @@ final class CatalogPluralizationTests: XCTestCase {
         "ng": ["other"],
         "nl": ["one", "other"],
         "nn": ["one", "other"],
+        "ny": ["one", "other"],
         "om": ["one", "other"],
         "pl": ["one", "few", "many", "other"],
         "pt": ["one", "other"],
@@ -107,6 +109,7 @@ final class CatalogPluralizationTests: XCTestCase {
         "ta": ["one", "other"],
         "te": ["one", "other"],
         "ti": ["one", "other"],
+        "tr": ["one", "other"],
         "uk": ["one", "few", "many", "other"],
         "yo": ["other"],
         "zu": ["one", "other"],
@@ -131,7 +134,7 @@ final class CatalogPluralizationTests: XCTestCase {
         XCTAssertEqual(
             Set(requiredCatalogCategories.keys),
             Set(supportedLanguages),
-            "requiredCatalogCategories must list exactly the 51 UI catalog languages"
+            "requiredCatalogCategories must list exactly the 54 UI catalog languages"
         )
 
         let catalog = try loadLocalizableCatalog()
@@ -404,6 +407,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("am", 2, "other", "2 ደቂቃዎች ቀርተዋል"),
         .init("bg", 1, "one", "Остава 1 минута"),
         .init("bg", 2, "other", "Остават 2 минути"),
+        .init("bn", 1, "one", "1 মিনিট বাকি"),
+        .init("bn", 2, "other", "2 মিনিট বাকি"),
         .init("cs", 1, "one", "Zbývá 1 minuta"),
         .init("cs", 3, "few", "Zbývají 3 minuty"),
         .init("cs", 5, "other", "Zbývá 5 minut"),
@@ -469,6 +474,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("nl", 2, "other", "Nog 2 minuten"),
         .init("nn", 1, "one", "1 minutt att"),
         .init("nn", 2, "other", "2 minutt att"),
+        .init("ny", 1, "one", "Miniti 1 yatsala"),
+        .init("ny", 2, "other", "Mamineti 2 atsala"),
         .init("om", 1, "one", "Daqiiqaan 1 hafe"),
         .init("om", 2, "other", "Daqiiqoonni 2 hafan"),
         .init("pl", 1, "one", "Pozostała 1 minuta"),
@@ -510,6 +517,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("te", 2, "other", "2 నిమిషాలు మిగిలాయి"),
         .init("ti", 1, "one", "1 ደቒቕ ተሪፉ"),
         .init("ti", 2, "other", "2 ደቓይቕ ተሪፎም"),
+        .init("tr", 1, "one", "1 dakika kaldı"),
+        .init("tr", 2, "other", "2 dakika kaldı"),
         .init("uk", 1, "one", "Залишилася 1 хвилина"),
         .init("uk", 2, "few", "Залишилося 2 хвилини"),
         .init("uk", 5, "many", "Залишилося 5 хвилин"),
@@ -528,6 +537,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("am", 2, "other", "2 ቋንቋዎች"),
         .init("bg", 1, "one", "1 език"),
         .init("bg", 2, "other", "2 езика"),
+        .init("bn", 1, "one", "1টি ভাষা"),
+        .init("bn", 2, "other", "2টি ভাষা"),
         .init("cs", 1, "one", "1 jazyk"),
         .init("cs", 3, "few", "3 jazyky"),
         .init("cs", 5, "other", "5 jazyků"),
@@ -592,6 +603,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("nl", 2, "other", "2 talen"),
         .init("nn", 1, "one", "1 språk"),
         .init("nn", 2, "other", "2 språk"),
+        .init("ny", 1, "one", "1 chinenero"),
+        .init("ny", 2, "other", "2 zinenero"),
         .init("om", 1, "one", "1 afaan"),
         .init("om", 2, "other", "2 afaanota"),
         .init("pl", 1, "one", "1 język"),
@@ -633,6 +646,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("te", 2, "other", "2 భాషలు"),
         .init("ti", 1, "one", "1 ቋንቋ"),
         .init("ti", 2, "other", "2 ቋንቋታት"),
+        .init("tr", 1, "one", "1 dil"),
+        .init("tr", 2, "other", "2 dil"),
         .init("uk", 1, "one", "1 мова"),
         .init("uk", 2, "few", "2 мови"),
         .init("uk", 5, "many", "5 мов"),
@@ -651,6 +666,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("am", 2, "other", "2 በመቶ"),
         .init("bg", 1, "one", "1 процент"),
         .init("bg", 2, "other", "2 процента"),
+        .init("bn", 1, "one", "1 শতাংশ"),
+        .init("bn", 2, "other", "2 শতাংশ"),
         .init("cs", 1, "one", "1 procento"),
         .init("cs", 3, "few", "3 procenta"),
         .init("cs", 5, "other", "5 procent"),
@@ -716,6 +733,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("nl", 2, "other", "2 procent"),
         .init("nn", 1, "one", "1 prosent"),
         .init("nn", 2, "other", "2 prosent"),
+        .init("ny", 1, "one", "1 peresenti"),
+        .init("ny", 2, "other", "2 maperesenti"),
         .init("om", 1, "one", "dhibbeentaa 1"),
         .init("om", 2, "other", "dhibbeentaa 2"),
         .init("pl", 1, "one", "1 procent"),
@@ -757,6 +776,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("te", 2, "other", "2 శాతం"),
         .init("ti", 1, "one", "1 ብመቶ"),
         .init("ti", 2, "other", "2 ብመቶ"),
+        .init("tr", 1, "one", "yüzde 1"),
+        .init("tr", 2, "other", "yüzde 2"),
         .init("uk", 1, "one", "1 відсоток"),
         .init("uk", 2, "few", "2 відсотки"),
         .init("uk", 5, "many", "5 відсотків"),
@@ -775,6 +796,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("am", 2, "other", "ድምጽ ወደ 2 በመቶ ተቀናብሯል"),
         .init("bg", 1, "one", "Силата на звука е зададена на 1 процент"),
         .init("bg", 2, "other", "Силата на звука е зададена на 2 процента"),
+        .init("bn", 1, "one", "ভলিউম 1 শতাংশে নির্ধারিত হয়েছে"),
+        .init("bn", 2, "other", "ভলিউম 2 শতাংশে নির্ধারিত হয়েছে"),
         .init("cs", 1, "one", "Hlasitost nastavena na 1 procento"),
         .init("cs", 3, "few", "Hlasitost nastavena na 3 procenta"),
         .init("cs", 5, "other", "Hlasitost nastavena na 5 procent"),
@@ -840,6 +863,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("nl", 2, "other", "Volume ingesteld op 2 procent"),
         .init("nn", 1, "one", "Volum sett til 1 prosent"),
         .init("nn", 2, "other", "Volum sett til 2 prosent"),
+        .init("ny", 1, "one", "Mawu ayikidwa pa 1 peresenti"),
+        .init("ny", 2, "other", "Mawu ayikidwa pa 2 maperesenti"),
         .init("om", 1, "one", "Sagaleen dhibbeentaa 1 irratti kaa'ameera"),
         .init("om", 2, "other", "Sagaleen dhibbeentaa 2 irratti kaa'ameera"),
         .init("pl", 1, "one", "Głośność ustawiona na 1 procent"),
@@ -881,6 +906,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("te", 2, "other", "వాల్యూమ్ 2 శాతానికి సెట్ చేయబడింది"),
         .init("ti", 1, "one", "ድምጺ ናብ 1 ብመቶ ተቐኒዑ"),
         .init("ti", 2, "other", "ድምጺ ናብ 2 ብመቶ ተቐኒዑ"),
+        .init("tr", 1, "one", "Ses düzeyi yüzde 1 olarak ayarlandı"),
+        .init("tr", 2, "other", "Ses düzeyi yüzde 2 olarak ayarlandı"),
         .init("uk", 1, "one", "Гучність встановлено на 1 відсоток"),
         .init("uk", 2, "few", "Гучність встановлено на 2 відсотки"),
         .init("uk", 5, "many", "Гучність встановлено на 5 відсотків"),

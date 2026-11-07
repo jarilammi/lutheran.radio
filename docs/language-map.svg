@@ -4,6 +4,9 @@
     Europe; the extra height is Africa, drawn below southern Europe.
     European shapes, labels, and connecting lines keep their original
     positions and sizes.
+    Turkish (Turkic) is the blob south-east of Greek.
+    Nyanja (Bantu) is the blob south of Swahili, north-east of Zulu.
+    Both use the organic closed path (M Q T T T T), not a circle or ellipse.
   -->
   <!-- Background -->
   <rect width="800" height="1067" fill="#f8f9fa"/>
@@ -172,6 +175,14 @@
   <text x="640" y="570" font-family="Arial" font-size="10" text-anchor="middle">Greek</text>
   <text x="640" y="582" font-family="Arial" font-size="9" text-anchor="middle" fill="#7d6608">ελληνικά</text>
 
+  <!-- Turkish - Turkic (Oghuz), Anatolia, south-east of Greek.
+       Own color family. Not joined to Greek or Bulgarian: those are different families.
+       Gagauz is also Turkic but is not drawn here, so there is no sibling line. -->
+  <path d="M708 625 Q738 600 768 618 T792 648 T758 678 T718 668 T708 625"
+        fill="#8e2454" opacity="0.8"/>
+  <text x="748" y="642" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Turkish</text>
+  <text x="748" y="654" font-family="Arial" font-size="9" text-anchor="middle" fill="#f8d7e3">Türkçe</text>
+
   <!-- Optional connecting lines (to show relationships) -->
   <g stroke="#ccd3e0" stroke-width="1" opacity="0.35">
     <!-- English connecting to German area -->
@@ -210,14 +221,14 @@
     Color marks language family, not country.
   -->
 
-  <!-- Hausa - Afro-Asiatic (Chadic), Sahel west of the Horn -->
+  <!-- Hausa - Afro-Asiatic (Chadic), Sahel west of Tigrinya -->
   <ellipse cx="250" cy="690" rx="40" ry="24" fill="#c87f0a" opacity="0.8"/>
   <text x="250" y="685" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Hausa</text>
   <text x="250" y="697" font-family="Arial" font-size="9" text-anchor="middle" fill="#fdebd0">Hausa</text>
 
   <!-- Yoruba - Niger-Congo (Volta-Niger), south of Hausa on the Gulf of Guinea.
        Related green family as the Bantu languages, but a yellower olive so it
-       is not read as Bantu. Not joined to Swahili / Ndonga / Zulu. -->
+       is not read as Bantu. Not joined to Swahili / Nyanja / Ndonga / Zulu. -->
   <ellipse cx="175" cy="800" rx="44" ry="22" fill="#7d8a3a" opacity="0.8"/>
   <text x="175" y="795" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Yoruba</text>
   <text x="175" y="807" font-family="Arial" font-size="9" text-anchor="middle" fill="#eaf2d7">Yorùbá</text>
@@ -245,6 +256,14 @@
   <text x="555" y="858" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Swahili</text>
   <text x="555" y="870" font-family="Arial" font-size="9" text-anchor="middle" fill="#eaf2d7">Kiswahili</text>
 
+  <!-- Nyanja - Niger-Congo (Bantu), Malawi and eastern Zambia, south of the
+       Swahili coast and north-east of Zulu. Same green family as Swahili,
+       Ndonga, and Zulu. Native name is the Malawian endonym. -->
+  <path d="M510 950 Q555 925 600 948 T630 990 T575 1018 T520 1000 T510 950"
+        fill="#2a5c38" opacity="0.8"/>
+  <text x="567" y="976" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Nyanja</text>
+  <text x="567" y="988" font-family="Arial" font-size="9" text-anchor="middle" fill="#eaf2d7">Chichewa</text>
+
   <!-- Malagasy - Austronesian, Madagascar (not related to the neighbouring Bantu languages) -->
   <ellipse cx="720" cy="890" rx="40" ry="22" fill="#1a7a8c" opacity="0.8"/>
   <text x="720" y="885" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Malagasy</text>
@@ -256,7 +275,7 @@
   <text x="240" y="967" font-family="Arial" font-size="9" text-anchor="middle" fill="#eaf2d7">Oshindonga</text>
 
   <!-- Zulu - Niger-Congo (Bantu), east of Afrikaans in southern Africa.
-       Same green family as Swahili and Ndonga. Not joined to Afrikaans. -->
+       Same green family as Swahili, Nyanja, and Ndonga. Not joined to Afrikaans. -->
   <ellipse cx="430" cy="1018" rx="40" ry="22" fill="#4a6b3c" opacity="0.8"/>
   <text x="430" y="1013" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Zulu</text>
   <text x="430" y="1025" font-family="Arial" font-size="9" text-anchor="middle" fill="#eaf2d7">isiZulu</text>
@@ -277,6 +296,10 @@
     <path d="M610 710 L640 770" fill="none"/>
     <!-- Swahili connecting to Ndonga -->
     <path d="M555 860 L240 960" fill="none"/>
+    <!-- Swahili connecting to Nyanja -->
+    <path d="M560 912 L562 940" fill="none"/>
+    <!-- Nyanja connecting to Zulu -->
+    <path d="M525 995 L465 1008" fill="none"/>
     <!-- Ndonga connecting to Zulu -->
     <path d="M240 960 L430 1018" fill="none"/>
   </g>

@@ -36,6 +36,7 @@ The app is fully localized in the following languages:
 - Afrikaans (af)
 - Albanian (sq)
 - Amharic (am)
+- Bengali (bn)
 - Bulgarian (bg)
 - Chinese, Simplified (zh-Hans)
 - Chinese, Traditional (zh-Hant)
@@ -65,6 +66,7 @@ The app is fully localized in the following languages:
 - North Sámi (se)
 - Norwegian Bokmål (nb)
 - Norwegian Nynorsk (nn)
+- Nyanja (ny)
 - Oromo (om)
 - Polish (pl)
 - Portuguese (pt)
@@ -80,6 +82,7 @@ The app is fully localized in the following languages:
 - Telugu (te)
 - Tigrinya (ti)
 - Tornedalen Finnish (fit)
+- Turkish (tr)
 - Ukrainian (uk)
 - Yoruba (yo)
 - Zulu (zu)
@@ -760,7 +763,7 @@ This table is the source of truth for the historical record of security models (
 | `montereypark`      | October 3, 2026    | (ongoing)          | 27.0.1                 |
 | `kailuakona`        | October 31, 2026   | (ongoing)          | 27.2.0                 |
 | `sunshinecoast`     | November 5, 2026   | (ongoing)          | 27.2.1                 |
-| `maryborough`       | (pending)          | (pending)          | (pending)              |
+| `maryborough`       | (pending)          | (pending)          | 27.2.2                 |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
