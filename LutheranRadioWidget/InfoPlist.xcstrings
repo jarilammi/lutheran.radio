@@ -22,6 +22,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",

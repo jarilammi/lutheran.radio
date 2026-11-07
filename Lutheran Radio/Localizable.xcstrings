@@ -21,6 +21,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -369,6 +375,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld езика"
+                }
+              }
+            }
+          }
+        },
+        "bn" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lldটি ভাষা"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lldটি ভাষা"
                 }
               }
             }
@@ -1356,6 +1380,12 @@
             "value" : "Докоснете два пъти, за да изберете устройство за аудиоизход"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "শব্দ শোনানোর ডিভাইস নির্বাচন করতে দুইবার চাপুন"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1670,6 +1700,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Показва информация за текущата радиопрограма"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "বর্তমান রেডিও অনুষ্ঠানের তথ্য দেখায়"
           }
         },
         "cs" : {
@@ -1988,6 +2024,12 @@
             "value" : "Превключва възпроизвеждането на радиопотока"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "রেডিও স্ট্রিমের চালানো চালু করে বা বিরতি দেয়"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2302,6 +2344,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Изберете колко време до спиране на възпроизвеждането"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "চালানো কতক্ষণ পর থামবে, তা বেছে নিন"
           }
         },
         "cs" : {
@@ -2620,6 +2668,12 @@
             "value" : "Регулира силата на звука"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "চালানোর ভলিউম সমন্বয় করে"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2931,6 +2985,12 @@
           }
         },
         "bg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "bn" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -3253,6 +3313,12 @@
             "value" : "Лого на Lutheran Radio"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio লোগো"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3567,6 +3633,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пауза"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "বিরতি"
           }
         },
         "cs" : {
@@ -3886,6 +3958,12 @@
             "value" : "Снимка на %@"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@-এর ছবি"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4200,6 +4278,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пусни"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "চালান"
           }
         },
         "cs" : {
@@ -4518,6 +4602,12 @@
             "value" : "Таймер за заспиване"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ঘুমের টাইমার"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4832,6 +4922,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сила на звука"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ভলিউম"
           }
         },
         "cs" : {
@@ -5182,6 +5278,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld процента"
+                }
+              }
+            }
+          }
+        },
+        "bn" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld শতাংশ"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld শতাংশ"
                 }
               }
             }
@@ -6169,6 +6283,12 @@
             "value" : "Продължи"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "চালিয়ে যান"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6483,6 +6603,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Опитай отново"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "আবার চেষ্টা করুন"
           }
         },
         "cs" : {
@@ -6801,6 +6927,12 @@
             "value" : "Разреши за тази сесия"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই সেশনের জন্য অনুমতি দিন"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7115,6 +7247,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Винаги разрешавай"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "সবসময় অনুমতি দিন"
           }
         },
         "cs" : {
@@ -7433,6 +7571,12 @@
             "value" : "Не сега"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এখন নয়"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7747,6 +7891,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Изчисти"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "মুছুন"
           }
         },
         "cs" : {
@@ -8065,6 +8215,12 @@
             "value" : "Изчистено"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "মুছা হয়েছে"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8379,6 +8535,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Това ще спре възпроизвеждането, ще премахне данните за джаджата и Live Activity и ще изчисти скорошното състояние на слушане от това устройство. Действието не може да бъде отменено."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এতে চালানো বন্ধ হবে, Widget-এর ও Live Activity-এর ডেটা মুছে যাবে, এবং এই ডিভাইস থেকে সাম্প্রতিক শোনার অবস্থা মুছে যাবে। এই কাজ আর আগের অবস্থায় ফেরানো যাবে না।"
           }
         },
         "cs" : {
@@ -8697,6 +8859,12 @@
             "value" : "Изчисти локалното състояние на възпроизвеждане"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "স্থানীয় চালানোর অবস্থা মুছুন"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9011,6 +9179,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Конфигурация на джаджата Lutheran Radio."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio Widget-এর কনফিগারেশন।"
           }
         },
         "cs" : {
@@ -9330,6 +9504,12 @@
             "value" : "Грешка при свързване"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "সংযোগে ত্রুটি"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9647,6 +9827,12 @@
             "value" : "Управлявайте възпроизвеждането на Lutheran Radio и вижте текущата станция."
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio-এর চালানো নিয়ন্ত্রণ করুন এবং বর্তমান স্টেশন দেখুন।"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9961,6 +10147,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Управлявайте възпроизвеждането и превключвайте между езиковите потоци."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "চালানো নিয়ন্ত্রণ করুন এবং ভাষার স্ট্রিমের মধ্যে বদলান।"
           }
         },
         "cs" : {
@@ -10280,6 +10472,12 @@
             "value" : "Намали силата на звука"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ভলিউম কমান"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10597,6 +10795,12 @@
             "value" : "Увеличи силата на звука"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ভলিউম বাড়ান"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10911,6 +11115,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Свири"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "চলছে"
           }
         },
         "cs" : {
@@ -11230,6 +11440,12 @@
             "value" : "Език"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ভাষা"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11544,6 +11760,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Код на езика"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ভাষার কোড"
           }
         },
         "cs" : {
@@ -11863,6 +12085,12 @@
             "value" : "Английски"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ইংরেজি"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12178,6 +12406,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Естонски"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এস্তোনীয়"
           }
         },
         "cs" : {
@@ -12497,6 +12731,12 @@
             "value" : "Фински"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ফিনিশ"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12812,6 +13052,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Немски"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "জার্মান"
           }
         },
         "cs" : {
@@ -13131,6 +13377,12 @@
             "value" : "Шведски"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "সুইডিশ"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13446,6 +13698,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · На живо"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · সরাসরি সম্প্রচার"
           }
         },
         "cs" : {
@@ -13765,6 +14023,12 @@
             "value" : "Само локално"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "শুধু স্থানীয়"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14077,6 +14341,12 @@
           }
         },
         "bg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "bn" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -14399,6 +14669,12 @@
             "value" : "Следващ език"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "পরের ভাষা"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14714,6 +14990,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Възпроизвеждане/Пауза"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "চালান/বিরতি"
           }
         },
         "cs" : {
@@ -15033,6 +15315,12 @@
             "value" : "Възпроизвеждане"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "চালানো"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15348,6 +15636,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Предишен език"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "আগের ভাষা"
           }
         },
         "cs" : {
@@ -15666,6 +15960,12 @@
             "value" : "Приложението използва мобилни данни, което може да доведе до допълнителни разходи в зависимост от вашия тарифен план."
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "অ্যাপটি মোবাইল ডেটা ব্যবহার করছে, তাই আপনার ডেটা প্যাকেজ অনুযায়ী খরচ হতে পারে।"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15980,6 +16280,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Използване на мобилни данни"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "মোবাইল ডেটা ব্যবহার"
           }
         },
         "cs" : {
@@ -16298,6 +16604,12 @@
             "value" : "Няма информация за записа"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ট্র্যাকের তথ্য নেই"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16614,6 +16926,12 @@
             "value" : "Сега свири"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এখন চলছে"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16925,6 +17243,12 @@
           }
         },
         "bg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "bn" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -17247,6 +17571,12 @@
             "value" : "Първо отворете приложението"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "আগে অ্যাপ খুলুন"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17563,6 +17893,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пауза на Lutheran Radio"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio বিরতি দিন"
           }
         },
         "cs" : {
@@ -17882,6 +18218,12 @@
             "value" : "Постави на пауза възпроизвеждането на Lutheran Radio."
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio-এর চালানোতে বিরতি দিন।"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18196,6 +18538,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пусни"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "চালান"
           }
         },
         "cs" : {
@@ -18515,6 +18863,12 @@
             "value" : "Пусни Lutheran Radio"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio চালান"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18829,6 +19183,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пусни или постави на пауза Lutheran Radio."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio চালান বা বিরতি দিন।"
           }
         },
         "cs" : {
@@ -19148,6 +19508,12 @@
             "value" : "Пусни или възобнови Lutheran Radio."
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio চালান বা চালিয়ে যান।"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19462,6 +19828,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Не може да се стартира възпроизвеждане поради неуспешна проверка на сигурността. Моля, проверете интернет връзката си и се уверете, че приложението е актуално. Ако проблемът продължава, рестартирайте приложението и опитайте отново."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "নিরাপত্তা যাচাই ব্যর্থ হওয়ায় চালানো শুরু করা যায়নি। অনুগ্রহ করে ইন্টারনেট সংযোগ পরীক্ষা করুন এবং অ্যাপটি হালনাগাদ আছে কি না দেখে নিন। সমস্যা থেকে গেলে অ্যাপটি বন্ধ করে আবার চালু করুন এবং আবার চেষ্টা করুন।"
           }
         },
         "cs" : {
@@ -19780,6 +20152,12 @@
             "value" : "Неуспешна проверка на сигурността"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "নিরাপত্তা যাচাই ব্যর্থ হয়েছে"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20095,6 +20473,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Избери %@"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ নির্বাচন করুন"
           }
         },
         "cs" : {
@@ -20445,6 +20829,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "Остават %lld минути"
+                }
+              }
+            }
+          }
+        },
+        "bn" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld মিনিট বাকি"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld মিনিট বাকি"
                 }
               }
             }
@@ -21432,6 +21834,12 @@
             "value" : "Отмени таймера"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "টাইমার বাতিল করুন"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21746,6 +22154,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 минути"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 মিনিট"
           }
         },
         "cs" : {
@@ -22064,6 +22478,12 @@
             "value" : "30 минути"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 মিনিট"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22378,6 +22798,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 минути"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 মিনিট"
           }
         },
         "cs" : {
@@ -22696,6 +23122,12 @@
             "value" : "60 минути"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 মিনিট"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23010,6 +23442,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Таймер за заспиване"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ঘুমের টাইমার"
           }
         },
         "cs" : {
@@ -23328,6 +23766,12 @@
             "value" : "Поточните сървъри са обновили SSL сертификатите си. Приложението работи в режим на съвместимост. Моля, актуализирайте до най-новата версия, когато е налична, за оптимална сигурност."
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "স্ট্রিমিং সার্ভারগুলো তাদের SSL সার্টিফিকেটগুলো নবায়ন করেছে। অ্যাপটি সামঞ্জস্য অবস্থায় চলছে। সর্বোত্তম নিরাপত্তার জন্য নতুন সংস্করণ পাওয়া গেলে হালনাগাদ করুন।"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23642,6 +24086,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сертификатът е обновен"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "সার্টিফিকেট হালনাগাদ হয়েছে"
           }
         },
         "cs" : {
@@ -23961,6 +24411,12 @@
             "value" : "Стартирайте или възобновете възпроизвеждането на Lutheran Radio."
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio-এর চালানো শুরু করুন বা চালিয়ে যান।"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24275,6 +24731,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Стартирайте или спрете възпроизвеждането на Lutheran Radio."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio-এর চালানো শুরু করুন বা থামান।"
           }
         },
         "cs" : {
@@ -24593,6 +25055,12 @@
             "value" : "Буфер"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "বাফার"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24907,6 +25375,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Свързване"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "সংযোগ"
           }
         },
         "cs" : {
@@ -25225,6 +25699,12 @@
             "value" : "Грешка"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ব্যর্থ"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25541,6 +26021,12 @@
             "value" : "Офлайн"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "অফলাইন"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25855,6 +26341,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пауза"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "বিরতি"
           }
         },
         "cs" : {
@@ -26174,6 +26666,12 @@
             "value" : "На пауза – Активно обаждане"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "বিরতি – কল চলছে"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26489,6 +26987,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Неуспешно възпроизвеждане: %@"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "চালানো ব্যর্থ: %@"
           }
         },
         "cs" : {
@@ -26808,6 +27312,12 @@
             "value" : "Свири"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "চালান"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27122,6 +27632,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сигурност"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "নিরাপত্তা"
           }
         },
         "cs" : {
@@ -27440,6 +27956,12 @@
             "value" : "SSL сертификатът е обновен – актуализирайте приложението скоро"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL সার্টিফিকেট নবায়িত - শীঘ্র অ্যাপ হালনাগাদ করুন"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27754,6 +28276,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Спряно"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "থেমেছে"
           }
         },
         "cs" : {
@@ -28072,6 +28600,12 @@
             "value" : "Изкл."
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "বন্ধ"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28386,6 +28920,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Устройството е горещо"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ডিভাইস গরম"
           }
         },
         "cs" : {
@@ -28704,6 +29244,12 @@
             "value" : "Предаването временно не е налично. Моля, опитайте отново по-късно."
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "সম্প্রচার সাময়িকভাবে পাওয়া যাচ্ছে না। অনুগ্রহ করে পরে আবার চেষ্টা করুন।"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29018,6 +29564,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Предаването не е налично"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "সম্প্রচার পাওয়া যাচ্ছে না"
           }
         },
         "cs" : {
@@ -29337,6 +29889,12 @@
             "value" : "Превключете езиковия поток на Lutheran Radio."
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio-এর ভাষার স্ট্রিম বদলান।"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29651,6 +30209,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Превключи потока"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "স্ট্রিম বদলান"
           }
         },
         "cs" : {
@@ -29970,6 +30534,12 @@
             "value" : "Превключи към %@"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ভাষায় বদলান"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30284,6 +30854,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Превключете към друг езиков поток от Live Activity."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity থেকে অন্য ভাষার স্ট্রিমে বদলান।"
           }
         },
         "cs" : {
@@ -30602,6 +31178,12 @@
             "value" : "Превключете към друг езиков поток."
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "অন্য ভাষার স্ট্রিমে বদলান।"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30917,6 +31499,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Превключено към %@"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ভাষায় বদলানো হয়েছে"
           }
         },
         "cs" : {
@@ -31237,6 +31825,12 @@
             "value" : "Докоснете, за да отворите"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "খুলতে চাপুন"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31552,6 +32146,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Превключи Lutheran Radio"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio চালান বা বিরতি দিন"
           }
         },
         "cs" : {
@@ -31870,6 +32470,12 @@
             "value" : "Превключи възпроизвеждането на Lutheran Radio"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio-এর চালানো চালু করুন বা বিরতি দিন"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32184,6 +32790,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Превключи възпроизвеждане/пауза от Live Activity."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity থেকে চালান বা বিরতি দিন।"
           }
         },
         "cs" : {
@@ -32501,6 +33113,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Превключи възпроизвеждането"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "চালানো চালু করুন বা বিরতি দিন"
           }
         },
         "cs" : {
@@ -32851,6 +33469,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "Силата на звука е зададена на %lld процента"
+                }
+              }
+            }
+          }
+        },
+        "bn" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ভলিউম %lld শতাংশে নির্ধারিত হয়েছে"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ভলিউম %lld শতাংশে নির্ধারিত হয়েছে"
                 }
               }
             }
@@ -33836,6 +34472,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Конфигурация на джаджата"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Widget কনফিগারেশন"
           }
         },
         "cs" : {

@@ -22,6 +22,12 @@
             "value" : "Пауза на ${applicationName}"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} বিরতি দিন"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -337,6 +343,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пусни ${applicationName}"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} চালান"
           }
         },
         "cs" : {
@@ -656,6 +668,12 @@
             "value" : "Пусни ${applicationName} на ${language}"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ${language} ভাষায় চালান"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -971,6 +989,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Стартирай ${applicationName}"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} শুরু করুন"
           }
         },
         "cs" : {
@@ -1290,6 +1314,12 @@
             "value" : "Спри ${applicationName}"
           }
         },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} থামান"
+          }
+        },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1605,6 +1635,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Превключи ${applicationName} към ${language}"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ${language} ভাষায় বদলান"
           }
         },
         "cs" : {
