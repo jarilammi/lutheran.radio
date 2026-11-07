@@ -190,6 +190,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "om" : {
           "stringUnit" : {
             "state" : "translated",

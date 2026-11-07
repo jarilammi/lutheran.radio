@@ -190,6 +190,12 @@
             "value" : "Set ${applicationName} på pause"
           }
         },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imitsani ${applicationName}"
+          }
+        },
         "om" : {
           "stringUnit" : {
             "state" : "translated",
@@ -499,6 +505,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spel ${applicationName}"
+          }
+        },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sewerani ${applicationName}"
           }
         },
         "om" : {
@@ -812,6 +824,12 @@
             "value" : "Spel ${applicationName} på ${language}"
           }
         },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sewerani ${applicationName} m'chinenero ${language}"
+          }
+        },
         "om" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1121,6 +1139,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start ${applicationName}"
+          }
+        },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yambitsani ${applicationName}"
           }
         },
         "om" : {
@@ -1434,6 +1458,12 @@
             "value" : "Stopp ${applicationName}"
           }
         },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lekani ${applicationName}"
+          }
+        },
         "om" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1743,6 +1773,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Byt ${applicationName} til ${language}"
+          }
+        },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sinthani ${applicationName} kukhala ${language}"
           }
         },
         "om" : {
