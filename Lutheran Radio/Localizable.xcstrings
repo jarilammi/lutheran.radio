@@ -291,6 +291,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1274,6 +1280,24 @@
             }
           }
         },
+        "tr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld dil"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld dil"
+                }
+              }
+            }
+          }
+        },
         "uk" : {
           "variations" : {
             "plural" : {
@@ -1650,6 +1674,12 @@
             "value" : "መሳርሒ መውጽኢ ድምጺ ንምምራጽ ክልተ ግዜ ጠውቕ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ses çıkış aygıtını seçmek için çift dokunun"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1970,6 +2000,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ብዛዕባ እቲ ሕጂ ዘሎ መደብ ራድዮ ሓበሬታ የርኢ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geçerli radyo programı hakkında bilgi gösterir"
           }
         },
         "uk" : {
@@ -2294,6 +2330,12 @@
             "value" : "ምጽዋት ውሕጅ ራድዮ የለዋውጥ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radyo yayınının oynatmasını açar veya kapatır"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2614,6 +2656,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምጽዋት ክሳብ ዝቋረጽ ክንደይ ግዜ ከም ዝጸንሕ ምረጽ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oynatmanın ne kadar süre sonra duracağını seçin"
           }
         },
         "uk" : {
@@ -2938,6 +2986,12 @@
             "value" : "ድምጺ ምጽዋት የስተኻኽል"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oynatma ses düzeyini ayarlar"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3255,6 +3309,12 @@
           }
         },
         "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "tr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -3583,6 +3643,12 @@
             "value" : "ሎጎ Lutheran Radio"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio logosu"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3903,6 +3969,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኣቋርጽ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duraklat"
           }
         },
         "uk" : {
@@ -4228,6 +4300,12 @@
             "value" : "ስእሊ ናይ %@"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ fotoğrafı"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4548,6 +4626,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ተጻወት"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oynat"
           }
         },
         "uk" : {
@@ -4872,6 +4956,12 @@
             "value" : "ታይመር ድቃስ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uyku zamanlayıcısı"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5192,6 +5282,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ድምጺ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ses düzeyi"
           }
         },
         "uk" : {
@@ -6177,6 +6273,24 @@
             }
           }
         },
+        "tr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "yüzde %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "yüzde %lld"
+                }
+              }
+            }
+          }
+        },
         "uk" : {
           "variations" : {
             "plural" : {
@@ -6553,6 +6667,12 @@
             "value" : "ቀጽል"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sürdür"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6873,6 +6993,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "እንደገና ፈትን"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yeniden dene"
           }
         },
         "uk" : {
@@ -7197,6 +7323,12 @@
             "value" : "ንዚ ክፍለ ግዜ ፍቐድ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu oturum için izin ver"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7517,6 +7649,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኩሉ ግዜ ፍቐድ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Her zaman izin ver"
           }
         },
         "uk" : {
@@ -7841,6 +7979,12 @@
             "value" : "ሕጂ ኣይኮነን"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Şimdi değil"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8161,6 +8305,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኣጽርይ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temizle"
           }
         },
         "uk" : {
@@ -8485,6 +8635,12 @@
             "value" : "ተጸሪዩ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temizlendi"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8805,6 +8961,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "እዚ ነቲ ምጽዋት ክቋርጽ፣ ናይ ዊጄትን Live Activity ን ዳታ ከውግድ፣ ከምኡ’ውን ካብዚ መሳርሒ ናይ ቀረባ ምስማዕ ኩነታት ከጽርይ እዩ። እዚ ተግባር ክምለስ ኣይክእልን።"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu işlem oynatmayı durdurur, Widget ve Live Activity verilerini kaldırır ve son dinleme durumunu bu aygıttan temizler. Bu işlem geri alınamaz."
           }
         },
         "uk" : {
@@ -9129,6 +9291,12 @@
             "value" : "ናይ ከባቢ ምጽዋት ኩነታት ኣጽርይ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yerel oynatma durumunu temizle"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9449,6 +9617,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ውቅረት ዊጄት Lutheran Radio።"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio Widget yapılandırması."
           }
         },
         "uk" : {
@@ -9774,6 +9948,12 @@
             "value" : "ጌጋ ርክብ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bağlantı hatası"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10097,6 +10277,12 @@
             "value" : "ምጽዋት Lutheran Radio ኣመሓድር እሞ ነቲ ሕጂ ዘሎ ጣብያ ርአ።"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio oynatmasını kontrol edin ve geçerli istasyonu görün."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10417,6 +10603,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምጽዋት ኣመሓድር እሞ ኣብ መንጎ ውሕጃት ቋንቋ ተቐያየር።"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oynatmayı kontrol edin ve dil yayınları arasında geçiş yapın."
           }
         },
         "uk" : {
@@ -10742,6 +10934,12 @@
             "value" : "ድምጺ ኣጉድል"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ses düzeyini azalt"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11065,6 +11263,12 @@
             "value" : "ድምጺ ወስኽ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ses düzeyini artır"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11385,6 +11589,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ይጻወት ኣሎ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oynatılıyor"
           }
         },
         "uk" : {
@@ -11710,6 +11920,12 @@
             "value" : "ቋንቋ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dil"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12030,6 +12246,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኮድ ቋንቋ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dil kodu"
           }
         },
         "uk" : {
@@ -12355,6 +12577,12 @@
             "value" : "እንግሊዝኛ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "İngilizce"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12676,6 +12904,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኤስቶንኛ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estonca"
           }
         },
         "uk" : {
@@ -13001,6 +13235,12 @@
             "value" : "ፊንላንድኛ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fince"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13322,6 +13562,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ጀርመን"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Almanca"
           }
         },
         "uk" : {
@@ -13647,6 +13893,12 @@
             "value" : "ስዊድንኛ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "İsveççe"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13968,6 +14220,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · ህያው ውሕጅ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Canlı yayın"
           }
         },
         "uk" : {
@@ -14293,6 +14551,12 @@
             "value" : "ዞባዊ ጥራይ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yalnızca yerel"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14611,6 +14875,12 @@
           }
         },
         "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "tr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -14939,6 +15209,12 @@
             "value" : "ዝቕጽል ቋንቋ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sonraki dil"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15260,6 +15536,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ተጻወት/ኣቋርጽ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oynat/Duraklat"
           }
         },
         "uk" : {
@@ -15585,6 +15867,12 @@
             "value" : "ምጽዋት"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oynatma"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15906,6 +16194,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ዝቐደመ ቋንቋ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Önceki dil"
           }
         },
         "uk" : {
@@ -16230,6 +16524,12 @@
             "value" : "እቲ ኣፕ ሞባይል ዳታ ይጥቀም ኣሎ፣ እዚ ድማ ብመሰረት ውጥን ዳታኻ ወጻኢታት ክስዕብ ይኽእል።"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uygulama mobil veri kullanıyor. Veri tarifinize bağlı olarak ücret oluşabilir."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16550,6 +16850,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምጥቃም ሞባይል ዳታ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mobil veri kullanımı"
           }
         },
         "uk" : {
@@ -16874,6 +17180,12 @@
             "value" : "ሓበሬታ ትራክ የለን"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parça bilgisi yok"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17196,6 +17508,12 @@
             "value" : "ሕጂ ይጻወት"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Şimdi çalıyor"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17513,6 +17831,12 @@
           }
         },
         "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "tr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -17841,6 +18165,12 @@
             "value" : "መጀመርታ ነቲ ኣፕ ክፈት"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Önce uygulamayı açın"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18163,6 +18493,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio ኣቋርጽ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio'yu duraklat"
           }
         },
         "uk" : {
@@ -18488,6 +18824,12 @@
             "value" : "ምጽዋት Lutheran Radio ኣቋርጽ።"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio oynatmasını duraklatın."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18808,6 +19150,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ተጻወት"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oynat"
           }
         },
         "uk" : {
@@ -19133,6 +19481,12 @@
             "value" : "Lutheran Radio ተጻወት"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio'yu oynat"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19453,6 +19807,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio ተጻወት ወይ ኣቋርጽ።"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio'yu oynatın veya duraklatın."
           }
         },
         "uk" : {
@@ -19778,6 +20138,12 @@
             "value" : "Lutheran Radio ተጻወት ወይ ቀጽል።"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio'yu oynatın veya sürdürün."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20098,6 +20464,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ብሰንኪ ውድቀት ምርግጋጽ ጸጥታ ምጽዋት ክጅመር ኣይከኣለን። በይኻ ርክብ ኢንተርነትካ ምርመር እሞ እቲ ኣፕ ሓዲሽ ምዃኑ ኣረጋግጽ። እቲ ጸገም እንተቐጺሉ፣ ነቲ ኣፕ ዳግም ጀምሮ እንደገና ፈትን።"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Güvenlik doğrulaması başarısız olduğu için oynatma başlatılamıyor. İnternet bağlantınızı kontrol edin ve uygulamanın güncel olduğundan emin olun. Sorun devam ederse uygulamayı yeniden başlatıp tekrar deneyin."
           }
         },
         "uk" : {
@@ -20422,6 +20794,12 @@
             "value" : "ምርግጋጽ ጸጥታ ፈሺሉ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Güvenlik doğrulaması başarısız"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20743,6 +21121,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ ምረጽ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ seçin"
           }
         },
         "uk" : {
@@ -21728,6 +22112,24 @@
             }
           }
         },
+        "tr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld dakika kaldı"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld dakika kaldı"
+                }
+              }
+            }
+          }
+        },
         "uk" : {
           "variations" : {
             "plural" : {
@@ -22104,6 +22506,12 @@
             "value" : "ነቲ ታይመር ሰርዝ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zamanlayıcıyı iptal et"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22424,6 +22832,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 ደቓይቕ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 dakika"
           }
         },
         "uk" : {
@@ -22748,6 +23162,12 @@
             "value" : "30 ደቓይቕ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 dakika"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23068,6 +23488,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 ደቓይቕ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 dakika"
           }
         },
         "uk" : {
@@ -23392,6 +23818,12 @@
             "value" : "60 ደቓይቕ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 dakika"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23712,6 +24144,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ታይመር ድቃስ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uyku zamanlayıcısı"
           }
         },
         "uk" : {
@@ -24036,6 +24474,12 @@
             "value" : "ኣገልገልቲ ስትሪሚንግ ናይ SSL ምስክር ወረቐቶም ኣሓዲሶም። እቲ ኣፕ ብሞድ ምትእስሳር ይሰርሕ ኣሎ። ንዝበለጸ ጸጥታ ምስ ዝርከብ ናብቲ እዋናዊ ስሪት ኣሐድስ።"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yayın sunucuları SSL sertifikalarını yeniledi. Uygulama uyumluluk modunda çalışıyor. En iyi güvenlik için kullanılabilir olduğunda en son sürüme güncelleyin."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24356,6 +24800,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምስክር ወረቐት ተሓዲሱ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sertifika güncellendi"
           }
         },
         "uk" : {
@@ -24681,6 +25131,12 @@
             "value" : "ምጽዋት Lutheran Radio ጀምር ወይ ቀጽል።"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio oynatmasını başlatın veya sürdürün."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25001,6 +25457,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምጽዋት Lutheran Radio ጀምር ወይ ኣቁም።"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio oynatmasını başlatın veya durdurun."
           }
         },
         "uk" : {
@@ -25325,6 +25787,12 @@
             "value" : "ምጽዓን"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arabellek"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25645,6 +26113,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኣራኽብ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bağlan"
           }
         },
         "uk" : {
@@ -25969,6 +26443,12 @@
             "value" : "ፈሺሉ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başarısız"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26291,6 +26771,12 @@
             "value" : "ዘይተራኸበ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Çevrimdışı"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26611,6 +27097,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኣቋርጽ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duraklat"
           }
         },
         "uk" : {
@@ -26936,6 +27428,12 @@
             "value" : "ተቋሪጹ – ጻውዒት ኣሎ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duraklatıldı – Etkin arama"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27257,6 +27755,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምጽዋት ፈሺሉ: %@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oynatma başarısız: %@"
           }
         },
         "uk" : {
@@ -27582,6 +28086,12 @@
             "value" : "ተጻወት"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oynat"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27902,6 +28412,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ጸጥታ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Güvenlik"
           }
         },
         "uk" : {
@@ -28226,6 +28742,12 @@
             "value" : "ምስክር ወረቐት SSL ተሓዲሱ - ነቲ ኣፕ ቀልጢፍካ ኣሐድስ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL sertifikası yenilendi - uygulamayı yakında güncelleyin"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28546,6 +29068,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ደው ኢሉ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Durduruldu"
           }
         },
         "uk" : {
@@ -28870,6 +29398,12 @@
             "value" : "ጠፊኡ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kapalı"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29190,6 +29724,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "መሳርሒ ውዑይ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aygıt sıcak"
           }
         },
         "uk" : {
@@ -29514,6 +30054,12 @@
             "value" : "እቲ ስርጭት ግዝያዊ ኣይርከብን። በይኻ ድሕሪኡ እንደገና ፈትን።"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yayın geçici olarak kullanılamıyor. Lütfen daha sonra yeniden deneyin."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29834,6 +30380,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ስርጭት ኣይርከብን"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yayın kullanılamıyor"
           }
         },
         "uk" : {
@@ -30159,6 +30711,12 @@
             "value" : "ውሕጅ ቋንቋ Lutheran Radio ቀይር።"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio dil yayınını değiştirin."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30479,6 +31037,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ውሕጅ ቀይር"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yayını değiştir"
           }
         },
         "uk" : {
@@ -30804,6 +31368,12 @@
             "value" : "ናብ %@ ቀይር"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ diline geç"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31124,6 +31694,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ካብ Live Activity ናብ ካልእ ውሕጅ ቋንቋ ቀይር።"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity üzerinden başka bir dil yayınına geçin."
           }
         },
         "uk" : {
@@ -31448,6 +32024,12 @@
             "value" : "ናብ ካልእ ውሕጅ ቋንቋ ቀይር።"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başka bir dil yayınına geçin."
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31769,6 +32351,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ናብ %@ ተቐይሩ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ diline geçildi"
           }
         },
         "uk" : {
@@ -32095,6 +32683,12 @@
             "value" : "ንምኽፋት ጠውቕ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Açmak için dokunun"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32416,6 +33010,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio ኣለዋውጥ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio'yu oynat veya duraklat"
           }
         },
         "uk" : {
@@ -32740,6 +33340,12 @@
             "value" : "ምጽዋት Lutheran Radio ኣለዋውጥ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio oynatmasını değiştir"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -33060,6 +33666,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ካብ Live Activity ተጻወት/ኣቋርጽ ኣለዋውጥ።"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity üzerinden oynatmayı veya duraklatmayı değiştirin."
           }
         },
         "uk" : {
@@ -33383,6 +33995,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምጽዋት ኣለዋውጥ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oynatmayı aç veya kapat"
           }
         },
         "uk" : {
@@ -34368,6 +34986,24 @@
             }
           }
         },
+        "tr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ses düzeyi yüzde %lld olarak ayarlandı"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ses düzeyi yüzde %lld olarak ayarlandı"
+                }
+              }
+            }
+          }
+        },
         "uk" : {
           "variations" : {
             "plural" : {
@@ -34742,6 +35378,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ውቅረት ዊጄት"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Widget yapılandırması"
           }
         },
         "uk" : {

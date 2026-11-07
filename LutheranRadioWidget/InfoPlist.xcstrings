@@ -292,6 +292,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",

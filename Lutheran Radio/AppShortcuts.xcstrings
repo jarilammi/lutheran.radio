@@ -292,6 +292,12 @@
             "value" : "${applicationName} ኣቋርጽ"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} uygulamasını duraklat"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -613,6 +619,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} ተጻወት"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} uygulamasını oynat"
           }
         },
         "uk" : {
@@ -938,6 +950,12 @@
             "value" : "${applicationName} ብ${language} ተጻወት"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} uygulamasını ${language} dilinde oynat"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1259,6 +1277,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} ጀምር"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} uygulamasını başlat"
           }
         },
         "uk" : {
@@ -1584,6 +1608,12 @@
             "value" : "${applicationName} ኣቁም"
           }
         },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} uygulamasını durdur"
+          }
+        },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1905,6 +1935,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} ናብ ${language} ቀይር"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} uygulamasını ${language} diline geçir"
           }
         },
         "uk" : {
