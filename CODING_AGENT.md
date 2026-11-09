@@ -113,7 +113,7 @@ These rules are especially strict for anything that could affect security invari
 ## Required Rules
 
 1. **Security Model**
-   - Current `expectedSecurityModel = "maryborough"` (Core/Configuration/SecurityConfiguration.swift). History Valid From, Valid Until, and App Version Introduced for that row stay `(pending)` until App Store publication. Do not date them from a DNS listing. `sunshinecoast` stays the published 27.2.1 row.
+   - The embedded name is `expectedSecurityModel` in `Core/Configuration/SecurityConfiguration.swift`. Do not copy that string into this file. README Security Model History is the only record of each name's Valid From, Valid Until, and App Version Introduced. Valid From and Valid Until stay `(pending)` until the App Store publication commit for that name. Do not date them from a DNS listing, and do not set Valid Until to `(ongoing)` before that commit. App Version Introduced is the marketing version that first contains the name. Filling that cell does not publish the row.
    - Do not change, remove, or comment out DNS TXT validation against the ordered `securityModelDomains` list (`securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk`). Ordered host walk (do not weaken): (1) authoritative answer = DNSSEC-validated TXT rdata accepted by the callback (including empty set); (2) contains expected model → success, stop; (3) does not contain it → permanent fail, stop (no fall-through); (4) transient (error, timeout, missing or non-Secure DNSSEC status, etc.) → next host, fully trusted if that host returns an authoritative allow-list containing the expected model.
    - Never bypass full-certificate fingerprint pinning. Runtime acceptance is `pinnedFingerprintDigests` — sole production leaf is preferred-apex `*.siikkari.net` `32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD` (`pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest`). Do not reintroduce retired pre-cutover leaves (e.g. former `CC:F7:…:3D:CC`) onto the acceptance list without a coordinated rotation and security review — obsolete pins enlarge the set of certificates the runtime will accept.
    - Never weaken SPKI pinning in Info.plist (sole media apex pin: `siikkari.net` / `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`)
@@ -521,9 +521,7 @@ The `Core` framework is the **single source of truth** for all security decision
 
 ## Security Model History Reference (Do Not Modify – See README.md)
 
-The complete security model history is maintained in the Security Model History table in README.md, which serves as the source of truth. Refer to it for the full table of past and current models, including validity periods and app versions.
-
-Current model = **maryborough**
+The complete security model history is maintained in the Security Model History table in README.md, which serves as the source of truth. Refer to it for past and current names and for which date cells are `(pending)` and which are published. The embedded name is `expectedSecurityModel`. Do not restate that string, or that row's cells, in this file.
 
 ## Response Style
 

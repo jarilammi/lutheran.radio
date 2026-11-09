@@ -53,12 +53,15 @@ public struct SecurityConfiguration: Sendable {
     
     /// The embedded security model this app build enforces.
     ///
-    /// This build's name is `maryborough`. It **must** appear as a whole token in the
-    /// comma-separated TXT record returned by ``securityModelDomains``
-    /// (queried by ``SecurityModelValidator``). Older names stay in the README
-    /// history table and must not be reused. Valid From, Valid Until, and the
-    /// introducing version for `maryborough` stay pending until the App Store
-    /// publication commit. A DNS listing is not that date.
+    /// This string **must** appear as a whole token in the comma-separated TXT
+    /// record returned by ``securityModelDomains`` (queried by ``SecurityModelValidator``).
+    /// Older names stay in the README Security Model History table and must not be reused.
+    /// That table is the only record of Valid From, Valid Until, and App Version
+    /// Introduced. Do not copy those cells into this comment. Valid From and Valid
+    /// Until stay `(pending)` until the App Store publication commit for this name.
+    /// App Version Introduced may already name the marketing version that first
+    /// contains this string. Filling that cell does not publish the row. A DNS
+    /// listing is not Valid From.
     ///
     /// If validation fails permanently, streaming is disabled for the lifetime of the process.
     ///

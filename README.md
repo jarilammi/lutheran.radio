@@ -356,7 +356,7 @@ Those `simctl` commands do not erase the available simulator you still run tests
 | Model validation cache        | 1 hour (3600 s), success-only, in `UserDefaults` (`modelCacheDuration`). Failures always re-query. Distinct from certificate pin-result caching.                                                              | `SecurityConfiguration` + `SecurityModelValidator`                                 |
 | Certificate validation cache  | 10 minutes (600 s) in `CertificateValidator` (`certificateValidationCacheDuration`). A hit skips system trust evaluation only when the leaf just presented matches `pinnedFingerprintDigests`. A different leaf is evaluated again. Periodic HEAD revalidation in `DirectStreamingPlayer` uses the same constant. | `SecurityConfiguration` + `CertificateValidator`                                   |
 
-**AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The `maryborough` row is the embedded model for this build (previous models are retained for the historical record and to prevent name reuse). Valid From, Valid Until, and App Version Introduced for that row stay `(pending)` until the App Store publication commit. A DNS listing is not that date. `sunshinecoast` stays the published 27.2.1 row (Valid From November 5, 2026, Valid Until ongoing).
+**AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The embedded name is `expectedSecurityModel`. Older names stay in Security Model History and must not be reused. That table is the only record of which cells are `(pending)` and which are published. Do not restate the current row here. Valid From and Valid Until stay `(pending)` until that name's App Store publication commit. App Version Introduced may already show the marketing version. A DNS listing is not a Valid From date.
 
 ### Media Apex Cutover & SSL Certificate Rotation (siikkari.net)
 
@@ -766,10 +766,9 @@ This table is the source of truth for the historical record of security models (
 | `maryborough`       | (pending)          | (pending)          | 27.2.2                 |
 
 **Notes:**
-- **Valid From:** The date when the security model was first published to the App Store.
-- **Valid Until:** The date when the security model was deprecated (or "(ongoing)" if still active).
-- **App Version Introduced:** The app version where this security model was first implemented.
-- **Valid From Dates:** Reflect the App Store publication date for the app version introducing the security model, ensuring alignment with public availability. The `maryborough` row stays `(pending)` in all three cells until that publication commit. DNS listing is not that date. Do not put 27.2.1 on that row: 27.2.1 is the published `sunshinecoast` build.
+- **Valid From:** The App Store publication date for this name. Stays `(pending)` until that publication commit. A DNS listing is not this date.
+- **Valid Until:** Stays `(pending)` until the same publication commit, then `(ongoing)` until a later commit records deprecation. Do not write `(ongoing)` while Valid From is `(pending)`.
+- **App Version Introduced:** The marketing version that first contains this name in `expectedSecurityModel`. Fill it when that version is assigned. Filling it does not publish the row and does not change Valid From or Valid Until. Use `(pending)` only when no marketing version has been assigned. Do not copy the previous row's version.
 - Cross-check live TXT (via the Agent Verification Commands) for the set of currently active models. This table is the historical source of truth.
 
 When introducing a new security model (requires security review + documentation upgrade):
@@ -777,12 +776,12 @@ When introducing a new security model (requires security review + documentation 
 1. Choose a unique name not listed in the table (e.g., a distinct city or codename). Confirm it has never been used.
 2. Update `expectedSecurityModel` in `Core/Configuration/SecurityConfiguration.swift` (the only allowed location).
 3. Add the new name to the DNS TXT record for `securitymodels.siikkari.net` (primary) and keep secondary/backup (`securitymodels.lutheranradio.eu`, `securitymodels.lutheranradio.sk`) consistent.
-4. Append a new row. Leave Valid From, Valid Until, and App Version Introduced as `(pending)` until the App Store publication commit. Do not date the row from a DNS listing. Do not reuse the previous row's published version: 27.2.1 is the `sunshinecoast` build.
+4. Append a row. Set Valid From and Valid Until to `(pending)`. Set App Version Introduced to the marketing version that contains the new `expectedSecurityModel`, or `(pending)` if that version is not assigned yet. Do not date the row from a DNS listing. Do not set Valid Until to `(ongoing)`. Do not copy the previous row's App Version Introduced. The publication commit later sets Valid From to the App Store date and Valid Until to `(ongoing)` and does not change the version cell.
 5. Update the "Current Security Snapshot" and any live example outputs in this README only after `dig` shows the new name on the primary TXT host.
 6. Improve surrounding documentation per the Documentation & Comment Standards in [`CODING_AGENT.md`](CODING_AGENT.md) (add "Why", Security Invariant callouts, cross-links to ``<doc:Security-Invariants>`` and the Architecture article, update agent checklist context if needed).
 7. Run the mandatory find command + build/test gates. Include security impact assessment in the PR.
 
-See also: ``<doc:Security-Invariants>`` (Invariant 1 and "Enforcement"), "Verifying the Security Model" section above, [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules + "Current model = maryborough" + response style requirements).
+See also: ``<doc:Security-Invariants>`` (Invariant 1 and "Enforcement"), "Verifying the Security Model" section above, [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules + Security Model History Reference + response style requirements).
 
 ### Why Track Security Model Names?
 
