@@ -13,10 +13,14 @@
 //  the hard stop. Relative gain is in-memory only — never UserDefaults or the App Group.
 //  Backgrounding does not cancel the ramp; the next playback start restores unity.
 //
-//  UI: SwiftUI `.confirmationDialog` in PlaybackControlsView is the sole presentation;
-//  presets/cancel route through PlayerViewModel into RadioPlayerCoordinator+SleepTimer.
+//  UI: SwiftUI `.confirmationDialog` in PlaybackControlsView is the sole in-app
+//  presentation; presets/cancel route through PlayerViewModel into
+//  RadioPlayerCoordinator+SleepTimer. Siri and Shortcuts use the same
+//  setSleepTimer / cancelSleepTimer entry points (SleepTimerIntents.swift).
 //  Actor-side setSleepTimer / cancelSleepTimer + countdown task + SleepTimerNotification
 //  remain the timer authority; the coordinator extension owns display glue only.
+//  A schedule posts one state notification so the moon updates when the caller
+//  is an intent, not only the in-app preset handler.
 //
 //  Created by Jari Lammi on 5.6.2026.
 //
@@ -128,6 +132,31 @@ enum SleepTimerNotification {
         }
         NotificationCenter.default.post(name: stateDidChange, object: nil, userInfo: userInfo)
     }
+
+    /// Seconds to seed into the in-app countdown, or nil when the moon should stay as it is.
+    ///
+    /// A schedule posts once with the armed length. The same length already cached
+    /// is a duplicate delivery before the first local tick, not a new arm.
+    /// A different positive length replaces the countdown, including an intent
+    /// that sets a new preset while one is already showing. Inactive notifications
+    /// are handled by the caller (clear the moon); this returns nil for those.
+    ///
+    /// - Parameters:
+    ///   - isActive: ``Key/isActive`` from the notification.
+    ///   - announcedRemaining: ``Key/remainingSeconds``, if present.
+    ///   - cachedRemaining: The coordinator's local countdown, or nil when the moon is idle.
+    /// - Returns: The length to pass to the local countdown, or nil to leave it.
+    /// - SeeAlso: ``RadioPlayerCoordinator/sleepTimerStateDidChange(_:)``,
+    ///   ``SharedPlayerManager/setSleepTimer(duration:)``.
+    static func countdownSeed(
+        isActive: Bool,
+        announcedRemaining: Int?,
+        cachedRemaining: Int?
+    ) -> Int? {
+        guard isActive, let announcedRemaining, announcedRemaining > 0 else { return nil }
+        guard cachedRemaining != announcedRemaining else { return nil }
+        return announcedRemaining
+    }
 }
 
 extension SharedPlayerManager {
@@ -140,15 +169,24 @@ extension SharedPlayerManager {
     /// then ``sleepTimerDidFire()`` runs the existing elapsed-pause stop. A shorter
     /// timer fades across its whole length. Off (configured duration `0`) does not ramp.
     ///
-    /// `sleepTimerRemainingSeconds` is written once at schedule (for one-shot UI sync
-    /// on foreground). The countdown loop does not mutate actor state every second —
-    /// coordinator UI glue decrements locally. Best-effort while backgrounded (the
-    /// actor task may suspend with the app). Backgrounding does not cancel the fade.
+    /// `sleepTimerRemainingSeconds` is written once at schedule. The countdown loop
+    /// does not mutate actor state every second — coordinator UI glue decrements
+    /// locally. This method posts one ``SleepTimerNotification`` with that length
+    /// so the moon updates for an App Intent as well as a later foreground sync.
+    /// Best-effort while backgrounded (the actor task may suspend with the app).
+    /// Backgrounding does not cancel the fade.
+    ///
+    /// A stopped or paused session still arms the countdown. ``playbackIntent``
+    /// changes to ``.sleepTimer`` only when ``currentVisualState`` is ``.playing``
+    /// or the intent is already an active playback intent. ``.userPaused`` stays
+    /// ``.userPaused`` until the deadline, when ``applySleepTimerElapsedPause()``
+    /// runs anyway. The in-app preset button uses this same rule.
     ///
     /// - Parameter duration: Timer length in seconds. `<= 0` leaves the timer disarmed.
     /// - Returns: Whole seconds armed, or `nil` when `duration` is not positive.
     /// - SeeAlso: ``cancelSleepTimer(restorePlaybackIntent:notifyStateChange:)``,
-    ///   ``SleepTimerFadePolicy``, ``applySleepTimerElapsedPause()``.
+    ///   ``isSleepTimerArmed``, ``SleepTimerFadePolicy``,
+    ///   ``applySleepTimerElapsedPause()``, ``SleepTimerNotification/countdownSeed(isActive:announcedRemaining:cachedRemaining:)``.
     @discardableResult
     func setSleepTimer(duration: TimeInterval) async -> Int? {
         await cancelSleepTimer(restorePlaybackIntent: false, notifyStateChange: false)
@@ -169,7 +207,20 @@ extension SharedPlayerManager {
         #if DEBUG
         print("[SharedPlayerManager] SleepTimer scheduled for \(totalSeconds)s (playbackIntent = .sleepTimer)")
         #endif
+        await SleepTimerNotification.postStateChange(isActive: true, remainingSeconds: totalSeconds)
         return totalSeconds
+    }
+
+    /// True while a countdown task is armed.
+    ///
+    /// ``cancelSleepTimer(restorePlaybackIntent:notifyStateChange:)`` posts the
+    /// inactive UI broadcast only when this is true. ``CancelSleepTimerIntent``
+    /// speaks the existing cancel-timer title when this is true, and returns
+    /// no dialog when it is not.
+    ///
+    /// - SeeAlso: ``setSleepTimer(duration:)``, ``CancelSleepTimerIntent``.
+    var isSleepTimerArmed: Bool {
+        sleepTimerTask != nil
     }
 
     /// Cancels any active sleep timer without changing playback transport.

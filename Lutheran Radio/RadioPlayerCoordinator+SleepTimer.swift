@@ -141,7 +141,7 @@ extension RadioPlayerCoordinator {
     }
 
     /// Receives broadcasts from SleepTimerNotification when a sleep timer is scheduled,
-    /// ticks (first value only), or becomes inactive (elapsed or cancelled).
+    /// replaced with a different length, or becomes inactive (elapsed or cancelled).
     ///
     /// - Important: This observer is the **main-app-only** channel that reconciles the
     ///   authoritative `currentVisualState` (from SharedPlayerManager SSOT) into the live
@@ -171,8 +171,12 @@ extension RadioPlayerCoordinator {
     ///   SharedPlayerManager.swift (resurrection table + applySleepTimerElapsedPause),
     ///   docs/Widget-Presentation-Dataflow.md (Cleanup Invariant).
     ///
-    /// - Note: Only the first remaining-seconds value seeds the local countdown to avoid
-    ///   per-second actor hops; this domain owns decrementing locally.
+    /// - Note: A schedule posts the armed length once.
+    ///   ``SleepTimerNotification/countdownSeed(isActive:announcedRemaining:cachedRemaining:)``
+    ///   starts the local countdown when the moon is idle, and restarts it when a
+    ///   new preset (including ``SetSleepTimerIntent``) arms a different length.
+    ///   A duplicate of the same length does not reset the tick. This domain still
+    ///   owns decrementing locally; the actor does not post per-second updates.
     @objc func sleepTimerStateDidChange(_ notification: Notification) {
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -191,11 +195,12 @@ extension RadioPlayerCoordinator {
                 self.updateUI(for: visualState)
                 return
             }
-            if let remaining = notification.userInfo?[SleepTimerNotification.Key.remainingSeconds] as? Int,
-               remaining > 0,
-               self.cachedSleepTimerRemaining == nil {
+            if let remaining = SleepTimerNotification.countdownSeed(
+                isActive: true,
+                announcedRemaining: notification.userInfo?[SleepTimerNotification.Key.remainingSeconds] as? Int,
+                cachedRemaining: self.cachedSleepTimerRemaining
+            ) {
                 self.beginLocalSleepTimerDisplay(remaining: remaining)
-                self.syncSleepTimerToViewModel(remaining: remaining)
             }
         }
     }

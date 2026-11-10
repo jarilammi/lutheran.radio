@@ -6,13 +6,15 @@
 //  utterances from the dedicated `AppShortcuts` table only — Localizable titles
 //  do not register "Toista Lutheran Radio" / "Spiele Lutheran Radio".
 //
-//  Invariant: every phrase in `LutheranRadioShortcuts` is extracted as
-//  `Play ${applicationName}` (etc.) and `AppShortcuts.xcstrings` ships a
-//  translated value for every UI language in README Localizations (the 54
-//  language codes). Every value keeps
-//  `${applicationName}`; parameterized phrases also keep `${language}`.
-//  Xcode binds only the first phrase of each `AppShortcut` initializer, so
-//  the provider must register one shortcut per utterance (no stale keys).
+//  Invariant: every play / pause / language phrase in `LutheranRadioShortcuts`
+//  is extracted as `Play ${applicationName}` (etc.) and `AppShortcuts.xcstrings`
+//  ships a translated value for every UI language in README Localizations (the
+//  54 language codes). Sleep-timer phrases are native in en, de, fi, sv, and et
+//  only; other languages fall back to English. Every value keeps
+//  `${applicationName}`; parameterized phrases also keep `${language}` or
+//  `${duration}`. Xcode binds only the first phrase of each `AppShortcut`
+//  initializer, so the provider must register one shortcut per utterance
+//  (no stale keys). The provider is capped at 10 shortcuts.
 //
 //  - SeeAlso: `LutheranRadioShortcuts`, `AppShortcuts.xcstrings`,
 //    `RadioPlaybackIntents.swift` (file header AGENT NOTE), README.md
@@ -46,9 +48,25 @@ final class AppShortcutsLocalizationTests: XCTestCase {
         "Switch ${applicationName} to ${language}",
     ]
 
+    /// Sleep-timer utterances. Native in en, de, fi, sv, and et only.
+    /// Other UI languages fall back to the English phrase. Siri may not speak
+    /// Estonian yet; the et strings are still required here.
+    /// One parameterized set phrase and one cancel phrase. The other 49 UI
+    /// languages are not translated here.
+    private let sleepTimerPhraseKeys: [String] = [
+        "Set a ${duration} sleep timer in ${applicationName}",
+        "Cancel the ${applicationName} sleep timer",
+    ]
+
+    private let sleepTimerPhraseLanguages: [String] = ["en", "de", "fi", "sv", "et"]
+
     private let parameterizedPhraseKeys: Set<String> = [
         "Play ${applicationName} in ${language}",
         "Switch ${applicationName} to ${language}",
+    ]
+
+    private let sleepTimerParameterizedPhraseKeys: Set<String> = [
+        "Set a ${duration} sleep timer in ${applicationName}",
     ]
 
     private let appBundle = Bundle(for: PlayerViewModel.self)
@@ -99,8 +117,61 @@ final class AppShortcutsLocalizationTests: XCTestCase {
         }
     }
 
+    /// Sleep-timer phrases are native for five languages and keep their tokens.
+    ///
+    /// Estonian is included even though Siri may not speak it yet. A non-English
+    /// value equal to the English key means the catalog fell back instead of
+    /// shipping the reviewed phrase.
+    func testSleepTimerPhrasesCoverFiveLanguages() throws {
+        let catalog = try loadSourceCatalog()
+        let strings = try XCTUnwrap(catalog["strings"] as? [String: Any])
+        XCTAssertEqual(
+            Set(strings.keys),
+            Set(requiredPhraseKeys + sleepTimerPhraseKeys),
+            "AppShortcuts.xcstrings must stay the six playback phrases plus the two sleep-timer phrases"
+        )
+
+        for key in sleepTimerPhraseKeys {
+            let entry = try XCTUnwrap(strings[key] as? [String: Any], "Missing entry \(key)")
+            let localizations = try XCTUnwrap(
+                entry["localizations"] as? [String: Any],
+                "Missing localizations for \(key)"
+            )
+            let english = try phraseValue(localizations, language: "en", key: key)
+            XCTAssertEqual(english, key, "\(key) English value drifted from the source phrase")
+
+            for language in sleepTimerPhraseLanguages {
+                let value = try phraseValue(localizations, language: language, key: key)
+                XCTAssertFalse(value.isEmpty, "\(language) \(key) is empty")
+                XCTAssertTrue(
+                    value.contains("${applicationName}"),
+                    "\(language) \(key) dropped ${applicationName}: \(value)"
+                )
+                if sleepTimerParameterizedPhraseKeys.contains(key) {
+                    XCTAssertTrue(
+                        value.contains("${duration}"),
+                        "\(language) \(key) dropped ${duration}: \(value)"
+                    )
+                }
+                if language != "en" {
+                    XCTAssertNotEqual(
+                        value,
+                        english,
+                        "\(language) \(key) is still the English phrase"
+                    )
+                }
+            }
+
+            let comment = entry["comment"] as? String ?? ""
+            XCTAssertTrue(
+                comment.localizedCaseInsensitiveContains("Estonian"),
+                "\(key) is missing the Estonian Siri review note"
+            )
+        }
+    }
+
     func testUtteranceTokenKeysAreNotInLocalizable() {
-        for key in requiredPhraseKeys {
+        for key in requiredPhraseKeys + sleepTimerPhraseKeys {
             let fromLocalizable = appBundle.localizedString(
                 forKey: key,
                 value: "MISSING",
@@ -526,6 +597,38 @@ final class AppShortcutsLocalizationTests: XCTestCase {
         )
     }
 
+    /// Compiled sleep-timer phrases for the five spoken languages.
+    ///
+    /// German, Finnish, Swedish, and Estonian are native-review candidates.
+    /// Siri may not speak Estonian yet; the compiled et table still has the phrase.
+    func testCompiledSleepTimerPhrasesAreNativeForFiveLanguages() {
+        let expected: [String: [String: String]] = [
+            "Set a ${duration} sleep timer in ${applicationName}": [
+                "en": "Set a ${duration} sleep timer in ${applicationName}",
+                "de": "Stelle einen Schlaf-Timer für ${duration} in ${applicationName}",
+                "fi": "Aseta uniajastin ${duration} ajaksi sovelluksessa ${applicationName}",
+                "sv": "Sätt en insomningstimer på ${duration} i ${applicationName}",
+                "et": "Sea uinumise taimer ${duration} peale rakenduses ${applicationName}",
+            ],
+            "Cancel the ${applicationName} sleep timer": [
+                "en": "Cancel the ${applicationName} sleep timer",
+                "de": "Beende den Schlaf-Timer in ${applicationName}",
+                "fi": "Peru uniajastin sovelluksessa ${applicationName}",
+                "sv": "Avbryt insomningstimern i ${applicationName}",
+                "et": "Tühista uinumise taimer rakenduses ${applicationName}",
+            ],
+        ]
+        for (key, byLanguage) in expected {
+            for (language, phrase) in byLanguage {
+                XCTAssertEqual(
+                    compiledPhrase(key, language: language),
+                    phrase,
+                    "\(language) compiled phrase for \(key)"
+                )
+            }
+        }
+    }
+
     /// Every compiled `.lproj` AppShortcuts table must resolve the English key
     /// to a native string, not fall back to the key itself.
     func testCompiledAppShortcutsTableResolvesEverySupportedLanguage() {
@@ -552,15 +655,20 @@ final class AppShortcutsLocalizationTests: XCTestCase {
         let shortcuts = LutheranRadioShortcuts.appShortcuts
         XCTAssertEqual(
             shortcuts.count,
-            requiredPhraseKeys.count,
+            requiredPhraseKeys.count + sleepTimerPhraseKeys.count,
             "Xcode extracts only the first phrase of each AppShortcut into AppShortcuts.xcstrings; keep one utterance per shortcut"
+        )
+        XCTAssertLessThanOrEqual(
+            shortcuts.count,
+            10,
+            "appintentsmetadataprocessor rejects more than 10 App Shortcuts"
         )
     }
 
     func testAppShortcutsCatalogHasNoStaleUtteranceKeys() throws {
         let catalog = try loadSourceCatalog()
         let strings = try XCTUnwrap(catalog["strings"] as? [String: Any])
-        for key in requiredPhraseKeys {
+        for key in requiredPhraseKeys + sleepTimerPhraseKeys {
             let entry = try XCTUnwrap(strings[key] as? [String: Any], "Missing entry \(key)")
             let state = entry["extractionState"] as? String
             XCTAssertNotEqual(
@@ -581,6 +689,19 @@ final class AppShortcutsLocalizationTests: XCTestCase {
         let data = try Data(contentsOf: catalogURL)
         let object = try JSONSerialization.jsonObject(with: data)
         return try XCTUnwrap(object as? [String: Any], "AppShortcuts.xcstrings is not a dictionary")
+    }
+
+    private func phraseValue(
+        _ localizations: [String: Any],
+        language: String,
+        key: String
+    ) throws -> String {
+        let localization = try XCTUnwrap(
+            localizations[language] as? [String: Any],
+            "\(key) missing \(language)"
+        )
+        let unit = try XCTUnwrap(localization["stringUnit"] as? [String: Any])
+        return try XCTUnwrap(unit["value"] as? String)
     }
 
     private func compiledPhrase(_ key: String, language: String) -> String {

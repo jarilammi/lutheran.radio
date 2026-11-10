@@ -1,6 +1,41 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Cancel the ${applicationName} sleep timer" : {
+      "comment" : "Siri utterance for CancelSleepTimerIntent. Keep ${applicationName}. Translator note: German, Finnish, Swedish, and Estonian are native phrasing for a native-speaker review. Siri may not support Estonian yet; the Estonian phrase is registered for when it does. Shortcuts runs the intent regardless. Other UI languages fall back to English.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beende den Schlaf-Timer in ${applicationName}"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel the ${applicationName} sleep timer"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tühista uinumise taimer rakenduses ${applicationName}"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Peru uniajastin sovelluksessa ${applicationName}"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avbryt insomningstimern i ${applicationName}"
+          }
+        }
+      }
+    },
     "Pause ${applicationName}" : {
       "comment" : "Siri utterance for pause. Keep ${applicationName}. PauseRadioIntent still stops the stream (same SSOT as in-app pause).",
       "localizations" : {
@@ -984,6 +1019,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dlala ${applicationName} ngolimi ${language}"
+          }
+        }
+      }
+    },
+    "Set a ${duration} sleep timer in ${applicationName}" : {
+      "comment" : "Siri utterance for SetSleepTimerIntent with the duration filled in one sentence. Keep ${applicationName} and ${duration}. Translator note: German, Finnish, Swedish, and Estonian are native phrasing for a native-speaker review. Siri may not support Estonian yet; the Estonian phrase is registered for when it does. Shortcuts runs the intent regardless. Other UI languages fall back to English.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stelle einen Schlaf-Timer für ${duration} in ${applicationName}"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set a ${duration} sleep timer in ${applicationName}"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sea uinumise taimer ${duration} peale rakenduses ${applicationName}"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aseta uniajastin ${duration} ajaksi sovelluksessa ${applicationName}"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sätt en insomningstimer på ${duration} i ${applicationName}"
           }
         }
       }

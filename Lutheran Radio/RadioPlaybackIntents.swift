@@ -8,6 +8,9 @@
 //  + play / stop). All playback goes through the documented guarded paths, resurrection protection,
 //  security validation, intent clearing, and persistence.
 //
+//  Sleep-timer intents live in SleepTimerIntents.swift and are registered on
+//  LutheranRadioShortcuts below (one AppShortcutsProvider per app).
+//
 //  New code lives only in the main "Lutheran Radio" target (no Core, no widget changes).
 //  Matches style, DEBUG logging, init patterns, and error handling from LutheranRadioWidget intents.
 //
@@ -258,10 +261,15 @@ struct SwitchToLanguageIntent: AppIntent {
 
 // MARK: - AppShortcutsProvider (zero-config Siri + Shortcuts app discovery)
 
-/// Zero-config Siri / Shortcuts / Spotlight discovery for play, pause, and language switch.
+/// Zero-config Siri / Shortcuts / Spotlight discovery for play, pause, language switch,
+/// and the sleep timer.
 ///
-/// English source phrases below are the extraction keys. Spoken forms for all 54
-/// app languages live in ``AppShortcuts.xcstrings`` (Apple-required table name).
+/// English source phrases below are the extraction keys. Play, pause, and
+/// language-switch utterances are translated for all 54 UI languages in
+/// ``AppShortcuts.xcstrings``. Sleep-timer utterances are native in English,
+/// German, Finnish, Swedish, and Estonian; other UI languages fall back to the
+/// English phrase. Siri may not speak Estonian yet — those phrases are registered
+/// for when it does, and Shortcuts runs the intents either way.
 ///
 /// - Important: Do not move these utterances into `Localizable.xcstrings`. Siri
 ///   only trains App Shortcut phrases from the `AppShortcuts` table. Every phrase
@@ -271,10 +279,17 @@ struct SwitchToLanguageIntent: AppIntent {
 ///   `AppShortcuts.xcstrings`. Extra phrases in the same `phrases:` array are
 ///   marked stale ("References to this key could not be found in source code")
 ///   and are not trained. Use the `@AppShortcutsBuilder` body (no `return []`).
-/// - Note: `shortTitle` / intent `title` / `description` stay on
-///   `LocalizedStringResource` in `Localizable.xcstrings` (Shortcuts library chrome).
+/// - Important: An app may ship at most 10 `AppShortcut` values. This provider
+///   registers eight (six playback + two sleep-timer). The set phrase includes
+///   `\(\.$duration)` and fills that parameter in one sentence. The 30-minute
+///   length is the parameter default when a shortcut runs without a duration.
+/// - Note: Play, pause, and language-switch `shortTitle` / `title` /
+///   `description` stay on `LocalizedStringResource` in `Localizable.xcstrings`.
+///   Sleep-timer titles and short titles reuse `sleep_timer_sheet_title` and
+///   `sleep_timer_cancel_timer`. A new literal there would be a new catalog key.
 /// - SeeAlso: `AppShortcuts.xcstrings`, `PlayRadioIntent`, `PauseRadioIntent`,
-///   `SwitchToLanguageIntent`, README.md Localizations, CODING_AGENT.md (Localization).
+///   `SwitchToLanguageIntent`, ``SetSleepTimerIntent``, ``CancelSleepTimerIntent``,
+///   README.md Localizations, CODING_AGENT.md (Localization).
 struct LutheranRadioShortcuts: AppShortcutsProvider {
     /// Provides the top-level shortcuts that appear automatically in the Shortcuts app,
     /// Spotlight, and are trainable by Siri in the user's language
@@ -327,6 +342,33 @@ struct LutheranRadioShortcuts: AppShortcutsProvider {
             ],
             shortTitle: LocalizedStringResource("Switch to %@"),
             systemImageName: "globe"
+        )
+        // Translator note (de, fi, sv, et): native phrasing for a native-speaker
+        // review. Siri may not support Estonian yet; the et phrases are registered
+        // so they train when it does. Shortcuts runs these intents regardless.
+        AppShortcut(
+            intent: SetSleepTimerIntent(),
+            phrases: [
+                "Set a \(\.$duration) sleep timer in \(.applicationName)"
+            ],
+            shortTitle: LocalizedStringResource(
+                "sleep_timer_sheet_title",
+                defaultValue: "Sleep timer",
+                table: "Localizable"
+            ),
+            systemImageName: "moon.zzz.fill"
+        )
+        AppShortcut(
+            intent: CancelSleepTimerIntent(),
+            phrases: [
+                "Cancel the \(.applicationName) sleep timer"
+            ],
+            shortTitle: LocalizedStringResource(
+                "sleep_timer_cancel_timer",
+                defaultValue: "Cancel timer",
+                table: "Localizable"
+            ),
+            systemImageName: "moon.zzz"
         )
     }
 }

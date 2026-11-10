@@ -32,6 +32,8 @@
 //  - Sole presentation is a native `.confirmationDialog` on ``SleepTimerMenuButton``
 //    with duration presets, conditional "Cancel timer", and the destructive
 //    "Clear local state" privacy action.
+//  - Preset minutes are ``SleepTimerPreset/allCases`` (15, 30, 45, 60). The same
+//    cases back ``SleepTimerPresetAppEnum``. Do not hard-code another length here.
 //  - The menu button is equatable on cancel-timer availability and the minute
 //    accessibility string. Action closures are left out of that comparison: the
 //    parent reallocates them on every status paint, and comparing them rebuilds
@@ -273,7 +275,7 @@ struct PlaybackControlsView: View {
 /// runs when the binding goes false, before ``onClearLocalStateTapped`` builds
 /// the secondary privacy alert.
 ///
-/// - SeeAlso: ``PlaybackControlsView``,
+/// - SeeAlso: ``PlaybackControlsView``, ``SleepTimerPreset``,
 ///   ``SleepTimerGlassPopoverLayout``,
 ///   ``SleepTimerPrivacyClearPresentation``,
 ///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority),
@@ -328,17 +330,12 @@ struct SleepTimerMenuButton: View, Equatable {
             isPresented: $isShowingSleepTimerDialog,
             titleVisibility: .visible
         ) {
-            Button(String(localized: "sleep_timer_preset_15_min", table: "Localizable")) {
-                onSelectSleepTimer?(15)
-            }
-            Button(String(localized: "sleep_timer_preset_30_min", table: "Localizable")) {
-                onSelectSleepTimer?(30)
-            }
-            Button(String(localized: "sleep_timer_preset_45_min", table: "Localizable")) {
-                onSelectSleepTimer?(45)
-            }
-            Button(String(localized: "sleep_timer_preset_60_min", table: "Localizable")) {
-                onSelectSleepTimer?(60)
+            // Titles and minutes are ``SleepTimerPreset`` so this menu and
+            // ``SetSleepTimerIntent`` cannot offer different lengths.
+            ForEach(SleepTimerPreset.allCases, id: \.rawValue) { preset in
+                Button(preset.menuTitle) {
+                    onSelectSleepTimer?(preset.rawValue)
+                }
             }
 
             if cancelTimerIsAvailable {
