@@ -258,8 +258,10 @@ struct RadioPlayerView: View {
 ///
 /// Why:
 /// - `DirectStreamingPlayer.setVolume` only sets `AVPlayer.volume`, an internal per-player gain.
-///   It has no effect on the actual audio output level delivered to the user, hardware volume
-///   buttons, Control Center, the Lock Screen Now Playing, or per-route volumes (AirPlay, BT).
+///   It has no effect on hardware volume buttons, Control Center, the Lock Screen Now Playing,
+///   or per-route volumes (AirPlay, BT). The sleep-timer fade ramps this same gain from 1 to 0
+///   and restores 1 before the next start. It never writes system route volume, `MPVolumeView`,
+///   UserDefaults, or the App Group.
 /// - Prior custom `@State` + `Slider` + UserDefaults "preferredVolume" was a transitional
 ///   workaround that accepted desync as a known limitation (explicitly documented in the
 ///   previous implementation).

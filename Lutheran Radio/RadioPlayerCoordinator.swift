@@ -517,6 +517,8 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         await updateUserDefaultsLanguage(initialStream.languageCode)
         streamingPlayer.resetTransientErrors()
         await performColdLaunchPlaybackIfAllowed(initialStream: initialStream)
+        // ``play()`` restores unity gain. Repeat here so an early return from that
+        // call still leaves relative gain at 1 (never system volume).
         streamingPlayer.setVolume(1.0)
     }
 

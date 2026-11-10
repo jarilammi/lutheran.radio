@@ -154,6 +154,9 @@ extension DirectStreamingPlayer {
             enforceSilenceAfterDiscardedAttach()
             return false
         }
+        // Engine `play()` (thermal / path recovery) does not enter the SPM pipeline.
+        // Invalidate any sleep-timer ramp and force unity before this start.
+        await SharedPlayerManager.shared.restoreUnityPlaybackGainForPlaybackStart()
         await createAndStartPlayer(for: streamURL, attachGeneration: attachGeneration)
         guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
             enforceSilenceAfterDiscardedAttach()
@@ -227,6 +230,9 @@ extension DirectStreamingPlayer {
         // ========================================================
         
         self.player?.automaticallyWaitsToMinimizeStalling = true
+        // Last guard before this item becomes audible. Pipeline starts already requested
+        // unity; this covers a reused `AVPlayer` whose volume was still faded.
+        restoreUnityPlaybackGain()
         self.player?.play()
 
         #if DEBUG

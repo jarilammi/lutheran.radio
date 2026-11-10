@@ -201,6 +201,7 @@ End with security impact, build status, localization needed.
 3. **SSOT stop path** — Sleep-timer cancel routes through `SharedPlayerManager.stop()`.
 4. **Preserve across switch** — Active-intent stream switches (`completeStreamSwitch`, `switchToStreamFromWidget`, external/Siri switch helpers) pass `preserveActiveSleepTimer: true` when intent is `.sleepTimer`.
 5. **Elapsed engine-complete cleanup** — ``applySleepTimerElapsedPause()`` awaits ``stopAndWait(reason: .interruption)`` then ``deactivateAudioSessionAsync()``. Does not run ``performSessionAndWidgetTeardown``. Grey `.userPaused` + `.sleepTimer` intent; resume via ``setPlaying()``.
+6. **Fade then stop** — The last 30 s (`SleepTimerFadePolicy.defaultDuration`) ramp `AVPlayer.volume` from 1 to 0 (ease-out, at least 10 steps per second), then the elapsed-pause path runs. A shorter timer fades across its remaining time. Off (`offDuration` 0) is still a hard stop. One fade task; a new fade cancels the previous. Cancel, Play/Pause, and stream switch restore gain to 1 immediately. The faded value is never written to UserDefaults or the App Group. The next `play()` / interruption resume also forces unity.
 
 ---
 

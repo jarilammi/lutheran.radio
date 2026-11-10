@@ -373,6 +373,9 @@ extension DirectStreamingPlayer {
         guard let player else { return false }
         // Same-stream soft-resume: the secured item is already buffered. Immediate kick is
         // intentional — do not wait for a cold live ``isPlaybackLikelyToKeepUp`` window.
+        // Reused players keep `AVPlayer.volume`. Full gain before the kick so a prior
+        // sleep-timer fade cannot resume quietly. System volume is untouched.
+        restoreUnityPlaybackGain()
         player.play()
         player.rate = 1.0
         player.playImmediately(atRate: 1.0)
@@ -408,10 +411,10 @@ extension DirectStreamingPlayer {
             
             let newPlayer = AVPlayer()
             newPlayer.automaticallyWaitsToMinimizeStalling = true
+            // A brand-new player must not inherit a sleep-timer fade. Unity is the
+            // default; ``restoreUnityPlaybackGain()`` is what keeps a reused player honest.
+            newPlayer.volume = 1
             self.player = newPlayer
-            
-            // Optional: Set volume from your slider
-            // newPlayer.volume = Float(currentVolume)
         }
     }
 
@@ -1180,6 +1183,8 @@ extension DirectStreamingPlayer {
         test_staleConnectingPlayNudgeCount += 1
         #endif
         guard !isTesting else { return }
+        // Explicit Play on a stale connect is a playback start. Full relative gain first.
+        restoreUnityPlaybackGain()
         guard let player else { return }
         let generation = playbackAttachGeneration
         let item = playerItem ?? player.currentItem

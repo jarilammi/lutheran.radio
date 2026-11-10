@@ -242,7 +242,12 @@ extension SharedPlayerManager {
     /// Phase 1 — load visual SSOT, Now Playing controls, sleep-timer policy, sticky clear.
     ///
     /// Stream-switch with an active sleep-timer intent preserves the timer; all other
-    /// play entries cancel it on the main app.
+    /// play entries cancel it on the main app. Every entry then restores `AVPlayer`
+    /// relative gain to `1` so a sleep-timer fade cannot leak into the next start.
+    /// That restore is the single pipeline site for user play, resume, stream switch,
+    /// widget / Live Activity / Siri intents, Control Center, deep links, and remote
+    /// commands — they all reach ``play()``. Early ``userRequestedPlay()`` returns that
+    /// never call ``play()`` use the same helper.
     private func preparePlayEntrySurfaces() async {
         ensureVisualStateLoaded()
         let preserveSleepTimerForStreamSwitch =
@@ -256,6 +261,10 @@ extension SharedPlayerManager {
             print("[SharedPlayerManager] play() — preserving active sleep timer during stream switch")
             #endif
         }
+        // Unity even when no timer was armed, and on the preserve path (fade cancelled,
+        // countdown kept). UITest isolation returns before engine attach, so this has
+        // to live here rather than next to `player.play()`.
+        await restoreUnityPlaybackGainForPlaybackStart()
         #endif
 
         // Always clear .userPaused / .cleared / elapsed-sleep-timer locks at the absolute top of play()
@@ -730,6 +739,10 @@ extension SharedPlayerManager {
                 #if DEBUG
                 print("[SharedPlayerManager] userRequestedPlay() — stale Connecting, nudging existing item (no second attach)")
                 #endif
+                if sleepTimerFadeTask != nil {
+                    await cancelSleepTimer(restorePlaybackIntent: false)
+                }
+                await restoreUnityPlaybackGainForPlaybackStart()
                 await DirectStreamingPlayer.shared.nudgeStaleConnectingPlay()
                 return
             }
@@ -748,6 +761,13 @@ extension SharedPlayerManager {
             print("[SharedPlayerManager] userRequestedPlay() no-op — already audibly playing matching selection")
             #endif
             #if LUTHERAN_MAIN_APP
+            // Already audible, so this return never reaches ``play()``. A mid-fade Play
+            // aborts the pending stop and restores unity; a quiet duplicate Play only
+            // restores gain (an interruption may have left the ramp cancelled).
+            if sleepTimerFadeTask != nil {
+                await cancelSleepTimer()
+            }
+            await restoreUnityPlaybackGainForPlaybackStart()
             // Light surface reaffirm only — no visual/intent mutation, no attach.
             await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
             #endif
@@ -1185,6 +1205,10 @@ extension SharedPlayerManager {
         #if LUTHERAN_MAIN_APP
         if !preserveActiveSleepTimer {
             await cancelSleepTimer(restorePlaybackIntent: false)
+        } else {
+            // Keep the deadline. Drop an in-progress ramp and restore unity now so the
+            // switch does not keep playing at the faded gain.
+            await restoreUnityPlaybackGainForPlaybackStart()
         }
         #endif
         // Note: Always clear .userPaused / .cleared lock for widget pure-play actions

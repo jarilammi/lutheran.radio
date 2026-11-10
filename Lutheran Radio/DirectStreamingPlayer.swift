@@ -1020,11 +1020,50 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     
+    /// In-memory relative gain applied to ``player`` (`AVPlayer.volume`).
+    ///
+    /// This is not system route volume and it is never written to UserDefaults or the
+    /// App Group. The sleep-timer fade and every playback start share this value.
+    /// A new `AVPlayer` still starts at `1` (see ``restoreUnityPlaybackGain()``).
+    ///
+    /// - Note: Main-actor isolated because AVPlayer mutations stay on the main thread
+    ///   (same rule as ``executeAudioOperation``).
+    @MainActor var playbackRelativeGain: Float = 1
+
+    /// Writes the player's internal gain. Does not touch `MPVolumeView` or the audio session.
+    ///
+    /// - Parameter volume: Linear gain. Clamped to `0...1` by ``applyPlaybackRelativeGain(_:)``.
+    /// - SeeAlso: ``applyPlaybackRelativeGain(_:)``, ``RadioPlayerView`` volume-row notes.
     func setVolume(_ volume: Float) {
-        executeAudioOperation({
-            self.player?.volume = volume
-            return ()
-        }, completion: { _ in })
+        let gain = volume
+        Task { @MainActor [weak self] in
+            self?.applyPlaybackRelativeGain(gain)
+        }
+    }
+
+    /// Stores ``playbackRelativeGain`` and applies it to the current `AVPlayer`, if any.
+    ///
+    /// - Parameter gain: Requested linear gain. Values outside `0...1` are clamped.
+    /// - Important: Memory only. Callers must not persist the faded value.
+    /// - SeeAlso: ``restoreUnityPlaybackGain()``, ``SleepTimerFadePolicy``.
+    @MainActor
+    func applyPlaybackRelativeGain(_ gain: Float) {
+        let clamped = min(max(gain, 0), 1)
+        playbackRelativeGain = clamped
+        player?.volume = clamped
+    }
+
+    /// Sets relative gain back to full before the next audible start, or after a fade ends.
+    ///
+    /// Safe to call when `player` is nil: the stored gain is still `1`, and the next
+    /// `AVPlayer` is created at unity (``ensurePlayerExists()``).
+    ///
+    /// - Postcondition: ``playbackRelativeGain`` is `1`. `player?.volume` is `1` when a
+    ///   player exists.
+    /// - SeeAlso: ``SharedPlayerManager/restoreUnityPlaybackGainForPlaybackStart()``.
+    @MainActor
+    func restoreUnityPlaybackGain() {
+        applyPlaybackRelativeGain(1)
     }
 
     // MARK: - Callback / deinit hygiene (see DirectStreamingPlayer+DeinitHygiene.swift)

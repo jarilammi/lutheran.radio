@@ -59,6 +59,13 @@ extension DirectStreamingPlayer {
                     self.isHandlingInterruption = true
                     self.wasPlayingBeforeInterruption = self.isPlaying  // Use refined check
                     
+                    // Drop the sleep-timer ramp so a later step cannot fight the resume.
+                    // Leave the current gain in place; the next playback start sets 1.0.
+                    // The countdown deadline is unchanged.
+                    Task {
+                        await SharedPlayerManager.shared.invalidateSleepTimerFadeKeepingDeadline()
+                    }
+
                     if self.wasPlayingBeforeInterruption {
                         self.player?.pause()  // Graceful pause
                         self.delegate?.onStatusChange(.paused, reasonKey: "Interruption")  // ← fixed
@@ -98,7 +105,11 @@ extension DirectStreamingPlayer {
                             
                             // Small delay helps AVPlayer settle after interruption
                             try? await Task.sleep(for: .milliseconds(100))
-                            
+
+                            // Interruption resume does not enter the play pipeline. Unity
+                            // gain here is what keeps a mid-fade phone call from coming
+                            // back quietly. System route volume is unchanged.
+                            await SharedPlayerManager.shared.restoreUnityPlaybackGainForPlaybackStart()
                             self.player?.play()
                             
                             if self.isPlaying {
@@ -145,6 +156,12 @@ extension DirectStreamingPlayer {
                 if self.player?.rate ?? 0 > 0 {
                     self.player?.pause()
                     self.delegate?.onStatusChange(.paused, reasonKey: "Route Change")  // ← fixed
+
+                    // Same fade invalidation as an interruption began: the ramp stops,
+                    // the deadline stays, and the next start restores unity gain.
+                    Task {
+                        await SharedPlayerManager.shared.invalidateSleepTimerFadeKeepingDeadline()
+                    }
                     
                     // Optional: persist paused state after route change
                     Task {

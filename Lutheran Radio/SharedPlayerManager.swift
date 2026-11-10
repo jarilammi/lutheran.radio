@@ -512,12 +512,32 @@ actor SharedPlayerManager {
     #if LUTHERAN_MAIN_APP
     // MARK: - Sleep Timer (main app only; implementation in SharedPlayerManager+SleepTimer.swift)
     // SwiftUI (PlaybackControlsView) presents the options dialog. All scheduling, cancellation,
-    // countdown, intent management and cross-sync remain here + the coordinator glue.
-    /// Active sleep timer task. Cancellable.
+    // countdown, the single fade task, intent management, and cross-sync remain here + the
+    // coordinator glue. The fade writes `AVPlayer.volume` only (in-memory relative gain).
+    // It never writes UserDefaults or the App Group.
+    /// Active sleep-timer countdown. Cancellable. Separate from ``sleepTimerFadeTask``.
     var sleepTimerTask: Task<Void, Never>?
+    /// The one in-flight sleep-timer volume ramp. A new fade cancels this task first.
+    /// Nil during the full-volume lead and after the ramp finishes or is cancelled.
+    var sleepTimerFadeTask: Task<SleepTimerFadeResult, Never>?
+    /// Bumped whenever a fade starts or is invalidated. In-flight steps whose generation
+    /// does not match drop the write so a cancelled ramp cannot lower gain after restore.
+    var sleepTimerFadeGeneration: UInt64 = 0
     /// Remaining seconds on the active sleep timer (for UI countdown). Nil when inactive.
     /// Mutated only by sleep-timer logic in `SharedPlayerManager+SleepTimer.swift`.
     var sleepTimerRemainingSeconds: Int?
+    #if DEBUG
+    /// Test override for ``SleepTimerFadePolicy/defaultDuration``. `0` is the Off policy
+    /// (hard stop, no ramp). Production builds always use the default.
+    var sleepTimerFadeConfiguredDuration: TimeInterval = SleepTimerFadePolicy.defaultDuration
+    /// Countdown and fade waits. Production sleeps on the wall clock. Tests install a
+    /// manual clock so a 30 s ramp does not block the suite.
+    var sleepTimerDelayHandler: @Sendable (Duration) async throws -> Void = { duration in
+        try await Task.sleep(for: duration)
+    }
+    /// Ramp samples and the elapsed-pause mark. Unity restores are not recorded.
+    var sleepTimerFadeTrace: [SleepTimerFadeTraceEvent] = []
+    #endif
     #endif
 
     // MARK: - Now Playing (Lock Screen & Control Center)
