@@ -726,10 +726,13 @@ extension ViewController {
     /// Wraps ``DirectStreamingPlayer/availableStreams`` via
     /// ``PlaybackKeyboardMenu/adjacentStreamIndex(current:offset:count:)`` and
     /// enters ``handleLanguageSelection(at:)`` (same orchestration as a flag tap).
+    /// Lock Screen, Control Center, and headset next/previous call the same
+    /// coordinator method from the media-transport mailbox. They do not use this shim.
     ///
     /// - Parameter offset: Signed catalog step (`-1` previous, `+1` next).
     /// - SeeAlso: ``RadioPlayerCoordinator/handleAdjacentLanguageSelection(offset:)``,
-    ///   ``AppDelegate/menuPreviousLanguage(_:)``, ``AppDelegate/menuNextLanguage(_:)``
+    ///   ``AppDelegate/menuPreviousLanguage(_:)``, ``AppDelegate/menuNextLanguage(_:)``,
+    ///   ``MediaTransportCommand/nextLanguage``
     public func handleAdjacentLanguageSelection(offset: Int) {
         radioPlayerCoordinator.handleAdjacentLanguageSelection(offset: offset)
     }

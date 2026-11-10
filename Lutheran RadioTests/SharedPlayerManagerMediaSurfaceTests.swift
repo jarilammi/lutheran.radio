@@ -1552,11 +1552,12 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
         }
     }
 
-    /// Protects install-time remote-command hygiene: only play / pause / toggle / stop are
-    /// enabled; track/seek/skip/rating and related commands must remain disabled so system
-    /// chrome does not present dead affordances for a continuous live stream.
+    /// Protects install-time remote-command hygiene: play / pause / toggle / stop and
+    /// next/previous (language step) are enabled. Seek/skip/rating and related commands
+    /// stay disabled so system chrome does not present dead affordances.
     ///
     /// - SeeAlso: ``SharedPlayerManager/configureNowPlayingControlsIfNeeded()``,
+    ///   ``MediaTransportCommand/nextLanguage``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     func testConfigureNowPlayingControlsDisablesUnsupportedRemoteCommands() async {
         await manager.configureNowPlayingControlsIfNeeded()
@@ -1567,10 +1568,16 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
             XCTAssertTrue(center.pauseCommand.isEnabled)
             XCTAssertTrue(center.togglePlayPauseCommand.isEnabled)
             XCTAssertTrue(center.stopCommand.isEnabled)
+            XCTAssertTrue(
+                center.nextTrackCommand.isEnabled,
+                "Next track must step the language catalog"
+            )
+            XCTAssertTrue(
+                center.previousTrackCommand.isEnabled,
+                "Previous track must step the language catalog"
+            )
 
             let unsupported: [MPRemoteCommand] = [
-                center.nextTrackCommand,
-                center.previousTrackCommand,
                 center.skipForwardCommand,
                 center.skipBackwardCommand,
                 center.seekForwardCommand,
@@ -1593,6 +1600,72 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
                 )
             }
         }
+    }
+
+    /// Next-track maps to catalog offset `+1` and previous-track to `-1`.
+    ///
+    /// Last stream (`et`) + next wraps to first (`en`). First stream (`en`) + previous
+    /// wraps to last (`et`). Play/pause/stop/toggle are not language steps.
+    /// Wrap math stays ``PlaybackKeyboardMenu/adjacentStreamIndex(current:offset:count:)``,
+    /// the same function ``handleAdjacentLanguageSelection(offset:)`` uses.
+    ///
+    /// - SeeAlso: ``MediaTransportCommand/adjacentLanguageCatalogOffset``,
+    ///   ``RadioPlayerCoordinator/handleAdjacentLanguageSelection(offset:)``,
+    ///   ``DirectStreamingPlayer/availableStreams``
+    func testNextAndPreviousLanguageCommandsWrapTheFiveStreamCatalog() throws {
+        let codes = DirectStreamingPlayer.availableStreams.map(\.languageCode)
+        XCTAssertEqual(codes, ["en", "de", "fi", "sv", "et"])
+        let count = codes.count
+        let last = count - 1
+
+        let nextOffset = try XCTUnwrap(MediaTransportCommand.nextLanguage.adjacentLanguageCatalogOffset)
+        let previousOffset = try XCTUnwrap(
+            MediaTransportCommand.previousLanguage.adjacentLanguageCatalogOffset
+        )
+        XCTAssertEqual(nextOffset, 1)
+        XCTAssertEqual(previousOffset, -1)
+        XCTAssertNil(MediaTransportCommand.play.adjacentLanguageCatalogOffset)
+        XCTAssertNil(MediaTransportCommand.pause.adjacentLanguageCatalogOffset)
+        XCTAssertNil(MediaTransportCommand.stop.adjacentLanguageCatalogOffset)
+        XCTAssertNil(MediaTransportCommand.togglePlayPause.adjacentLanguageCatalogOffset)
+
+        let wrappedNext = try XCTUnwrap(
+            PlaybackKeyboardMenu.adjacentStreamIndex(current: last, offset: nextOffset, count: count)
+        )
+        let wrappedPrevious = try XCTUnwrap(
+            PlaybackKeyboardMenu.adjacentStreamIndex(current: 0, offset: previousOffset, count: count)
+        )
+        XCTAssertEqual(wrappedNext, 0)
+        XCTAssertEqual(codes[wrappedNext], "en")
+        XCTAssertEqual(wrappedPrevious, last)
+        XCTAssertEqual(codes[wrappedPrevious], "et")
+    }
+
+    /// Mailbox next then previous forwards `+1` then `-1` and does not start playback
+    /// under the XCTest host.
+    ///
+    /// The host skips ``handleAdjacentLanguageSelection(offset:)`` so ``switchToStream``
+    /// cannot move the shared engine model. The capture seam is the observation of the
+    /// offset ``performMediaTransportCommand(_:generation:)`` would forward.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
+    ///   ``SharedPlayerManager/_test_setCaptureAdjacentLanguageOffsets(_:)``,
+    ///   ``MediaTransportCommand/adjacentLanguageCatalogOffset``
+    func testMediaTransportAdjacentLanguageVerbsForwardOffsetsInOrder() async {
+        SharedPlayerManager._test_setCaptureAdjacentLanguageOffsets(true)
+        defer { SharedPlayerManager._test_setCaptureAdjacentLanguageOffsets(false) }
+
+        let visualBefore = await manager.currentVisualState
+        let intentBefore = await manager.currentPlaybackIntent
+
+        await manager.submitMediaTransportCommandAndWait(.nextLanguage)
+        await manager.submitMediaTransportCommandAndWait(.previousLanguage)
+
+        XCTAssertEqual(SharedPlayerManager._test_adjacentLanguageOffsetLog(), [1, -1])
+        let visualAfter = await manager.currentVisualState
+        let intentAfter = await manager.currentPlaybackIntent
+        XCTAssertEqual(visualAfter, visualBefore)
+        XCTAssertEqual(intentAfter, intentBefore)
     }
 
     /// Protects media-transport mailbox ordering for rapid headset / Now Playing toggles.

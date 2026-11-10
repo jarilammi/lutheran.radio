@@ -531,7 +531,8 @@ actor SharedPlayerManager {
     /// Serial mailbox chain for Now Playing / headset / Live Activity transport verbs.
     ///
     /// Each ``submitMediaTransportCommand(_:)`` schedules work that either waits for this
-    /// tail (play / toggle) or preempts it (pause / stop). See ``MediaTransportCommand``.
+    /// tail (play / toggle / next language / previous language) or preempts it
+    /// (pause / stop). See ``MediaTransportCommand``.
     ///
     /// - SeeAlso: ``submitMediaTransportCommand(_:)``, ``submitMediaTransportCommandAndWait(_:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md

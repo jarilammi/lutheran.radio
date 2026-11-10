@@ -42,7 +42,8 @@
 //  - ``syncInProcessLanguageChromeIfPresent(for:isAttaching:)`` — in-process chip hook
 //  - ``updateUserDefaultsLanguage(_:)`` — awaited destination language + privacy-gated liveness
 //  - ``handleLanguageSelection(at:)`` — LanguageSelectorView / PlayerViewModel
-//  - ``handleAdjacentLanguageSelection(offset:)`` — menu / keyboard previous-next wrap
+//  - ``handleAdjacentLanguageSelection(offset:)`` — menu / keyboard / Now Playing
+//    next-previous language wrap (remote verbs enter through the media-transport mailbox)
 //
 //  Canonical private orchestrators (same type, file-private):
 //  - ``completeStreamSwitch(stream:index:)`` — main-app full UX (tuning + needle)
@@ -521,17 +522,28 @@ extension RadioPlayerCoordinator {
 
     // MARK: - Main-app flag-tap language selection
 
-    /// Menu / keyboard previous or next language: wrap the catalog, then ``handleLanguageSelection(at:)``.
+    /// Previous or next language: wrap the catalog, then ``handleLanguageSelection(at:)``.
     ///
+    /// Callers: keyboard / menu (⌘[ / ⌘]) and system next/previous track
+    /// (``MediaTransportCommand/nextLanguage`` / ``previousLanguage`` →
+    /// ``SharedPlayerManager/performMediaTransportCommand(_:generation:)``).
     /// Same orchestration as a flag tap (tuning + needle + sticky-pause preserve). Not a
     /// new play entry and not the external ``handleSwitchToLanguage(_:)`` path.
+    ///
+    /// Stopped sessions follow the flag-tap rule inside ``completeStreamSwitch``:
+    /// an already-active playback intent switches and continues (an idle
+    /// ``.shouldBePlaying`` session therefore switches and starts); sticky
+    /// ``.userPaused`` switches language and stays stopped. Cellular prompting
+    /// stays on the host path observer when audio actually starts.
     ///
     /// - Parameter offset: Signed step through ``DirectStreamingPlayer/availableStreams``
     ///   (`-1` previous, `+1` next). A no-op when the wrap lands on the current index
     ///   (single-stream catalog or `offset == 0`).
     /// - SeeAlso: ``PlaybackKeyboardMenu/adjacentStreamIndex(current:offset:count:)``,
     ///   ``handleLanguageSelection(at:)``, ``AppDelegate/menuPreviousLanguage(_:)``,
-    ///   ``AppDelegate/menuNextLanguage(_:)``
+    ///   ``AppDelegate/menuNextLanguage(_:)``,
+    ///   ``MediaTransportCommand/adjacentLanguageCatalogOffset``,
+    ///   ``CellularPermissionManager``
     func handleAdjacentLanguageSelection(offset: Int) {
         let streams = DirectStreamingPlayer.availableStreams
         guard let nextIndex = PlaybackKeyboardMenu.adjacentStreamIndex(

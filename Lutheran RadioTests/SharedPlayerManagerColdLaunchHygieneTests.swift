@@ -1164,8 +1164,9 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
     /// Factory reset installs Now Playing remotes without starting audio.
     ///
     /// **Invariant protected:** After ``resetToFactoryDefaultsOnLaunch()``, play / pause /
-    /// toggle / stop are enabled so a background relaunch can honor an explicit headset
-    /// command. Visual stays `.prePlay` (this test does not note presentable).
+    /// toggle / stop and next/previous language step are enabled so a background relaunch
+    /// can honor an explicit headset command. Visual stays `.prePlay` (this test does not
+    /// note presentable).
     ///
     /// - SeeAlso: ``SharedPlayerManager/configureNowPlayingControlsIfNeeded()``.
     func testFactoryResetInstallsNowPlayingRemotesWithoutStartingPlay() async {
@@ -1185,6 +1186,8 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
             XCTAssertTrue(center.pauseCommand.isEnabled)
             XCTAssertTrue(center.togglePlayPauseCommand.isEnabled)
             XCTAssertTrue(center.stopCommand.isEnabled)
+            XCTAssertTrue(center.nextTrackCommand.isEnabled)
+            XCTAssertTrue(center.previousTrackCommand.isEnabled)
         }
     }
 

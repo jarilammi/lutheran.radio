@@ -581,6 +581,7 @@ func tearDownSharedPlayerManagerEventTestIsolation(
         SharedPlayerManager._test_setBypassUITestModeForPlaySecurityValidation(false)
         SharedPlayerManager._test_setRecordMediaSurfaceCoordinationOrder(false)
         SharedPlayerManager._test_clearMediaSurfaceCoordinationOrderLog()
+        SharedPlayerManager._test_setCaptureAdjacentLanguageOffsets(false)
         SharedPlayerManager._test_resetProcessExitSessionTeardownOnceFlag()
     }
 }

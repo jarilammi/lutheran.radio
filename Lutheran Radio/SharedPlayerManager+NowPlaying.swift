@@ -5,6 +5,10 @@
 //  Lock screen and Control Center integration using the MediaPlayer framework.
 //  Main app target only (no CarPlay entitlement required).
 //
+//  Next / previous track step ``DirectStreamingPlayer/availableStreams`` through
+//  ``RadioPlayerCoordinator/handleAdjacentLanguageSelection(offset:)``. Seek, skip,
+//  and rating stay disabled. Core pinning and DNS validation are not in this file.
+//
 //  Created by Jari Lammi on 3.6.2026.
 //
 
@@ -42,8 +46,15 @@ enum MediaSurfaceLiveActivityMode: Sendable {
 /// clicks cannot invert direction by
 /// sampling `isActivelyPlaying` before a prior verb commits sticky intent / visual state.
 ///
+/// Next and previous track are language steps (`en` / `de` / `fi` / `sv` / `et`), not a
+/// playlist. They forward to ``RadioPlayerCoordinator/handleAdjacentLanguageSelection(offset:)``
+/// (the keyboard step). They are not a second switch implementation and not a new play entry.
+///
 /// - SeeAlso: ``SharedPlayerManager/submitMediaTransportCommand(_:)``,
 ///   ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
+///   ``SharedPlayerManager/performMediaTransportCommand(_:generation:)``,
+///   ``RadioPlayerCoordinator/handleAdjacentLanguageSelection(offset:)``,
+///   ``PlaybackKeyboardMenu/adjacentStreamIndex(current:offset:count:)``,
 ///   ``WidgetIntentExecution/executeLiveActivityToggle(plan:)``,
 ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
 enum MediaTransportCommand: Sendable, Equatable {
@@ -55,6 +66,35 @@ enum MediaTransportCommand: Sendable, Equatable {
     case stop
     /// Headset / lock-screen toggle: pause when actively playing, otherwise play.
     case togglePlayPause
+    /// System next-track: one step forward in ``DirectStreamingPlayer/availableStreams``.
+    ///
+    /// Wraps (last → first). Offset is ``adjacentLanguageCatalogOffset`` (`+1`).
+    case nextLanguage
+    /// System previous-track: one step backward in ``DirectStreamingPlayer/availableStreams``.
+    ///
+    /// Wraps (first → last). Offset is ``adjacentLanguageCatalogOffset`` (`-1`).
+    case previousLanguage
+
+    /// Signed catalog step for a language remote, or `nil` for play / pause / stop / toggle.
+    ///
+    /// Next track is `+1`. Previous track is `-1`. The coordinator applies wrap with
+    /// ``PlaybackKeyboardMenu/adjacentStreamIndex(current:offset:count:)``. Handlers must
+    /// not reimplement that math.
+    ///
+    /// - Returns: Catalog offset, or `nil` when this verb does not change language.
+    /// - SeeAlso: ``RadioPlayerCoordinator/handleAdjacentLanguageSelection(offset:)``,
+    ///   ``PlaybackKeyboardMenu/adjacentStreamIndex(current:offset:count:)``,
+    ///   ``DirectStreamingPlayer/availableStreams``
+    var adjacentLanguageCatalogOffset: Int? {
+        switch self {
+        case .nextLanguage:
+            return 1
+        case .previousLanguage:
+            return -1
+        case .play, .pause, .stop, .togglePlayPause:
+            return nil
+        }
+    }
 }
 
 // MARK: - MainActor-only MediaPlayer wiring (MPRemoteCommandCenter requires main thread)
@@ -65,14 +105,21 @@ private enum NowPlayingRemoteCommands {
 
     /// One-time ``MPRemoteCommandCenter`` wiring. Must run on the main actor.
     ///
-    /// Enables only the transport verbs this live stream supports (play, pause,
-    /// toggle play/pause, stop). All other system remote commands are disabled so
-    /// Control Center / lock screen / headset chrome does not offer next/previous,
-    /// seek, skip, rating, or other affordances that have no engine implementation.
+    /// Enables the transport verbs this live stream supports: play, pause, toggle
+    /// play/pause, stop, and next/previous track as language steps. Seek, skip,
+    /// rating, and the other unused system commands stay disabled so Control Center,
+    /// the Lock Screen, and headsets do not offer dead affordances.
+    ///
+    /// Next and previous have no app-supplied accessibility title.
+    /// ``MPRemoteCommand`` does not expose `localizedTitle` (that property is on
+    /// ``MPFeedbackCommand`` only). The system keeps its Next / Previous names.
+    /// After a step, VoiceOver uses the existing `switched_to_language` announcement
+    /// from ``RadioPlayerCoordinator``.
     ///
     /// - Postcondition: Supported commands are enabled with targets that route to
     ///   ``SharedPlayerManager/submitMediaTransportCommand(_:)`` (serial mailbox →
-    ///   ``userRequestedPlay()`` / ``stop()``). Unsupported commands are disabled.
+    ///   ``userRequestedPlay()`` / ``stop()`` / adjacent language). Unsupported
+    ///   commands are disabled.
     /// - Note: Handlers return `.success` immediately and only hop onto the actor to
     ///   enqueue work — they never block the remote-command callback thread on network
     ///   or engine completion. Ordering and toggle direction decisions run inside the
@@ -118,10 +165,27 @@ private enum NowPlayingRemoteCommands {
             return .success
         }
 
-        // Live radio has no track list, seekable timeline, ratings, or language-option
-        // remote surface. Disable every unsupported command so system chrome does not
-        // present dead next/previous/seek/skip/like controls on lock screen, Control
-        // Center, or hardware remotes.
+        // Next / previous track step the language catalog. Same mailbox as play/pause
+        // so a headset click cannot race a pause that has not committed sticky intent.
+        // The coordinator owns wrap and whether audio continues. See
+        // ``performMediaTransportCommand(_:generation:)``.
+        center.nextTrackCommand.removeTarget(nil)
+        center.nextTrackCommand.isEnabled = true
+        center.nextTrackCommand.addTarget { _ in
+            Task { await SharedPlayerManager.shared.submitMediaTransportCommand(.nextLanguage) }
+            return .success
+        }
+
+        center.previousTrackCommand.removeTarget(nil)
+        center.previousTrackCommand.isEnabled = true
+        center.previousTrackCommand.addTarget { _ in
+            Task { await SharedPlayerManager.shared.submitMediaTransportCommand(.previousLanguage) }
+            return .success
+        }
+
+        // Live radio has no seekable timeline, ratings, or per-item language options.
+        // Disable every remaining command so system chrome does not present dead
+        // seek/skip/like controls on the Lock Screen, Control Center, or hardware remotes.
         disableUnsupportedRemoteCommands(on: center)
     }
 
@@ -133,8 +197,6 @@ private enum NowPlayingRemoteCommands {
     ///   have `isEnabled == false`.
     private static func disableUnsupportedRemoteCommands(on center: MPRemoteCommandCenter) {
         let unsupported: [MPRemoteCommand] = [
-            center.nextTrackCommand,
-            center.previousTrackCommand,
             center.skipForwardCommand,
             center.skipBackwardCommand,
             center.seekForwardCommand,
@@ -169,9 +231,9 @@ extension SharedPlayerManager {
     /// One-time ``MPRemoteCommandCenter`` wiring for Lock Screen, Control Center, and
     /// hardware remotes (main app only).
     ///
-    /// Installs play / pause / toggle / stop handlers and disables every unsupported
-    /// remote command (next/previous, seek, skip, rating, language options, etc.) so
-    /// system chrome never offers dead transport affordances for a live stream.
+    /// Installs play / pause / toggle / stop and next/previous language-step handlers,
+    /// and disables every unsupported remote command (seek, skip, rating, language
+    /// options, etc.) so system chrome never offers dead transport affordances.
     ///
     /// Handlers enqueue ``MediaTransportCommand`` values on the serial media-transport
     /// mailbox rather than spawning unordered play/stop tasks.
@@ -202,8 +264,11 @@ extension SharedPlayerManager {
     /// share this mailbox so interleaved taps cannot invert play/pause direction.
     ///
     /// **Ordering rules**
-    /// - **Play / toggle:** wait for the previous enqueued verb to finish, then run only if
-    ///   this submission’s epoch is still current (not superseded by a newer submit).
+    /// - **Play / toggle / next language / previous language:** wait for the previous
+    ///   enqueued verb to finish, then run only if this submission’s epoch is still
+    ///   current (not superseded by a newer submit). Language steps do not preempt:
+    ///   a pause submitted first must commit sticky `.userPaused` before the step
+    ///   samples intent.
     /// - **Pause / stop:** preempt — cancel the previous chain task and run ``stop()``
     ///   without waiting for an in-flight play to complete. Records
     ///   ``mediaTransportPauseEpoch`` so a play already inside `userRequestedPlay` re-asserts
@@ -254,7 +319,7 @@ extension SharedPlayerManager {
                 await self.performMediaTransportCommand(command, generation: epoch)
                 await previous?.value
             }
-        case .play, .togglePlayPause:
+        case .play, .togglePlayPause, .nextLanguage, .previousLanguage:
             task = Task {
                 await previous?.value
                 guard epoch == self.mediaTransportEpoch else { return }
@@ -296,11 +361,40 @@ extension SharedPlayerManager {
     /// - ``blocksPlannedPlay`` while thermally stressed → no-op (keep thermal chrome)
     /// - otherwise → ``userRequestedPlay()``
     ///
+    /// **Language step (next / previous track).** Forwards
+    /// ``MediaTransportCommand/adjacentLanguageCatalogOffset`` to
+    /// ``RadioPlayerCoordinator/handleAdjacentLanguageSelection(offset:)``.
+    /// That is the keyboard step (⌘] / ⌘[). This method does not pick a stream,
+    /// wrap the catalog, or call ``play()`` / ``userRequestedPlay()`` itself.
+    ///
+    /// Stopped vs playing matches that keyboard step. It is not a new play entry.
+    /// An active intent (audible play, sleep-timer countdown, or idle ``.prePlay``
+    /// with ``.shouldBePlaying`` before any sticky pause) switches and continues,
+    /// so a not-yet-playing session switches and starts. A sticky stop
+    /// (``.userPaused``, including the system stop command) switches language and
+    /// stays stopped. ``completeStreamSwitch`` resumes only when
+    /// ``PlaybackIntent/isActivePlaybackIntent`` was already true, which keeps
+    /// the keyboard's sticky-pause preserve.
+    ///
+    /// Cellular prompting is unchanged. When the step actually starts audio,
+    /// ``CellularPermissionManager`` still decides inside
+    /// ``ViewController/handleEngineNetworkPathUpdate(isConnected:isExpensive:wasConnected:)``.
+    /// This verb does not present a second alert and does not read or write the
+    /// ternary preference. Now Playing language and program metadata update on the
+    /// same ``completeStreamSwitch`` path as a flag tap (`updateUserDefaultsLanguage`
+    /// then ``refreshAllMediaSurfaces``).
+    ///
+    /// Under ``isRunningInUITestMode`` the coordinator hop is skipped so the suite
+    /// does not call ``switchToStream``. DEBUG tests observe the offset through
+    /// ``_test_setCaptureAdjacentLanguageOffsets(_:)``.
+    ///
     /// - Parameters:
     ///   - command: Verb to apply to the engine / sticky intent path.
     ///   - generation: Submission epoch captured at enqueue time.
     /// - SeeAlso: ``userRequestedPlay()``, ``stop()``, ``isConnectingPlayback``,
     ///   ``MediaTransportCommand``, ``PlayerVisualState/blocksPlannedPlay``,
+    ///   ``RadioPlayerCoordinator/handleAdjacentLanguageSelection(offset:)``,
+    ///   ``CellularPermissionManager``,
     ///   ``MediaTransportLatencyTimeline`` (DEBUG latency milestones)
     func performMediaTransportCommand(
         _ command: MediaTransportCommand,
@@ -335,6 +429,25 @@ extension SharedPlayerManager {
             } else {
                 await userRequestedPlay()
                 await reassertStickyPauseIfSupersededByPause(generation: generation)
+            }
+        case .nextLanguage, .previousLanguage:
+            guard let offset = command.adjacentLanguageCatalogOffset else { break }
+            #if DEBUG
+            // SAFETY: DEBUG test seam. Appends only while a unit test has armed
+            // capture, and only from this actor method. Release builds omit the flag.
+            if unsafe Self._test_captureAdjacentLanguageOffsets {
+                unsafe Self._test_adjacentLanguageOffsets.append(offset)
+            }
+            #endif
+            // UITestMode must not reach switchToStream / play from a remote verb.
+            // The `-UITestMode` check inside ``isRunningInUITestMode`` is present in
+            // Release; the XCTest-host fallback is DEBUG-only.
+            if Self.isRunningInUITestMode {
+                break
+            }
+            await MainActor.run {
+                RadioPlayerCoordinator.inProcessLanguageChromeOwner?
+                    .handleAdjacentLanguageSelection(offset: offset)
             }
         }
 
@@ -697,6 +810,35 @@ extension SharedPlayerManager {
     nonisolated(unsafe) private static var _test_recordMediaSurfaceCoordinationOrder = false
 
     nonisolated(unsafe) private static var _test_mediaSurfaceCoordinationStepLog: [MediaSurfaceCoordinationStep] = []
+
+    /// When `true`, next/previous language verbs append ``adjacentLanguageCatalogOffset``
+    /// for unit tests. The coordinator hop stays skipped under ``isRunningInUITestMode``.
+    ///
+    /// - SeeAlso: ``performMediaTransportCommand(_:generation:)``,
+    ///   ``MediaTransportCommand/adjacentLanguageCatalogOffset``
+    nonisolated(unsafe) private static var _test_captureAdjacentLanguageOffsets = false
+
+    nonisolated(unsafe) private static var _test_adjacentLanguageOffsets: [Int] = []
+
+    /// Starts or stops recording adjacent-language mailbox offsets.
+    ///
+    /// - Parameter capture: `true` clears the log and records subsequent next/previous verbs.
+    /// - SeeAlso: ``_test_adjacentLanguageOffsetLog()``,
+    ///   ``performMediaTransportCommand(_:generation:)``
+    nonisolated static func _test_setCaptureAdjacentLanguageOffsets(_ capture: Bool) {
+        // SAFETY: DEBUG-only test seam. The flag and log are read from the
+        // media-transport actor method and from XCTest setUp/tearDown around that work.
+        // Release builds omit both.
+        unsafe _test_captureAdjacentLanguageOffsets = capture
+        if capture {
+            unsafe _test_adjacentLanguageOffsets = []
+        }
+    }
+
+    /// Offsets recorded while adjacent-language capture is armed, in mailbox order.
+    nonisolated static func _test_adjacentLanguageOffsetLog() -> [Int] {
+        unsafe _test_adjacentLanguageOffsets
+    }
 
     /// Enables Now Playing updates during XCTest runs (no Live Activity IPC).
     nonisolated static func _test_setBypassUITestModeForNowPlayingUpdates(_ bypass: Bool) {
