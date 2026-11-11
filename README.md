@@ -36,7 +36,7 @@ The app is fully localized in the following languages:
 - Afrikaans (af)
 - Albanian (sq)
 - Amharic (am)
-- Bengali (bn)
+- Bangla (bn)
 - Bulgarian (bg)
 - Chinese, Simplified (zh-Hans)
 - Chinese, Traditional (zh-Hant)
