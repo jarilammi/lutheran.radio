@@ -6,7 +6,9 @@
     positions and sizes.
     Turkish (Turkic) is the blob south-east of Greek.
     Nyanja (Bantu) is the blob south of Swahili, north-east of Zulu.
-    Both use the organic closed path (M Q T T T T), not a circle or ellipse.
+    Bemba (Bantu) is the blob west of Swahili, north-west of Nyanja.
+    Turkish, Nyanja, and Bemba use the organic closed path (M Q T T T T),
+    not a circle or ellipse.
   -->
   <!-- Background -->
   <rect width="800" height="1067" fill="#f8f9fa"/>
@@ -228,7 +230,7 @@
 
   <!-- Yoruba - Niger-Congo (Volta-Niger), south of Hausa on the Gulf of Guinea.
        Related green family as the Bantu languages, but a yellower olive so it
-       is not read as Bantu. Not joined to Swahili / Nyanja / Ndonga / Zulu. -->
+       is not read as Bantu. Not joined to Swahili / Bemba / Nyanja / Ndonga / Zulu. -->
   <ellipse cx="175" cy="800" rx="44" ry="22" fill="#7d8a3a" opacity="0.8"/>
   <text x="175" y="795" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Yoruba</text>
   <text x="175" y="807" font-family="Arial" font-size="9" text-anchor="middle" fill="#eaf2d7">Yorùbá</text>
@@ -256,9 +258,17 @@
   <text x="555" y="858" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Swahili</text>
   <text x="555" y="870" font-family="Arial" font-size="9" text-anchor="middle" fill="#eaf2d7">Kiswahili</text>
 
+  <!-- Bemba - Niger-Congo (Bantu), northern Zambia, west of the Swahili
+       coast and north-west of Nyanja. Same green family as Swahili, Nyanja,
+       Ndonga, and Zulu. Native name is the Zambian endonym (c, not ch). -->
+  <path d="M330 793 Q375 768 420 791 T450 833 T395 861 T340 843 T330 793"
+        fill="#1f5c40" opacity="0.8"/>
+  <text x="390" y="819" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Bemba</text>
+  <text x="390" y="831" font-family="Arial" font-size="9" text-anchor="middle" fill="#eaf2d7">Icibemba</text>
+
   <!-- Nyanja - Niger-Congo (Bantu), Malawi and eastern Zambia, south of the
        Swahili coast and north-east of Zulu. Same green family as Swahili,
-       Ndonga, and Zulu. Native name is the Malawian endonym. -->
+       Bemba, Ndonga, and Zulu. Native name is the Malawian endonym. -->
   <path d="M510 950 Q555 925 600 948 T630 990 T575 1018 T520 1000 T510 950"
         fill="#2a5c38" opacity="0.8"/>
   <text x="567" y="976" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Nyanja</text>
@@ -275,7 +285,7 @@
   <text x="240" y="967" font-family="Arial" font-size="9" text-anchor="middle" fill="#eaf2d7">Oshindonga</text>
 
   <!-- Zulu - Niger-Congo (Bantu), east of Afrikaans in southern Africa.
-       Same green family as Swahili, Nyanja, and Ndonga. Not joined to Afrikaans. -->
+       Same green family as Swahili, Bemba, Nyanja, and Ndonga. Not joined to Afrikaans. -->
   <ellipse cx="430" cy="1018" rx="40" ry="22" fill="#4a6b3c" opacity="0.8"/>
   <text x="430" y="1013" font-family="Arial" font-size="10" text-anchor="middle" fill="#fff">Zulu</text>
   <text x="430" y="1025" font-family="Arial" font-size="9" text-anchor="middle" fill="#eaf2d7">isiZulu</text>
@@ -296,8 +306,12 @@
     <path d="M610 710 L640 770" fill="none"/>
     <!-- Swahili connecting to Ndonga -->
     <path d="M555 860 L240 960" fill="none"/>
+    <!-- Swahili connecting to Bemba -->
+    <path d="M518 832 L450 833" fill="none"/>
     <!-- Swahili connecting to Nyanja -->
     <path d="M560 912 L562 940" fill="none"/>
+    <!-- Bemba connecting to Nyanja -->
+    <path d="M400 858 L520 948" fill="none"/>
     <!-- Nyanja connecting to Zulu -->
     <path d="M525 995 L465 1008" fill="none"/>
     <!-- Ndonga connecting to Zulu -->

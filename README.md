@@ -37,6 +37,7 @@ The app is fully localized in the following languages:
 - Albanian (sq)
 - Amharic (am)
 - Bangla (bn)
+- Bemba (bem)
 - Bulgarian (bg)
 - Chinese, Simplified (zh-Hans)
 - Chinese, Traditional (zh-Hant)
