@@ -47,9 +47,11 @@ import Foundation
 ///                    can distinguish timer-driven pause from sticky `.userPaused`.
 /// - securityLocked:  Permanent security failure from an authoritative TXT answer
 ///                    that omits the expected security model, from certificate
-///                    pinning failure, or from HTTP 403 on the stream.
-///                    Sticky until the next explicit play that passes full
-///                    security validation.
+///                    pinning failure, or from HTTP 403 once every production
+///                    cluster has refused the embedded model this process.
+///                    One cluster's refusal excludes that cluster only. Sticky
+///                    until the next explicit play. If no cluster remains, that
+///                    play re-locks and does not open a stream URL.
 /// - cleared:         Explicit user-initiated privacy clear ("Clear local playback state").
 ///                    Visual is set to dedicated .cleared (blue "Cleared" using clear_local_state_done)
 ///                    for explicit confirmation of the completed reset. The blocker lives ONLY in the

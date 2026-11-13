@@ -280,13 +280,19 @@ extension DirectStreamingPlayer {
     /// rebuilds the URL through ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``
     /// (no warm reuse, no wait for a new ping pair) before ``makeSecuredPlayerItem(for:)``.
     /// Does not stamp ``lastServerSelectionTime`` — leaving a silent cluster is not a
-    /// measured ping. Otherwise recreates the same URL. Soft-pause resume does not
-    /// call this.
+    /// measured ping. Otherwise recreates the same URL. A cluster that refused the
+    /// embedded security model is neither rebuilt nor chosen as the destination.
+    /// Soft-pause resume does not call this.
     ///
     /// - SeeAlso: ``scheduleStartupSafetyNet()``, ``recreatePlayerItem(securedURL:)``,
     ///   docs/cold-launch-streamplay-regression-checklist.md (§8).
     @MainActor
     func recreateFromStartupSafetyNet() async {
+        // A cluster that refused the embedded model is not rebuilt and is not the
+        // safety-net destination. The 403 path owns the one failover.
+        guard isProductionClusterEligible(currentSelectedServer.subdomain) else {
+            return
+        }
         let item = playerItem
         let status = item?.status ?? currentItemStatus
         let shouldLeave = Self.shouldLeaveInheritedClusterOnFirstByteSafetyNet(
@@ -296,11 +302,11 @@ extension DirectStreamingPlayer {
             inheritedClusterFromEarlierMount: currentAttachInheritedClusterWithoutFirstByte
         )
         guard shouldLeave,
-              let alternateSubdomain = Self.alternateProductionClusterSubdomain(
+              let alternate = Self.alternateEligibleCluster(
                 currentSubdomain: currentSelectedServer.subdomain,
-                productionSubdomains: Self.servers.map(\.subdomain)
-              ),
-              let alternate = Self.servers.first(where: { $0.subdomain == alternateSubdomain })
+                rejectedSubdomains: embeddedSecurityModelRejectedSubdomains(),
+                servers: Self.servers
+              )
         else {
             recreatePlayerItem()
             return
@@ -577,6 +583,14 @@ extension DirectStreamingPlayer {
                 return
             }
             let generationAtStart = self.playbackAttachGeneration
+            let candidateURL = securedURL ?? (self.playerItem?.asset as? AVURLAsset)?.url
+            if let candidateURL, self.streamRequestTargetsRejectedEmbeddedSecurityModelCluster(candidateURL) {
+                #if DEBUG
+                print("[DirectStreamingPlayer] recreatePlayerItem: suppressed — cluster rejected the embedded security model")
+                #endif
+                return
+            }
+            self.test_recreatePlayerItemEntryCount += 1
             self.recreateInFlight = true
             defer { self.recreateInFlight = false }
             
@@ -784,6 +798,19 @@ extension DirectStreamingPlayer {
     ///   docs/cold-launch-streamplay-regression-checklist.md (§6.12, §8.7), CODING_AGENT.md
     @MainActor
     func handleItemStatusFailure(_ item: AVPlayerItem) async {
+        if let asset = item.asset as? AVURLAsset,
+           streamRequestTargetsRejectedEmbeddedSecurityModelCluster(asset.url) {
+            // Same-URL recreate would be another stream HTTP to a cluster that
+            // already refused the embedded model. Failover is owned by the session
+            // delegate. When no cluster remains, lock and stop without user-pause chrome.
+            #if DEBUG
+            print("[DirectStreamingPlayer] item failure on a cluster that rejected the embedded security model — no same-URL recreate")
+            #endif
+            if !hasEligibleProductionCluster() {
+                await finishBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()
+            }
+            return
+        }
         let error = item.error
         let errorType = StreamErrorType.from(error: error)
 

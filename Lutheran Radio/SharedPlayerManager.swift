@@ -149,10 +149,14 @@ import WidgetKit
 ///   cold-launch, resurrection, recovery, or KVO paths.)
 /// - `.securityLocked` — permanent security failure from an authoritative TXT answer
 ///   that omits ``SecurityConfiguration/expectedSecurityModel``, from certificate
-///   pinning failure, or from streaming HTTP 403.
+///   pinning failure, or from streaming HTTP 403 once no production cluster remains
+///   that has not already refused the embedded model this process.
 ///   Set when ``runPlaySecurityValidationPhase()`` sees ``isPermanentlyInvalid()``,
-///   and from `setSecurityLocked()` (HTTP 403). Persists until the next explicit play
-///   that passes validation.
+///   from `setSecurityLocked()` (403 whose query is not the embedded model), and from
+///   ``lockPlaybackBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()``.
+///   A single cluster's HTTP 403 for the embedded model excludes that cluster for
+///   the process and may attach the other cluster once. Explicit play clears the
+///   sticky intent; attach re-locks with no stream HTTP when every cluster has refused.
 ///   (Why this guard exists: an authoritative security rejection stays sticky for
 ///   this process until an explicit user play succeeds; protects the security model.)
 /// - `.cleared` — explicit privacy clear. Set via `resetStateToClearedForPrivacy()`
@@ -233,7 +237,7 @@ import WidgetKit
 /// | .playing / Connecting | User-initiated stream/language switch             | `resetToPrePlayForNewStream(connectingLanguageCode:)` (chrome + clear ICY + destination language + **clear start-pipeline latch**) **before** silent engine stop, then `play()` | .prePlay → .playing | Hold prePlay through attach; never advertise `.playing` mid teardown; never prior-language chrome with Connecting; superseded Connecting start must not skip the follow-on `play()`; engine `setPlaying` after readyToPlay |
 /// | .playing        | Mid-session stall / ICY drop / item transient     | `canProceedWithPlayback()` then secured `recreatePlayerItem()` / rate kick (attach generation) | .playing        | Engine-internal; does not call `play()`. Sticky pause blocks admission. |
 /// | .playing        | Host technical recovery (network reconnect, route)| `canProceedWithPlayback()` then permitted raw `play()`          | .playing / .prePlay → .playing | Not explicit user play; still process-local sticky only. |
-/// | any             | Authoritative TXT rejection, pinning failure, or HTTP 403 | ``runPlaySecurityValidationPhase()`` when ``isPermanentlyInvalid()``, or StreamingSessionDelegate 403 / ``setSecurityLocked()`` | .securityLocked | Sticky until an explicit play passes validation |
+/// | any             | Authoritative TXT rejection, pinning failure, or HTTP 403 when no production cluster remains | ``runPlaySecurityValidationPhase()`` when ``isPermanentlyInvalid()``, malformed-query 403 / ``setSecurityLocked()``, or ``lockPlaybackBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()`` | .securityLocked | Sticky until an explicit play. A cluster that returned HTTP 403 for the embedded model is not opened again this process; if none remain, attach re-locks and does not open a stream URL |
 /// | any             | All-host transient DNS timeout                 | ``runPlaySecurityValidationPhase()`` when ``beforeAttach`` is false and ``isPermanentlyInvalid()`` is false | .userPaused (grey) | Intent unchanged (``.shouldBePlaying`` or ``.sleepTimer``). Does not attach. A later ``play()`` can validate again |
 /// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
 /// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()` then visual/intent re-check | (unchanged or forced .userPaused) | Restore does not start audio; engine resume only when still allowed. Sticky intent only — no prior-process App Group play gate. |

@@ -21,6 +21,7 @@
 
 import XCTest
 @testable import Lutheran_Radio
+import Core
 import WidgetSurface
 
 final class DirectStreamingPlayerServerSelectionTests: XCTestCase {
@@ -233,6 +234,145 @@ final class DirectStreamingPlayerServerSelectionTests: XCTestCase {
                 allowSameStreamWarmReuse: true
             ),
             "Warm window is inclusive at the boundary"
+        )
+    }
+
+    /// Protects: only HTTP 403 on a language stream host whose query is the embedded
+    /// model excludes that cluster. Ping hosts, other statuses, and a missing query do not.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/isEmbeddedSecurityModelRejection(statusCode:url:expectedModel:apex:productionSubdomains:)``,
+    ///   ``DirectStreamingPlayer/productionClusterSubdomain(host:apex:productionSubdomains:)``
+    func testEmbeddedSecurityModelRejectionMatchesOnlyStream403() {
+        let apex = SecurityConfiguration.current.preferredStreamingDomainSuffix
+        let model = SecurityConfiguration.current.expectedSecurityModel
+        let subdomains = ["eu", "us"]
+        let finnishEU = URL(string: "https://finnish-eu.\(apex)/lutheranradio.mp3?security_model=\(model)")!
+        let finnishUS = URL(string: "https://finnish-us.\(apex)/lutheranradio.mp3?security_model=\(model)")!
+        let missingQuery = URL(string: "https://finnish-eu.\(apex)/lutheranradio.mp3")!
+        let pingHost = URL(string: "https://european.\(apex)/ping")!
+
+        XCTAssertTrue(
+            DirectStreamingPlayer.isEmbeddedSecurityModelRejection(
+                statusCode: 403,
+                url: finnishEU,
+                expectedModel: model,
+                apex: apex,
+                productionSubdomains: subdomains
+            )
+        )
+        XCTAssertEqual(
+            DirectStreamingPlayer.productionClusterSubdomain(host: finnishEU.host!, apex: apex, productionSubdomains: subdomains),
+            "eu"
+        )
+        XCTAssertEqual(
+            DirectStreamingPlayer.productionClusterSubdomain(host: finnishUS.host!, apex: apex, productionSubdomains: subdomains),
+            "us"
+        )
+        XCTAssertNil(
+            DirectStreamingPlayer.productionClusterSubdomain(host: pingHost.host!, apex: apex, productionSubdomains: subdomains),
+            "Ping hosts are not stream clusters"
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.isEmbeddedSecurityModelRejection(
+                statusCode: 200,
+                url: finnishEU,
+                expectedModel: model,
+                apex: apex,
+                productionSubdomains: subdomains
+            )
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.isEmbeddedSecurityModelRejection(
+                statusCode: 404,
+                url: finnishEU,
+                expectedModel: model,
+                apex: apex,
+                productionSubdomains: subdomains
+            )
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.isEmbeddedSecurityModelRejection(
+                statusCode: 403,
+                url: missingQuery,
+                expectedModel: model,
+                apex: apex,
+                productionSubdomains: subdomains
+            )
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.isEmbeddedSecurityModelRejection(
+                statusCode: 403,
+                url: pingHost,
+                expectedModel: model,
+                apex: apex,
+                productionSubdomains: subdomains
+            )
+        )
+    }
+
+    /// Protects: after `eu` refuses, the next cluster is `us`; after both, none remain.
+    /// Throttle, warm reuse, and a lower EU latency cannot select a refused cluster.
+    func testRejectedClusterIsSkippedByReuseAndLatency() {
+        XCTAssertEqual(
+            DirectStreamingPlayer.alternateEligibleCluster(
+                currentSubdomain: "eu",
+                rejectedSubdomains: ["eu"],
+                servers: DirectStreamingPlayer.servers
+            )?.subdomain,
+            "us"
+        )
+        XCTAssertNil(
+            DirectStreamingPlayer.alternateEligibleCluster(
+                currentSubdomain: "eu",
+                rejectedSubdomains: ["eu", "us"],
+                servers: DirectStreamingPlayer.servers
+            )
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.mayReuseCachedCluster(
+                subdomain: "eu",
+                rejectedSubdomains: ["eu"],
+                lastSelectionAge: 0,
+                allowSameStreamWarmReuse: true
+            ),
+            "Throttle and warm reuse must not keep a cluster that refused the embedded model"
+        )
+        XCTAssertTrue(
+            DirectStreamingPlayer.mayReuseCachedCluster(
+                subdomain: "us",
+                rejectedSubdomains: ["eu"],
+                lastSelectionAge: 0,
+                allowSameStreamWarmReuse: false
+            )
+        )
+        XCTAssertFalse(
+            DirectStreamingPlayer.mayReuseCachedCluster(
+                subdomain: "us",
+                rejectedSubdomains: [],
+                lastSelectionAge: nil,
+                allowSameStreamWarmReuse: true
+            ),
+            "A missing stamp still pings"
+        )
+        let samples = [
+            DirectStreamingPlayer.ClusterLatencySample(subdomain: "eu", latency: 0.05),
+            DirectStreamingPlayer.ClusterLatencySample(subdomain: "us", latency: 0.40)
+        ]
+        XCTAssertEqual(
+            DirectStreamingPlayer.winningClusterSubdomain(
+                samples: samples,
+                rejectedSubdomains: ["eu"],
+                fallbackSubdomain: "eu"
+            ),
+            "us",
+            "A lower latency on a refused cluster must not win"
+        )
+        XCTAssertNil(
+            DirectStreamingPlayer.winningClusterSubdomain(
+                samples: samples,
+                rejectedSubdomains: ["eu", "us"],
+                fallbackSubdomain: "eu"
+            )
         )
     }
 }

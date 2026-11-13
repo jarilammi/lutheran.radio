@@ -194,6 +194,8 @@ extension DirectStreamingPlayer {
                 #endif
 
                 self.lastServerSelectionTime = nil
+                // Does not clear clusters that refused the embedded security model.
+                // That set is process memory and outlives a path restore.
 
                 // Reset transient security state + revalidate (named reconnect intent).
                 Task {

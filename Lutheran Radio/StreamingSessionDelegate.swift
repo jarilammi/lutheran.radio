@@ -121,23 +121,57 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
         }
         let statusCode = httpResponse.statusCode
         
-        // Server-side security lock: Permanent failure when server returns 403 on ?security_model=
-        if statusCode == 403,
-           let requestURL = self.loadingRequest.request.url,
-           requestURL.query?.contains("security_model=") == true {
-
-            #if DEBUG
-            print("[StreamingSessionDelegate] Server returned 403 on security_model= URL → PERMANENT security failure")
-            #endif
-
-            Task { @MainActor in
-                await SharedPlayerManager.shared.setSecurityLocked()
+        // HTTP 403 on a stream URL that already carries the embedded model excludes
+        // that production cluster for this process. One other cluster may be tried.
+        // When none remain, visual and intent lock. A 403 whose query is not the
+        // embedded model still takes the older visual lock (`setSecurityLocked`).
+        // SECURITY: the query value is never replaced with a previous model name.
+        if statusCode == 403, let requestURL = self.loadingRequest.request.url {
+            let disposition = DirectStreamingPlayer.shared.noteEmbeddedSecurityModelRejection(
+                url: requestURL,
+                statusCode: statusCode
+            )
+            switch disposition {
+            case .notThisFailure:
+                if requestURL.query?.contains("security_model=") == true {
+                    #if DEBUG
+                    print("[StreamingSessionDelegate] Server returned 403 on security_model= URL that is not the embedded model → visual security lock")
+                    #endif
+                    Task { @MainActor in
+                        await SharedPlayerManager.shared.setSecurityLocked()
+                    }
+                    loadingRequest.finishLoading(with: URLError(.badServerResponse))
+                    completionHandler(.cancel)
+                    return
+                }
+            case .failoverOnce(_):
+                #if DEBUG
+                print("[StreamingSessionDelegate] Embedded-model 403 → one failover onto the other cluster")
+                #endif
+                loadingRequest.finishLoading(with: URLError(.badServerResponse))
+                completionHandler(.cancel)
+                Task { @MainActor in
+                    await DirectStreamingPlayer.shared.performEmbeddedSecurityModelClusterFailover()
+                }
+                return
+            case .waitForInFlightFailover:
+                #if DEBUG
+                print("[StreamingSessionDelegate] Embedded-model 403 → failover already scheduled; not opening this cluster again")
+                #endif
+                loadingRequest.finishLoading(with: URLError(.badServerResponse))
+                completionHandler(.cancel)
+                return
+            case .terminalLock:
+                #if DEBUG
+                print("[StreamingSessionDelegate] Embedded-model 403 → no production cluster remains")
+                #endif
+                loadingRequest.finishLoading(with: URLError(.badServerResponse))
+                completionHandler(.cancel)
+                Task { @MainActor in
+                    await DirectStreamingPlayer.shared.finishBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()
+                }
+                return
             }
-
-            // Cancel this loading request cleanly (same behaviour as other 4xx/5xx)
-            loadingRequest.finishLoading(with: URLError(.badServerResponse))
-            completionHandler(.cancel)
-            return
         }
         
         if (400...599).contains(statusCode) {

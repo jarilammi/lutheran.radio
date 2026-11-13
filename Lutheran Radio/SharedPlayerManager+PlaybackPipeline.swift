@@ -636,7 +636,16 @@ extension SharedPlayerManager {
     }
     
     /// Forces the visual state to `.securityLocked` (permanent failure) and persists it.
-    /// Called from server 403 responses or unrecoverable validation failures.
+    ///
+    /// Used for a stream HTTP 403 whose query is not the embedded security model, and
+    /// for other callers that only need the visual lock. A 403 that already carries
+    /// ``SecurityConfiguration/expectedSecurityModel`` does not call this for the first
+    /// refused cluster. When every production cluster has refused, use
+    /// ``lockPlaybackBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()``,
+    /// which also sets ``PlaybackIntent/securityLocked``.
+    ///
+    /// - SeeAlso: ``lockPlaybackBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()``,
+    ///   ``DirectStreamingPlayer/noteEmbeddedSecurityModelRejection(url:statusCode:)``
     func setSecurityLocked() async {
         #if LUTHERAN_MAIN_APP
         await cancelSleepTimer(restorePlaybackIntent: false)
@@ -646,6 +655,27 @@ extension SharedPlayerManager {
         
         #if DEBUG
         print("[SharedPlayerManager] Security lock applied from server 403 response")
+        #endif
+    }
+
+    /// Locks visual and intent when every production cluster has refused the embedded model.
+    ///
+    /// ``canProceedWithPlayback()`` stays false until an explicit play clears the sticky
+    /// intent. That later play still does not open a refused cluster: attach sees the
+    /// process set and calls this again. No stream URL is built here.
+    ///
+    /// - SeeAlso: ``setSecurityLocked()``,
+    ///   ``DirectStreamingPlayer/finishBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()``,
+    ///   ``PlaybackIntent/securityLocked``
+    func lockPlaybackBecauseEveryProductionClusterRejectedEmbeddedSecurityModel() async {
+        #if LUTHERAN_MAIN_APP
+        await cancelSleepTimer(restorePlaybackIntent: false)
+        #endif
+        applyVisualState(.securityLocked)
+        updatePlaybackIntent(to: .securityLocked)
+        await saveCurrentState()
+        #if DEBUG
+        print("[SharedPlayerManager] Security lock — every production cluster rejected the embedded model")
         #endif
     }
     

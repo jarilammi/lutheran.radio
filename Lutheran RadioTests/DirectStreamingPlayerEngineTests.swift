@@ -53,10 +53,12 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         sanitizeLiveActivityLocalState()
         DirectStreamingPlayer.shared.test_clearPlaybackTeardownGuard()
         DirectStreamingPlayer.shared.test_resetAudioSessionMutationProbe()
+        DirectStreamingPlayer.shared.test_resetEmbeddedSecurityModelClusterRejections()
     }
 
     override func tearDown() async throws {
         DirectStreamingPlayer.shared.test_resetAudioSessionMutationProbe()
+        DirectStreamingPlayer.shared.test_resetEmbeddedSecurityModelClusterRejections()
         sanitizeLiveActivityLocalState()
         try await super.tearDown()
     }
@@ -1384,6 +1386,75 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
                 reasonKey: "status_buffering",
                 visual: .playing
             )
+        )
+    }
+
+    /// Protects: one HTTP 403 for the embedded model excludes that cluster for the
+    /// process, schedules one URL on the other cluster, and does not same-URL recreate.
+    /// A second cluster's 403 does not schedule a third URL. The query stays the
+    /// embedded model.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/noteEmbeddedSecurityModelRejection(url:statusCode:)``,
+    ///   ``DirectStreamingPlayer/performEmbeddedSecurityModelClusterFailover()``,
+    ///   ``DirectStreamingPlayer/recreatePlayerItem(securedURL:)``
+    func testEmbeddedSecurityModelRejectionDoesNotReopenThatCluster() async throws {
+        let player = DirectStreamingPlayer.shared
+        let previous = player.currentSelectedServer
+        player.test_resetEmbeddedSecurityModelClusterRejections()
+        defer {
+            player.currentSelectedServer = previous
+            player.test_resetEmbeddedSecurityModelClusterRejections()
+        }
+
+        let apex = SecurityConfiguration.current.preferredStreamingDomainSuffix
+        let model = SecurityConfiguration.current.expectedSecurityModel
+        let finnishEU = URL(string: "https://finnish-eu.\(apex)/lutheranradio.mp3?security_model=\(model)")!
+        let finnishUS = URL(string: "https://finnish-us.\(apex)/lutheranradio.mp3?security_model=\(model)")!
+
+        let first = player.noteEmbeddedSecurityModelRejection(url: finnishEU, statusCode: 403)
+        guard case .failoverOnce(let subdomain) = first else {
+            XCTFail("First refusal must failover once, got \(first)")
+            return
+        }
+        XCTAssertEqual(subdomain, "us")
+        XCTAssertEqual(player.embeddedSecurityModelRejectedSubdomains(), ["eu"])
+        XCTAssertTrue(player.streamRequestTargetsRejectedEmbeddedSecurityModelCluster(finnishEU))
+
+        let duplicate = player.noteEmbeddedSecurityModelRejection(url: finnishEU, statusCode: 403)
+        XCTAssertEqual(duplicate, .waitForInFlightFailover)
+
+        let recreatesBefore = player.test_recreatePlayerItemEntryCount
+        player.recreatePlayerItem(securedURL: finnishEU)
+        await Task.yield()
+        await Task.yield()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(
+            player.test_recreatePlayerItemEntryCount,
+            recreatesBefore,
+            "Same-URL recreate must not run for a cluster that refused the embedded model"
+        )
+
+        await player.performEmbeddedSecurityModelClusterFailover()
+        let failoverURL = player.test_lastEmbeddedSecurityModelFailoverURL
+        XCTAssertEqual(
+            DirectStreamingPlayer.productionClusterSubdomain(
+                host: failoverURL?.host ?? "",
+                apex: apex,
+                productionSubdomains: DirectStreamingPlayer.servers.map(\.subdomain)
+            ),
+            "us"
+        )
+        let items = URLComponents(url: failoverURL ?? finnishUS, resolvingAgainstBaseURL: false)?.queryItems
+        XCTAssertTrue(items?.contains { $0.name == "security_model" && $0.value == model } == true)
+        XCTAssertEqual(player.test_recreatePlayerItemEntryCount, recreatesBefore)
+
+        let secondCluster = player.noteEmbeddedSecurityModelRejection(url: finnishUS, statusCode: 403)
+        XCTAssertEqual(secondCluster, .terminalLock)
+        XCTAssertFalse(player.hasEligibleProductionCluster())
+        XCTAssertEqual(
+            player.noteEmbeddedSecurityModelRejection(url: finnishUS, statusCode: 403),
+            .terminalLock,
+            "A later 403 on a refused cluster must not schedule another stream URL"
         )
     }
 }

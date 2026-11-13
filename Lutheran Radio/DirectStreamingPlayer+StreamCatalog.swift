@@ -132,7 +132,10 @@ extension DirectStreamingPlayer {
     //
     // This design achieves:
     // 1. Geographic load distribution (lower latency)
-    // 2. Simple automatic failover (if one cluster is down, the other is used next launch)
+    // 2. Failover when one cluster refuses the embedded security model: that cluster
+//    is not opened again this process; the other cluster may be opened once.
+//    When both have refused, playback locks and no further stream HTTP is sent.
+//    A cluster that is merely down (timeout) still follows the ping / safety-net path.
     // 3. Future-proof version gating via DNS TXT record
     // 4. Media apex SSOT lives only in Core (preferredStreamingDomainSuffixes)
     //

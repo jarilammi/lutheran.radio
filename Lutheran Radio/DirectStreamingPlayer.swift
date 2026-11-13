@@ -38,6 +38,7 @@
 import Foundation
 import Security
 import CommonCrypto
+import Synchronization
 @unsafe @preconcurrency import AVFoundation
 import dnssd
 import Network
@@ -504,6 +505,24 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // Stored selection state stays on the façade (extensions cannot declare stored properties).
 
     var lastServerSelectionTime: Date?
+    /// Clusters whose stream origin returned HTTP 403 for the embedded security model.
+    ///
+    /// Process memory only. A URLSession callback records the subdomain under this mutex
+    /// before `finishLoading`, so a later resource-loader request cannot open that cluster.
+    /// Not written to UserDefaults or the App Group. Network-path reconnect nils
+    /// ``lastServerSelectionTime`` and does not clear this set.
+    ///
+    /// - Important: This is not a Core security decision. The next URL still carries
+    ///   ``SecurityConfiguration/expectedSecurityModel``. A rejected cluster is skipped;
+    ///   the previous model name is never substituted.
+    /// - SeeAlso: ``noteEmbeddedSecurityModelRejection(url:statusCode:)``,
+    ///   ``EmbeddedSecurityModelClusterRejectionState``,
+    ///   DirectStreamingPlayer+ServerSelection.swift
+    let embeddedSecurityModelClusterRejections = Mutex(EmbeddedSecurityModelClusterRejectionState())
+    /// Test seam: secured recreates that passed the rejected-cluster guard.
+    var test_recreatePlayerItemEntryCount = 0
+    /// Test seam: URL the one embedded-model failover would open. Nil until that path runs.
+    var test_lastEmbeddedSecurityModelFailoverURL: URL?
     /// Wall-clock stamp of the last **measured** cluster (a valid ping RTT). Dual timeout
     /// must not stamp — that would make ``serverSelectionThrottleInterval`` treat “we learned
     /// nothing” as a real selection. ``selectOptimalServer`` throttles every context for

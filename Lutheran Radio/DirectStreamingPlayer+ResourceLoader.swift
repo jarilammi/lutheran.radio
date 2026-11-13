@@ -78,6 +78,17 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
             #endif
             return false  // Let the system handle non-protected hosts
         }
+
+        // A cluster that already returned HTTP 403 for the embedded model is not
+        // opened again this process. Finish the request here so AVFoundation does
+        // not fall through to a system fetch (that would be another stream HTTP).
+        if streamRequestTargetsRejectedEmbeddedSecurityModelCluster(url) {
+            #if DEBUG
+            print("[DirectStreamingPlayer] [Resource Loader] Refusing \(host) — cluster rejected the embedded security model this process")
+            #endif
+            loadingRequest.finishLoading(with: URLError(.cancelled))
+            return true
+        }
         
         // Server-trust acceptance is sole-source in Core ``CertificateValidator``
         // (full DER leaf digest + transition window); the session delegate never

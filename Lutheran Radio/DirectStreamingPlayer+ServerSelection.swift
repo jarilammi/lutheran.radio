@@ -26,6 +26,13 @@
 //  ``play()`` do not. Network-path reconnect nils the stamp. Never set
 //  ``isSoftPaused`` on user pause to avoid this probe.
 //
+//  A stream HTTP 403 whose query already carries ``expectedSecurityModel`` excludes
+//  that production cluster (`eu` / `us`) for the rest of this process
+//  (``noteEmbeddedSecurityModelRejection(url:statusCode:)``). The other cluster may
+//  be opened once. When none remain, attach stops and playback locks. The set is not
+//  a ping failure and is not cleared when the path returns. Do not send a previous
+//  model name.
+//
 //  - SeeAlso: DirectStreamingPlayer.swift, ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``,
 //    SecurityConfiguration.makeSecureEphemeralConfiguration(),
 //    SecurityConfiguration.streamingHostCandidates(leadingLabel:), DirectStreamingPlayer+StreamCatalog.swift,
@@ -34,7 +41,39 @@
 
 import Foundation
 import Network
+import Synchronization
 import Core
+
+/// Process-local record of production clusters that refused the embedded security model.
+///
+/// `rejectedSubdomains` holds `eu` / `us` after HTTP 403 on a stream URL that already
+/// carried ``SecurityConfiguration/expectedSecurityModel``. `failoverInFlight` stays
+/// true after the one move onto a cluster that has not refused yet, so a second 403
+/// on the refused cluster does not open another stream. Cleared when no cluster
+/// remains, and by the test reset. Not persisted.
+///
+/// - SeeAlso: ``DirectStreamingPlayer/noteEmbeddedSecurityModelRejection(url:statusCode:)``,
+///   ``DirectStreamingPlayer/embeddedSecurityModelClusterRejections``
+struct EmbeddedSecurityModelClusterRejectionState: Sendable {
+    var rejectedSubdomains: Set<String> = []
+    var failoverInFlight: Bool = false
+}
+
+/// What one stream HTTP 403 means for the rest of this process.
+///
+/// - SeeAlso: ``DirectStreamingPlayer/noteEmbeddedSecurityModelRejection(url:statusCode:)``
+enum EmbeddedSecurityModelRejectionDisposition: Equatable, Sendable {
+    /// Not a refusal of the embedded model (wrong status, ping host, or a query that
+    /// does not carry ``SecurityConfiguration/expectedSecurityModel``).
+    case notThisFailure
+    /// One attach onto this still-eligible production subdomain. The refused cluster
+    /// is not opened again.
+    case failoverOnce(String)
+    /// A failover attach is already scheduled. Do not open the refused cluster again.
+    case waitForInFlightFailover
+    /// Every production cluster has refused the embedded model. Do not open a stream URL.
+    case terminalLock
+}
 
 extension DirectStreamingPlayer {
     /// A radio stream server endpoint (EU or US cluster).
@@ -186,6 +225,330 @@ extension DirectStreamingPlayer {
         return false
     }
 
+    /// One measured cluster sample used when a rejected cluster must not win on RTT.
+    struct ClusterLatencySample: Equatable, Sendable {
+        var subdomain: String
+        var latency: TimeInterval
+    }
+
+    /// Whether `host` is a production stream host (`<slug>-eu.<apex>` / `<slug>-us.<apex>`).
+    ///
+    /// Ping hosts (`european.<apex>`, `livestream.<apex>`) return nil. The match is the
+    /// trailing `-<subdomain>` label, not a substring of the apex.
+    ///
+    /// - Parameters:
+    ///   - host: URL host, without a port.
+    ///   - apex: ``SecurityConfiguration/preferredStreamingDomainSuffix``.
+    ///   - productionSubdomains: ``servers`` subdomains, preferred order.
+    /// - Returns: `eu` / `us` when the host is a language stream on that cluster.
+    /// - SeeAlso: ``isEmbeddedSecurityModelRejection(statusCode:url:expectedModel:apex:productionSubdomains:)``
+    static func productionClusterSubdomain(
+        host: String,
+        apex: String,
+        productionSubdomains: [String]
+    ) -> String? {
+        let normalizedHost = host.lowercased()
+        let suffix = ".\(apex.lowercased())"
+        guard normalizedHost.hasSuffix(suffix) else { return nil }
+        let label = String(normalizedHost.dropLast(suffix.count))
+        guard !label.contains(".") else { return nil }
+        return productionSubdomains.first { subdomain in
+            let token = subdomain.lowercased()
+            return label.hasSuffix("-\(token)") && label.count > token.count + 1
+        }
+    }
+
+    /// HTTP 403 from a production stream host whose query already carries the embedded model.
+    ///
+    /// This is the deploy-lag window: the origin has not loaded the name yet. It is not a
+    /// certificate failure and not a `/ping` User-Agent refusal. The app must keep sending
+    /// ``SecurityConfiguration/expectedSecurityModel`` and must not substitute an older name.
+    ///
+    /// - Parameters:
+    ///   - statusCode: HTTP status from the stream response.
+    ///   - url: Stream URL the origin answered.
+    ///   - expectedModel: ``SecurityConfiguration/expectedSecurityModel``.
+    ///   - apex: ``SecurityConfiguration/preferredStreamingDomainSuffix``.
+    ///   - productionSubdomains: ``servers`` subdomains.
+    /// - Returns: `true` only for status 403, a language stream host, and an exact
+    ///   `security_model` query match.
+    /// - SeeAlso: ``productionClusterSubdomain(host:apex:productionSubdomains:)``,
+    ///   ``noteEmbeddedSecurityModelRejection(url:statusCode:)``
+    static func isEmbeddedSecurityModelRejection(
+        statusCode: Int,
+        url: URL,
+        expectedModel: String,
+        apex: String,
+        productionSubdomains: [String]
+    ) -> Bool {
+        guard statusCode == 403, let host = url.host else { return false }
+        guard productionClusterSubdomain(
+            host: host,
+            apex: apex,
+            productionSubdomains: productionSubdomains
+        ) != nil else {
+            return false
+        }
+        guard let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else {
+            return false
+        }
+        return items.contains { $0.name == "security_model" && $0.value == expectedModel }
+    }
+
+    /// Whether `subdomain` may still be opened this process.
+    ///
+    /// - Parameters:
+    ///   - subdomain: Production cluster subdomain (`eu` / `us`).
+    ///   - rejectedSubdomains: Clusters that already returned HTTP 403 for the embedded model.
+    /// - Returns: `false` when `subdomain` is in the set.
+    static func clusterEligibleAfterSecurityModelRejections(
+        subdomain: String,
+        rejectedSubdomains: Set<String>
+    ) -> Bool {
+        !rejectedSubdomains.contains(subdomain)
+    }
+
+    /// The other production cluster, when it has not refused the embedded model.
+    ///
+    /// - Parameters:
+    ///   - currentSubdomain: Cluster that just failed or is selected now.
+    ///   - rejectedSubdomains: Clusters already refused this process.
+    ///   - servers: ``servers``, preferred order.
+    /// - Returns: The first server whose subdomain differs and is not rejected.
+    /// - SeeAlso: ``alternateProductionClusterSubdomain(currentSubdomain:productionSubdomains:)``
+    static func alternateEligibleCluster(
+        currentSubdomain: String,
+        rejectedSubdomains: Set<String>,
+        servers: [Server]
+    ) -> Server? {
+        servers.first { server in
+            server.subdomain != currentSubdomain && !rejectedSubdomains.contains(server.subdomain)
+        }
+    }
+
+    /// Cached-cluster reuse, plus the embedded-model refusal set.
+    ///
+    /// A rejected cluster is never reused, including inside the 10 s throttle and the
+    /// same-stream warm window. A missing stamp still does not reuse.
+    ///
+    /// - Parameters:
+    ///   - subdomain: Cluster the cache would keep.
+    ///   - rejectedSubdomains: Clusters refused this process.
+    ///   - lastSelectionAge: Seconds since ``lastServerSelectionTime``, or nil.
+    ///   - allowSameStreamWarmReuse: Forwarded to ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``.
+    /// - Returns: `true` only when the cluster is eligible and the age window says reuse.
+    /// - SeeAlso: ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``
+    static func mayReuseCachedCluster(
+        subdomain: String,
+        rejectedSubdomains: Set<String>,
+        lastSelectionAge: TimeInterval?,
+        allowSameStreamWarmReuse: Bool
+    ) -> Bool {
+        guard clusterEligibleAfterSecurityModelRejections(
+            subdomain: subdomain,
+            rejectedSubdomains: rejectedSubdomains
+        ) else {
+            return false
+        }
+        return shouldReuseCachedServerSelection(
+            lastSelectionAge: lastSelectionAge,
+            allowSameStreamWarmReuse: allowSameStreamWarmReuse
+        )
+    }
+
+    /// Lowest finite RTT among clusters that have not refused the embedded model.
+    ///
+    /// A rejected sample cannot win, even when its latency is lower. When every sample
+    /// is unusable, `fallbackSubdomain` is returned only if it is still eligible.
+    ///
+    /// - Parameters:
+    ///   - samples: Ping results. Non-finite latency is a failed probe.
+    ///   - rejectedSubdomains: Clusters refused this process.
+    ///   - fallbackSubdomain: Current cluster when no eligible sample exists.
+    /// - Returns: The subdomain to select, or nil when none remain eligible.
+    /// - SeeAlso: ``mayReuseCachedCluster(subdomain:rejectedSubdomains:lastSelectionAge:allowSameStreamWarmReuse:)``
+    static func winningClusterSubdomain(
+        samples: [ClusterLatencySample],
+        rejectedSubdomains: Set<String>,
+        fallbackSubdomain: String
+    ) -> String? {
+        let eligible = samples.filter { sample in
+            sample.latency.isFinite && !rejectedSubdomains.contains(sample.subdomain)
+        }
+        if let best = eligible.min(by: { $0.latency < $1.latency }) {
+            return best.subdomain
+        }
+        if clusterEligibleAfterSecurityModelRejections(
+            subdomain: fallbackSubdomain,
+            rejectedSubdomains: rejectedSubdomains
+        ) {
+            return fallbackSubdomain
+        }
+        return nil
+    }
+
+    /// Records an HTTP 403 that refused the embedded security model, if this URL is one.
+    ///
+    /// Safe to call from the URLSession delegate queue. The insert is visible to the
+    /// resource loader before the caller finishes the loading request.
+    ///
+    /// - Parameters:
+    ///   - url: Stream URL that returned `statusCode`.
+    ///   - statusCode: HTTP status.
+    /// - Returns: ``EmbeddedSecurityModelRejectionDisposition``. `.notThisFailure` leaves
+    ///   the existing 403 path in place. `.failoverOnce` is the one move onto the other
+    ///   cluster. `.terminalLock` means every production cluster has refused.
+    /// - Important: Does not change ``SecurityConfiguration/expectedSecurityModel`` and
+    ///   does not persist the set.
+    /// - SeeAlso: ``performEmbeddedSecurityModelClusterFailover()``,
+    ///   ``isEmbeddedSecurityModelRejection(statusCode:url:expectedModel:apex:productionSubdomains:)``
+    func noteEmbeddedSecurityModelRejection(
+        url: URL,
+        statusCode: Int
+    ) -> EmbeddedSecurityModelRejectionDisposition {
+        let apex = SecurityConfiguration.current.preferredStreamingDomainSuffix
+        let expectedModel = SecurityConfiguration.current.expectedSecurityModel
+        let productionSubdomains = Self.servers.map(\.subdomain)
+        guard Self.isEmbeddedSecurityModelRejection(
+            statusCode: statusCode,
+            url: url,
+            expectedModel: expectedModel,
+            apex: apex,
+            productionSubdomains: productionSubdomains
+        ), let host = url.host,
+              let failed = Self.productionClusterSubdomain(
+                host: host,
+                apex: apex,
+                productionSubdomains: productionSubdomains
+              ) else {
+            return .notThisFailure
+        }
+        return embeddedSecurityModelClusterRejections.withLock { state in
+            state.rejectedSubdomains.insert(failed)
+            let eligible = Self.servers.filter { !state.rejectedSubdomains.contains($0.subdomain) }
+            guard let next = eligible.first else {
+                state.failoverInFlight = false
+                return .terminalLock
+            }
+            if state.failoverInFlight {
+                return .waitForInFlightFailover
+            }
+            state.failoverInFlight = true
+            return .failoverOnce(next.subdomain)
+        }
+    }
+
+    /// Subdomains refused this process. Empty until a matching HTTP 403 is recorded.
+    func embeddedSecurityModelRejectedSubdomains() -> Set<String> {
+        embeddedSecurityModelClusterRejections.withLock { $0.rejectedSubdomains }
+    }
+
+    /// `true` when at least one production cluster has not refused the embedded model.
+    func hasEligibleProductionCluster() -> Bool {
+        let rejected = embeddedSecurityModelRejectedSubdomains()
+        return Self.servers.contains { !rejected.contains($0.subdomain) }
+    }
+
+    /// `true` when `subdomain` may still be opened this process.
+    func isProductionClusterEligible(_ subdomain: String) -> Bool {
+        Self.clusterEligibleAfterSecurityModelRejections(
+            subdomain: subdomain,
+            rejectedSubdomains: embeddedSecurityModelRejectedSubdomains()
+        )
+    }
+
+    /// `true` when `url` is a language stream on a cluster refused this process.
+    func streamRequestTargetsRejectedEmbeddedSecurityModelCluster(_ url: URL) -> Bool {
+        guard let host = url.host else { return false }
+        let apex = SecurityConfiguration.current.preferredStreamingDomainSuffix
+        guard let subdomain = Self.productionClusterSubdomain(
+            host: host,
+            apex: apex,
+            productionSubdomains: Self.servers.map(\.subdomain)
+        ) else {
+            return false
+        }
+        return !isProductionClusterEligible(subdomain)
+    }
+
+    /// Points ``currentSelectedServer`` at a cluster that has not refused, without stamping.
+    ///
+    /// - Returns: `false` when every production cluster has refused. The caller must not ping
+    ///   or attach.
+    @discardableResult
+    func redirectCurrentServerOffRejectedCluster() -> Bool {
+        let rejected = embeddedSecurityModelRejectedSubdomains()
+        guard Self.servers.contains(where: { !rejected.contains($0.subdomain) }) else {
+            return false
+        }
+        if !rejected.contains(currentSelectedServer.subdomain) {
+            return true
+        }
+        guard let alternate = Self.alternateEligibleCluster(
+            currentSubdomain: currentSelectedServer.subdomain,
+            rejectedSubdomains: rejected,
+            servers: Self.servers
+        ) else {
+            return false
+        }
+        currentSelectedServer = alternate
+        return true
+    }
+
+    /// One move onto a cluster that has not refused the embedded model.
+    ///
+    /// Does not stamp ``lastServerSelectionTime``. Under UITestMode the URL is recorded
+    /// and no item is built. When no cluster remains, locks playback and stops without
+    /// a user-pause visual.
+    ///
+    /// - SeeAlso: ``noteEmbeddedSecurityModelRejection(url:statusCode:)``,
+    ///   ``finishBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()``
+    @MainActor
+    func performEmbeddedSecurityModelClusterFailover() async {
+        cancelStartupSafetyNet()
+        cancelEarlyICYDropRecreate()
+        let server = embeddedSecurityModelClusterRejections.withLock { state -> Server? in
+            Self.servers.first { !state.rejectedSubdomains.contains($0.subdomain) }
+        }
+        guard let server, isProductionClusterEligible(server.subdomain) else {
+            await finishBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()
+            return
+        }
+        currentSelectedServer = server
+        let url = StreamCatalog.streamURL(
+            languageCode: selectedStream.languageCode,
+            region: server.subdomain
+        )
+        test_lastEmbeddedSecurityModelFailoverURL = url
+        guard !isTesting else { return }
+        recreatePlayerItem(securedURL: url)
+    }
+
+    /// Locks visual and intent, then stops the engine, when no production cluster remains.
+    ///
+    /// Stop uses ``StopReason/error`` so the teardown does not paint sticky user pause
+    /// over ``.securityLocked``. No stream URL is opened.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/lockPlaybackBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()``,
+    ///   ``stop(reason:completion:silent:applyUserPauseVisualLock:)``
+    @MainActor
+    func finishBecauseEveryProductionClusterRejectedEmbeddedSecurityModel() async {
+        cancelStartupSafetyNet()
+        cancelEarlyICYDropRecreate()
+        await SharedPlayerManager.shared.lockPlaybackBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()
+        stop(reason: .error, silent: true, applyUserPauseVisualLock: false)
+    }
+
+    /// Clears the process refusal set. Unit tests call this so a case cannot leak into the next one.
+    func test_resetEmbeddedSecurityModelClusterRejections() {
+        embeddedSecurityModelClusterRejections.withLock { state in
+            state.rejectedSubdomains.removeAll()
+            state.failoverInFlight = false
+        }
+        test_lastEmbeddedSecurityModelFailoverURL = nil
+        test_recreatePlayerItemEntryCount = 0
+    }
+
     // MARK: - Network & Server Selection
     /// When true, real audio session configuration, eager security validation, and
     /// all playback engine entry points are no-ops. This keeps XCUITest and unit test
@@ -227,15 +590,29 @@ extension DirectStreamingPlayer {
     /// - Parameter completion: Handler with selected server.
     /// - Note: Throttles repeat calls within ``serverSelectionThrottleInterval`` (reuses
     ///   ``currentSelectedServer``); delays the latency probe in Low Power Mode. Selection is
-    ///   latency-only — there is no failure-count map driving prefer/avoid logic. Same-stream
-    ///   warm reuse is decided in ``ensureOptimalServerSelected(allowSameStreamWarmReuse:)``
+    ///   latency-only among clusters that have not refused the embedded security model this
+    ///   process. A rejected cluster is not a ping sample and is not kept by the throttle.
+    ///   Same-stream warm reuse is decided in ``ensureOptimalServerSelected(allowSameStreamWarmReuse:)``
     ///   before this method runs; once this method is entered past the 10 s throttle it pings.
     /// - Example: `selectOptimalServer { server in print(server.name) }`
     /// - SeeAlso: `fetchServerIPsAndLatencies(completion:)`, ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``,
     ///   ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``
     func selectOptimalServer(completion: @escaping @Sendable (Server) -> Void) {
+        guard redirectCurrentServerOffRejectedCluster() else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] selectOptimalServer: no eligible cluster after embedded-model rejection")
+            #endif
+            completion(currentSelectedServer)
+            return
+        }
+        let rejected = embeddedSecurityModelRejectedSubdomains()
         if let last = lastServerSelectionTime,
-           Date().timeIntervalSince(last) <= Self.serverSelectionThrottleInterval {
+           Self.mayReuseCachedCluster(
+            subdomain: currentSelectedServer.subdomain,
+            rejectedSubdomains: rejected,
+            lastSelectionAge: Date().timeIntervalSince(last),
+            allowSameStreamWarmReuse: false
+           ) {
             #if DEBUG
             print("[DirectStreamingPlayer] selectOptimalServer: Throttling server selection, using cached server: \(currentSelectedServer.name)")
             #endif
@@ -252,30 +629,39 @@ extension DirectStreamingPlayer {
             }
             
             self.fetchServerIPsAndLatencies { results in
-                let validResults = results.filter { $0.latency != .infinity }
-                
-                if let bestResult = validResults.min(by: { $0.latency < $1.latency }) {
-                    self.currentSelectedServer = bestResult.server
-                    
-                    // Fire-and-forget save
-                    Task {
-                        await SharedPlayerManager.shared.saveCurrentState()
+                let rejectedNow = self.embeddedSecurityModelRejectedSubdomains()
+                let samples = results.map {
+                    ClusterLatencySample(subdomain: $0.server.subdomain, latency: $0.latency)
+                }
+                if let winner = Self.winningClusterSubdomain(
+                    samples: samples,
+                    rejectedSubdomains: rejectedNow,
+                    fallbackSubdomain: self.currentSelectedServer.subdomain
+                ), let server = Self.servers.first(where: { $0.subdomain == winner }) {
+                    let measured = samples.contains { sample in
+                        sample.subdomain == winner
+                            && sample.latency.isFinite
+                            && !rejectedNow.contains(sample.subdomain)
                     }
-                    
-                    if Self.shouldStampLastServerSelection(hasValidPingResult: true) {
+                    self.currentSelectedServer = server
+                    if measured {
+                        // Fire-and-forget save of a measured cluster. A refused cluster
+                        // cannot be this winner. Dual timeout does not save or stamp.
+                        Task {
+                            await SharedPlayerManager.shared.saveCurrentState()
+                        }
+                    }
+                    if Self.shouldStampLastServerSelection(hasValidPingResult: measured) {
                         self.lastServerSelectionTime = Date()
                     }
-                    
                     #if DEBUG
-                    print("[DirectStreamingPlayer] [Server Selection] Selected \(bestResult.server.name) with latency \(bestResult.latency)s")
+                    print("[DirectStreamingPlayer] [Server Selection] Selected \(server.name) measured=\(measured)")
                     #endif
                 } else {
-                    // Dual timeout: keep default/last-good. Do **not** stamp
-                    // ``lastServerSelectionTime`` so the 10 s throttle cannot treat a
-                    // no-result as a real selection. Do not overwrite a previous
-                    // measured cluster with EU solely because this pair timed out.
+                    // No eligible cluster, or dual timeout with a rejected fallback.
+                    // Do not stamp. Do not open a refused cluster from this result.
                     #if DEBUG
-                    print("[DirectStreamingPlayer] [Server Selection] No valid ping results, keeping \(self.currentSelectedServer.name) (not stamping)")
+                    print("[DirectStreamingPlayer] [Server Selection] No eligible ping result, keeping \(self.currentSelectedServer.name) (not stamping)")
                     #endif
                 }
 
@@ -299,9 +685,13 @@ extension DirectStreamingPlayer {
     ///   ``urlWithOptimalServer(for:allowSameStreamWarmReuse:)``
     func beginBackgroundServerSelectionIfNeeded() {
         guard !isTesting else { return }
+        guard hasEligibleProductionCluster() else { return }
+        guard redirectCurrentServerOffRejectedCluster() else { return }
         guard !serverSelectionInFlight else { return }
         let age = lastServerSelectionTime.map { Date().timeIntervalSince($0) }
-        if Self.shouldReuseCachedServerSelection(
+        if Self.mayReuseCachedCluster(
+            subdomain: currentSelectedServer.subdomain,
+            rejectedSubdomains: embeddedSecurityModelRejectedSubdomains(),
             lastSelectionAge: age,
             allowSameStreamWarmReuse: false
         ) {
@@ -331,8 +721,16 @@ extension DirectStreamingPlayer {
     /// - SeeAlso: ``shouldReuseCachedServerSelection(lastSelectionAge:allowSameStreamWarmReuse:)``,
     ///   ``beginBackgroundServerSelectionIfNeeded()``
     func ensureOptimalServerSelected(allowSameStreamWarmReuse: Bool = false) async {
+        guard redirectCurrentServerOffRejectedCluster() else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] ensureOptimalServerSelected: no eligible cluster after embedded-model rejection")
+            #endif
+            return
+        }
         let age = lastServerSelectionTime.map { Date().timeIntervalSince($0) }
-        if Self.shouldReuseCachedServerSelection(
+        if Self.mayReuseCachedCluster(
+            subdomain: currentSelectedServer.subdomain,
+            rejectedSubdomains: embeddedSecurityModelRejectedSubdomains(),
             lastSelectionAge: age,
             allowSameStreamWarmReuse: allowSameStreamWarmReuse
         ) {
@@ -393,6 +791,12 @@ extension DirectStreamingPlayer {
     ///   ``beginBackgroundServerSelectionIfNeeded()``,
     ///   ``PlaybackAttachContext``, DirectStreamingPlayer+PlaybackAttach.swift
     func urlWithOptimalServer(for stream: Stream, allowSameStreamWarmReuse: Bool = false) async -> URL {
+        // A refused cluster is not probed. Callers that attach must check
+        // ``hasEligibleProductionCluster()`` first; the resource loader also refuses
+        // the URL so a late caller still opens no stream HTTP.
+        guard hasEligibleProductionCluster() else {
+            return stream.url
+        }
         await ensureOptimalServerSelected(allowSameStreamWarmReuse: allowSameStreamWarmReuse)
 
         #if DEBUG
@@ -448,8 +852,11 @@ extension DirectStreamingPlayer {
     }
     
     func fetchAllServerLatencies() async -> [PingResult] {
-        await withTaskGroup(of: PingResult.self) { group in
-            for server in Self.servers {
+        let rejected = embeddedSecurityModelRejectedSubdomains()
+        let targets = Self.servers.filter { !rejected.contains($0.subdomain) }
+        guard !targets.isEmpty else { return [] }
+        return await withTaskGroup(of: PingResult.self) { group in
+            for server in targets {
                 group.addTask {
                     await self.ping(server: server)
                 }

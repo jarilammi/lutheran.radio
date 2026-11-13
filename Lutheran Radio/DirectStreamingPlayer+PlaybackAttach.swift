@@ -211,6 +211,11 @@ extension DirectStreamingPlayer {
             return
         }
 
+        guard hasEligibleProductionCluster() else {
+            await finishBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()
+            return
+        }
+
         // Cover the primary attach path (not only recovery `play()`) so stop during
         // connect/first-play can invalidate generation and soft-silence consistently.
         let attachGeneration = beginInFlightPlaybackAttach()
@@ -269,6 +274,11 @@ extension DirectStreamingPlayer {
             #if DEBUG
             print("[DirectStreamingPlayer] prepareSecuredPlayerItem — isTesting, model updated but no network/asset work")
             #endif
+            return
+        }
+
+        guard hasEligibleProductionCluster() else {
+            await finishBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()
             return
         }
 
