@@ -509,10 +509,13 @@ private func nsError(for failure: DNSCallbackFailure) -> NSError {
 /// 3. **Does not contain it** → permanent fail; **stop** (no fall-through).
 /// 4. **Transient** (error, timeout, missing or non-Secure DNSSEC status, etc.) → next host; that host is
 ///    **fully trusted** if it returns an authoritative allow-list containing the expected model.
-/// - Success (model present **and** DNSSEC-validated) → result is cached for 1 hour in `UserDefaults`.
-///   A timestamp ahead of the device clock is discarded (it is not a cache hit).
+/// - Success (model present **and** DNSSEC-validated) → cached for 1 hour in `UserDefaults`.
+///   The pair is `lastSecurityValidation` (`Date`) and `lastSecurityValidationModel`
+///   (the embedded name that succeeded). A hit requires that name. A timestamp ahead
+///   of the device clock is discarded (it is not a cache hit). A `Date` with no name,
+///   or a different name, is not a hit and is removed.
 /// - Permanent failure → streaming is permanently disabled for the process lifetime.
-///   The success timestamp is removed and cannot revive `.failedPermanent`.
+///   The success pair is removed and cannot revive `.failedPermanent`.
 ///
 /// The actor uses strict Swift 6 isolation. All public API is `async` where mutation
 /// or cross-actor access is involved. DNS-SD callback vs watchdog teardown is
@@ -533,6 +536,14 @@ public actor SecurityModelValidator {
     private var inFlightValidation: Task<Bool, Never>?
 
     private let userDefaultsKey = "lastSecurityValidation"
+    /// Embedded name that the success timestamp belongs to. Not the TXT rdata.
+    ///
+    /// A hit requires this string to equal ``SecurityConfiguration/expectedSecurityModel``
+    /// lowercased. The standard suite is per process (main app and widget each keep
+    /// their own). This key is not written to the app-group store.
+    ///
+    /// - SeeAlso: ``isSuccessCacheFresh()``, ``<doc:Security-Invariants>`` Invariant 1
+    private let validatedModelDefaultsKey = "lastSecurityValidationModel"
 
     /// Injectable for tests (time-dependent cache logic).
     internal var currentDate: @Sendable () -> Date = { Date() }
@@ -556,7 +567,12 @@ public actor SecurityModelValidator {
     #endif
 
     private init() {
-        if let saved = UserDefaults.standard.object(forKey: userDefaultsKey) as? Date {
+        // Load the timestamp only for this binary's name. A legacy `Date` with no
+        // model string, or a name from an older build, stays on disk until the
+        // first freshness check removes it.
+        let expected = SecurityConfiguration.current.expectedSecurityModel.lowercased()
+        if UserDefaults.standard.string(forKey: validatedModelDefaultsKey)?.lowercased() == expected,
+           let saved = UserDefaults.standard.object(forKey: userDefaultsKey) as? Date {
             lastValidationTime = saved
         }
     }
@@ -568,8 +584,11 @@ public actor SecurityModelValidator {
     /// This is the primary entry point. It:
     /// 1. Returns `false` immediately when this process has already recorded
     ///    ``ValidationState/failedPermanent``. A stored success timestamp cannot revive it.
-    /// 2. Returns `true` immediately if a successful validation result is still within
-    ///    the 1-hour cache window. A timestamp ahead of the device clock is discarded.
+    /// 2. Returns `true` immediately if a successful validation for this embedded name
+    ///    is still within the 1-hour cache window. The stored name must equal
+    ///    ``SecurityConfiguration/expectedSecurityModel``. A timestamp ahead of the
+    ///    device clock is discarded. A `Date` with no name, or a different name, is
+    ///    not a hit.
     /// 3. Otherwise performs DNS TXT queries in ``securityModelDomains`` order
     ///    (authoritative answer stops the walk; only transient advances — see type-level
     ///    Behavior list and ``<doc:Security-Invariants>`` Invariant 1).
@@ -612,12 +631,18 @@ public actor SecurityModelValidator {
         return result
     }
 
-    /// Returns whether a successful validation is still within the 1-hour cache window.
+    /// Returns whether a successful validation for this embedded name is still inside the 1-hour window.
     ///
-    /// A timestamp ahead of ``currentDate`` is discarded. `timeIntervalSince` is
-    /// negative in that case, and `age < modelCacheDuration` would stay true until
+    /// The model string is read from `UserDefaults` on every check, before the
+    /// timestamp. An in-memory ``lastValidationTime`` must not authorize a different
+    /// name. A timestamp ahead of ``currentDate`` is discarded. `timeIntervalSince`
+    /// is negative in that case, and `age < modelCacheDuration` would stay true until
     /// the device clock catches the future instant — longer than the 1-hour
     /// success window in ``<doc:Security-Invariants>`` Invariant 1.
+    ///
+    /// A `Date` whose stored name is missing or different is removed and is not a hit.
+    /// A matching timestamp that is still in the past and younger than an hour stays
+    /// a hit, including after a backward clock step inside that hour.
     ///
     /// ``ValidationState/failedPermanent`` is never a cache hit.
     private func isSuccessCacheFresh() -> Bool {
@@ -625,7 +650,18 @@ public actor SecurityModelValidator {
             return false
         }
 
-        guard let last = lastValidationTime ?? UserDefaults.standard.object(forKey: userDefaultsKey) as? Date else {
+        let expected = config.expectedSecurityModel.lowercased()
+        let storedModel = UserDefaults.standard.string(forKey: validatedModelDefaultsKey)
+        let storedDate = UserDefaults.standard.object(forKey: userDefaultsKey) as? Date
+        let modelMatches = storedModel?.lowercased() == expected
+
+        // The name is checked before the instant. A legacy date, or a date stored
+        // for another embedded name, is not this build's success.
+        guard modelMatches, let last = storedDate else {
+            let dateKeyPresent = UserDefaults.standard.object(forKey: userDefaultsKey) != nil
+            if dateKeyPresent || storedModel != nil || lastValidationTime != nil {
+                discardSuccessCacheTimestamp()
+            }
             return false
         }
 
@@ -637,14 +673,15 @@ public actor SecurityModelValidator {
         return age < config.modelCacheDuration
     }
 
-    /// Drops the in-memory and `UserDefaults` success timestamp.
+    /// Drops the in-memory timestamp and both success-cache keys.
     ///
-    /// Used when the stored instant is ahead of the device clock, when an
-    /// authoritative TXT answer does not contain the model, and when a transient
-    /// retry explicitly invalidates the cache.
+    /// Used when the stored instant is ahead of the device clock, when the stored
+    /// name does not match this build, when an authoritative TXT answer does not
+    /// contain the model, and when a transient retry explicitly invalidates the cache.
     private func discardSuccessCacheTimestamp() {
         lastValidationTime = nil
         UserDefaults.standard.removeObject(forKey: userDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: validatedModelDefaultsKey)
     }
 
     /// Performs DNS TXT validation when cache is stale or absent. DEBUG "started" logs only here.
@@ -682,8 +719,13 @@ public actor SecurityModelValidator {
 
                 if isValid {
                     // Contains expected model → success; stop (later hosts not queried).
+                    // The name is stored with the instant so a later build cannot reuse this hour.
                     lastValidationTime = now
                     UserDefaults.standard.set(now, forKey: userDefaultsKey)
+                    UserDefaults.standard.set(
+                        config.expectedSecurityModel.lowercased(),
+                        forKey: validatedModelDefaultsKey
+                    )
                     validationState = .success
                     
                     #if DEBUG
@@ -693,7 +735,7 @@ public actor SecurityModelValidator {
                     return true
                 } else {
                     // Does not contain it → permanent fail; stop (no fall-through).
-                    // Drop the previous success timestamp so a later clock step
+                    // Drop the previous success pair so a later clock step
                     // cannot treat that hour as still authoritative.
                     validationState = .failedPermanent
                     discardSuccessCacheTimestamp()
@@ -783,9 +825,10 @@ public actor SecurityModelValidator {
     ///
     /// After calling this method, the next call to ``validateSecurityModel()`` or
     /// ``isCurrentlyValid()`` will perform a fresh DNS query (subject to normal
-    /// transient retry logic). The persisted `lastSecurityValidation` timestamp is
-    /// removed, not only the in-memory copy. Leaving it in `UserDefaults` would
-    /// let a clock step backward satisfy the success-cache check.
+    /// transient retry logic). The persisted `lastSecurityValidation` timestamp and
+    /// `lastSecurityValidationModel` name are removed, not only the in-memory copy.
+    /// Leaving the pair in `UserDefaults` would let a clock step backward satisfy
+    /// the success-cache check.
     ///
     /// Permanent failures (``ValidationState/failedPermanent``) are unaffected.
     /// Use this method only to recover from transient network conditions during testing
@@ -1171,6 +1214,7 @@ public actor SecurityModelValidator {
             inFlightValidation = nil
             lastValidationTime = nil
             UserDefaults.standard.removeObject(forKey: userDefaultsKey)
+            UserDefaults.standard.removeObject(forKey: validatedModelDefaultsKey)
             validationState = .pending
         }
     }

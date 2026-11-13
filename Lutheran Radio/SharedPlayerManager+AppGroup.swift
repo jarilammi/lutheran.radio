@@ -115,7 +115,7 @@ extension SharedPlayerManager {
     /// - Pending-action mailbox (`pendingAction*`, `pendingLanguage`) — first post-clear widget
     ///   intent must still deliver Darwin + pending when the main app is suspended
     /// - Durable Live Activity mirrors (`liveActivityToggleVisualState`, `liveActivityCurrentLanguage`)
-    /// - Security caches (standard suite `lastSecurityValidation` and Core policy)
+    /// - Security caches (standard suite `lastSecurityValidation`, `lastSecurityValidationModel`, and Core policy)
     /// - Retired visual keys (handled by ``clearPersistedVisualStateKeysFromDisk()``)
     ///
     /// - Postcondition: `lastUpdateTime`, `isInstantFeedback`, `instantFeedbackTime`, and

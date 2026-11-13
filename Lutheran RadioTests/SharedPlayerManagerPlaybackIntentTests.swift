@@ -209,7 +209,7 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
     ///
     /// **Invariant protected:** ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)`` on the
     /// true→false edge calls ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``.
-    /// Security DNS cache (`lastSecurityValidation` on the standard suite) is never touched.
+    /// Security DNS cache (`lastSecurityValidation` and `lastSecurityValidationModel` on the standard suite) is never touched.
     /// Pending-action mailbox and Live Activity durable mirrors are out of scope for this residual
     /// helper (privacy clear removes them via ``removeAllLocalPlaybackKeys()``).
     ///
@@ -232,11 +232,17 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
         defaults.set(now, forKey: "instantFeedbackTime")
         defaults.set("fi", forKey: "instantFeedbackLanguage")
 
-        // Seed a security cache marker on the standard suite — must survive residual clear.
+        // Seed security cache markers on the standard suite — must survive residual clear.
         let securityKey = "lastSecurityValidation"
+        let securityModelKey = "lastSecurityValidationModel"
         let securityMarker = "privacy-residual-test-\(UUID().uuidString)"
+        let securityModelMarker = "privacy-residual-model-\(UUID().uuidString)"
         UserDefaults.standard.set(securityMarker, forKey: securityKey)
-        defer { UserDefaults.standard.removeObject(forKey: securityKey) }
+        UserDefaults.standard.set(securityModelMarker, forKey: securityModelKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: securityKey)
+            UserDefaults.standard.removeObject(forKey: securityModelKey)
+        }
 
         await MainActor.run {
             WidgetRefreshManager.setHasActiveLutheranWidgets(false)
@@ -252,6 +258,11 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
             UserDefaults.standard.string(forKey: securityKey),
             securityMarker,
             "Privacy residual clear must never touch lastSecurityValidation"
+        )
+        XCTAssertEqual(
+            UserDefaults.standard.string(forKey: securityModelKey),
+            securityModelMarker,
+            "Privacy residual clear must never touch lastSecurityValidationModel"
         )
     }
 
@@ -357,9 +368,15 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
         defaults.set("sv", forKey: "instantFeedbackLanguage")
 
         let securityKey = "lastSecurityValidation"
+        let securityModelKey = "lastSecurityValidationModel"
         let securityMarker = "privacy-clear-test-\(UUID().uuidString)"
+        let securityModelMarker = "privacy-clear-model-\(UUID().uuidString)"
         UserDefaults.standard.set(securityMarker, forKey: securityKey)
-        defer { UserDefaults.standard.removeObject(forKey: securityKey) }
+        UserDefaults.standard.set(securityModelMarker, forKey: securityModelKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: securityKey)
+            UserDefaults.standard.removeObject(forKey: securityModelKey)
+        }
 
         await SharedPlayerManager.clearAllLocalState()
 
@@ -376,6 +393,11 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
             UserDefaults.standard.string(forKey: securityKey),
             securityMarker,
             "Privacy clear must never touch lastSecurityValidation"
+        )
+        XCTAssertEqual(
+            UserDefaults.standard.string(forKey: securityModelKey),
+            securityModelMarker,
+            "Privacy clear must never touch lastSecurityValidationModel"
         )
 
         // Main-app paths must not reintroduce residual keys while the gate is closed.

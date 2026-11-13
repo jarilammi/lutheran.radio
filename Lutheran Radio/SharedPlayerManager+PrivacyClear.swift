@@ -39,7 +39,7 @@ extension SharedPlayerManager {
     /// Does not affect security data or Core state.
     ///
     /// Does **not** touch:
-    /// - "lastSecurityValidation" (Core DNS TXT 1-hour success cache — required for secure launch & streaming)
+    /// - "lastSecurityValidation" and "lastSecurityValidationModel" (Core DNS TXT 1-hour success cache — required for secure launch & streaming)
     /// - Any keys written by SecurityModelValidator / Core security
     /// - Certificate pinning data, app version, migration flags, or launch-critical state
     ///

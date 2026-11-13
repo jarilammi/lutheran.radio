@@ -313,6 +313,86 @@ struct SecurityModelValidatorTests {
         #expect(afterReset == false, "Should now see the new (wrong) model and fail permanently")
         #expect(counter.value == 2)
     }
+
+    /// Invariant 1: the 1-hour success pair authorizes only the embedded name that
+    /// was checked. A timestamp stored for another name must not skip DNS.
+    @Test("Success cached for another embedded name does not skip DNS")
+    func successCacheForAnotherModelDoesNotAuthorize() async {
+        await resetForDeterministicTest()
+        await restoreRealClock()
+
+        final class Counter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var _value = 0
+            var value: Int { lock.withLock { _value } }
+            func increment() { lock.withLock { _value += 1 } }
+        }
+        let counter = Counter()
+
+        await SecurityModelValidator._test_setTXTFetcher { _ in
+            counter.increment()
+            return [testExpectedSecurityModel]
+        }
+
+        let first = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(first == true)
+        #expect(counter.value == 1)
+        #expect(
+            UserDefaults.standard.string(forKey: "lastSecurityValidationModel")
+                == testExpectedSecurityModel.lowercased()
+        )
+
+        UserDefaults.standard.set("sunshinecoast", forKey: "lastSecurityValidationModel")
+        await SecurityModelValidator._test_setTXTFetcher({ _ in
+            counter.increment()
+            return ["revoked-model"]
+        }, clearCache: false)
+
+        let second = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(second == false)
+        #expect(counter.value == 2, "A different embedded name must not satisfy the success cache")
+        #expect(await SecurityModelValidator.shared.isPermanentlyInvalid)
+        #expect(UserDefaults.standard.object(forKey: "lastSecurityValidation") == nil)
+        #expect(UserDefaults.standard.object(forKey: "lastSecurityValidationModel") == nil)
+
+        await resetForDeterministicTest()
+        await restoreRealClock()
+    }
+
+    /// Invariant 1: a `Date` written by an older build, with no stored name, is not a hit.
+    /// The check removes it and queries. The following success writes both keys.
+    @Test("Success timestamp with no embedded name does not skip DNS")
+    func legacySuccessTimestampDoesNotAuthorize() async {
+        await resetForDeterministicTest()
+        await restoreRealClock()
+
+        final class Counter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var _value = 0
+            var value: Int { lock.withLock { _value } }
+            func increment() { lock.withLock { _value += 1 } }
+        }
+        let counter = Counter()
+
+        await SecurityModelValidator._test_setTXTFetcher({ _ in
+            counter.increment()
+            return [testExpectedSecurityModel]
+        }, clearCache: false)
+        UserDefaults.standard.set(Date(), forKey: "lastSecurityValidation")
+        UserDefaults.standard.removeObject(forKey: "lastSecurityValidationModel")
+
+        let result = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(result == true)
+        #expect(counter.value == 1, "A date with no model name must not skip DNS")
+        #expect(UserDefaults.standard.object(forKey: "lastSecurityValidation") is Date)
+        #expect(
+            UserDefaults.standard.string(forKey: "lastSecurityValidationModel")
+                == testExpectedSecurityModel.lowercased()
+        )
+
+        await resetForDeterministicTest()
+        await restoreRealClock()
+    }
     
     // MARK: - Reset + Seam Interaction
     

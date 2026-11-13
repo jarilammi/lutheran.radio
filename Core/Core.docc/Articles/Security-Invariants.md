@@ -24,9 +24,9 @@ This document defines the **required security invariants** of the Lutheran Radio
   4. **Transient** (error, timeout, missing or non-Secure DNSSEC status, etc.) → next host; that host is **fully trusted** if it returns an authoritative allow-list containing the expected model.
 - On **permanent failure** (model not present in a *validated* TXT record), streaming is **permanently disabled** for the lifetime of the process. The only recovery is installing a new app build with an updated model.
 - On **transient failure** (network, timeout, *or DNSSEC validation not asserted*), the app may retry, but must eventually succeed or fall back to a safe error state.
-- Successful validations (validated response + model present) are cached for exactly 1 hour in `UserDefaults` (key: `lastSecurityValidation`). The cache applies **only** to successes.
-- A stored success timestamp **ahead of the device clock** is discarded and is not a cache hit. A negative age must not extend trust until that future instant.
-- ``ValidationState/failedPermanent`` clears the success timestamp. For the rest of the process, that state is not returned to success by a timestamp that still falls inside the original hour.
+- Successful validations (validated response + model present) are cached for exactly 1 hour in `UserDefaults`. The pair is `lastSecurityValidation` (`Date`) and `lastSecurityValidationModel` (the embedded name that succeeded). The cache applies **only** to successes, and only for that name. A `Date` with no name, or a different name, is not a hit and is removed. The TXT rdata is not stored.
+- A stored success timestamp **ahead of the device clock** is discarded and is not a cache hit. A negative age must not extend trust until that future instant. A matching timestamp that is still in the past and younger than one hour stays a hit, including after a backward clock step inside that hour.
+- ``ValidationState/failedPermanent`` clears the success pair. For the rest of the process, that state is not returned to success by a timestamp that still falls inside the original hour.
 - The validator is an `actor` and all mutation of validation state is isolated.
 
 ## Invariant 2: DNSSEC-protected name resolution for streaming hosts

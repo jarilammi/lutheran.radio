@@ -769,7 +769,7 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
     ///
     /// **Invariant protected:** ``clearAllLocalState()`` → ``removeAllLocalPlaybackKeys()``
     /// clears ``liveActivityToggleVisualState`` and ``liveActivityCurrentLanguage``. Security
-    /// DNS cache on the standard suite is never touched.
+    /// DNS cache (`lastSecurityValidation` and `lastSecurityValidationModel`) on the standard suite is never touched.
     ///
     /// - SeeAlso: ``SharedPlayerManager/clearAllLocalState()``,
     ///   ``SharedPlayerManager/removeAllLocalPlaybackKeys()``.
@@ -780,9 +780,15 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
         XCTAssertEqual(SharedPlayerManager.loadLiveActivityLanguageMirror(), "de")
 
         let securityKey = "lastSecurityValidation"
+        let securityModelKey = "lastSecurityValidationModel"
         let securityMarker = "la-mirror-privacy-clear-\(UUID().uuidString)"
+        let securityModelMarker = "la-mirror-privacy-model-\(UUID().uuidString)"
         UserDefaults.standard.set(securityMarker, forKey: securityKey)
-        defer { UserDefaults.standard.removeObject(forKey: securityKey) }
+        UserDefaults.standard.set(securityModelMarker, forKey: securityModelKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: securityKey)
+            UserDefaults.standard.removeObject(forKey: securityModelKey)
+        }
 
         await SharedPlayerManager.clearAllLocalState()
 
@@ -798,6 +804,11 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
             UserDefaults.standard.string(forKey: securityKey),
             securityMarker,
             "Privacy clear must never touch lastSecurityValidation"
+        )
+        XCTAssertEqual(
+            UserDefaults.standard.string(forKey: securityModelKey),
+            securityModelMarker,
+            "Privacy clear must never touch lastSecurityValidationModel"
         )
     }
 
