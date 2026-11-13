@@ -15,6 +15,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -363,6 +369,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld ቋንቋዎች"
+                }
+              }
+            }
+          }
+        },
+        "bem" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ululimi"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld indimi"
                 }
               }
             }
@@ -1398,6 +1422,12 @@
             "value" : "የድምጽ መውጫ መሣሪያ ለመምረጥ ሁለት ጊዜ መታ ያድርጉ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tineni kabiri pakuti musale divayisi iifumya ishiwi"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1724,6 +1754,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ስለ አሁኑ የሬዲዮ ፕሮግራም መረጃ ያሳያል"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cilelanga ilyashi pa pulogalamu ya redio iilebomba nomba"
           }
         },
         "bg" : {
@@ -2054,6 +2090,12 @@
             "value" : "የሬዲዮ ስርጭት መጫወትን ይቀያይራል"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cilealula ukwangala kwa redio"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2380,6 +2422,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "መጫወት እስከሚቆም ድረስ ምን ያህል ጊዜ እንደሚቆይ ይምረጡ"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saleni inshita iyo ukwangala kukaleka"
           }
         },
         "bg" : {
@@ -2710,6 +2758,12 @@
             "value" : "የመጫወት ድምጽን ያስተካክላል"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cilelunga ubukulu bwa ishiwi lyakwangala"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3033,6 +3087,12 @@
           }
         },
         "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "bem" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -3367,6 +3427,12 @@
             "value" : "Lutheran Radio አርማ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icishibilo ca Lutheran Radio"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3693,6 +3759,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ለአፍታ አቁም"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imika"
           }
         },
         "bg" : {
@@ -4024,6 +4096,12 @@
             "value" : "የ%@ ፎቶ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icikope ca %@"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4350,6 +4428,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "አጫውት"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angala"
           }
         },
         "bg" : {
@@ -4680,6 +4764,12 @@
             "value" : "የእንቅልፍ ሰዓት ቆጣሪ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inshita ya kulala"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5006,6 +5096,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ድምጽ"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ishiwi"
           }
         },
         "bg" : {
@@ -5356,6 +5452,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld በመቶ"
+                }
+              }
+            }
+          }
+        },
+        "bem" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pesenti"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pesenti"
                 }
               }
             }
@@ -6391,6 +6505,12 @@
             "value" : "ቀጥል"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konkanyeni"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6717,6 +6837,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "እንደገና ሞክር"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esheni nakabili"
           }
         },
         "bg" : {
@@ -7047,6 +7173,12 @@
             "value" : "ለዚህ ክፍለ ጊዜ ፍቀድ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suminisheni pa nshita iyi"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7373,6 +7505,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ሁልጊዜ ፍቀድ"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suminisheni lyonse"
           }
         },
         "bg" : {
@@ -7703,6 +7841,12 @@
             "value" : "አሁን አይደለም"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te nomba"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8029,6 +8173,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "አጽዳ"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fumyeni"
           }
         },
         "bg" : {
@@ -8359,6 +8509,12 @@
             "value" : "ጸድቷል"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fyafumishiwapo"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8685,6 +8841,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ይህ መጫወትን ያቆማል፣ የዊጄት እና የ Live Activity ውሂብን ያስወግዳል፣ እንዲሁም ከዚህ መሣሪያ የቅርብ ጊዜ ማዳመጥ ሁኔታን ያጸዳል። ይህን እርምጃ መቀልበስ አይቻልም።"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ici cikaleka ukwangala, cikafumye ifya Widget elyo na ifya Live Activity, elyo cikapute ifyo mwaumfwile nomba line pa divayisi iyi. Teti cibweshiwepo."
           }
         },
         "bg" : {
@@ -9015,6 +9177,12 @@
             "value" : "የአካባቢ መጫወት ሁኔታን አጽዳ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fumyeni ifyo ukwangala kuli pa divayisi iyi"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9341,6 +9509,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የ Lutheran Radio ዊጄት ውቅር።"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukubika kwa Widget ya Lutheran Radio."
           }
         },
         "bg" : {
@@ -9672,6 +9846,12 @@
             "value" : "የግንኙነት ስህተት"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ifilwa ya kukumbinkanya"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10001,6 +10181,12 @@
             "value" : "የ Lutheran Radio መጫወትን ይቆጣጠሩ እና አሁኑን ጣቢያ ይመልከቱ።"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lungeni ukwangala kwa Lutheran Radio elyo mumone siteshoni iilebomba."
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10327,6 +10513,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "መጫወትን ይቆጣጠሩ እና በቋንቋ ስርጭቶች መካከል ይቀያይሩ።"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lungeni ukwangala elyo mualule pakati pa ndimi sha redio."
           }
         },
         "bg" : {
@@ -10658,6 +10850,12 @@
             "value" : "ድምጽን ቀንስ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cefyeni ishiwi"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10987,6 +11185,12 @@
             "value" : "ድምጽን ጨምር"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kulisheni ishiwi"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11313,6 +11517,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "እየተጫወተ ነው"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ileangala"
           }
         },
         "bg" : {
@@ -11644,6 +11854,12 @@
             "value" : "ቋንቋ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ululimi"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11970,6 +12186,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የቋንቋ ኮድ"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ikodi ya ululimi"
           }
         },
         "bg" : {
@@ -12301,6 +12523,12 @@
             "value" : "እንግሊዝኛ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icisungu"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12628,6 +12856,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኢስቶንኛ"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iciestonia"
           }
         },
         "bg" : {
@@ -12959,6 +13193,12 @@
             "value" : "ፊንላንድኛ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icifinilandi"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13286,6 +13526,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ጀርመንኛ"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icijemani"
           }
         },
         "bg" : {
@@ -13617,6 +13863,12 @@
             "value" : "ስዊድንኛ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iciswideni"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13944,6 +14196,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · ቀጥታ ስርጭት"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Redio ya nomba"
           }
         },
         "bg" : {
@@ -14275,6 +14533,12 @@
             "value" : "የአካባቢ ብቻ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pa divayisi iyi fye"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14599,6 +14863,12 @@
           }
         },
         "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "bem" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -14933,6 +15203,12 @@
             "value" : "ቀጣይ ቋንቋ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ululimi ulukonkapo"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15260,6 +15536,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "አጫውት/ለአፍታ አቁም"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angala/Imika"
           }
         },
         "bg" : {
@@ -15591,6 +15873,12 @@
             "value" : "መጫወት"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukwangala"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15918,6 +16206,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ቀዳሚ ቋንቋ"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ululimi ulwapita"
           }
         },
         "bg" : {
@@ -16248,6 +16542,12 @@
             "value" : "መተግበሪያው የሞባይል ውሂብ እየተጠቀመ ነው፣ ይህም በውሂብ እቅድዎ መሠረት ክፍያ ሊያስከትል ይችላል።"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pulogalamu ilebomfya deta ya foni, iyo ingaleta indalama ukulingana na nshila yenu ya deta."
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16574,6 +16874,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የሞባይል ውሂብ አጠቃቀም"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukubomfya deta ya foni"
           }
         },
         "bg" : {
@@ -16904,6 +17210,12 @@
             "value" : "ምንም የትራክ መረጃ የለም"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Takuli ilyashi lya nyimbo"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17232,6 +17544,12 @@
             "value" : "አሁን እየተጫወተ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ileangala nomba"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17555,6 +17873,12 @@
           }
         },
         "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "bem" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -17889,6 +18213,12 @@
             "value" : "መጀመሪያ መተግበሪያውን ይክፈቱ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isuleni pulogalamu akabalilapo"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18217,6 +18547,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radioን ለአፍታ አቁም"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imikeni Lutheran Radio"
           }
         },
         "bg" : {
@@ -18548,6 +18884,12 @@
             "value" : "የ Lutheran Radio መጫወትን ለአፍታ ያቁሙ።"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imikeni ukwangala kwa Lutheran Radio."
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18874,6 +19216,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "አጫውት"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angala"
           }
         },
         "bg" : {
@@ -19205,6 +19553,12 @@
             "value" : "Lutheran Radioን አጫውት"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angaleni Lutheran Radio"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19531,6 +19885,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radioን ያጫውቱ ወይም ለአፍታ ያቁሙ።"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angaleni nangu imikeni Lutheran Radio."
           }
         },
         "bg" : {
@@ -19862,6 +20222,12 @@
             "value" : "Lutheran Radioን ያጫውቱ ወይም ይቀጥሉ።"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angaleni nangu pitilisheni Lutheran Radio."
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20188,6 +20554,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "በደህንነት ማረጋገጫ ውድቀት ምክንያት መጫወት መጀመር አልተቻለም። እባክዎ የበይነመረብ ግንኙነትዎን ይፈትሹ እና መተግበሪያው ወቅታዊ መሆኑን ያረጋግጡ። ችግሩ ከቀጠለ መተግበሪያውን እንደገና ያስጀምሩና እንደገና ይሞክሩ።"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Takuli ukutendeka ukwangala pantu ukushininkisha icingililo kwafilwa. Napapata moneni intaneti yenu elyo mushininkishe ukuti pulogalamu yalilungwa. Nga cilepitirira, yambeni pulogalamu nakabili elyo mweshe."
           }
         },
         "bg" : {
@@ -20518,6 +20890,12 @@
             "value" : "የደህንነት ማረጋገጫ አልተሳካም"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukushininkisha icingililo kwafilwa"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20845,6 +21223,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ን ይምረጡ"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saleni %@"
           }
         },
         "bg" : {
@@ -21195,6 +21579,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld ደቂቃዎች ቀርተዋል"
+                }
+              }
+            }
+          }
+        },
+        "bem" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Mineti %lld yashele"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Imineti %lld shashele"
                 }
               }
             }
@@ -22230,6 +22632,12 @@
             "value" : "ሰዓት ቆጣሪውን ሰርዝ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lekeni inshita"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22556,6 +22964,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 ደቂቃዎች"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imineti 15"
           }
         },
         "bg" : {
@@ -22886,6 +23300,12 @@
             "value" : "30 ደቂቃዎች"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imineti 30"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23212,6 +23632,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 ደቂቃዎች"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imineti 45"
           }
         },
         "bg" : {
@@ -23542,6 +23968,12 @@
             "value" : "60 ደቂቃዎች"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imineti 60"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23868,6 +24300,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የእንቅልፍ ሰዓት ቆጣሪ"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inshita ya kulala"
           }
         },
         "bg" : {
@@ -24198,6 +24636,12 @@
             "value" : "የስትሪሚንግ አገልጋዮች የ SSL የምስክር ወረቀቶቻቸውን አድሰዋል። መተግበሪያው በተኳኋኝነት ሁነታ እየሰራ ነው። ለምርጥ ደህንነት ሲገኝ ወደ የቅርብ ጊዜው ስሪት ያዘምኑ።"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maseva ya redio yalilungisha amasatifiketi yabo ya SSL. Pulogalamu ilebomba mu nshila ya kulingana. Napapata lungisheni ku muputo uupya ilyo ukaba, pakuti icingililo cibe icisuma."
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24524,6 +24968,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የምስክር ወረቀት ተዘምኗል"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Satifiketi yalungwa"
           }
         },
         "bg" : {
@@ -24855,6 +25305,12 @@
             "value" : "የ Lutheran Radio መጫወትን ይጀምሩ ወይም ይቀጥሉ።"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yambeni nangu pitilisheni ukwangala kwa Lutheran Radio."
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25181,6 +25637,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የ Lutheran Radio መጫወትን ይጀምሩ ወይም ያቁሙ።"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yambeni nangu lekeni ukwangala kwa Lutheran Radio."
           }
         },
         "bg" : {
@@ -25511,6 +25973,12 @@
             "value" : "ቋት"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isula"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25837,6 +26305,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "አገናኝ"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kumbinkanya"
           }
         },
         "bg" : {
@@ -26167,6 +26641,12 @@
             "value" : "አልተሳካም"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cafilwa"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26495,6 +26975,12 @@
             "value" : "ከመስመር ውጪ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tapali intaneti"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26821,6 +27307,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ለአፍታ"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imika"
           }
         },
         "bg" : {
@@ -27152,6 +27644,12 @@
             "value" : "ለአፍታ ቆሟል – ጥሪ በሂደት ላይ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cemikwa – Foni ilebomba"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27479,6 +27977,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "መጫወት አልተሳካም: %@"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukwangala kwafilwa: %@"
           }
         },
         "bg" : {
@@ -27810,6 +28314,12 @@
             "value" : "አጫውት"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angala"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28136,6 +28646,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ደህንነት"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icingililo"
           }
         },
         "bg" : {
@@ -28466,6 +28982,12 @@
             "value" : "የ SSL የምስክር ወረቀት ታድሷል - መተግበሪያውን በቅርቡ ያዘምኑ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Satifiketi ya SSL yalungwa - lungisheni pulogalamu nomba line"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28792,6 +29314,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ቆሟል"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calekwa"
           }
         },
         "bg" : {
@@ -29122,6 +29650,12 @@
             "value" : "ጠፍቷል"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cazima"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29448,6 +29982,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "መሣሪያው ሞቋል"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Divayisi ilepya"
           }
         },
         "bg" : {
@@ -29778,6 +30318,12 @@
             "value" : "ስርጭቱ ለጊዜው አይገኝም። እባክዎ በኋላ እንደገና ይሞክሩ።"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redio tayapo pa nshita iinono. Napapata esheni nakabili panuma."
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30104,6 +30650,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ስርጭት አይገኝም"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redio tayapo"
           }
         },
         "bg" : {
@@ -30435,6 +30987,12 @@
             "value" : "የ Lutheran Radio የቋንቋ ስርጭትን ይቀይሩ።"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aluleni redio ya ululimi lwa Lutheran Radio."
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30761,6 +31319,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ስርጭትን ቀይር"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aluleni redio"
           }
         },
         "bg" : {
@@ -31092,6 +31656,12 @@
             "value" : "ወደ %@ ቀይር"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aluleni ku %@"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31418,6 +31988,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ከ Live Activity ወደ ሌላ የቋንቋ ስርጭት ይቀይሩ።"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aluleni ku redio imbi ya ululimi ukufuma ku Live Activity."
           }
         },
         "bg" : {
@@ -31748,6 +32324,12 @@
             "value" : "ወደ ሌላ የቋንቋ ስርጭት ይቀይሩ።"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aluleni ku redio imbi ya ululimi."
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32075,6 +32657,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ወደ %@ ተቀይሯል"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calulwa ku %@"
           }
         },
         "bg" : {
@@ -32407,6 +32995,12 @@
             "value" : "ለመክፈት መታ ያድርጉ"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tineni pakwisula"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32734,6 +33328,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radioን ቀያይር"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aluleni Lutheran Radio"
           }
         },
         "bg" : {
@@ -33064,6 +33664,12 @@
             "value" : "የ Lutheran Radio መጫወትን ቀያይር"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aluleni ukwangala kwa Lutheran Radio"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -33390,6 +33996,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ከ Live Activity አጫውት/ለአፍታ አቁምን ቀያይር።"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aluleni angala/imika ukufuma ku Live Activity."
           }
         },
         "bg" : {
@@ -33719,6 +34331,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "መጫወትን ቀያይር"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aluleni ukwangala"
           }
         },
         "bg" : {
@@ -34069,6 +34687,24 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "ድምጽ ወደ %lld በመቶ ተቀናብሯል"
+                }
+              }
+            }
+          }
+        },
+        "bem" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ishiwi lyabikwa pa pesenti %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ishiwi lyabikwa pa pesenti %lld"
                 }
               }
             }
@@ -35102,6 +35738,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የዊጄት ውቅር"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukubika kwa Widget"
           }
         },
         "bg" : {

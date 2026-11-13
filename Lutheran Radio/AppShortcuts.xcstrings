@@ -51,6 +51,12 @@
             "value" : "${applicationName}ን ለአፍታ አቁም"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imikeni ${applicationName}"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -380,6 +386,12 @@
             "value" : "${applicationName}ን አጫውት"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angaleni ${applicationName}"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -707,6 +719,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName}ን በ${language} አጫውት"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angaleni ${applicationName} mu ululimi ${language}"
           }
         },
         "bg" : {
@@ -1073,6 +1091,12 @@
             "value" : "${applicationName}ን ጀምር"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yambeni ${applicationName}"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1402,6 +1426,12 @@
             "value" : "${applicationName}ን አቁም"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lekeni ${applicationName}"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1729,6 +1759,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName}ን ወደ ${language} ቀይር"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aluleni ${applicationName} ku ${language}"
           }
         },
         "bg" : {
