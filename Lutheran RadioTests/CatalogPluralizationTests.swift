@@ -9,7 +9,7 @@
 //  interpolation so Foundation can select the CLDR category.
 //
 //  Coverage is both catalog structure and compiled runtime for every README
-//  Localizations language (54 codes), not a 10-locale subset. A missing or
+//  Localizations language (55 codes), not a 10-locale subset. A missing or
 //  wrong Slovak `few` string, a dropped Northern Sami `two`, or a missing
 //  Latvian `zero` must fail CI. Integer-unreachable `many` (cs, sk, lt) and
 //  decimal-only `other` (pl, ru, uk) are catalog-gated; integer probes skip them.
@@ -36,10 +36,10 @@ final class CatalogPluralizationTests: XCTestCase {
     /// a Polish `.lproj` without `locale: "pl"` still applies Finnish one/other rules.
     private let appBundle = Bundle(for: PlayerViewModel.self)
 
-    /// UI catalog languages: README Localizations / Localizable coverage (the 54
+    /// UI catalog languages: README Localizations / Localizable coverage (the 55
     /// language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
-        "af", "am", "bg", "bn", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
+        "af", "am", "bem", "bg", "bn", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "ha", "haw", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
         "lv", "mg", "nb", "ng", "nl", "nn", "ny", "om", "pl", "pt", "pt-BR", "ro", "ru",
         "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "ti", "tr", "uk", "yo", "zu",
@@ -63,6 +63,7 @@ final class CatalogPluralizationTests: XCTestCase {
     private let requiredCatalogCategories: [String: Set<String>] = [
         "af": ["one", "other"],
         "am": ["one", "other"],
+        "bem": ["one", "other"],
         "bg": ["one", "other"],
         "bn": ["one", "other"],
         "cs": ["one", "few", "many", "other"],
@@ -134,7 +135,7 @@ final class CatalogPluralizationTests: XCTestCase {
         XCTAssertEqual(
             Set(requiredCatalogCategories.keys),
             Set(supportedLanguages),
-            "requiredCatalogCategories must list exactly the 54 UI catalog languages"
+            "requiredCatalogCategories must list exactly the 55 UI catalog languages"
         )
 
         let catalog = try loadLocalizableCatalog()
@@ -405,6 +406,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("af", 2, "other", "Nog 2 minute"),
         .init("am", 1, "one", "1 ደቂቃ ቀርቷል"),
         .init("am", 2, "other", "2 ደቂቃዎች ቀርተዋል"),
+        .init("bem", 1, "one", "Mineti 1 yashele"),
+        .init("bem", 2, "other", "Imineti 2 shashele"),
         .init("bg", 1, "one", "Остава 1 минута"),
         .init("bg", 2, "other", "Остават 2 минути"),
         .init("bn", 1, "one", "1 মিনিট বাকি"),
@@ -535,6 +538,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("af", 2, "other", "2 tale"),
         .init("am", 1, "one", "1 ቋንቋ"),
         .init("am", 2, "other", "2 ቋንቋዎች"),
+        .init("bem", 1, "one", "1 ululimi"),
+        .init("bem", 2, "other", "2 indimi"),
         .init("bg", 1, "one", "1 език"),
         .init("bg", 2, "other", "2 езика"),
         .init("bn", 1, "one", "1টি ভাষা"),
@@ -664,6 +669,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("af", 2, "other", "2 persent"),
         .init("am", 1, "one", "1 በመቶ"),
         .init("am", 2, "other", "2 በመቶ"),
+        .init("bem", 1, "one", "1 pesenti"),
+        .init("bem", 2, "other", "2 pesenti"),
         .init("bg", 1, "one", "1 процент"),
         .init("bg", 2, "other", "2 процента"),
         .init("bn", 1, "one", "1 শতাংশ"),
@@ -794,6 +801,8 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("af", 2, "other", "Volume ingestel op 2 persent"),
         .init("am", 1, "one", "ድምጽ ወደ 1 በመቶ ተቀናብሯል"),
         .init("am", 2, "other", "ድምጽ ወደ 2 በመቶ ተቀናብሯል"),
+        .init("bem", 1, "one", "Ishiwi lyabikwa pa pesenti 1"),
+        .init("bem", 2, "other", "Ishiwi lyabikwa pa pesenti 2"),
         .init("bg", 1, "one", "Силата на звука е зададена на 1 процент"),
         .init("bg", 2, "other", "Силата на звука е зададена на 2 процента"),
         .init("bn", 1, "one", "ভলিউম 1 শতাংশে নির্ধারিত হয়েছে"),

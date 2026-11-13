@@ -70,7 +70,7 @@ struct RadioLanguageEntity: AppEntity {
 struct RadioLanguageQuery: EntityQuery {
     /// Returns the 5 supported streams as suggested entities for Siri / Shortcuts parameter pickers.
     /// Uses the SSOT ``availableStreams`` (exactly the five playable streams: en, de, fi, sv, et).
-    /// UI localization is the 54-language README Localizations table and is separate.
+    /// UI localization is the 55-language README Localizations table and is separate.
     ///
     /// - SeeAlso: ``SharedPlayerManager/availableStreams``, README.md Localizations,
     ///   CODING_AGENT.md (Localization).
@@ -265,7 +265,7 @@ struct SwitchToLanguageIntent: AppIntent {
 /// and the sleep timer.
 ///
 /// English source phrases below are the extraction keys. Play, pause, and
-/// language-switch utterances are translated for all 54 UI languages in
+/// language-switch utterances are translated for all 55 UI languages in
 /// ``AppShortcuts.xcstrings``. Sleep-timer utterances are native in English,
 /// German, Finnish, Swedish, and Estonian; other UI languages fall back to the
 /// English phrase. Siri may not speak Estonian yet — those phrases are registered

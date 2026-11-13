@@ -16,6 +16,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "bg" : {
           "stringUnit" : {
             "state" : "translated",
