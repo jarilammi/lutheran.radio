@@ -15,6 +15,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -375,6 +381,36 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld ቋንቋዎች"
+                }
+              }
+            }
+          }
+        },
+        "be" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld мовы"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld моў"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld мова"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld мовы"
                 }
               }
             }
@@ -1452,6 +1488,12 @@
             "value" : "የድምጽ መውጫ መሣሪያ ለመምረጥ ሁለት ጊዜ መታ ያድርጉ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Націсніце двойчы, каб выбраць прыладу вываду гуку"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1790,6 +1832,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ስለ አሁኑ የሬዲዮ ፕሮግራም መረጃ ያሳያል"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Паказвае інфармацыю пра бягучую радыёпраграму"
           }
         },
         "bem" : {
@@ -2132,6 +2180,12 @@
             "value" : "የሬዲዮ ስርጭት መጫወትን ይቀያይራል"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пераключае прайграванне радыёпатоку"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2470,6 +2524,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "መጫወት እስከሚቆም ድረስ ምን ያህል ጊዜ እንደሚቆይ ይምረጡ"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выберыце, праз колькі часу спыніцца прайграванне"
           }
         },
         "bem" : {
@@ -2812,6 +2872,12 @@
             "value" : "የመጫወት ድምጽን ያስተካክላል"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Рэгулюе гучнасць прайгравання"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3147,6 +3213,12 @@
           }
         },
         "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "be" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -3493,6 +3565,12 @@
             "value" : "Lutheran Radio አርማ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Лагатып Lutheran Radio"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3831,6 +3909,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ለአፍታ አቁም"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Паўза"
           }
         },
         "bem" : {
@@ -4174,6 +4258,12 @@
             "value" : "የ%@ ፎቶ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фота %@"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4512,6 +4602,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "አጫውት"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайграваць"
           }
         },
         "bem" : {
@@ -4854,6 +4950,12 @@
             "value" : "የእንቅልፍ ሰዓት ቆጣሪ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Таймер сну"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5192,6 +5294,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ድምጽ"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Гучнасць"
           }
         },
         "bem" : {
@@ -5554,6 +5662,36 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld በመቶ"
+                }
+              }
+            }
+          }
+        },
+        "be" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld працэнты"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld працэнтаў"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld працэнт"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld працэнта"
                 }
               }
             }
@@ -6631,6 +6769,12 @@
             "value" : "ቀጥል"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Працягнуць"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6969,6 +7113,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "እንደገና ሞክር"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Паўтарыць"
           }
         },
         "bem" : {
@@ -7311,6 +7461,12 @@
             "value" : "ለዚህ ክፍለ ጊዜ ፍቀድ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Дазволіць для гэтага сеанса"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7649,6 +7805,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ሁልጊዜ ፍቀድ"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заўсёды дазваляць"
           }
         },
         "bem" : {
@@ -7991,6 +8153,12 @@
             "value" : "አሁን አይደለም"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не зараз"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8329,6 +8497,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "አጽዳ"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ачысціць"
           }
         },
         "bem" : {
@@ -8671,6 +8845,12 @@
             "value" : "ጸድቷል"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ачышчана"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9009,6 +9189,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ይህ መጫወትን ያቆማል፣ የዊጄት እና የ Live Activity ውሂብን ያስወግዳል፣ እንዲሁም ከዚህ መሣሪያ የቅርብ ጊዜ ማዳመጥ ሁኔታን ያጸዳል። ይህን እርምጃ መቀልበስ አይቻልም።"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Гэта спыніць прайграванне, выдаліць даныя Widget і Live Activity і ачысціць нядаўні стан праслухоўвання на гэтай прыладзе. Дзеянне нельга адмяніць."
           }
         },
         "bem" : {
@@ -9351,6 +9537,12 @@
             "value" : "የአካባቢ መጫወት ሁኔታን አጽዳ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ачысціць лакальны стан прайгравання"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9689,6 +9881,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የ Lutheran Radio ዊጄት ውቅር።"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Канфігурацыя для Lutheran Radio Widget."
           }
         },
         "bem" : {
@@ -10032,6 +10230,12 @@
             "value" : "የግንኙነት ስህተት"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Памылка злучэння"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10373,6 +10577,12 @@
             "value" : "የ Lutheran Radio መጫወትን ይቆጣጠሩ እና አሁኑን ጣቢያ ይመልከቱ።"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кіруйце прайграваннем Lutheran Radio і глядзіце бягучую станцыю."
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10711,6 +10921,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "መጫወትን ይቆጣጠሩ እና በቋንቋ ስርጭቶች መካከል ይቀያይሩ።"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кіруйце прайграваннем і пераключайцеся паміж моўнымі патокамі."
           }
         },
         "bem" : {
@@ -11054,6 +11270,12 @@
             "value" : "ድምጽን ቀንስ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Паменшыць гучнасць"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11395,6 +11617,12 @@
             "value" : "ድምጽን ጨምር"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Павялічыць гучнасць"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11733,6 +11961,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "እየተጫወተ ነው"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайграецца"
           }
         },
         "bem" : {
@@ -12076,6 +12310,12 @@
             "value" : "ቋንቋ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Мова"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12414,6 +12654,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የቋንቋ ኮድ"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Код мовы"
           }
         },
         "bem" : {
@@ -12757,6 +13003,12 @@
             "value" : "እንግሊዝኛ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Англійская"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13096,6 +13348,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኢስቶንኛ"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эстонская"
           }
         },
         "bem" : {
@@ -13439,6 +13697,12 @@
             "value" : "ፊንላንድኛ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фінская"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13778,6 +14042,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ጀርመንኛ"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нямецкая"
           }
         },
         "bem" : {
@@ -14121,6 +14391,12 @@
             "value" : "ስዊድንኛ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Шведская"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14460,6 +14736,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · ቀጥታ ስርጭት"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Прамы эфір"
           }
         },
         "bem" : {
@@ -14803,6 +15085,12 @@
             "value" : "የአካባቢ ብቻ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Толькі лакальна"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15139,6 +15427,12 @@
           }
         },
         "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "be" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -15485,6 +15779,12 @@
             "value" : "ቀጣይ ቋንቋ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Наступная мова"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15824,6 +16124,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "አጫውት/ለአፍታ አቁም"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайграваць/Паўза"
           }
         },
         "bem" : {
@@ -16167,6 +16473,12 @@
             "value" : "መጫወት"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайграванне"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16506,6 +16818,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ቀዳሚ ቋንቋ"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Папярэдняя мова"
           }
         },
         "bem" : {
@@ -16848,6 +17166,12 @@
             "value" : "መተግበሪያው የሞባይል ውሂብ እየተጠቀመ ነው፣ ይህም በውሂብ እቅድዎ መሠረት ክፍያ ሊያስከትል ይችላል።"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Праграма выкарыстоўвае мабільныя даныя, што можа прывесці да выдаткаў у залежнасці ад вашага тарыфнага плана."
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17186,6 +17510,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የሞባይል ውሂብ አጠቃቀም"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выкарыстанне мабільных даных"
           }
         },
         "bem" : {
@@ -17528,6 +17858,12 @@
             "value" : "ምንም የትራክ መረጃ የለም"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Няма інфармацыі пра твор"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17868,6 +18204,12 @@
             "value" : "አሁን እየተጫወተ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зараз прайграецца"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18203,6 +18545,12 @@
           }
         },
         "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "be" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -18549,6 +18897,12 @@
             "value" : "መጀመሪያ መተግበሪያውን ይክፈቱ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спачатку адкрыйце праграму"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18889,6 +19243,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radioን ለአፍታ አቁም"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прыпыніць Lutheran Radio"
           }
         },
         "bem" : {
@@ -19232,6 +19592,12 @@
             "value" : "የ Lutheran Radio መጫወትን ለአፍታ ያቁሙ።"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прыпыніць прайграванне Lutheran Radio."
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19570,6 +19936,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "አጫውት"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайграваць"
           }
         },
         "bem" : {
@@ -19913,6 +20285,12 @@
             "value" : "Lutheran Radioን አጫውት"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайграваць Lutheran Radio"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20251,6 +20629,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radioን ያጫውቱ ወይም ለአፍታ ያቁሙ።"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайграваць або прыпыніць Lutheran Radio."
           }
         },
         "bem" : {
@@ -20594,6 +20978,12 @@
             "value" : "Lutheran Radioን ያጫውቱ ወይም ይቀጥሉ።"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайграваць або ўзнавіць Lutheran Radio."
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20932,6 +21322,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "በደህንነት ማረጋገጫ ውድቀት ምክንያት መጫወት መጀመር አልተቻለም። እባክዎ የበይነመረብ ግንኙነትዎን ይፈትሹ እና መተግበሪያው ወቅታዊ መሆኑን ያረጋግጡ። ችግሩ ከቀጠለ መተግበሪያውን እንደገና ያስጀምሩና እንደገና ይሞክሩ።"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Немагчыма пачаць прайграванне праз збой праверкі бяспекі. Калі ласка, праверце злучэнне з інтэрнэтам і пераканайцеся, што праграма абноўлена. Калі праблема не знікае, перазапусціце праграму і паспрабуйце яшчэ раз."
           }
         },
         "bem" : {
@@ -21274,6 +21670,12 @@
             "value" : "የደህንነት ማረጋገጫ አልተሳካም"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Праверка бяспекі не прайшла"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21613,6 +22015,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ን ይምረጡ"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выбраць %@"
           }
         },
         "bem" : {
@@ -21975,6 +22383,36 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld ደቂቃዎች ቀርተዋል"
+                }
+              }
+            }
+          }
+        },
+        "be" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Засталіся %lld хвіліны"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Засталося %lld хвілін"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Засталася %lld хвіліна"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Засталося %lld хвіліны"
                 }
               }
             }
@@ -23052,6 +23490,12 @@
             "value" : "ሰዓት ቆጣሪውን ሰርዝ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Скасаваць таймер"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23390,6 +23834,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 ደቂቃዎች"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15 хвілін"
           }
         },
         "bem" : {
@@ -23732,6 +24182,12 @@
             "value" : "30 ደቂቃዎች"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 хвілін"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24070,6 +24526,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 ደቂቃዎች"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45 хвілін"
           }
         },
         "bem" : {
@@ -24412,6 +24874,12 @@
             "value" : "60 ደቂቃዎች"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60 хвілін"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24750,6 +25218,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የእንቅልፍ ሰዓት ቆጣሪ"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Таймер сну"
           }
         },
         "bem" : {
@@ -25092,6 +25566,12 @@
             "value" : "የስትሪሚንግ አገልጋዮች የ SSL የምስክር ወረቀቶቻቸውን አድሰዋል። መተግበሪያው በተኳኋኝነት ሁነታ እየሰራ ነው። ለምርጥ ደህንነት ሲገኝ ወደ የቅርብ ጊዜው ስሪት ያዘምኑ።"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Серверы трансляцыі абнавілі свае сертыфікаты SSL. Праграма працуе ў рэжыме сумяшчальнасці. Калі ласка, абнавіце яе да апошняй версіі, калі яна стане даступнай, для найлепшай бяспекі."
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25430,6 +25910,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የምስክር ወረቀት ተዘምኗል"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сертыфікат абноўлены"
           }
         },
         "bem" : {
@@ -25773,6 +26259,12 @@
             "value" : "የ Lutheran Radio መጫወትን ይጀምሩ ወይም ይቀጥሉ።"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пачаць або ўзнавіць прайграванне Lutheran Radio."
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26111,6 +26603,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የ Lutheran Radio መጫወትን ይጀምሩ ወይም ያቁሙ።"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пачаць або спыніць прайграванне Lutheran Radio."
           }
         },
         "bem" : {
@@ -26453,6 +26951,12 @@
             "value" : "ቋት"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Буфер"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26791,6 +27295,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "አገናኝ"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Злучэнне"
           }
         },
         "bem" : {
@@ -27133,6 +27643,12 @@
             "value" : "አልተሳካም"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Няўдача"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27473,6 +27989,12 @@
             "value" : "ከመስመር ውጪ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Па-за сеткай"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27811,6 +28333,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ለአፍታ"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Паўза"
           }
         },
         "bem" : {
@@ -28154,6 +28682,12 @@
             "value" : "ለአፍታ ቆሟል – ጥሪ በሂደት ላይ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "На паўзе – Актыўны выклік"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28493,6 +29027,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "መጫወት አልተሳካም: %@"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайграванне не ўдалося: %@"
           }
         },
         "bem" : {
@@ -28836,6 +29376,12 @@
             "value" : "አጫውት"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайграваць"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29174,6 +29720,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ደህንነት"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бяспека"
           }
         },
         "bem" : {
@@ -29516,6 +30068,12 @@
             "value" : "የ SSL የምስክር ወረቀት ታድሷል - መተግበሪያውን በቅርቡ ያዘምኑ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сертыфікат SSL абноўлены — хутка абнавіце праграму"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29854,6 +30412,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ቆሟል"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спынена"
           }
         },
         "bem" : {
@@ -30196,6 +30760,12 @@
             "value" : "ጠፍቷል"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выкл."
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30534,6 +31104,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "መሣሪያው ሞቋል"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прылада гарачая"
           }
         },
         "bem" : {
@@ -30876,6 +31452,12 @@
             "value" : "ስርጭቱ ለጊዜው አይገኝም። እባክዎ በኋላ እንደገና ይሞክሩ።"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Трансляцыя часова недаступная. Калі ласка, паспрабуйце пазней."
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31214,6 +31796,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ስርጭት አይገኝም"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Трансляцыя недаступная"
           }
         },
         "bem" : {
@@ -31557,6 +32145,12 @@
             "value" : "የ Lutheran Radio የቋንቋ ስርጭትን ይቀይሩ።"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пераключыць моўны паток Lutheran Radio."
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31895,6 +32489,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ስርጭትን ቀይር"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пераключыць паток"
           }
         },
         "bem" : {
@@ -32238,6 +32838,12 @@
             "value" : "ወደ %@ ቀይር"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пераключыць на %@"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32576,6 +33182,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ከ Live Activity ወደ ሌላ የቋንቋ ስርጭት ይቀይሩ።"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пераключыць на іншы моўны паток з Live Activity."
           }
         },
         "bem" : {
@@ -32918,6 +33530,12 @@
             "value" : "ወደ ሌላ የቋንቋ ስርጭት ይቀይሩ።"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пераключыць на іншы моўны паток."
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -33257,6 +33875,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ወደ %@ ተቀይሯል"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пераключана на %@"
           }
         },
         "bem" : {
@@ -33601,6 +34225,12 @@
             "value" : "ለመክፈት መታ ያድርጉ"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Націсніце, каб адкрыць"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -33940,6 +34570,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radioን ቀያይር"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пераключыць Lutheran Radio"
           }
         },
         "bem" : {
@@ -34282,6 +34918,12 @@
             "value" : "የ Lutheran Radio መጫወትን ቀያይር"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пераключыць прайграванне Lutheran Radio"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -34620,6 +35262,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ከ Live Activity አጫውት/ለአፍታ አቁምን ቀያይር።"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пераключыць прайграванне/паўзу з Live Activity."
           }
         },
         "bem" : {
@@ -34961,6 +35609,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "መጫወትን ቀያይር"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пераключыць прайграванне"
           }
         },
         "bem" : {
@@ -35323,6 +35977,36 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "ድምጽ ወደ %lld በመቶ ተቀናብሯል"
+                }
+              }
+            }
+          }
+        },
+        "be" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Гучнасць усталявана на %lld працэнты"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Гучнасць усталявана на %lld працэнтаў"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Гучнасць усталявана на %lld працэнт"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Гучнасць усталявана на %lld працэнта"
                 }
               }
             }
@@ -36398,6 +37082,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "የዊጄት ውቅር"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Канфігурацыя Widget"
           }
         },
         "bem" : {

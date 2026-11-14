@@ -51,6 +51,12 @@
             "value" : "${applicationName}ን ለአፍታ አቁም"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прыпыні ${applicationName}"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -392,6 +398,12 @@
             "value" : "${applicationName}ን አጫውት"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайгравай ${applicationName}"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -731,6 +743,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName}ን በ${language} አጫውት"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайгравай ${applicationName} на мове ${language}"
           }
         },
         "bem" : {
@@ -1109,6 +1127,12 @@
             "value" : "${applicationName}ን ጀምር"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запусці ${applicationName}"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1450,6 +1474,12 @@
             "value" : "${applicationName}ን አቁም"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спыні ${applicationName}"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1789,6 +1819,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName}ን ወደ ${language} ቀይር"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пераключы ${applicationName} на мову ${language}"
           }
         },
         "bem" : {
