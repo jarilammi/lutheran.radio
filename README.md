@@ -63,6 +63,7 @@ The app is fully localized in the following languages:
 - Kalaallisut (kl)
 - Latvian (lv)
 - Lithuanian (lt)
+- Macedonian (mk)
 - Malagasy (mg)
 - Ndonga (ng)
 - North Sámi (se)

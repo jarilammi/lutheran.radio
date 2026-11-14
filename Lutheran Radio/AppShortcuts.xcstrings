@@ -219,6 +219,12 @@
             "value" : "Ajanony ${applicationName}"
           }
         },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Паузирај ${applicationName}"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -566,6 +572,12 @@
             "value" : "Alefaso ${applicationName}"
           }
         },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пушти ${applicationName}"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -911,6 +923,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alefaso ${applicationName} amin'ny ${language}"
+          }
+        },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пушти ${applicationName} на јазикот ${language}"
           }
         },
         "nb" : {
@@ -1295,6 +1313,12 @@
             "value" : "Atombohy ${applicationName}"
           }
         },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Започни ${applicationName}"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1642,6 +1666,12 @@
             "value" : "Atsaharo ${applicationName}"
           }
         },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запри ${applicationName}"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1987,6 +2017,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ovay ${applicationName} ho ${language}"
+          }
+        },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Префрли ${applicationName} на јазикот ${language}"
           }
         },
         "nb" : {
