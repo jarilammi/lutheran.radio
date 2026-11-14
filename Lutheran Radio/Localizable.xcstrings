@@ -22398,7 +22398,7 @@
         "be" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Выбраць %@"
+            "value" : "Выбраць: %@"
           }
         },
         "bem" : {
@@ -27768,7 +27768,7 @@
         "be" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Злучэнне"
+            "value" : "Злучыць"
           }
         },
         "bem" : {
@@ -33405,7 +33405,7 @@
         "be" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Пераключыць на %@"
+            "value" : "Пераключыць: %@"
           }
         },
         "bem" : {
@@ -34462,7 +34462,7 @@
         "be" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Пераключана на %@"
+            "value" : "Пераключана: %@"
           }
         },
         "bem" : {
