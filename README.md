@@ -74,6 +74,7 @@ The app is fully localized in the following languages:
 - Portuguese (Brazil) (pt-BR)
 - Romanian (ro)
 - Russian (ru)
+- Serbian (sr)
 - Slovak (sk)
 - Slovenian (sl)
 - Spanish (es)
@@ -97,7 +98,7 @@ The app is fully localized in the following languages:
 </tr>
 </table>
 
-Count strings (`%lld languages`, `sleep_timer_accessibility_remaining`, `accessibility_value_volume`, `volume_set_to`) use String Catalog `variations.plural` with the CLDR categories required by each locale (for example Polish/Russian/Ukrainian `one`/`few`/`many`/`other`, Croatian `one`/`few`/`other`, Lithuanian `one`/`few`/`many`/`other`, Northern Sami `one`/`two`/`other`, Latvian `zero`/`one`/`other`, Slovak `one`/`few`/`many`/`other`). `CatalogPluralizationTests` gates **every** README Localizations language: source-catalog category sets plus compiled stringsdict formatting of integer probes (a wrong Slovak `few` fails CI). Call sites must pass the number through `String(localized:defaultValue:)` interpolation or `LocalizedStringResource` interpolation. `String(format: String(localized:), n)` resolves the catalog to `other` before the number is known and cannot inflect (“1 minutes remaining”).
+Count strings (`%lld languages`, `sleep_timer_accessibility_remaining`, `accessibility_value_volume`, `volume_set_to`) use String Catalog `variations.plural` with the CLDR categories required by each locale (for example Polish/Russian/Ukrainian `one`/`few`/`many`/`other`, Croatian and Serbian `one`/`few`/`other`, Lithuanian `one`/`few`/`many`/`other`, Northern Sami `one`/`two`/`other`, Latvian `zero`/`one`/`other`, Slovak `one`/`few`/`many`/`other`). `CatalogPluralizationTests` gates **every** README Localizations language: source-catalog category sets plus compiled stringsdict formatting of integer probes (a wrong Slovak `few` fails CI). Call sites must pass the number through `String(localized:defaultValue:)` interpolation or `LocalizedStringResource` interpolation. `String(format: String(localized:), n)` resolves the catalog to `other` before the number is known and cannot inflect (“1 minutes remaining”).
 
 Siri App Shortcut utterances (`Play / Start / Pause / Stop ${applicationName}`, `Play ${applicationName} in ${language}`, `Switch ${applicationName} to ${language}`) live in [`Lutheran Radio/AppShortcuts.xcstrings`](Lutheran%20Radio/AppShortcuts.xcstrings) and are translated for every UI language. Sleep-timer utterances (`Set a ${duration} sleep timer in ${applicationName}`, `Cancel the ${applicationName} sleep timer`) are native in English, German, Finnish, Swedish, and Estonian. Other UI languages fall back to the English sleep-timer phrase. Apple trains recognition from that dedicated table only — do not add those phrases to `Localizable.xcstrings`. Every utterance must keep `${applicationName}` (and `${language}` or `${duration}` when the phrase has that parameter). Play, pause, and language-switch titles and descriptions stay in `Localizable.xcstrings`. Sleep-timer titles reuse `sleep_timer_sheet_title` and `sleep_timer_cancel_timer` in that catalog and do not add keys.
 

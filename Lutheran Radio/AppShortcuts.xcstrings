@@ -303,6 +303,12 @@
             "value" : "Pauzo ${applicationName}"
           }
         },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Паузирај ${applicationName}"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -638,6 +644,12 @@
             "value" : "Luaj ${applicationName}"
           }
         },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пусти ${applicationName}"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -971,6 +983,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Luaj ${applicationName} në ${language}"
+          }
+        },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пусти ${applicationName} на језику ${language}"
           }
         },
         "sv" : {
@@ -1343,6 +1361,12 @@
             "value" : "Fillo ${applicationName}"
           }
         },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Покрени ${applicationName}"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1678,6 +1702,12 @@
             "value" : "Ndalo ${applicationName}"
           }
         },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заустави ${applicationName}"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2011,6 +2041,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kalo ${applicationName} te ${language}"
+          }
+        },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пребаци ${applicationName} на језик ${language}"
           }
         },
         "sv" : {
