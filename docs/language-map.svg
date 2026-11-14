@@ -7,8 +7,12 @@
     Turkish (Turkic) is the blob south-east of Greek.
     Nyanja (Bantu) is the blob south of Swahili, north-east of Zulu.
     Bemba (Bantu) is the blob west of Swahili, north-west of Nyanja.
-    Turkish, Nyanja, and Bemba use the organic closed path (M Q T T T T),
-    not a circle or ellipse.
+    Belarusian (East Slavic) is the blob south of Russian and west of Ukrainian.
+    Serbian (South Slavic) is the blob south-west of Hungarian and west of Bulgarian.
+    Macedonian (South Slavic) is the blob south-east of Serbian and west of Greek.
+    Turkish, Nyanja, Bemba, Belarusian, Serbian, and Macedonian use the
+    organic closed path (M Q T T T T), not a circle or ellipse.
+    Serbian and Macedonian sit above Tigrinya and are not joined to it.
   -->
   <!-- Background -->
   <rect width="800" height="1067" fill="#f8f9fa"/>
@@ -215,6 +219,53 @@
     <path d="M720 350 L650 250" fill="none"/>
     <!-- Ukrainian connecting toward Polish -->
     <path d="M720 350 L490 420" fill="none"/>
+  </g>
+
+  <!--
+    East and South Slavic languages added in the gaps the original
+    European shapes left open. Existing shapes and lines stay put.
+    Drawn after those lines so the Ukrainian–Polish line runs under
+    the Belarusian fill instead of through the label.
+  -->
+
+  <!-- Belarusian - East Slavic, south of Russian, west of Ukrainian,
+       east of Lithuanian. Same organic path as Polish.
+       Not joined to Polish or Lithuanian: those are different branches.
+       The existing Ukrainian–Polish line passes under this fill. -->
+  <path d="M608 312 Q648 292 668 312 T688 352 T648 372 T608 352 T608 312"
+        fill="#0d6e6e" opacity="0.8"/>
+  <text x="616" y="332" font-family="Arial" font-size="10" fill="#fff">Belarusian</text>
+  <text x="616" y="344" font-family="Arial" font-size="10" fill="#d5f5e3">беларуская</text>
+
+  <!-- Serbian - South Slavic, south-west of Hungarian, west of Bulgarian,
+       east of Italian. Above Tigrinya; not joined to it.
+       The gap west of this blob (toward Italian) stays empty. -->
+  <path d="M458 544 Q488 524 518 540 T538 570 T500 580 T462 566 T458 544"
+        fill="#117a65" opacity="0.8"/>
+  <text x="470" y="558" font-family="Arial" font-size="10" fill="#fff">Serbian</text>
+  <text x="470" y="570" font-family="Arial" font-size="10" fill="#d5f5e3">српски</text>
+
+  <!-- Macedonian - South Slavic, south-east of Serbian, west of Greek.
+       The top-right rim overlaps Greek's empty lower-left by a few pixels.
+       Greek's label stays centered further east. Not joined to Greek:
+       Hellenic is a different family. Not joined to Tigrinya or Turkish.
+       A straight line to Bulgarian would cross the Greek ellipse, so
+       Bulgarian is reached through Serbian. -->
+  <path d="M542 598 Q582 587 602 598 T622 620 T582 631 T542 620 T542 598"
+        fill="#0b5345" opacity="0.8"/>
+  <text x="552" y="610" font-family="Arial" font-size="10" fill="#fff">Macedonian</text>
+  <text x="552" y="622" font-family="Arial" font-size="10" fill="#d5f5e3">македонски</text>
+
+  <!-- Sibling lines only. No line crosses the Greek ellipse. -->
+  <g stroke="#ccd3e0" stroke-width="1" opacity="0.35">
+    <!-- Belarusian connecting to Russian -->
+    <path d="M648 308 L652 285" fill="none"/>
+    <!-- Belarusian connecting to Ukrainian -->
+    <path d="M688 348 L705 350" fill="none"/>
+    <!-- Serbian connecting to Bulgarian -->
+    <path d="M520 555 L640 545" fill="none"/>
+    <!-- Serbian connecting to Macedonian -->
+    <path d="M510 578 L555 600" fill="none"/>
   </g>
 
   <!--
