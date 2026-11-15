@@ -16,7 +16,17 @@
 //  `overlay(alignment:content:)` so the 6 pt circular clip and 1 pt ring share one
 //  path. No security, playback, or Live Activity logic belongs here.
 //
+//  VoiceOver: each home stream chip is one element. The spoken label is the
+//  localized language name from
+//  ``widgetStreamChipAccessibility(languageName:isCurrentLanguage:)``. The flag
+//  Text is accessibility-hidden so the emoji is not spoken as a country name.
+//  The system selected trait follows the visual ``isSelected`` Bool. A labeled
+//  chip's visible name is not a second element. There is no accessibility hint
+//  and no catalog string for the selected trait.
+//
 //  - SeeAlso: ``WidgetLivenessPresentation``, ``displayFlag(for:)``,
+//    ``displayLanguageName(for:preferredStreamLanguage:)``,
+//    ``widgetStreamChipAccessibility(languageName:isCurrentLanguage:)``,
 //    ``WidgetStreamChipLabel``, docs/Widget-Presentation-Dataflow.md,
 //    docs/Widget-Functionality-Roadmap.md, CODING_AGENT.md (WidgetSurface surface area).
 //
@@ -162,8 +172,12 @@ public struct WidgetPassiveTapToOpenChrome: View {
 /// Visual density for home-widget stream-selection chips.
 public enum WidgetStreamChipStyle: Sendable, Equatable {
     /// Compact flag-only chip (small / medium rows).
+    ///
+    /// Draws the flag alone. VoiceOver still speaks ``WidgetStreamChipLabel/languageName``.
     case flagOnly
     /// Flag + language label (large grid).
+    ///
+    /// Draws the flag and ``WidgetStreamChipLabel/languageName``. The name is spoken once.
     case labeled
 
     var flagFont: Font {
@@ -200,10 +214,68 @@ public enum WidgetStreamChipStyle: Sendable, Equatable {
     }
 }
 
+/// Spoken label and selected-trait flag for one home-widget stream chip.
+///
+/// ``label`` is the language name unchanged. ``isSelected`` is the system
+/// selected trait, not a word appended to the label.
+///
+/// - SeeAlso: ``widgetStreamChipAccessibility(languageName:isCurrentLanguage:)``,
+///   ``WidgetStreamChipLabel``.
+public struct WidgetStreamChipAccessibility: Sendable, Equatable {
+    /// VoiceOver label. The language name the caller supplied.
+    public let label: String
+
+    /// When `true`, the chip adds ``AccessibilityTraits/isSelected``.
+    public let isSelected: Bool
+
+    public init(label: String, isSelected: Bool) {
+        self.label = label
+        self.isSelected = isSelected
+    }
+}
+
+/// Resolves the VoiceOver label and selected trait for a home-widget stream chip.
+///
+/// The label is `languageName` with no fallback. An empty name stays empty.
+/// Production streams always supply a catalog name from
+/// ``displayLanguageName(for:preferredStreamLanguage:)`` (the stream's `language`
+/// string). This function does not append a selected word and does not read a
+/// Localizable key.
+///
+/// `isCurrentLanguage` is the chip's visual selection Bool: home widgets set it
+/// by comparing the chip's language code with the current language code. That
+/// comparison stays true while playback is paused, so the trait does too.
+///
+/// - Parameters:
+///   - languageName: Localized language name already resolved by the caller.
+///   - isCurrentLanguage: `true` when this chip is the current language.
+/// - Returns: The spoken label and whether to add the system selected trait.
+/// - Important: Do not substitute a flag emoji, a language code, or a
+///   "selected" string when `languageName` is empty.
+/// - SeeAlso: ``WidgetStreamChipLabel``, ``WidgetStreamChipAccessibility``,
+///   ``displayLanguageName(for:preferredStreamLanguage:)``.
+public func widgetStreamChipAccessibility(
+    languageName: String,
+    isCurrentLanguage: Bool
+) -> WidgetStreamChipAccessibility {
+    WidgetStreamChipAccessibility(
+        label: languageName,
+        isSelected: isCurrentLanguage
+    )
+}
+
 /// Selected / unselected stream chip chrome shared by small, medium, and large home widgets.
 ///
-/// Content is flag-only or flag+label; selection styling (blue fill + 1 pt stroke) is unified.
-/// Extension views wrap this in `Button(intent: SwitchStreamIntent(...))`.
+/// Draws the flag, or the flag plus ``languageName``, with one blue fill and a
+/// 1 pt stroke when ``isSelected`` is true. Extension views wrap this in
+/// `Button(intent: SwitchStreamIntent(...))`.
+///
+/// VoiceOver sees one element. The label comes from
+/// ``widgetStreamChipAccessibility(languageName:isCurrentLanguage:)`` and is the
+/// language name alone. The flag `Text` is accessibility-hidden so the emoji is
+/// not spoken. The system selected trait is added only when ``isSelected`` is
+/// true. Child elements are ignored, so the visible name on a labeled chip is
+/// not spoken a second time. The chip sets no accessibility hint.
 ///
 /// Fill clip and stroke share ``chipCornerRadius`` so the ring sits on the same
 /// circular path as the clipped fill. `clipShape` replaces `.cornerRadius`;
@@ -212,7 +284,11 @@ public enum WidgetStreamChipStyle: Sendable, Equatable {
 ///
 /// - Important: Keep ``RoundedRectangle`` at the default circular style. A
 ///   `.continuous` squircle would change small / medium / large home chips.
-/// - SeeAlso: ``WidgetStreamChipStyle``, ``WidgetPassiveTapToOpenChrome``,
+///   ``languageName`` is the spoken label for every style. ``.flagOnly`` does
+///   not draw it. A missing or empty name is not replaced.
+/// - SeeAlso: ``widgetStreamChipAccessibility(languageName:isCurrentLanguage:)``,
+///   ``displayLanguageName(for:preferredStreamLanguage:)``,
+///   ``WidgetStreamChipStyle``, ``WidgetPassiveTapToOpenChrome``,
 ///   docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md,
 ///   CODING_AGENT.md (WidgetSurface presentation-only surface area).
 public struct WidgetStreamChipLabel: View {
@@ -226,6 +302,19 @@ public struct WidgetStreamChipLabel: View {
     /// Shared so the ring cannot drift off the fill path.
     private static let chipCornerRadius: CGFloat = 6
 
+    /// Creates home-widget stream-chip chrome.
+    ///
+    /// - Parameters:
+    ///   - flag: Flag emoji drawn for every style. Hidden from VoiceOver.
+    ///   - languageName: Localized language name. Spoken for every style. Drawn
+    ///     only for ``WidgetStreamChipStyle/labeled``. `nil` and `""` stay empty
+    ///     in the spoken label.
+    ///   - isSelected: Visual selection and the source of the selected trait.
+    ///     Home widgets pass the current-language comparison, including while paused.
+    ///   - style: Flag-only or flag plus name. Does not change the spoken label.
+    ///   - expandsToFill: Gives a flag-only chip flexible width in the medium row.
+    /// - SeeAlso: ``widgetStreamChipAccessibility(languageName:isCurrentLanguage:)``,
+    ///   ``displayLanguageName(for:preferredStreamLanguage:)``.
     public init(
         flag: String,
         languageName: String? = nil,
@@ -240,17 +329,28 @@ public struct WidgetStreamChipLabel: View {
         self.expandsToFill = expandsToFill
     }
 
+    /// Flag emoji. Decorative for VoiceOver; the chip label is the language name.
+    ///
+    /// Hidden on this `Text` only. The chip and its `Button` stay exposed.
+    private var decorativeFlag: some View {
+        Text(flag)
+            .font(style.flagFont)
+            .accessibilityHidden(true)
+    }
+
     public var body: some View {
+        let spoken = widgetStreamChipAccessibility(
+            languageName: languageName ?? "",
+            isCurrentLanguage: isSelected
+        )
         Group {
             switch style {
             case .flagOnly:
-                Text(flag)
-                    .font(style.flagFont)
+                decorativeFlag
                     .frame(maxWidth: expandsToFill ? .infinity : nil)
             case .labeled:
                 HStack(spacing: 4) {
-                    Text(flag)
-                        .font(style.flagFont)
+                    decorativeFlag
                     if let languageName {
                         Text(languageName)
                             .font(.caption)
@@ -268,5 +368,10 @@ public struct WidgetStreamChipLabel: View {
             RoundedRectangle(cornerRadius: Self.chipCornerRadius)
                 .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1)
         }
+        // One element. Ignoring children keeps the large chip's visible name
+        // from being spoken again beside this label. The flag Text is also hidden.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken.label)
+        .accessibilityAddTraits(spoken.isSelected ? .isSelected : AccessibilityTraits())
     }
 }

@@ -8,6 +8,8 @@
 //  - SeeAlso: ``WidgetIntentCoordinators``, ``WidgetLivenessPresentation``,
 //    ``WidgetTimelineEntryFactory``, ``WidgetProviderPresentationAssembly``,
 //    ``displayFlag(for:)``, ``displayLanguageName(for:preferredStreamLanguage:)``,
+//    ``widgetStreamChipAccessibility(languageName:isCurrentLanguage:)``,
+//    ``WidgetStreamChipLabel``,
 //    ``HomeWidgetLiveChrome``,
 //    docs/Widget-Functionality-Roadmap.md,
 //    docs/Home-Live-Chrome-App-Group-Mirror-Design.md.
@@ -1170,6 +1172,80 @@ struct WidgetSurfaceTests {
     @Test func displayLanguageNameUnknownCodeCapitalizesWithoutCatalog() {
         #expect(displayLanguageName(for: "xx") == "Xx")
         #expect(displayLanguageName(for: "zz") == "Zz")
+    }
+
+    /// Home-widget stream chips speak the catalog language name and select only the current language.
+    ///
+    /// For en, de, fi, sv, and et, the label equals
+    /// ``displayLanguageName(for:preferredStreamLanguage:)``. That helper follows the process
+    /// language. The development-language catalog values, read from the host app's `en.lproj`,
+    /// are English, German, Finnish, Swedish, and Estonian. With current language `fi`, only
+    /// `fi` adds the selected trait. A second pass with current language `de` keeps the trait
+    /// on the comparison. An empty name stays empty: the function does not invent a label or
+    /// a selected word. ``WidgetStreamChipLabel`` calls this function for its accessibility
+    /// label and trait.
+    ///
+    /// - SeeAlso: ``widgetStreamChipAccessibility(languageName:isCurrentLanguage:)``,
+    ///   ``displayLanguageName(for:preferredStreamLanguage:)``, ``WidgetStreamChipLabel``.
+    @Test func widgetStreamChipAccessibilitySpeaksCatalogNameAndSelectedTrait() {
+        // `String(localized:locale:)` still follows the process preferred language for
+        // catalog lookup. Development-language names are the host app's `en.lproj` values.
+        #expect(developmentCatalogName(key: "language_english") == "English")
+        #expect(developmentCatalogName(key: "language_german") == "German")
+        #expect(developmentCatalogName(key: "language_finnish") == "Finnish")
+        #expect(developmentCatalogName(key: "language_swedish") == "Swedish")
+        #expect(developmentCatalogName(key: "language_estonian") == "Estonian")
+
+        let codes = ["en", "de", "fi", "sv", "et"]
+        expectStreamChipSpeech(codes: codes, currentCode: "fi")
+        expectStreamChipSpeech(codes: codes, currentCode: "de")
+
+        let emptySelected = widgetStreamChipAccessibility(
+            languageName: "",
+            isCurrentLanguage: true
+        )
+        #expect(emptySelected.label.isEmpty)
+        #expect(emptySelected.isSelected)
+
+        let emptyUnselected = widgetStreamChipAccessibility(
+            languageName: "",
+            isCurrentLanguage: false
+        )
+        #expect(emptyUnselected.label.isEmpty)
+        #expect(emptyUnselected.isSelected == false)
+    }
+
+    /// Development-language catalog name from the host app's `en.lproj`.
+    ///
+    /// ``displayLanguageName(for:preferredStreamLanguage:)`` follows the process language.
+    /// `String(localized:locale:)` does too, so the English names are read from the compiled
+    /// development table. `Bundle.main` is the Lutheran Radio host under WidgetSurfaceTests.
+    /// An absent table returns an empty string so the expectation fails closed.
+    private func developmentCatalogName(key: String) -> String {
+        guard
+            let path = Bundle.main.path(forResource: "en", ofType: "lproj"),
+            let bundle = Bundle(path: path)
+        else {
+            return ""
+        }
+        return bundle.localizedString(forKey: key, value: "", table: "Localizable")
+    }
+
+    /// One current-language pass. The spoken label is ``displayLanguageName(for:)`` for that
+    /// code, and the selected trait is only the chip whose code equals `currentCode`.
+    private func expectStreamChipSpeech(codes: [String], currentCode: String) {
+        for code in codes {
+            let name = displayLanguageName(for: code)
+            let spoken = widgetStreamChipAccessibility(
+                languageName: name,
+                isCurrentLanguage: code == currentCode
+            )
+            #expect(spoken.label == name)
+            #expect(spoken.label == displayLanguageName(for: code))
+            #expect(spoken.isSelected == (code == currentCode))
+            #expect(spoken.label != displayFlag(for: code))
+            #expect(spoken.label.isEmpty == false)
+        }
     }
 
     // MARK: - Provider presentation assembly (pure)

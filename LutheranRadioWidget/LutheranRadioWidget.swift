@@ -592,6 +592,9 @@ struct SmallWidgetView: View {
         }
     }
 
+    /// Flag-only stream chip. ``stream.language`` is the VoiceOver name.
+    /// ``.flagOnly`` still draws the flag alone. Selection is the language-code
+    /// comparison, including while playback is paused.
     @ViewBuilder
     private func homeWidgetStreamFlagButton(
         for stream: DirectStreamingPlayer.Stream,
@@ -600,6 +603,7 @@ struct SmallWidgetView: View {
         Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
             WidgetStreamChipLabel(
                 flag: stream.flag,
+                languageName: stream.language,
                 isSelected: stream.languageCode == currentLanguageCode,
                 style: .flagOnly,
                 expandsToFill: expandsToFill
@@ -672,8 +676,10 @@ struct MediumWidgetView: View {
                     HStack(spacing: 6) {
                         ForEach(availableStreams, id: \.languageCode) { stream in
                             Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
+                                // languageName is spoken; .flagOnly still draws the flag alone.
                                 WidgetStreamChipLabel(
                                     flag: stream.flag,
+                                    languageName: stream.language,
                                     isSelected: stream.languageCode == currentLanguageCode,
                                     style: .flagOnly,
                                     expandsToFill: true
