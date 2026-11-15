@@ -351,6 +351,12 @@
             "value" : "${applicationName} ኣቋርጽ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taʻofi e ${applicationName}"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -704,6 +710,12 @@
             "value" : "${applicationName} ተጻወት"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā e ${applicationName}"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1055,6 +1067,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} ብ${language} ተጻወት"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā e ${applicationName} ʻi he ${language}"
           }
         },
         "tr" : {
@@ -1445,6 +1463,12 @@
             "value" : "${applicationName} ጀምር"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kamata e ${applicationName}"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1798,6 +1822,12 @@
             "value" : "${applicationName} ኣቁም"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tuku e ${applicationName}"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2149,6 +2179,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} ናብ ${language} ቀይር"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liliu e ${applicationName} ki he ${language}"
           }
         },
         "tr" : {
