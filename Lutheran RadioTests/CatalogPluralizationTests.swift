@@ -9,7 +9,7 @@
 //  interpolation so Foundation can select the CLDR category.
 //
 //  Coverage is both catalog structure and compiled runtime for every README
-//  Localizations language (58 codes), not a 10-locale subset. A missing or
+//  Localizations language (59 codes), not a 10-locale subset. A missing or
 //  wrong Slovak `few` string, a dropped Northern Sami `two`, or a missing
 //  Latvian `zero` must fail CI. Integer-unreachable `many` (cs, sk, lt) and
 //  decimal-only `other` (be, pl, ru, uk) are catalog-gated; integer probes skip them.
@@ -36,13 +36,13 @@ final class CatalogPluralizationTests: XCTestCase {
     /// a Polish `.lproj` without `locale: "pl"` still applies Finnish one/other rules.
     private let appBundle = Bundle(for: PlayerViewModel.self)
 
-    /// UI catalog languages: README Localizations / Localizable coverage (the 58
+    /// UI catalog languages: README Localizations / Localizable coverage (the 59
     /// language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "af", "am", "be", "bem", "bg", "bn", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "ha", "haw", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
         "lv", "mg", "mk", "nb", "ng", "nl", "nn", "ny", "om", "pl", "pt", "pt-BR", "ro", "ru",
-        "se", "sk", "sl", "sq", "sr", "sv", "sw", "ta", "te", "ti", "tr", "uk", "yo", "zu",
+        "se", "sk", "sl", "sq", "sr", "sv", "sw", "ta", "te", "ti", "to", "tr", "uk", "yo", "zu",
         "zh-Hans", "zh-Hant",
     ]
 
@@ -113,6 +113,7 @@ final class CatalogPluralizationTests: XCTestCase {
         "ta": ["one", "other"],
         "te": ["one", "other"],
         "ti": ["one", "other"],
+        "to": ["other"],
         "tr": ["one", "other"],
         "uk": ["one", "few", "many", "other"],
         "yo": ["other"],
@@ -139,7 +140,7 @@ final class CatalogPluralizationTests: XCTestCase {
         XCTAssertEqual(
             Set(requiredCatalogCategories.keys),
             Set(supportedLanguages),
-            "requiredCatalogCategories must list exactly the 58 UI catalog languages"
+            "requiredCatalogCategories must list exactly the 59 UI catalog languages"
         )
 
         let catalog = try loadLocalizableCatalog()
@@ -389,8 +390,10 @@ final class CatalogPluralizationTests: XCTestCase {
     /// AGENT NOTE: A new UI language must append integer-reachable cases to all
     /// four tables. `testRuntimeProbesCoverEveryLocaleAndIntegerReachableCategory`
     /// is the completeness gate — listing the code in `supportedLanguages` alone
-    /// is not enough. Yoruba (`yo`), Chinese Simplified (`zh-Hans`), and Chinese
-    /// Traditional (`zh-Hant`) are `other` only, same slot as `id` and `ng`.
+    /// is not enough. Yoruba (`yo`), Chinese Simplified (`zh-Hans`), Chinese
+    /// Traditional (`zh-Hant`), and Tongan (`to`) are `other` only, same slot as
+    /// `id` and `ng`. Tongan has no `one`; the probe is count 2. The okina is
+    /// U+02BB, and `pēseti` uses macron U+0113.
     /// Serbian (`sr`) follows Croatian: `one` is integers ending in 1 except 11,
     /// `few` is 2–4 except 12–14, and 5 and 11 are `other`. Belarusian (`be`)
     /// follows Russian, so 11 is `many` and fractional `other` is not probed.
@@ -542,6 +545,7 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("te", 2, "other", "2 నిమిషాలు మిగిలాయి"),
         .init("ti", 1, "one", "1 ደቒቕ ተሪፉ"),
         .init("ti", 2, "other", "2 ደቓይቕ ተሪፎም"),
+        .init("to", 2, "other", "miniti ʻe 2 ʻoku toe"),
         .init("tr", 1, "one", "1 dakika kaldı"),
         .init("tr", 2, "other", "2 dakika kaldı"),
         .init("uk", 1, "one", "Залишилася 1 хвилина"),
@@ -687,6 +691,7 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("te", 2, "other", "2 భాషలు"),
         .init("ti", 1, "one", "1 ቋንቋ"),
         .init("ti", 2, "other", "2 ቋንቋታት"),
+        .init("to", 2, "other", "lea ʻe 2"),
         .init("tr", 1, "one", "1 dil"),
         .init("tr", 2, "other", "2 dil"),
         .init("uk", 1, "one", "1 мова"),
@@ -833,6 +838,7 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("te", 2, "other", "2 శాతం"),
         .init("ti", 1, "one", "1 ብመቶ"),
         .init("ti", 2, "other", "2 ብመቶ"),
+        .init("to", 2, "other", "pēseti ʻe 2"),
         .init("tr", 1, "one", "yüzde 1"),
         .init("tr", 2, "other", "yüzde 2"),
         .init("uk", 1, "one", "1 відсоток"),
@@ -979,6 +985,7 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("te", 2, "other", "వాల్యూమ్ 2 శాతానికి సెట్ చేయబడింది"),
         .init("ti", 1, "one", "ድምጺ ናብ 1 ብመቶ ተቐኒዑ"),
         .init("ti", 2, "other", "ድምጺ ናብ 2 ብመቶ ተቐኒዑ"),
+        .init("to", 2, "other", "Kuo fokotuʻu ʻa e leʻo ki he pēseti ʻe 2"),
         .init("tr", 1, "one", "Ses düzeyi yüzde 1 olarak ayarlandı"),
         .init("tr", 2, "other", "Ses düzeyi yüzde 2 olarak ayarlandı"),
         .init("uk", 1, "one", "Гучність встановлено на 1 відсоток"),
