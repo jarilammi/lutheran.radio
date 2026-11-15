@@ -9,7 +9,7 @@
 //  Invariant: every play / pause / language phrase in `LutheranRadioShortcuts`
 //  is extracted as `Play ${applicationName}` (etc.) and `AppShortcuts.xcstrings`
 //  ships a translated value for every UI language in README Localizations (the
-//  55 language codes). Sleep-timer phrases are native in en, de, fi, sv, and et
+//  58 language codes). Sleep-timer phrases are native in en, de, fi, sv, and et
 //  only; other languages fall back to English. Every value keeps
 //  `${applicationName}`; parameterized phrases also keep `${language}` or
 //  `${duration}`. Xcode binds only the first phrase of each `AppShortcut`
@@ -30,12 +30,12 @@ import XCTest
 final class AppShortcutsLocalizationTests: XCTestCase {
 
     /// UI catalog languages: README Localizations / Localizable + AppShortcuts coverage
-    /// (the 55 language codes). Playback catalog remains the five radio streams.
+    /// (the 58 language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
-        "af", "am", "bem", "bg", "bn", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
+        "af", "am", "be", "bem", "bg", "bn", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "ha", "haw", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
-        "lv", "mg", "nb", "ng", "nl", "nn", "ny", "om", "pl", "pt", "pt-BR", "ro", "ru",
-        "se", "sk", "sl", "sq", "sv", "sw", "ta", "te", "ti", "tr", "uk", "yo", "zu",
+        "lv", "mg", "mk", "nb", "ng", "nl", "nn", "ny", "om", "pl", "pt", "pt-BR", "ro", "ru",
+        "se", "sk", "sl", "sq", "sr", "sv", "sw", "ta", "te", "ti", "tr", "uk", "yo", "zu",
         "zh-Hans", "zh-Hant",
     ]
 
@@ -51,7 +51,7 @@ final class AppShortcutsLocalizationTests: XCTestCase {
     /// Sleep-timer utterances. Native in en, de, fi, sv, and et only.
     /// Other UI languages fall back to the English phrase. Siri may not speak
     /// Estonian yet; the et strings are still required here.
-    /// One parameterized set phrase and one cancel phrase. The other 50 UI
+    /// One parameterized set phrase and one cancel phrase. The other 53 UI
     /// languages are not translated here.
     private let sleepTimerPhraseKeys: [String] = [
         "Set a ${duration} sleep timer in ${applicationName}",
@@ -617,6 +617,78 @@ final class AppShortcutsLocalizationTests: XCTestCase {
         XCTAssertEqual(
             compiledPhrase("Switch ${applicationName} to ${language}", language: "bem"),
             "Aluleni ${applicationName} ku ${language}"
+        )
+    }
+
+    /// Compiled Serbian phrases stay standard Serbian of Serbia (Cyrillic, ekavian)
+    /// and keep the Siri tokens.
+    ///
+    /// The every-language check only rejects an English fallback. These strings
+    /// are the catalog values for locale `sr`. There is no `sr-Latn` table.
+    func testCompiledSerbianPlayAndPausePhrasesAreNative() {
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName}", language: "sr"),
+            "Пусти ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Pause ${applicationName}", language: "sr"),
+            "Паузирај ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName} in ${language}", language: "sr"),
+            "Пусти ${applicationName} на језику ${language}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Switch ${applicationName} to ${language}", language: "sr"),
+            "Пребаци ${applicationName} на језик ${language}"
+        )
+    }
+
+    /// Compiled Belarusian phrases stay official Belarusian (Cyrillic, narkamaŭka)
+    /// and keep the Siri tokens.
+    ///
+    /// The every-language check only rejects an English fallback. These strings
+    /// are the catalog values for locale `be`.
+    func testCompiledBelarusianPlayAndPausePhrasesAreNative() {
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName}", language: "be"),
+            "Прайгравай ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Pause ${applicationName}", language: "be"),
+            "Прыпыні ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName} in ${language}", language: "be"),
+            "Прайгравай ${applicationName} на мове ${language}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Switch ${applicationName} to ${language}", language: "be"),
+            "Пераключы ${applicationName} на мову ${language}"
+        )
+    }
+
+    /// Compiled Macedonian phrases stay official Macedonian of North Macedonia
+    /// and keep the Siri tokens.
+    ///
+    /// The every-language check only rejects an English fallback. These strings
+    /// are the catalog values for locale `mk`.
+    func testCompiledMacedonianPlayAndPausePhrasesAreNative() {
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName}", language: "mk"),
+            "Пушти ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Pause ${applicationName}", language: "mk"),
+            "Паузирај ${applicationName}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName} in ${language}", language: "mk"),
+            "Пушти ${applicationName} на јазикот ${language}"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Switch ${applicationName} to ${language}", language: "mk"),
+            "Префрли ${applicationName} на јазикот ${language}"
         )
     }
 

@@ -16,6 +16,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -178,6 +184,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -263,6 +275,12 @@
           }
         },
         "sq" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "sr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -352,6 +370,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -514,6 +538,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -599,6 +629,12 @@
           }
         },
         "sq" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "sr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -688,6 +724,12 @@
             "value" : "© 2025-2026 Jari Lammi"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "© 2025-2026 Jari Lammi"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -850,6 +892,12 @@
             "value" : "© 2025-2026 Jari Lammi"
           }
         },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "© 2025-2026 Jari Lammi"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -935,6 +983,12 @@
           }
         },
         "sq" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "© 2025-2026 Jari Lammi"
+          }
+        },
+        "sr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "© 2025-2026 Jari Lammi"

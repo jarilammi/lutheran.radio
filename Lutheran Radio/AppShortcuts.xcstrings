@@ -51,6 +51,12 @@
             "value" : "${applicationName}ን ለአፍታ አቁም"
           }
         },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прыпыні ${applicationName}"
+          }
+        },
         "bem" : {
           "stringUnit" : {
             "state" : "translated",
@@ -213,6 +219,12 @@
             "value" : "Ajanony ${applicationName}"
           }
         },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Паузирај ${applicationName}"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -303,6 +315,12 @@
             "value" : "Pauzo ${applicationName}"
           }
         },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Паузирај ${applicationName}"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -384,6 +402,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName}ን አጫውት"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайгравай ${applicationName}"
           }
         },
         "bem" : {
@@ -548,6 +572,12 @@
             "value" : "Alefaso ${applicationName}"
           }
         },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пушти ${applicationName}"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -638,6 +668,12 @@
             "value" : "Luaj ${applicationName}"
           }
         },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пусти ${applicationName}"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -719,6 +755,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName}ን በ${language} አጫውት"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прайгравай ${applicationName} на мове ${language}"
           }
         },
         "bem" : {
@@ -883,6 +925,12 @@
             "value" : "Alefaso ${applicationName} amin'ny ${language}"
           }
         },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пушти ${applicationName} на јазикот ${language}"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -971,6 +1019,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Luaj ${applicationName} në ${language}"
+          }
+        },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пусти ${applicationName} на језику ${language}"
           }
         },
         "sv" : {
@@ -1089,6 +1143,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName}ን ጀምር"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запусці ${applicationName}"
           }
         },
         "bem" : {
@@ -1253,6 +1313,12 @@
             "value" : "Atombohy ${applicationName}"
           }
         },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Започни ${applicationName}"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1343,6 +1409,12 @@
             "value" : "Fillo ${applicationName}"
           }
         },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Покрени ${applicationName}"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1424,6 +1496,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName}ን አቁም"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Спыні ${applicationName}"
           }
         },
         "bem" : {
@@ -1588,6 +1666,12 @@
             "value" : "Atsaharo ${applicationName}"
           }
         },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запри ${applicationName}"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1678,6 +1762,12 @@
             "value" : "Ndalo ${applicationName}"
           }
         },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заустави ${applicationName}"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1759,6 +1849,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName}ን ወደ ${language} ቀይር"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пераключы ${applicationName} на мову ${language}"
           }
         },
         "bem" : {
@@ -1923,6 +2019,12 @@
             "value" : "Ovay ${applicationName} ho ${language}"
           }
         },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Префрли ${applicationName} на јазикот ${language}"
+          }
+        },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2011,6 +2113,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kalo ${applicationName} te ${language}"
+          }
+        },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пребаци ${applicationName} на језик ${language}"
           }
         },
         "sv" : {

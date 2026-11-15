@@ -852,6 +852,9 @@
 				bn,
 				tr,
 				bem,
+				sr,
+				be,
+				mk,
 			);
 			mainGroup = B7AFC6A32CCD7D0A00BDDD83;
 			minimizedProjectReferenceProxies = 1;
