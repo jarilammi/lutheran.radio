@@ -133,12 +133,25 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     
     /// Injectable closure for the current date, used for testing time-dependent logic (e.g., transition periods).
     ///
-    /// Defaults to system date. In tests, override to mock dates:
-    /// ```
-    /// validator.currentDate = { Date(timeIntervalSince1970: someTimestamp) }
-    /// ```
+    /// Defaults to system date. A fresh test validator takes the clock in
+    /// ``init(currentDate:)``. The shared validator used by the Icecast
+    /// resource loader is moved with ``_test_setCurrentDate(_:)``.
     /// - Important: Do not change in production.
     internal var currentDate: @Sendable () -> Date = { Date() }
+
+    #if DEBUG
+    /// Points ``currentDate`` at `provider` for tests of the shared validator.
+    ///
+    /// Cross-module assignment of this actor property does not compile.
+    /// Compiled out of Release. Does not change ``allowTransitionLeniency``,
+    /// the pin list, or the transition-window dates.
+    ///
+    /// - Parameter provider: Device clock for later trust decisions on this actor.
+    /// - SeeAlso: ``currentDate``, ``<doc:Security-Invariants>`` Invariant 6
+    public func _test_setCurrentDate(_ provider: @escaping @Sendable () -> Date) {
+        currentDate = provider
+    }
+    #endif
     
     /// Validates a server trust object received during a URL authentication challenge.
     ///

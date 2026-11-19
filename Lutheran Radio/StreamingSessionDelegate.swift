@@ -10,18 +10,24 @@ import AVFoundation
 @unsafe @preconcurrency import Security
 import Core
 
-/// Custom URLSession delegate for managing audio streaming sessions with integrated SSL certificate pinning validation.
+/// Custom URLSession delegate for the Icecast resource loader.
 ///
-/// This class handles data tasks for streaming audio content using AVFoundation, ensuring secure connections through
-/// runtime certificate validation. It acts as a bridge between AVAssetResourceLoadingRequest and URLSession, processing
-/// incoming data and responding to the loading request.
+/// AVFoundation asks this delegate for media bytes. The session follows redirects,
+/// and ATS `NSPinnedDomains` covers only the media apex, so the TLS challenge
+/// must name the host. An empty host cancels. Any other server trust goes through
+/// ``CertificateValidator/validateStreamingServerTrust(_:host:)`` (media SPKI,
+/// then the leaf digest). ``CertificateValidator/validateServerTrust(_:)`` alone
+/// can accept an unpinned leaf during the transition window.
 ///
 /// Key Features:
 /// - Implements `URLSessionDataDelegate` for handling streaming data in chunks.
-/// - Implements `URLSessionDelegate` for server trust challenges, deferring to `CertificateValidator` for pinning checks.
+/// - Implements `URLSessionTaskDelegate` for server-trust challenges.
 /// - Supports cancellation of ongoing sessions.
 /// - Logs debug information in DEBUG builds for troubleshooting.
 /// - Handles HTTP responses, content types, and errors appropriately for streaming.
+///
+/// - SeeAlso: ``CertificateValidator/validateStreamingServerTrust(_:host:)``,
+///   ``<doc:Security-Invariants>`` Invariant 3
 ///
 /// Usage:
 /// - Initialize with an `AVAssetResourceLoadingRequest` from AVFoundation.
@@ -74,9 +80,26 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
     
     // MARK: - Modern async delegate (WWDC 2025 / Swift 6 recommendation)
     
-    /// Handles server trust authentication challenges using the 2026 async API.
-    /// Delegates validation to CertificateValidator (now actor-isolated + async).
-    /// On failure, immediately notifies the AVAssetResourceLoadingRequest (exact same behaviour as before).
+    /// Handles the Icecast resource-loader TLS challenge.
+    ///
+    /// An empty host cancels. This session follows redirects, and ATS
+    /// `NSPinnedDomains` covers only the media apex, so a missing name must
+    /// not fall through to the leaf check. Any other server trust calls
+    /// ``CertificateValidator/validateStreamingServerTrust(_:host:)``, which
+    /// requires ``SecurityConfiguration/pinnedMediaLeafSPKISHA256Base64`` for a
+    /// host under ``preferredStreamingDomainSuffixes`` before the leaf digest.
+    /// A failure reports ``URLError.serverCertificateUntrusted``, finishes the
+    /// loading request, and cancels the challenge. A challenge that is not
+    /// server trust keeps default handling.
+    ///
+    /// - Parameters:
+    ///   - session: Resource-loader session. The decision does not read it.
+    ///   - task: Task that received the challenge. The decision does not read it.
+    ///   - challenge: URLSession server-trust challenge, including the peer name.
+    /// - Returns: Use-credential when the host and pins accept the trust; cancel
+    ///   when the host is empty or the pins reject it; default handling otherwise.
+    /// - SeeAlso: ``CertificateValidator/validateStreamingServerTrust(_:host:)``,
+    ///   ``<doc:Security-Invariants>`` Invariant 3
     nonisolated func urlSession(_ session: URLSession,
                     task: URLSessionTask,
                     didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
@@ -84,9 +107,16 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
               let serverTrust = challenge.protectionSpace.serverTrust else {
             return (.performDefaultHandling, nil)
         }
-        
-        let isValid = await CertificateValidator.shared.validateServerTrust(serverTrust)
-        
+
+        // An empty host is not a protected streaming name. Fail closed rather
+        // than accepting the leaf pin with no SPKI host check.
+        let host = challenge.protectionSpace.host
+        guard !host.isEmpty else {
+            return (.cancelAuthenticationChallenge, nil)
+        }
+
+        let isValid = await CertificateValidator.shared.validateStreamingServerTrust(serverTrust, host: host)
+
         if isValid {
             return (.useCredential, URLCredential(trust: serverTrust))
         } else {

@@ -5,7 +5,7 @@
 //  Single source of truth for every security constant and networking policy.
 //
 //  This file owns:
-//  - The embedded `expectedSecurityModel` ("goombungee")
+//  - The embedded `expectedSecurityModel` ("toowoomba")
 //  - Authoritative certificate fingerprints (DER digest form)
 //  - Transition window + time-skew parameters
 //  - Distinct cache durations: `modelCacheDuration` (DNS TXT success, 1 h) and
@@ -67,7 +67,7 @@ public struct SecurityConfiguration: Sendable {
     ///
     /// - SeeAlso: ``<doc:Security-Invariants>``, ``SecurityModelValidator/validateSecurityModel()``,
     ///   README Security Model History
-    public let expectedSecurityModel: String = "goombungee"
+    public let expectedSecurityModel: String = "toowoomba"
     
     /// Primary domain queried for TXT record containing valid models (comma-separated).
     ///

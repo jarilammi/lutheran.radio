@@ -7,6 +7,8 @@
 
 import XCTest
 import AVFoundation
+import Security
+@testable import Core
 @testable import Lutheran_Radio
 
 /// Protocol to unify both delegate types for testing.
@@ -28,6 +30,11 @@ final class StreamingSessionDelegateTests: XCTestCase {
     
     var mockLoadingRequest: MockLoadingRequest!
     var testableDelegate: TestableStreamingSessionDelegate!
+    /// Keeps the custom-scheme asset alive until the production challenge returns.
+    /// The scheme never resolves on the network.
+    private var resourceLoaderAsset: AVURLAsset?
+    private var resourceLoaderItem: AVPlayerItem?
+    private var resourceLoaderDelegate: SimpleResourceLoaderDelegate?
     
     override func setUp() {
         super.setUp()
@@ -39,6 +46,9 @@ final class StreamingSessionDelegateTests: XCTestCase {
         testableDelegate?.cancel()
         testableDelegate = nil
         mockLoadingRequest = nil
+        resourceLoaderItem = nil
+        resourceLoaderAsset = nil
+        resourceLoaderDelegate = nil
         super.tearDown()
     }
     
@@ -369,11 +379,12 @@ final class StreamingSessionDelegateTests: XCTestCase {
     
     // MARK: - SSL Certificate Validation Tests
     
-    /// Challenge disposition for server-trust auth method.
+    /// Challenge disposition for the testable mock only.
     ///
-    /// Production ``StreamingSessionDelegate`` evaluates trust via Core
-    /// ``CertificateValidator`` (async). This suite exercises the testable
-    /// mock's challenge path only; pin acceptance is covered in CoreTests.
+    /// ``TestableStreamingSessionDelegate`` returns ``URLSession/AuthChallengeDisposition/performDefaultHandling``
+    /// and never calls ``CertificateValidator``. Pin acceptance for the
+    /// production Icecast delegate is ``testPinnedSiikkariLeafOnSiikkariHostIsAccepted``
+    /// and the rejection tests below. Those tests do not open a stream.
     func testServerTrustAuthentication() {
         // Given: Server trust authentication challenge
         let protectionSpace = URLProtectionSpace(
@@ -515,6 +526,182 @@ final class StreamingSessionDelegateTests: XCTestCase {
         XCTAssertNil(testableDelegate.session, "Delegate should clear session reference")
         XCTAssertNil(testableDelegate.dataTask, "Delegate should clear data task reference")
     }
+
+    // MARK: - Production Icecast trust challenge
+
+    /// Invariant 3: the pinned `*.siikkari.net` leaf is still accepted for a
+    /// `siikkari.net` host when the resource loader asks ``validateStreamingServerTrust(_:host:)``.
+    ///
+    /// The fixture is the public leaf already used by ``CertificateValidatorTests``.
+    /// The task is not resumed, and the loading URL is a custom scheme, so this
+    /// does not open a live stream.
+    func testPinnedSiikkariLeafOnSiikkariHostIsAccepted() async throws {
+        let (delegate, request) = try await makeProductionDelegate()
+        var reported: Error?
+        delegate.onError = { reported = $0 }
+        let trust = CertificateValidatorTests().createMockSecTrust()
+        let outcome = await decide(
+            delegate,
+            trust: trust,
+            host: "livestream.siikkari.net"
+        )
+
+        XCTAssertEqual(outcome.disposition, .useCredential)
+        XCTAssertNotNil(outcome.credential)
+        XCTAssertNil(reported)
+        XCTAssertFalse(request.isFinished)
+    }
+
+    /// Invariant 3 and 4: an unpinned leaf, and the pinned leaf on a host outside
+    /// `siikkari.net`, are rejected while the transition window is open and the
+    /// leniency latch is still on.
+    ///
+    /// ``validateServerTrust(_:)`` would accept the unpinned fixture in that window.
+    /// The resource loader must not. A rejected challenge reports
+    /// ``URLError.Code.serverCertificateUntrusted`` and finishes the loading request.
+    /// The latch stays on because the SPKI check fails before leniency runs.
+    func testUnpinnedOrNonSiikkariLeafIsRejectedInsideTransitionWindow() async throws {
+        let insideWindow = Date(timeIntervalSince1970: 1_798_761_600 + 3_600)
+        let probe = CertificateValidator(currentDate: { insideWindow })
+        let leniencyWouldAccept = await probe.validateServerTrust(
+            CertificateValidatorTests().createUnpinnedSecTrust()
+        )
+        XCTAssertTrue(
+            leniencyWouldAccept,
+            "The unpinned fixture must be one that leaf-only leniency would accept"
+        )
+
+        try await withSharedValidatorDate(insideWindow) {
+            let latchOn = await CertificateValidator.shared.allowTransitionLeniency
+            XCTAssertTrue(latchOn)
+
+            let (unpinnedDelegate, unpinnedRequest) = try await self.makeProductionDelegate()
+            let unpinnedError = self.expectation(description: "unpinned leaf reports untrusted")
+            unpinnedDelegate.onError = { error in
+                let urlError = error as? URLError
+                XCTAssertEqual(urlError?.code, .serverCertificateUntrusted)
+                unpinnedError.fulfill()
+            }
+            let unpinned = await self.decide(
+                unpinnedDelegate,
+                trust: CertificateValidatorTests().createUnpinnedSecTrust(),
+                host: "livestream.siikkari.net"
+            )
+            await self.fulfillment(of: [unpinnedError], timeout: 1)
+            XCTAssertEqual(unpinned.disposition, .cancelAuthenticationChallenge)
+            XCTAssertNil(unpinned.credential)
+            XCTAssertTrue(unpinnedRequest.isFinished)
+
+            let (foreignDelegate, foreignRequest) = try await self.makeProductionDelegate()
+            let foreignError = self.expectation(description: "non-siikkari host reports untrusted")
+            foreignDelegate.onError = { error in
+                let urlError = error as? URLError
+                XCTAssertEqual(urlError?.code, .serverCertificateUntrusted)
+                foreignError.fulfill()
+            }
+            let foreign = await self.decide(
+                foreignDelegate,
+                trust: CertificateValidatorTests().createMockSecTrust(),
+                host: "example.com"
+            )
+            await self.fulfillment(of: [foreignError], timeout: 1)
+            XCTAssertEqual(foreign.disposition, .cancelAuthenticationChallenge)
+            XCTAssertNil(foreign.credential)
+            XCTAssertTrue(foreignRequest.isFinished)
+
+            let stillOn = await CertificateValidator.shared.allowTransitionLeniency
+            XCTAssertTrue(stillOn, "An SPKI rejection must not turn the leniency latch off")
+        }
+    }
+
+    /// An empty peer name cancels before the leaf check.
+    ///
+    /// The fixture is the pinned leaf, which a named `siikkari.net` host would
+    /// accept. The challenge handler does not report ``onError`` for a missing
+    /// host; the task failure finishes the loading request later.
+    func testEmptyHostCancelsIcecastChallenge() async throws {
+        let (delegate, request) = try await makeProductionDelegate()
+        var reported: Error?
+        delegate.onError = { reported = $0 }
+        let outcome = await decide(
+            delegate,
+            trust: CertificateValidatorTests().createMockSecTrust(),
+            host: ""
+        )
+
+        XCTAssertEqual(outcome.disposition, .cancelAuthenticationChallenge)
+        XCTAssertNil(outcome.credential)
+        XCTAssertNil(reported)
+        XCTAssertFalse(request.isFinished)
+    }
+
+    /// Runs `body` while ``CertificateValidator/shared`` reads `date` as the device clock.
+    ///
+    /// Restores `Date()` afterwards, including when `body` throws. The production
+    /// Icecast handler uses that shared validator, so the transition window has
+    /// to be injected there.
+    private func withSharedValidatorDate(
+        _ date: Date,
+        _ body: () async throws -> Void
+    ) async throws {
+        await CertificateValidator.shared._test_setCurrentDate { date }
+        do {
+            try await body()
+        } catch {
+            await CertificateValidator.shared._test_setCurrentDate { Date() }
+            throw error
+        }
+        await CertificateValidator.shared._test_setCurrentDate { Date() }
+    }
+
+    /// Asks the production delegate to decide one server-trust challenge.
+    ///
+    /// The data task is never resumed.
+    private func decide(
+        _ delegate: StreamingSessionDelegate,
+        trust: SecTrust,
+        host: String
+    ) async -> (disposition: URLSession.AuthChallengeDisposition, credential: URLCredential?) {
+        let space = FixtureServerTrustProtectionSpace(host: host, serverTrust: trust)
+        let challenge = URLAuthenticationChallenge(
+            protectionSpace: space,
+            proposedCredential: nil,
+            previousFailureCount: 0,
+            failureResponse: nil,
+            error: nil,
+            sender: MockURLAuthenticationChallengeSender()
+        )
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let task = session.dataTask(with: URL(string: "https://unit.test.invalid/")!)
+        return await delegate.urlSession(session, task: task, didReceive: challenge)
+    }
+
+    /// Captures one ``AVAssetResourceLoadingRequest`` from a custom-scheme asset.
+    ///
+    /// AVFoundation delivers the request to the resource loader instead of
+    /// opening a network stream. The asset stays retained on this test case
+    /// so the request remains valid for ``finishLoading(with:)``.
+    private func makeProductionDelegate() async throws -> (StreamingSessionDelegate, AVAssetResourceLoadingRequest) {
+        let box = LoadingRequestBox()
+        let offered = expectation(description: "custom-scheme loading request")
+        let asset = AVURLAsset(url: try XCTUnwrap(URL(string: "lutheranradio://unit.test/icecast")))
+        let loader = SimpleResourceLoaderDelegate { request in
+            box.request = request
+            offered.fulfill()
+            return true
+        }
+        resourceLoaderDelegate = loader
+        resourceLoaderAsset = asset
+        asset.resourceLoader.setDelegate(loader, queue: DispatchQueue(label: "radio.lutheran.test.resource-loader"))
+        resourceLoaderItem = AVPlayerItem(asset: asset)
+        Task {
+            _ = try? await asset.load(.duration)
+        }
+        await fulfillment(of: [offered], timeout: 3)
+        let request = try XCTUnwrap(box.request, "The custom scheme did not offer a loading request")
+        return (StreamingSessionDelegate(loadingRequest: request), request)
+    }
 }
 
 // MARK: - Mock Classes and Protocol Extensions
@@ -559,8 +746,11 @@ class MockLoadingRequest: LoadingRequestProtocol {
 ///
 /// Challenge handling deliberately does **not** reimplement Core leaf-digest
 /// pinning. Production ``StreamingSessionDelegate`` routes server trust through
-/// ``CertificateValidator``; pin acceptance is covered in CoreTests. This mock
-/// only exercises disposition plumbing for non-production challenge paths.
+/// ``CertificateValidator/validateStreamingServerTrust(_:host:)``. The Icecast
+/// cases are ``testPinnedSiikkariLeafOnSiikkariHostIsAccepted``,
+/// ``testUnpinnedOrNonSiikkariLeafIsRejectedInsideTransitionWindow``, and
+/// ``testEmptyHostCancelsIcecastChallenge``. This mock only exercises
+/// disposition plumbing.
 ///
 /// - Important: Test-only delegate; `session` and `dataTask` are mutated only on the
 ///   XCTest main thread during delegate callback simulation.
@@ -667,6 +857,53 @@ final class TestableStreamingSessionDelegate: NSObject, URLSessionDataDelegate, 
         } else {
             completionHandler(.performDefaultHandling, nil)
         }
+    }
+}
+
+/// Holds the loading request captured on the resource-loader queue.
+///
+/// The test reads `request` only after the expectation is fulfilled.
+private final class LoadingRequestBox: @unchecked Sendable {
+    var request: AVAssetResourceLoadingRequest?
+}
+
+/// Protection space that keeps a fixture `SecTrust` after the challenge copies it.
+///
+/// The public ``URLProtectionSpace`` initializer cannot attach a trust. The
+/// challenge's protection space is a copy, so ``copy(with:)`` returns this
+/// subclass. Otherwise the copy drops the trust and the production handler
+/// takes the missing-trust path.
+///
+/// Test-only. The trust is the fixture passed into one challenge decision.
+// SAFETY: Test-only. `SecTrust` is confined to the challenge decision on the XCTest task.
+final class FixtureServerTrustProtectionSpace: URLProtectionSpace, @unchecked Sendable {
+    private let stubHost: String
+    private let stubTrust: SecTrust
+
+    init(host: String, serverTrust: SecTrust) {
+        stubHost = host
+        stubTrust = serverTrust
+        super.init(
+            host: host,
+            port: 443,
+            protocol: NSURLProtectionSpaceHTTPS,
+            realm: nil,
+            authenticationMethod: NSURLAuthenticationMethodServerTrust
+        )
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("Fixture protection spaces are not archived")
+    }
+
+    override var host: String { stubHost }
+
+    override var serverTrust: SecTrust? { stubTrust }
+
+    override var authenticationMethod: String { NSURLAuthenticationMethodServerTrust }
+
+    override func copy(with zone: NSZone? = nil) -> Any {
+        self
     }
 }
 

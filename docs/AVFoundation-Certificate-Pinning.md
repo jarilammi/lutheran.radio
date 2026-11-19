@@ -15,7 +15,7 @@ Do not duplicate pin values outside `SecurityConfiguration`. Do not keep retired
 - Swift source of truth: `SecurityConfiguration.pinnedMediaLeafSPKISHA256Base64`. `AppTransportSecurityPins` compares the leaf SPKI with that constant for a host under `preferredStreamingDomainSuffixes`. An empty match set fails closed. The check does not read `Bundle.main`.
 - The app `Info.plist` keeps the same bytes under `NSAppTransportSecurity > NSPinnedDomains` (`NSIncludesSubdomains` is true) so ATS enforces them on URLSession. The widget plist has no `NSPinnedDomains`.
 - Sole media apex: `siikkari.net` (covers `european.siikkari.net`, `livestream.siikkari.net`, language hosts).
-- `CertificateValidator.urlSession(_:task:didReceive:)` passes the challenge host into `validateStreamingServerTrust(_:host:)`. A missing host fails closed.
+- `CertificateValidator.urlSession(_:task:didReceive:)` and `StreamingSessionDelegate` (Icecast resource loader) both pass the challenge host into `validateStreamingServerTrust(_:host:)`. A missing host fails closed. The resource loader cancels an empty host. A pin failure there finishes the loading request with `URLError.serverCertificateUntrusted`. The session follows redirects, and ATS `NSPinnedDomains` covers only `siikkari.net`, so a host outside `preferredStreamingDomainSuffixes` fails the SPKI check before transition-window leniency.
 - Current SPKI-SHA256-BASE64: `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`
 - DoH resolver pins in `pinnedDoHResolvers` are different keys. Do not reuse one as the media pin.
 
@@ -36,7 +36,7 @@ Expected: `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=` (`pinnedMediaLeafSPKISH
   `32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD`
 - Comparison: `CertificateFingerprint.constantTimeMatches` (constant-time). Colon-hex strings are never used for runtime decisions.
 - Success cache: `certificateValidationCacheDuration` (10 minutes). A hit skips system trust evaluation only when the leaf just presented matches `pinnedFingerprintDigests`. A different leaf is evaluated again. Independent of DNS TXT `modelCacheDuration` (1 hour).
-- Call sites: `StreamingSessionDelegate` (per-request trust) and `DirectStreamingPlayer` (initial + periodic HEAD revalidation using the same cache duration).
+- Call sites: `StreamingSessionDelegate` (per-request trust via `validateStreamingServerTrust(_:host:)`) and `DirectStreamingPlayer` (initial + periodic HEAD revalidation using the same cache duration). The resource loader does not call `validateServerTrust(_:)` directly.
 
 Verify leaf DER SHA-256 (copy-paste):
 
