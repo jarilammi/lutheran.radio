@@ -85,6 +85,7 @@ The app is fully localized in the following languages:
 - Tamil (ta)
 - Telugu (te)
 - Tigrinya (ti)
+- Tongan (to)
 - Tornedalen Finnish (fit)
 - Turkish (tr)
 - Ukrainian (uk)

@@ -315,6 +315,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1394,6 +1400,18 @@
             }
           }
         },
+        "to" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "lea ʻe %lld"
+                }
+              }
+            }
+          }
+        },
         "tr" : {
           "variations" : {
             "plural" : {
@@ -1812,6 +1830,12 @@
             "value" : "መሳርሒ መውጽኢ ድምጺ ንምምራጽ ክልተ ግዜ ጠውቕ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lomi tuʻo ua ke fili ha mīsini ke ʻalu ki ai ʻa e leʻo"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2162,6 +2186,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ብዛዕባ እቲ ሕጂ ዘሎ መደብ ራድዮ ሓበሬታ የርኢ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻOku fakahā ʻa e fakamatala ki he polokalama lolotonga ʻo e letiō"
           }
         },
         "tr" : {
@@ -2516,6 +2546,12 @@
             "value" : "ምጽዋት ውሕጅ ራድዮ የለዋውጥ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻOku tā pe taʻofi ʻa e fakafanongo ʻo e letiō"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2866,6 +2902,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምጽዋት ክሳብ ዝቋረጽ ክንደይ ግዜ ከም ዝጸንሕ ምረጽ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fili ʻa e fuoloa kaeʻoua ʻe tuku ʻa e fakafanongo"
           }
         },
         "tr" : {
@@ -3220,6 +3262,12 @@
             "value" : "ድምጺ ምጽዋት የስተኻኽል"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻOku fokotuʻu ʻa e leʻo ʻo e fakafanongo"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3567,6 +3615,12 @@
           }
         },
         "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "to" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -3925,6 +3979,12 @@
             "value" : "ሎጎ Lutheran Radio"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ko e fakaʻilonga ʻo Lutheran Radio"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4275,6 +4335,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኣቋርጽ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taʻofi"
           }
         },
         "tr" : {
@@ -4630,6 +4696,12 @@
             "value" : "ስእሊ ናይ %@"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fakatātā ʻo %@"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4980,6 +5052,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ተጻወት"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā"
           }
         },
         "tr" : {
@@ -5334,6 +5412,12 @@
             "value" : "ታይመር ድቃስ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taimi mohe"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5684,6 +5768,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ድምጺ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leʻo"
           }
         },
         "tr" : {
@@ -6765,6 +6855,18 @@
             }
           }
         },
+        "to" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "pēseti ʻe %lld"
+                }
+              }
+            }
+          }
+        },
         "tr" : {
           "variations" : {
             "plural" : {
@@ -7183,6 +7285,12 @@
             "value" : "ቀጽል"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoko atu"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7533,6 +7641,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "እንደገና ፈትን"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toe feinga"
           }
         },
         "tr" : {
@@ -7887,6 +8001,12 @@
             "value" : "ንዚ ክፍለ ግዜ ፍቐድ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fakangofua ki he taimi ni pē"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8237,6 +8357,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኩሉ ግዜ ፍቐድ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fakangofua maʻu pē"
           }
         },
         "tr" : {
@@ -8591,6 +8717,12 @@
             "value" : "ሕጂ ኣይኮነን"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻIkai ʻi he taimi ni"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8941,6 +9073,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኣጽርይ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fakamaʻa"
           }
         },
         "tr" : {
@@ -9295,6 +9433,12 @@
             "value" : "ተጸሪዩ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuo fakamaʻa"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9645,6 +9789,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "እዚ ነቲ ምጽዋት ክቋርጽ፣ ናይ ዊጄትን Live Activity ን ዳታ ከውግድ፣ ከምኡ’ውን ካብዚ መሳርሒ ናይ ቀረባ ምስማዕ ኩነታት ከጽርይ እዩ። እዚ ተግባር ክምለስ ኣይክእልን።"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻE tuku ʻa e fakafanongo, ʻe toʻo ʻa e ngaahi tēta ʻo e Widget mo e Live Activity, pea ʻe fakamaʻa ʻa e tuʻunga fanongo fakamuimui mei he mīsini ni. ʻOku ʻikai ke lava ke toe fakafoki ʻa e ngāue ni."
           }
         },
         "tr" : {
@@ -9999,6 +10149,12 @@
             "value" : "ናይ ከባቢ ምጽዋት ኩነታት ኣጽርይ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fakamaʻa ʻa e tuʻunga fakafanongo fakalotofonua"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10349,6 +10505,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ውቅረት ዊጄት Lutheran Radio።"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fokotuʻutuʻu ki he Widget ʻo Lutheran Radio."
           }
         },
         "tr" : {
@@ -10704,6 +10866,12 @@
             "value" : "ጌጋ ርክብ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ko e hala fehokotaki"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11057,6 +11225,12 @@
             "value" : "ምጽዋት Lutheran Radio ኣመሓድር እሞ ነቲ ሕጂ ዘሎ ጣብያ ርአ።"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puleʻi ʻa e fakafanongo ʻo Lutheran Radio pea sio ki he letiō lolotonga."
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11407,6 +11581,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምጽዋት ኣመሓድር እሞ ኣብ መንጎ ውሕጃት ቋንቋ ተቐያየር።"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puleʻi ʻa e fakafanongo pea liliu ʻa e ngaahi letiō lea."
           }
         },
         "tr" : {
@@ -11762,6 +11942,12 @@
             "value" : "ድምጺ ኣጉድል"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fakasiʻisiʻi e leʻo"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12115,6 +12301,12 @@
             "value" : "ድምጺ ወስኽ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fakalahi e leʻo"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12465,6 +12657,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ይጻወት ኣሎ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻOku tā"
           }
         },
         "tr" : {
@@ -12820,6 +13018,12 @@
             "value" : "ቋንቋ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lea"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13170,6 +13374,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኮድ ቋንቋ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kouti ʻo e lea"
           }
         },
         "tr" : {
@@ -13525,6 +13735,12 @@
             "value" : "እንግሊዝኛ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lea faka-Pālangi"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13876,6 +14092,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኤስቶንኛ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lea faka-ʻEsitōnia"
           }
         },
         "tr" : {
@@ -14231,6 +14453,12 @@
             "value" : "ፊንላንድኛ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lea faka-Finilani"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14582,6 +14810,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ጀርመን"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lea faka-Siamane"
           }
         },
         "tr" : {
@@ -14937,6 +15171,12 @@
             "value" : "ስዊድንኛ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lea faka-Suēteni"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15288,6 +15528,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · ህያው ውሕጅ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Letiō lolotonga"
           }
         },
         "tr" : {
@@ -15643,6 +15889,12 @@
             "value" : "ዞባዊ ጥራይ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fakalotofonua pē"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15991,6 +16243,12 @@
           }
         },
         "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "to" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -16349,6 +16607,12 @@
             "value" : "ዝቕጽል ቋንቋ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lea hoko"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16700,6 +16964,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ተጻወት/ኣቋርጽ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā/Taʻofi"
           }
         },
         "tr" : {
@@ -17055,6 +17325,12 @@
             "value" : "ምጽዋት"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fakafanongo"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17406,6 +17682,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ዝቐደመ ቋንቋ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lea kimuʻa"
           }
         },
         "tr" : {
@@ -17760,6 +18042,12 @@
             "value" : "እቲ ኣፕ ሞባይል ዳታ ይጥቀም ኣሎ፣ እዚ ድማ ብመሰረት ውጥን ዳታኻ ወጻኢታት ክስዕብ ይኽእል።"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻOku ngāueʻaki ʻe he polokalama ʻa e tēta ʻo e telefoni, pea ʻe ala totongi ʻo fakatatau ki hoʻo palani tēta."
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18110,6 +18398,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምጥቃም ሞባይል ዳታ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ngāueʻaki ʻo e tēta ʻo e telefoni"
           }
         },
         "tr" : {
@@ -18464,6 +18758,12 @@
             "value" : "ሓበሬታ ትራክ የለን"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻIkai ha fakamatala ʻo e hiva"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18816,6 +19116,12 @@
             "value" : "ሕጂ ይጻወት"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā lolotonga"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19163,6 +19469,12 @@
           }
         },
         "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "to" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -19521,6 +19833,12 @@
             "value" : "መጀመርታ ነቲ ኣፕ ክፈት"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fakaava ʻa e polokalama kimuʻa"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19873,6 +20191,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio ኣቋርጽ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taʻofi e Lutheran Radio"
           }
         },
         "tr" : {
@@ -20228,6 +20552,12 @@
             "value" : "ምጽዋት Lutheran Radio ኣቋርጽ።"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taʻofi ʻa e fakafanongo ʻo Lutheran Radio."
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20578,6 +20908,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ተጻወት"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā"
           }
         },
         "tr" : {
@@ -20933,6 +21269,12 @@
             "value" : "Lutheran Radio ተጻወት"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā e Lutheran Radio"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21283,6 +21625,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio ተጻወት ወይ ኣቋርጽ።"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā pe taʻofi e Lutheran Radio."
           }
         },
         "tr" : {
@@ -21638,6 +21986,12 @@
             "value" : "Lutheran Radio ተጻወት ወይ ቀጽል።"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā pe toe kamata e Lutheran Radio."
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21988,6 +22342,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ብሰንኪ ውድቀት ምርግጋጽ ጸጥታ ምጽዋት ክጅመር ኣይከኣለን። በይኻ ርክብ ኢንተርነትካ ምርመር እሞ እቲ ኣፕ ሓዲሽ ምዃኑ ኣረጋግጽ። እቲ ጸገም እንተቐጺሉ፣ ነቲ ኣፕ ዳግም ጀምሮ እንደገና ፈትን።"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻOku ʻikai ke lava ke kamata ʻa e fakafanongo koeʻuhi kuo hala ʻa e sivi malu. Kataki vakai ki hoʻo fehokotaki ki he ʻinitaneti pea fakapapauʻi kuo fakafoʻou ʻa e polokalama. Kapau ʻe kei hoko atu ʻa e palopalema, toe kamata ʻa e polokalama pea toe feinga."
           }
         },
         "tr" : {
@@ -22342,6 +22702,12 @@
             "value" : "ምርግጋጽ ጸጥታ ፈሺሉ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuo hala ʻa e sivi malu"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22693,6 +23059,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ ምረጽ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fili e %@"
           }
         },
         "tr" : {
@@ -23774,6 +24146,18 @@
             }
           }
         },
+        "to" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "miniti ʻe %lld ʻoku toe"
+                }
+              }
+            }
+          }
+        },
         "tr" : {
           "variations" : {
             "plural" : {
@@ -24192,6 +24576,12 @@
             "value" : "ነቲ ታይመር ሰርዝ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kaniseli e taimi"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24542,6 +24932,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 ደቓይቕ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "miniti ʻe 15"
           }
         },
         "tr" : {
@@ -24896,6 +25292,12 @@
             "value" : "30 ደቓይቕ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "miniti ʻe 30"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25246,6 +25648,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 ደቓይቕ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "miniti ʻe 45"
           }
         },
         "tr" : {
@@ -25600,6 +26008,12 @@
             "value" : "60 ደቓይቕ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "miniti ʻe 60"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25950,6 +26364,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ታይመር ድቃስ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taimi mohe"
           }
         },
         "tr" : {
@@ -26304,6 +26724,12 @@
             "value" : "ኣገልገልቲ ስትሪሚንግ ናይ SSL ምስክር ወረቐቶም ኣሓዲሶም። እቲ ኣፕ ብሞድ ምትእስሳር ይሰርሕ ኣሎ። ንዝበለጸ ጸጥታ ምስ ዝርከብ ናብቲ እዋናዊ ስሪት ኣሐድስ።"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuo fakafoʻou ʻe he ngaahi mīsini letiō ʻenau ngaahi tohi fakamoʻoni SSL. ʻOku ngāue ʻa e polokalama ʻi he tuʻunga fengāueʻaki. Kataki fakafoʻou ki he vesini foʻou taha ʻo ka maʻu, ke malu lelei taha."
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26654,6 +27080,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምስክር ወረቐት ተሓዲሱ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuo fakafoʻou ʻa e tohi fakamoʻoni"
           }
         },
         "tr" : {
@@ -27009,6 +27441,12 @@
             "value" : "ምጽዋት Lutheran Radio ጀምር ወይ ቀጽል።"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kamata pe toe kamata ʻa e fakafanongo ʻo Lutheran Radio."
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27359,6 +27797,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምጽዋት Lutheran Radio ጀምር ወይ ኣቁም።"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kamata pe tuku ʻa e fakafanongo ʻo Lutheran Radio."
           }
         },
         "tr" : {
@@ -27713,6 +28157,12 @@
             "value" : "ምጽዓን"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tatali"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28063,6 +28513,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኣራኽብ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fakahoko"
           }
         },
         "tr" : {
@@ -28417,6 +28873,12 @@
             "value" : "ፈሺሉ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hala"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28769,6 +29231,12 @@
             "value" : "ዘይተራኸበ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻIkai ʻinitaneti"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29119,6 +29587,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ኣቋርጽ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taʻofi"
           }
         },
         "tr" : {
@@ -29474,6 +29948,12 @@
             "value" : "ተቋሪጹ – ጻውዒት ኣሎ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuo taʻofi – ʻOku ngāue ʻa e telefoni"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29825,6 +30305,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምጽዋት ፈሺሉ: %@"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuo hala ʻa e fakafanongo: %@"
           }
         },
         "tr" : {
@@ -30180,6 +30666,12 @@
             "value" : "ተጻወት"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30530,6 +31022,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ጸጥታ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Malu"
           }
         },
         "tr" : {
@@ -30884,6 +31382,12 @@
             "value" : "ምስክር ወረቐት SSL ተሓዲሱ - ነቲ ኣፕ ቀልጢፍካ ኣሐድስ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuo fakafoʻou ʻa e tohi fakamoʻoni SSL - fakafoʻou vave ʻa e polokalama"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31234,6 +31738,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ደው ኢሉ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuo tuku"
           }
         },
         "tr" : {
@@ -31588,6 +32098,12 @@
             "value" : "ጠፊኡ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tāmate"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31938,6 +32454,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "መሳርሒ ውዑይ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vela e mīsini"
           }
         },
         "tr" : {
@@ -32292,6 +32814,12 @@
             "value" : "እቲ ስርጭት ግዝያዊ ኣይርከብን። በይኻ ድሕሪኡ እንደገና ፈትን።"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻOku ʻikai ke maʻu ʻa e fanongonongo ki ha taimi nounou. Kataki toe feinga ʻamui ange."
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32642,6 +33170,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ስርጭት ኣይርከብን"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻIkai ke maʻu ʻa e fanongonongo"
           }
         },
         "tr" : {
@@ -32997,6 +33531,12 @@
             "value" : "ውሕጅ ቋንቋ Lutheran Radio ቀይር።"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liliu ʻa e letiō lea ʻo Lutheran Radio."
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -33347,6 +33887,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ውሕጅ ቀይር"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liliu e letiō"
           }
         },
         "tr" : {
@@ -33702,6 +34248,12 @@
             "value" : "ናብ %@ ቀይር"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liliu ki he %@"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -34052,6 +34604,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ካብ Live Activity ናብ ካልእ ውሕጅ ቋንቋ ቀይር።"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liliu ki ha letiō lea kehe mei he Live Activity."
           }
         },
         "tr" : {
@@ -34406,6 +34964,12 @@
             "value" : "ናብ ካልእ ውሕጅ ቋንቋ ቀይር።"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liliu ki ha letiō lea kehe."
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -34757,6 +35321,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ናብ %@ ተቐይሩ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuo liliu ki he %@"
           }
         },
         "tr" : {
@@ -35113,6 +35683,12 @@
             "value" : "ንምኽፋት ጠውቕ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lomi ke fakaava"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -35464,6 +36040,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio ኣለዋውጥ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā pe taʻofi e Lutheran Radio"
           }
         },
         "tr" : {
@@ -35818,6 +36400,12 @@
             "value" : "ምጽዋት Lutheran Radio ኣለዋውጥ"
           }
         },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā pe taʻofi e fakafanongo ʻo Lutheran Radio"
+          }
+        },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
@@ -36168,6 +36756,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ካብ Live Activity ተጻወት/ኣቋርጽ ኣለዋውጥ።"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā pe taʻofi mei he Live Activity."
           }
         },
         "tr" : {
@@ -36521,6 +37115,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ምጽዋት ኣለዋውጥ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tā pe taʻofi"
           }
         },
         "tr" : {
@@ -37602,6 +38202,18 @@
             }
           }
         },
+        "to" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Kuo fokotuʻu ʻa e leʻo ki he pēseti ʻe %lld"
+                }
+              }
+            }
+          }
+        },
         "tr" : {
           "variations" : {
             "plural" : {
@@ -38018,6 +38630,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ውቅረት ዊጄት"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fokotuʻutuʻu ʻo e Widget"
           }
         },
         "tr" : {

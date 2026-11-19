@@ -9,7 +9,7 @@
 //  Invariant: every play / pause / language phrase in `LutheranRadioShortcuts`
 //  is extracted as `Play ${applicationName}` (etc.) and `AppShortcuts.xcstrings`
 //  ships a translated value for every UI language in README Localizations (the
-//  58 language codes). Sleep-timer phrases are native in en, de, fi, sv, and et
+//  59 language codes). Sleep-timer phrases are native in en, de, fi, sv, and et
 //  only; other languages fall back to English. Every value keeps
 //  `${applicationName}`; parameterized phrases also keep `${language}` or
 //  `${duration}`. Xcode binds only the first phrase of each `AppShortcut`
@@ -30,12 +30,12 @@ import XCTest
 final class AppShortcutsLocalizationTests: XCTestCase {
 
     /// UI catalog languages: README Localizations / Localizable + AppShortcuts coverage
-    /// (the 58 language codes). Playback catalog remains the five radio streams.
+    /// (the 59 language codes). Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "af", "am", "be", "bem", "bg", "bn", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "ha", "haw", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
         "lv", "mg", "mk", "nb", "ng", "nl", "nn", "ny", "om", "pl", "pt", "pt-BR", "ro", "ru",
-        "se", "sk", "sl", "sq", "sr", "sv", "sw", "ta", "te", "ti", "tr", "uk", "yo", "zu",
+        "se", "sk", "sl", "sq", "sr", "sv", "sw", "ta", "te", "ti", "to", "tr", "uk", "yo", "zu",
         "zh-Hans", "zh-Hant",
     ]
 
@@ -51,7 +51,7 @@ final class AppShortcutsLocalizationTests: XCTestCase {
     /// Sleep-timer utterances. Native in en, de, fi, sv, and et only.
     /// Other UI languages fall back to the English phrase. Siri may not speak
     /// Estonian yet; the et strings are still required here.
-    /// One parameterized set phrase and one cancel phrase. The other 53 UI
+    /// One parameterized set phrase and one cancel phrase. The other 54 UI
     /// languages are not translated here.
     private let sleepTimerPhraseKeys: [String] = [
         "Set a ${duration} sleep timer in ${applicationName}",
