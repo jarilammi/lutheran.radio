@@ -9,6 +9,8 @@
 //  The chain is signed with the same canonical bytes ``DNSSECCrypto/signedMaterial`` verifies.
 //  Bad signature, expired RRSIG, and a wrong trust anchor must still fail.
 //  A self-signed revoked root DNSKEY suppresses that anchor's digest.
+//  An anchor with `trustUntil` also stops matching at that instant, and that
+//  instant is not the revoke signal.
 //  P-256 fixtures are not the IANA 20326 or 38696 key bytes.
 //  One chain uses RSA-SHA256 at the root and a 1024-bit key only for the signer `eu`.
 //  Two zone keys that share a key tag are both tried. A signature from a key
@@ -1249,6 +1251,7 @@ struct DNSSECLocalVerificationTests {
 
     /// Order is KSK-2017 (20326), then KSK-2024 (38696). The timestamps are
     /// `validFrom`, not the 11 October 2026 signing change and not the retirement signal.
+    /// 20326 also has `trustUntil` at 2027-03-22 00:00:00 UTC. 38696 has no compiled end.
     ///
     /// - SeeAlso: ``SecurityConfiguration/ianaRootTrustAnchors``
     @Test("The embedded root anchors are the two current KeyDigests")
@@ -1258,8 +1261,132 @@ struct DNSSECLocalVerificationTests {
         #expect(anchors.allSatisfy { $0.algorithm == 8 && $0.digestType == 2 && $0.digest.count == 32 })
         #expect(anchors[0].validFrom == 1_485_993_600)
         #expect(anchors[1].validFrom == 1_721_260_800)
+        #expect(anchors[0].trustUntil == 1_805_673_600)
+        #expect(anchors[1].trustUntil == nil)
         let resolvers = SecurityConfiguration.current.pinnedDoHResolvers
         #expect(resolvers.map(\.host) == ["cloudflare-dns.com", "dns.google"])
+    }
+
+    /// A compiled end rejects that anchor when the retirement store is empty.
+    /// One second before the end still verifies a set that anchor signs. The
+    /// fixture RRSIG covers both instants, so the 5-minute skew is not what
+    /// accepts or rejects them. The production integer is not used here.
+    ///
+    /// - SeeAlso: ``DNSSECTrustAnchor/trustUntil``, ``<doc:Security-Invariants>`` Invariant 5
+    @Test("A compiled end rejects that anchor when the retirement store is empty")
+    func compiledEndRejectsAnchorWhenStoreIsEmpty() async throws {
+        let ended = try DNSSECFixtureBuilder.allowList(txt: "kailuakona")
+        let open = try DNSSECFixtureBuilder.allowList(txt: "kailuakona")
+        let trustUntil = DNSSECFixtureBuilder.now.timeIntervalSince1970
+        let endedAnchor = ending(ended.anchors[0], at: trustUntil)
+        let openAnchor = open.anchors[0]
+        #expect(openAnchor.trustUntil == nil)
+        let anchors = [endedAnchor, openAnchor]
+        let name = try #require(DNSName(presentation: "securitymodels.siikkari.net"))
+        let before = DNSSECWalk(
+            fetcher: ended.fetcher,
+            anchors: anchors,
+            now: Date(timeIntervalSince1970: trustUntil - 1),
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(await before.txtModels(name: name) == .verified(["kailuakona"]))
+        let atEnd = DNSSECWalk(
+            fetcher: ended.fetcher,
+            anchors: anchors,
+            now: Date(timeIntervalSince1970: trustUntil),
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(await atEnd.txtModels(name: name) == .failed)
+    }
+
+    /// The other anchor still verifies at that end. Both anchors are in the
+    /// list. The open anchor has no compiled end and signs this set.
+    ///
+    /// - SeeAlso: ``DNSSECTrustAnchor/trustUntil``, ``<doc:Security-Invariants>`` Invariant 5
+    @Test("The other anchor still verifies at that end")
+    func otherAnchorStillVerifiesAtCompiledEnd() async throws {
+        let ended = try DNSSECFixtureBuilder.allowList(txt: "kailuakona")
+        let open = try DNSSECFixtureBuilder.allowList(txt: "kailuakona")
+        let trustUntil = DNSSECFixtureBuilder.now.timeIntervalSince1970
+        let anchors = [ending(ended.anchors[0], at: trustUntil), open.anchors[0]]
+        #expect(anchors[1].trustUntil == nil)
+        let name = try #require(DNSName(presentation: "securitymodels.siikkari.net"))
+        let walk = DNSSECWalk(
+            fetcher: open.fetcher,
+            anchors: anchors,
+            now: Date(timeIntervalSince1970: trustUntil),
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(await walk.txtModels(name: name) == .verified(["kailuakona"]))
+    }
+
+    /// A self-signed revoke before that end still stores the digest. The store
+    /// starts empty. The ended anchor's `trustUntil` is after this walk's clock,
+    /// so the early stop is the revoke, same as a self-signed revoked root key.
+    ///
+    /// - SeeAlso: ``RetiredRootAnchorStore``, ``DNSSECTrustAnchor/trustUntil``,
+    ///   ``<doc:Security-Invariants>`` Invariant 5
+    @Test("A self-signed revoke before that end still stores the digest")
+    func selfSignedRevokeBeforeCompiledEndStillStoresDigest() async throws {
+        let fixture = try DNSSECFixtureBuilder.selfRevocation()
+        let trustUntil = DNSSECFixtureBuilder.now.timeIntervalSince1970 + 1
+        let anchors = ending(fixture.retiring.anchors, digest: fixture.retiredDigest, at: trustUntil)
+        #expect(anchors.contains { $0.digest == fixture.survivorDigest && $0.trustUntil == nil })
+        let store = RetiredRootAnchorStore.memory()
+        let retiring = DNSSECWalk(
+            fetcher: fixture.retiring.fetcher,
+            anchors: anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: store
+        )
+        #expect(await retiring.txtModels(name: fixture.childName) == .verified(["kailuakona"]))
+        #expect(await store.suppresses(fixture.retiredDigest))
+        #expect(await store.suppresses(fixture.survivorDigest) == false)
+
+        let fresh = DNSSECWalk(
+            fetcher: fixture.unrevokedCandidate.fetcher,
+            anchors: anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: RetiredRootAnchorStore.memory()
+        )
+        #expect(await fresh.txtModels(name: fixture.probeName) == .verified(["kailuakona"]))
+
+        let suppressed = DNSSECWalk(
+            fetcher: fixture.unrevokedCandidate.fetcher,
+            anchors: anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: store
+        )
+        #expect(await suppressed.txtModels(name: fixture.probeName) == .failed)
+
+        let survivor = DNSSECWalk(
+            fetcher: fixture.survivor.fetcher,
+            anchors: anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: store
+        )
+        #expect(await survivor.txtModels(name: fixture.childName) == .verified(["kailuakona"]))
+    }
+
+    /// A self-signed revoke at that end does not store the digest. The other
+    /// anchor still verifies the child. The ended key is already not trusted.
+    ///
+    /// - SeeAlso: ``DNSSECTrustAnchor/trustUntil``, ``<doc:Security-Invariants>`` Invariant 5
+    @Test("A self-signed revoke at that end does not store the digest")
+    func selfSignedRevokeAtCompiledEndDoesNotStoreDigest() async throws {
+        let fixture = try DNSSECFixtureBuilder.selfRevocation()
+        let trustUntil = DNSSECFixtureBuilder.now.timeIntervalSince1970
+        let anchors = ending(fixture.retiring.anchors, digest: fixture.retiredDigest, at: trustUntil)
+        let store = RetiredRootAnchorStore.memory()
+        let retiring = DNSSECWalk(
+            fetcher: fixture.retiring.fetcher,
+            anchors: anchors,
+            now: DNSSECFixtureBuilder.now,
+            retiredAnchors: store
+        )
+        #expect(await retiring.txtModels(name: fixture.childName) == .verified(["kailuakona"]))
+        #expect(await store.suppresses(fixture.retiredDigest) == false)
+        #expect(await store.suppresses(fixture.survivorDigest) == false)
     }
 
     /// Honest self-revocation. Anchors A and B. The root answer contains B unchanged
@@ -1794,6 +1921,25 @@ struct DNSSECLocalVerificationTests {
         DNSSECResolverWalk.invalidateProductionSessions(fixture)
         #expect(fixture.queries.withLock { $0 }.isEmpty)
         #expect(second._test_openSessionCount == 1)
+    }
+
+    /// Copies `anchor` with an explicit compiled end. The production integer stays out of fixtures.
+    private func ending(_ anchor: DNSSECTrustAnchor, at trustUntil: TimeInterval) -> DNSSECTrustAnchor {
+        var copy = anchor
+        copy.trustUntil = trustUntil
+        return copy
+    }
+
+    /// Copies `anchors`, setting `trustUntil` only on `digest`.
+    private func ending(
+        _ anchors: [DNSSECTrustAnchor],
+        digest: Data,
+        at trustUntil: TimeInterval
+    ) -> [DNSSECTrustAnchor] {
+        anchors.map { anchor in
+            guard anchor.digest == digest else { return anchor }
+            return ending(anchor, at: trustUntil)
+        }
     }
 
     private static func sawRootDNSKEY(_ fetcher: MappedDNSFetcher) -> Bool {

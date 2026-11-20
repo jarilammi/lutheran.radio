@@ -574,20 +574,21 @@ public struct SecurityConfiguration: Sendable {
     /// Current IANA root KeyDigests (DS SHA-256). Not the DNSKEY public keys.
     ///
     /// KSK-2024, key tag 38696, signs the root DNSKEY set as of 11 October 2026.
-    /// That signing-role change does not alter this anchor. KSK-2017, key tag
-    /// 20326, stopped signing on that date and remains usable until the root walk
-    /// observes a self-signed revoked form of that key. The revoked rdata does not
-    /// match this digest: the REVOKE bit changes the flags, so the key tag and the
-    /// digest of the published rdata differ from the stored anchor. The stored
-    /// digest stays trusted until that self-signature verifies. Both digests remain
-    /// in this array afterwards. 11 January 2027 is not the signal.
+    /// That anchor has no compiled end. KSK-2017, key tag 20326, stopped signing
+    /// that day. A self-signed revoked form still retires it early. The digest
+    /// stays in this array after that. The revoked rdata does not match this
+    /// digest: the REVOKE bit changes the flags, so the key tag and the digest
+    /// of the published rdata differ from the stored anchor. 11 January 2027
+    /// is not the signal. `trustUntil` on 20326 is the later backstop: at
+    /// 2027-03-22 00:00:00 UTC and after, that anchor does not match, including
+    /// when the store is empty.
     ///
-    /// `validFrom` is the instant that anchor may be used on the device clock:
+    /// `validFrom` is still only the first instant the digest may be used:
     /// 2 February 2017 UTC for 20326, and 18 July 2024 UTC for 38696. It is not
-    /// the date the signing role changed and it is not the retirement signal.
+    /// the signing-role change and it is not the retirement signal. `trustUntil`
+    /// is not moved by ``maxAllowedTimeSkew`` or the certificate transition window.
     /// Root RRSIG inception and expiration are fetched live and are not recorded
-    /// here. An RRSIG is not extended by ``maxAllowedTimeSkew`` or the certificate
-    /// transition window.
+    /// here. An RRSIG is not extended by those either.
     ///
     /// - SeeAlso: ``DNSSECTrustAnchor``, ``<doc:Security-Invariants>`` Invariant 1,
     ///   ``<doc:Security-Invariants>`` Invariant 5
@@ -602,7 +603,8 @@ public struct SecurityConfiguration: Sendable {
                 0x58, 0xE8, 0x80, 0x40, 0x9B, 0xBC, 0x68, 0x34,
                 0x57, 0x10, 0x42, 0x37, 0xC7, 0xF8, 0xEC, 0x8D,
             ]),
-            validFrom: 1_485_993_600 // 2017-02-02 00:00:00 UTC
+            validFrom: 1_485_993_600, // 2017-02-02 00:00:00 UTC
+            trustUntil: 1_805_673_600 // 2027-03-22 00:00:00 UTC. KSK-2017 leaves the root zone. Not 11 January 2027.
         ),
         DNSSECTrustAnchor(
             keyTag: 38696, // KSK-2024. Signs the root DNSKEY set as of 11 October 2026.

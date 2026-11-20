@@ -21,7 +21,8 @@
 //  that same key with the REVOKE bit set and that key signs the set. The
 //  bytes in ``SecurityConfiguration/ianaRootTrustAnchors`` stay. There is no
 //  hold-down and no trust-anchor add. A revoked key is not returned, so it
-//  cannot validate a child DS or any other RRset.
+//  cannot validate a child DS or any other RRset. An anchor with `trustUntil`
+//  also stops matching at that instant, and that instant is not the revoke signal.
 //
 //  An RRSIG key tag is not unique. Verification tries every key in the list
 //  it was given that shares the tag and algorithm, and fails that signature
@@ -50,23 +51,48 @@ import Network
 @unsafe @preconcurrency import Security
 
 /// One IANA KeyDigest. Values live only in ``SecurityConfiguration``.
+///
+/// `validFrom` is the first instant the digest may be used. `trustUntil`, when
+/// set, is the first instant it is refused. `nil` means no compiled end.
+/// Neither value is the RFC 5011 revoke signal.
+///
+/// - SeeAlso: ``SecurityConfiguration/ianaRootTrustAnchors``,
+///   ``<doc:Security-Invariants>`` Invariant 5
 public struct DNSSECTrustAnchor: Sendable, Equatable {
     public var keyTag: UInt16
     public var algorithm: UInt8
     public var digestType: UInt8
     public var digest: Data
-    /// Unix seconds. An anchor is ignored before this instant.
+    /// Unix seconds on the device clock. The digest may be used at this instant.
     ///
-    /// This is the date the digest may be trusted. It is not the date that key
-    /// took over signing the root DNSKEY set.
+    /// This is not the date that key took over signing the root DNSKEY set.
     public var validFrom: TimeInterval
+    /// Unix seconds on the device clock. The anchor is not accepted at this
+    /// instant or after.
+    ///
+    /// This is not ``validFrom``, not the 11 October 2026 signing change, and
+    /// not the RFC 5011 signal. `nil` means no compiled end.
+    /// ``SecurityConfiguration/maxAllowedTimeSkew`` and the certificate
+    /// transition window do not move this instant.
+    public var trustUntil: TimeInterval?
 
-    public init(keyTag: UInt16, algorithm: UInt8, digestType: UInt8, digest: Data, validFrom: TimeInterval) {
+    /// - Parameters:
+    ///   - trustUntil: Compiled end, in Unix seconds on the device clock.
+    ///     The default `nil` means the digest has no compiled end.
+    public init(
+        keyTag: UInt16,
+        algorithm: UInt8,
+        digestType: UInt8,
+        digest: Data,
+        validFrom: TimeInterval,
+        trustUntil: TimeInterval? = nil
+    ) {
         self.keyTag = keyTag
         self.algorithm = algorithm
         self.digestType = digestType
         self.digest = digest
         self.validFrom = validFrom
+        self.trustUntil = trustUntil
     }
 }
 
@@ -544,9 +570,11 @@ actor RetiredRootAnchorStore {
 /// and starts another. A re-entrant fetch may repeat a query. That costs a
 /// budget slot and does not deadlock. Root-anchor retirement lives in
 /// ``RetiredRootAnchorStore``, which this walk awaits and which does not call
-/// back into the walk. An RRSIG key tag is not unique. Each key in the
-/// authenticated set that shares the tag and algorithm is tried. The set is
-/// not widened. The retirement check still passes the revoked key alone.
+/// back into the walk. An anchor `trustUntil` also stops a match at that
+/// instant and is not written to the store. An RRSIG key tag is not unique.
+/// Each key in the authenticated set that shares the tag and algorithm is
+/// tried. The set is not widened. The retirement check still passes the
+/// revoked key alone.
 ///
 /// - SeeAlso: ``DNSSECResolverWalk``, ``RetiredRootAnchorStore``,
 ///   ``<doc:Security-Invariants>`` Invariant 1 and Invariant 2
@@ -566,7 +594,7 @@ actor DNSSECWalk {
     /// - Parameters:
     ///   - fetcher: DNS wire source. Production posts queries to pinned DoH. Tests return fixtures.
     ///   - anchors: Root KeyDigests. Production passes ``SecurityConfiguration/ianaRootTrustAnchors``.
-    ///   - now: Device clock for RRSIG lifetime and anchor `validFrom`. Not a retirement signal.
+    ///   - now: Device clock for RRSIG lifetime and anchor lifetime (`validFrom`, and `trustUntil` when set). Not a retirement signal.
     ///   - retiredAnchors: Digests already suppressed after a self-signed revocation.
     ///     Production passes ``RetiredRootAnchorStore/shared``. There is no default.
     ///     A default of the shared store would let a test write `UserDefaults.standard`.
@@ -908,9 +936,11 @@ actor DNSSECWalk {
         return found
     }
 
-    /// Stored digest of the anchor whose tag, algorithm, and DS digest match `key`.
+    /// Stored digest of the anchor whose tag, algorithm, DS digest, and compiled
+    /// lifetime match `key`.
     ///
-    /// This names the anchor. It does not apply the retired-digest skip.
+    /// This names the anchor. It does not apply the retired-digest skip. After
+    /// `trustUntil`, a revoked form of that key is not stored.
     private func anchorDigest(matching key: DNSKEYRecord, zone: DNSName) -> Data? {
         let digest = DNSSECCrypto.dsDigest(owner: zone, dnskeyRdata: key.rdata)
         guard digest.count == 32 else { return nil }
@@ -920,7 +950,7 @@ actor DNSSECWalk {
                   anchor.digest.count == 32,
                   anchor.algorithm == key.algorithm,
                   anchor.keyTag == key.keyTag,
-                  now >= anchor.validFrom else {
+                  anchorLifetimeContainsNow(anchor) else {
                 continue
             }
             let expected = CertificateFingerprint(bytes: [UInt8](anchor.digest))
@@ -1007,9 +1037,11 @@ actor DNSSECWalk {
         return false
     }
 
-    /// `true` when `key` matches an anchor whose digest is not in `retired`.
+    /// `true` when `key` matches an anchor whose digest is not in `retired`
+    /// and whose compiled lifetime contains `now`.
     ///
-    /// A retired digest does not match, including when `key` is the old unrevoked rdata.
+    /// A retired digest does not match, including when `key` is the old unrevoked
+    /// rdata. That check stays first. `trustUntil` does not write the store.
     private func matchesAnchor(_ key: DNSKEYRecord, zone: DNSName, retired: [Data]) -> Bool {
         let digest = DNSSECCrypto.dsDigest(owner: zone, dnskeyRdata: key.rdata)
         guard digest.count == 32 else { return false }
@@ -1023,7 +1055,7 @@ actor DNSSECWalk {
                   anchor.digest.count == 32,
                   anchor.algorithm == key.algorithm,
                   anchor.keyTag == key.keyTag,
-                  now >= anchor.validFrom else {
+                  anchorLifetimeContainsNow(anchor) else {
                 continue
             }
             let expected = CertificateFingerprint(bytes: [UInt8](anchor.digest))
@@ -1032,6 +1064,17 @@ actor DNSSECWalk {
             }
         }
         return false
+    }
+
+    /// `true` when the device clock accepts `anchor`.
+    ///
+    /// Acceptance is `now >= validFrom`, and `now < trustUntil` when that end
+    /// is set. The end instant is refused. The 5-minute skew is not applied.
+    /// The retired-digest check stays in ``matchesAnchor(_:zone:retired:)``.
+    private func anchorLifetimeContainsNow(_ anchor: DNSSECTrustAnchor) -> Bool {
+        guard now >= anchor.validFrom else { return false }
+        guard let trustUntil = anchor.trustUntil else { return true }
+        return now < trustUntil
     }
 
     private func digestsMatch(_ left: Data, _ right: Data) -> Bool {
@@ -1125,7 +1168,7 @@ enum DNSSECResolverWalk {
     ///   - fetchers: One walk each. The first may cover every resolver. Each later
     ///     fetcher is one resolver, and it runs only after the previous walk was unverified.
     ///   - anchors: Root KeyDigests.
-    ///   - now: Device clock for RRSIG lifetime and anchor `validFrom`.
+    ///   - now: Device clock for RRSIG lifetime and anchor lifetime (`validFrom`, and `trustUntil` when set).
     ///   - retiredAnchors: Digests already suppressed. Shared across the walks.
     /// - Returns: The first verified set, or ``DNSSECVerifiedTXT/failed`` when every walk fails.
     ///   A missing RRset is not a verified empty set. A present RRset that parses
@@ -1172,7 +1215,7 @@ enum DNSSECResolverWalk {
     ///   - name: Hostname, without a port.
     ///   - fetchers: Same order as ``txtModels(name:fetchers:anchors:now:retiredAnchors:)``.
     ///   - anchors: Root KeyDigests.
-    ///   - now: Device clock for RRSIG lifetime and anchor `validFrom`.
+    ///   - now: Device clock for RRSIG lifetime and anchor lifetime (`validFrom`, and `trustUntil` when set).
     ///   - retiredAnchors: Digests already suppressed. Shared across the walks.
     /// - Returns: Addresses from the first verified walk, or an empty array when every walk fails.
     /// - SeeAlso: ``DNSSECLocalVerification``, ``<doc:Security-Invariants>`` Invariant 2
