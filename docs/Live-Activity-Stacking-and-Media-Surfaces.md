@@ -265,7 +265,7 @@ Mutation-path timeline reloads are driven by the Tier 2 ``PlayerEvent`` observer
 
 **Unit gates:** `SharedPlayerManagerMediaTransportLatencyTests` — `testMediaTransportLatencyTimelineRecordsPauseMailboxAndSoftSilence` (includes single `softSilenceComplete` count), `testMediaTransportLatencyTimelineRecordsLiveActivityTogglePauseChain`.
 
-**Device QA:** Before a lock-screen scenario, optionally call ``MediaTransportLatencyTimeline/reset()`` from a DEBUG hook or rely on process-start origin; then pause/play from Now Playing and Live Activity and read `dt=` on `softSilenceComplete` and `authoritativePlayingPublished`. Each milestone should appear once in the console.
+**Device QA:** Before a lock-screen scenario, optionally call ``MediaTransportLatencyTimeline/reset()`` from a DEBUG hook or rely on process-start origin; then pause/play from Now Playing and Live Activity and read `dt=` on `softSilenceComplete` and `authoritativePlayingPublished`. Each milestone should appear once in the console. Ready-to-play and keep-up observers share one in-flight ``setPlaying`` per ``playbackAttachGeneration``, so `authoritativePlayingPublished` is one mark per admitted publish.
 
 - SeeAlso: ``MediaTransportLatencyTimeline``, docs/Widget-Functionality-Roadmap.md
 
@@ -377,7 +377,7 @@ Required convergence: paused chrome and torn-down Icecast session — never dura
 | readyToPlay first-play kick | `playImmediately` then ``publishAuthoritativePlayingIfNeeded()`` | Authoritative `.playing` |
 | User pause during connect | Sticky `.userPaused` + generation discard (see above) | Paused chrome + silent engine |
 
-**Authoritative publish helper:** ``DirectStreamingPlayer`` `publishAuthoritativePlayingIfNeeded()` calls ``setPlaying()`` only when intent still allows play and visual is not already `.playing` (readyToPlay + timeControl KVO cannot double-emit).
+**Authoritative publish helper:** ``DirectStreamingPlayer/publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)`` admits one in-flight ``setPlaying`` per ``playbackAttachGeneration`` before its first await. A same-generation overlap joins that call. After the claim is released, visual already `.playing` is the sequential no-op.
 
 **Surface paint after ``setPlaying()`` (shared intermediate, independent consumers):**
 

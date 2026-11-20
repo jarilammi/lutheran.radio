@@ -16,7 +16,9 @@
 //  ``audiblePlaybackKickTiming`` /
 //  ``explicitBackgroundPlayHoldDecision`` /
 //  ``shouldReplaceCurrentItemWithNilOnStop`` /
-//  ``shouldAllowAudiblePlaybackKick(startedAt:)`` policy.
+//  ``shouldAllowAudiblePlaybackKick(startedAt:)`` /
+//  ``admitAuthoritativePlayingPublish(inFlight:generation:currentGeneration:nextTicketID:)``
+//  policy (same-generation in-flight ``setPlaying``).
 //
 //  - SeeAlso: ``DirectStreamingPlayer``, ``SharedPlayerManager``,
 //    ``DirectStreamingPlayer/configureAudioSessionAsync()``,
@@ -52,11 +54,13 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         try await super.setUp()
         sanitizeLiveActivityLocalState()
         DirectStreamingPlayer.shared.test_clearPlaybackTeardownGuard()
+        DirectStreamingPlayer.shared.test_clearAuthoritativePlayingPublishClaim()
         DirectStreamingPlayer.shared.test_resetAudioSessionMutationProbe()
         DirectStreamingPlayer.shared.test_resetEmbeddedSecurityModelClusterRejections()
     }
 
     override func tearDown() async throws {
+        DirectStreamingPlayer.shared.test_clearAuthoritativePlayingPublishClaim()
         DirectStreamingPlayer.shared.test_resetAudioSessionMutationProbe()
         DirectStreamingPlayer.shared.test_resetEmbeddedSecurityModelClusterRejections()
         sanitizeLiveActivityLocalState()
@@ -874,10 +878,14 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
     }
 
     /// Engine publish helper is the sole readyToPlay / soft-resume bridge to ``setPlaying()``.
-    /// First call from Connecting (``.prePlay``) must flip chrome; a second call must no-op so
-    /// readyToPlay + timeControl KVO cannot double-emit ``streamDidStart``.
+    /// First call from Connecting (``.prePlay``) must flip chrome. A second call in sequence
+    /// sees visual `.playing` and takes the already-playing no-op. That sequential no-op is
+    /// this test. Two calls that both pass the visual read before either ``setPlaying``
+    /// returns join one in-flight publish; that contract is
+    /// ``testInFlightAuthoritativePlayingPublishLeavesPrePlayUntilTheClaimIsReleased``.
     ///
     /// - SeeAlso: `DirectStreamingPlayer.publishAuthoritativePlayingIfNeeded`,
+    ///   ``DirectStreamingPlayer/admitAuthoritativePlayingPublish(inFlight:generation:currentGeneration:nextTicketID:)``,
     ///   ``SharedPlayerManager/setPlaying()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     func testPublishAuthoritativePlayingIfNeededIsIdempotent() async {
         let engine = DirectStreamingPlayer.shared
@@ -912,6 +920,192 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
             .userPaused,
             "Publish must not override sticky user pause after stop"
         )
+    }
+
+    /// Same-generation overlap joins one ``setPlaying``. A newer generation replaces the
+    /// claim. The replaced ticket’s release leaves the new claim. A stale snapshot does
+    /// not replace storage. Pure: no player and no `UserDefaults`.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/admitAuthoritativePlayingPublish(inFlight:generation:currentGeneration:nextTicketID:)``,
+    ///   ``DirectStreamingPlayer/releaseAuthoritativePlayingPublish(inFlight:ticketID:)``.
+    func testAuthoritativePlayingPublishAdmissionJoinsRefusesReplacesAndReleasesByTicket() {
+        let began = DirectStreamingPlayer.admitAuthoritativePlayingPublish(
+            inFlight: nil,
+            generation: 4,
+            currentGeneration: 4,
+            nextTicketID: 10
+        )
+        let firstClaim = DirectStreamingPlayer.AuthoritativePlayingPublishClaim(
+            ticketID: 10,
+            generation: 4
+        )
+        XCTAssertEqual(began.admission, .begin(firstClaim))
+        XCTAssertEqual(began.inFlight, firstClaim)
+
+        let joined = DirectStreamingPlayer.admitAuthoritativePlayingPublish(
+            inFlight: began.inFlight,
+            generation: 4,
+            currentGeneration: 4,
+            nextTicketID: 11
+        )
+        XCTAssertEqual(joined.admission, .joinInFlight(firstClaim))
+        XCTAssertEqual(
+            joined.inFlight,
+            firstClaim,
+            "Join must not consume nextTicketID into a new claim"
+        )
+
+        let stale = DirectStreamingPlayer.admitAuthoritativePlayingPublish(
+            inFlight: began.inFlight,
+            generation: 3,
+            currentGeneration: 4,
+            nextTicketID: 12
+        )
+        XCTAssertEqual(stale.admission, .refuseStaleGeneration)
+        XCTAssertEqual(stale.inFlight, firstClaim, "A stale snapshot must leave the stored claim")
+
+        let replaced = DirectStreamingPlayer.admitAuthoritativePlayingPublish(
+            inFlight: began.inFlight,
+            generation: 5,
+            currentGeneration: 5,
+            nextTicketID: 20
+        )
+        let replacement = DirectStreamingPlayer.AuthoritativePlayingPublishClaim(
+            ticketID: 20,
+            generation: 5
+        )
+        XCTAssertEqual(replaced.admission, .begin(replacement))
+        XCTAssertEqual(replaced.inFlight, replacement)
+
+        let afterOldRelease = DirectStreamingPlayer.releaseAuthoritativePlayingPublish(
+            inFlight: replaced.inFlight,
+            ticketID: 10
+        )
+        XCTAssertEqual(afterOldRelease, replacement, "The replaced ticket must not clear the new claim")
+
+        let afterNewRelease = DirectStreamingPlayer.releaseAuthoritativePlayingPublish(
+            inFlight: afterOldRelease,
+            ticketID: 20
+        )
+        XCTAssertNil(afterNewRelease, "Release of the stored ticket id clears the claim")
+    }
+
+    /// Holding the claim keeps visual `.prePlay` and records `reason=inFlightPublish`
+    /// without `authoritativePlayingPublished`. Releasing it lets one publish reach
+    /// `.playing` with one published mark.
+    ///
+    /// Why this pattern is required: the visual `!= .playing` read is after an `await`,
+    /// so two callers can both pass it. This test holds the claim the publisher stores
+    /// and does not sleep to overlap two kicks.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``,
+    ///   ``testPublishAuthoritativePlayingIfNeededIsIdempotent``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testInFlightAuthoritativePlayingPublishLeavesPrePlayUntilTheClaimIsReleased() async {
+        let engine = DirectStreamingPlayer.shared
+        let manager = SharedPlayerManager.shared
+
+        await manager.stop()
+        await manager.setUserIntentToPlay()
+        var visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .prePlay, "Arrange: Connecting chrome before the in-flight claim")
+
+        MediaTransportLatencyTimeline._test_resetAndStartCapture()
+        let ticket = engine.test_holdAuthoritativePlayingPublishClaim(
+            generation: engine.test_playbackAttachGeneration
+        )
+        defer {
+            engine.test_releaseAuthoritativePlayingPublishClaim(ticketID: ticket)
+            MediaTransportLatencyTimeline._test_clearCapture()
+        }
+        XCTAssertNotEqual(ticket, 0, "The current generation must begin a claim")
+
+        await engine.test_publishAuthoritativePlayingIfNeeded()
+        visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .prePlay, "An in-flight claim must not call setPlaying")
+        let held = MediaTransportLatencyTimeline._test_samples()
+        XCTAssertTrue(
+            held.contains {
+                $0.milestone == .authoritativePlayingSkipped && $0.detail == "reason=inFlightPublish"
+            },
+            "Join records authoritativePlayingSkipped reason=inFlightPublish"
+        )
+        XCTAssertFalse(
+            held.contains { $0.milestone == .authoritativePlayingPublished },
+            "Join must not record authoritativePlayingPublished"
+        )
+
+        engine.test_releaseAuthoritativePlayingPublishClaim(ticketID: ticket)
+        MediaTransportLatencyTimeline._test_resetAndStartCapture()
+        await engine.test_publishAuthoritativePlayingIfNeeded()
+        visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .playing, "After release, one publish must call setPlaying")
+        let published = MediaTransportLatencyTimeline._test_samples().filter {
+            $0.milestone == .authoritativePlayingPublished
+        }
+        XCTAssertEqual(published.count, 1, "One admitted publish records one authoritativePlayingPublished")
+
+        await manager.stop()
+    }
+
+    /// A snapshot that is not ``playbackAttachGeneration`` refuses at admission
+    /// (`reason=staleGeneration`) and does not replace a claim the current generation holds.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/admitAuthoritativePlayingPublish(inFlight:generation:currentGeneration:nextTicketID:)``,
+    ///   ``testInFlightAuthoritativePlayingPublishLeavesPrePlayUntilTheClaimIsReleased``.
+    func testStaleGenerationAuthoritativePlayingPublishDoesNotTakeTheClaim() async {
+        let engine = DirectStreamingPlayer.shared
+        let manager = SharedPlayerManager.shared
+
+        await manager.stop()
+        await manager.setUserIntentToPlay()
+        var visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .prePlay, "Arrange: Connecting chrome before a stale snapshot")
+
+        MediaTransportLatencyTimeline._test_resetAndStartCapture()
+        let current = engine.test_playbackAttachGeneration
+        let ticket = engine.test_holdAuthoritativePlayingPublishClaim(generation: current)
+        defer {
+            engine.test_releaseAuthoritativePlayingPublishClaim(ticketID: ticket)
+            MediaTransportLatencyTimeline._test_clearCapture()
+        }
+        XCTAssertNotEqual(ticket, 0, "The current generation must begin a claim")
+
+        let stale = await engine.publishAuthoritativePlayingIfNeeded(
+            attachGenerationSnapshot: current &+ 1
+        )
+        XCTAssertEqual(stale, .skipped)
+        visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .prePlay, "A stale snapshot must not call setPlaying")
+        let staleSamples = MediaTransportLatencyTimeline._test_samples()
+        XCTAssertTrue(
+            staleSamples.contains {
+                $0.milestone == .authoritativePlayingSkipped && $0.detail == "reason=staleGeneration"
+            },
+            "Stale admission records authoritativePlayingSkipped reason=staleGeneration"
+        )
+        XCTAssertFalse(
+            staleSamples.contains { $0.milestone == .authoritativePlayingPublished },
+            "A stale snapshot must not record authoritativePlayingPublished"
+        )
+
+        MediaTransportLatencyTimeline._test_resetAndStartCapture()
+        await engine.test_publishAuthoritativePlayingIfNeeded()
+        visual = await manager.currentVisualState
+        XCTAssertEqual(
+            visual,
+            .prePlay,
+            "The stale call must not have replaced the current generation's claim"
+        )
+        let stillHeld = MediaTransportLatencyTimeline._test_samples()
+        XCTAssertTrue(
+            stillHeld.contains {
+                $0.milestone == .authoritativePlayingSkipped && $0.detail == "reason=inFlightPublish"
+            },
+            "The original claim still joins"
+        )
+
+        await manager.stop()
     }
 
     /// An attaching hold whose destination differs from ``attachedItemLanguageCode``

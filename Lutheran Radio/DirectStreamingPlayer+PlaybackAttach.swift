@@ -21,6 +21,11 @@
 //  and does not publish `.playing`. Foreground cold launch does not begin the task.
 //  UITestMode does not call `beginBackgroundTask`.
 //
+//  Same-generation callers of ``publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``
+//  share one in-flight ``setPlaying``. A newer ``playbackAttachGeneration`` replaces that
+//  claim. The older ticket’s release does not clear the replacement. A stale snapshot
+//  does not take the claim.
+//
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
 //  DirectStreamingPlayer remains the public façade; this file owns one domain.
 //
@@ -1052,7 +1057,10 @@ extension DirectStreamingPlayer {
     ///   - generation: Bind/attach snapshot — **not** fire-time ``playbackAttachGeneration``.
     ///     Same token as ``shouldContinueInFlightAttach(startedAt:)``. Do not use
     ///     ``isCurrentlyAttemptingPlayback``; first keep-up often fires after attach returns.
-    /// - Returns: `true` when the chrome-publishing kick ran.
+    /// - Returns: `true` when this generation's chrome-publishing kick ran, including
+    ///   when publish joined an in-flight ``setPlaying`` (``nudgeStaleConnectingPlay()``
+    ///   uses `true` to skip a second `play()`). `false` when the kick waits, is
+    ///   discarded, or publish skips.
     /// - Postcondition: Connecting chrome remains until a kick; user pause / teardown / stale
     ///   generation still wins. A rejected kick does not set ``isSoftPaused`` (user pause is
     ///   Icecast hard teardown).
@@ -1147,7 +1155,9 @@ extension DirectStreamingPlayer {
             safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")
             stopBufferingTimer()
             hasStartedPlaying = true
-            await publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot: generation)
+            let publishResult = await publishAuthoritativePlayingIfNeeded(
+                attachGenerationSnapshot: generation
+            )
             // Stop can hop onto MainActor during publish. Fail closed: do not leave a stale
             // attach's play() as the success result, and do not treat this as soft-pause.
             guard generation == playbackAttachGeneration else {
@@ -1158,10 +1168,20 @@ extension DirectStreamingPlayer {
                 #endif
                 return false
             }
-            #if DEBUG
-            print("[DirectStreamingPlayer] live-attach audible kick — play(), timeControlStatus: \(player?.timeControlStatus.rawValue ?? -1), rate: \(player?.rate ?? -1)")
-            #endif
-            return true
+            switch publishResult {
+            case .published, .alreadyPlaying:
+                #if DEBUG
+                print("[DirectStreamingPlayer] live-attach audible kick — play(), timeControlStatus: \(player?.timeControlStatus.rawValue ?? -1), rate: \(player?.rate ?? -1)")
+                #endif
+                return true
+            case .joinedInFlight:
+                #if DEBUG
+                print("[DirectStreamingPlayer] live-attach audible kick joined in-flight publish")
+                #endif
+                return true
+            case .skipped:
+                return false
+            }
         }
     }
 
@@ -1290,13 +1310,123 @@ extension DirectStreamingPlayer {
         )
     }
 
+    /// One admitted call inside ``publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``.
+    ///
+    /// `ticketID` is the only value ``releaseAuthoritativePlayingPublish(inFlight:ticketID:)``
+    /// may clear. `generation` is the ``playbackAttachGeneration`` that owned ``setPlaying``.
+    ///
+    /// - SeeAlso: ``admitAuthoritativePlayingPublish(inFlight:generation:currentGeneration:nextTicketID:)``,
+    ///   ``publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``.
+    struct AuthoritativePlayingPublishClaim: Equatable, Sendable {
+        /// Identity of this admission. An older call’s release must not match a replacement.
+        var ticketID: UInt64
+        /// ``playbackAttachGeneration`` captured when this claim was stored.
+        var generation: UInt64
+    }
+
+    /// Pure decision for one authoritative-playing publish attempt.
+    ///
+    /// - SeeAlso: ``admitAuthoritativePlayingPublish(inFlight:generation:currentGeneration:nextTicketID:)``.
+    enum AuthoritativePlayingPublishAdmission: Equatable {
+        /// This call owns ``setPlaying`` for `claim`.
+        case begin(AuthoritativePlayingPublishClaim)
+        /// Same generation is already inside publish. Do not call ``setPlaying``.
+        case joinInFlight(AuthoritativePlayingPublishClaim)
+        /// Snapshot is not ``playbackAttachGeneration``. Leave the stored claim unchanged.
+        case refuseStaleGeneration
+    }
+
+    /// What ``publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)`` did.
+    ///
+    /// ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``
+    /// prints the audible-kick success line for ``published`` and ``alreadyPlaying``,
+    /// prints a join line for ``joinedInFlight``, and returns `false` for ``skipped``.
+    ///
+    /// - SeeAlso: ``publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``,
+    ///   ``applyLiveAttachAudibleKickIfReady(itemIsReadyToPlay:isPlaybackLikelyToKeepUp:startedAt:)``.
+    enum AuthoritativePlayingPublishResult: Equatable, Sendable {
+        /// This call ran ``setPlaying``.
+        case published
+        /// Visual was already `.playing`. Sequential no-op, including Live Activity reconcile.
+        case alreadyPlaying
+        /// A same-generation publish is already inside the function. ``setPlaying`` was not called.
+        case joinedInFlight
+        /// Sticky pause, attaching-item refusal, or a stale generation. ``setPlaying`` was not called.
+        case skipped
+    }
+
+    /// Decides whether this call may run ``setPlaying`` for `generation`.
+    ///
+    /// Pure: no actor, no `AVPlayer`, no `UserDefaults`. The caller stores `inFlight`
+    /// and advances its ticket serial only on ``AuthoritativePlayingPublishAdmission/begin``.
+    ///
+    /// - Parameters:
+    ///   - inFlight: Claim already stored, or `nil`.
+    ///   - generation: Snapshot the caller is publishing, or the current generation when it has none.
+    ///   - currentGeneration: Synchronous ``playbackAttachGeneration``.
+    ///   - nextTicketID: Ticket to store if this call begins. Ignored on join and stale refusal.
+    /// - Returns: The admission and the claim storage after the decision. Stale refusal and
+    ///   join leave storage unchanged. Begin replaces it, including when `currentGeneration`
+    ///   is newer than the stored claim.
+    /// - SeeAlso: ``releaseAuthoritativePlayingPublish(inFlight:ticketID:)``,
+    ///   ``publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func admitAuthoritativePlayingPublish(
+        inFlight: AuthoritativePlayingPublishClaim?,
+        generation: UInt64,
+        currentGeneration: UInt64,
+        nextTicketID: UInt64
+    ) -> (admission: AuthoritativePlayingPublishAdmission, inFlight: AuthoritativePlayingPublishClaim?) {
+        guard generation == currentGeneration else {
+            return (.refuseStaleGeneration, inFlight)
+        }
+        if let inFlight, inFlight.generation == generation {
+            return (.joinInFlight(inFlight), inFlight)
+        }
+        let claim = AuthoritativePlayingPublishClaim(ticketID: nextTicketID, generation: generation)
+        return (.begin(claim), claim)
+    }
+
+    /// Clears an in-flight publish claim only when `ticketID` is still the stored one.
+    ///
+    /// An older call’s `defer` passes its own ticket. If a newer generation already
+    /// replaced the claim, that newer claim is returned unchanged.
+    ///
+    /// - Parameters:
+    ///   - inFlight: Claim currently stored, or `nil`.
+    ///   - ticketID: Ticket the finishing call was admitted with.
+    /// - Returns: `nil` when `inFlight?.ticketID` equals `ticketID` (or nothing is stored).
+    ///   Otherwise the existing claim.
+    /// - SeeAlso: ``admitAuthoritativePlayingPublish(inFlight:generation:currentGeneration:nextTicketID:)``.
+    static func releaseAuthoritativePlayingPublish(
+        inFlight: AuthoritativePlayingPublishClaim?,
+        ticketID: UInt64
+    ) -> AuthoritativePlayingPublishClaim? {
+        guard let inFlight, inFlight.ticketID == ticketID else {
+            return inFlight
+        }
+        return nil
+    }
+
     /// Publishes authoritative `.playing` chrome after the engine has started or resumed audible output.
+    ///
+    /// One in-flight call per ``playbackAttachGeneration`` owns ``setPlaying``.
+    /// Admission runs on the main actor before ``canProceedWithPlayback()``, so
+    /// ready-to-play and keep-up observers cannot both pass the visual read and
+    /// both emit `streamDidStart`. A same-generation overlap joins: it does not
+    /// call ``setPlaying``, does not run the settled Live Activity pushes, and
+    /// does not mark `authoritativePlayingPublished`. A newer
+    /// ``playbackAttachGeneration`` replaces the claim. The older call’s release
+    /// clears storage only when its ticket id still matches. A snapshot that is
+    /// not the current generation refuses without replacing the claim
+    /// (`reason=staleGeneration`).
     ///
     /// Call only after a rate kick / soft-resume `playImmediately` (or equivalent KVO observation of
     /// live play). Live attach must have passed ``audiblePlaybackKickTiming`` (keep-up, not bare
     /// `.readyToPlay`). Skips when sticky pause/lock already won. When visual is already `.playing`,
-    /// skips actor mutation / `streamDidStart` re-emit so keep-up + timeControl KVO cannot
-    /// thrash surfaces — but still reconciles Live Activity owned language via
+    /// returns ``AuthoritativePlayingPublishResult/alreadyPlaying`` and skips actor mutation /
+    /// `streamDidStart` re-emit so a sequential second call cannot thrash surfaces — but still
+    /// reconciles Live Activity owned language via
     /// ``RadioLiveActivityManager/pushSettledLanguageAcceptanceContentIfNeeded()`` and owned
     /// visual via ``RadioLiveActivityManager/pushSettledPlayingAcceptanceContentIfNeeded()``
     /// (plus soft playing ensure when quiet is not engaged) so soft-resume (or a no-op publish
@@ -1305,7 +1435,9 @@ extension DirectStreamingPlayer {
     /// or a committed observation closed it and the spaced retry has not yet pushed,
     /// and owned visual is still ``.prePlay``, that reconcile is skipped. In-app chrome
     /// stays green. The skip leaves the spaced long-horizon playing retry scheduled.
-    /// That retry is the next Live Activity visual push.
+    /// That retry is the next Live Activity visual push. The in-flight claim covers
+    /// only the window while the first call is still inside this function. The
+    /// already-playing no-op is the sequential second call.
     ///
     /// While an attaching Connecting hold is active, this returns without
     /// ``SharedPlayerManager/setPlaying(audibleAttachedLanguage:enforceAttachingDestination:)``
@@ -1320,10 +1452,18 @@ extension DirectStreamingPlayer {
     /// ``SharedPlayerManager`` cannot read ``playbackAttachGeneration``.
     ///
     /// - Parameter attachGenerationSnapshot: Bind/attach generation from a caller that
-    ///   already captured one (live-attach kick, KVO). `nil` when the caller has no snapshot.
+    ///   already captured one (live-attach kick, KVO). `nil` reads the current
+    ///   ``playbackAttachGeneration`` synchronously for admission.
+    /// - Returns: ``AuthoritativePlayingPublishResult/published`` when this call ran
+    ///   ``setPlaying``. ``alreadyPlaying`` when visual was already `.playing`.
+    ///   ``joinedInFlight`` when a same-generation publish was already inside this
+    ///   function. ``skipped`` for sticky pause, a non-destination attaching item,
+    ///   or a stale generation.
     /// - Important: Never call from the start of ``SharedPlayerManager/play()`` or from
     ///   ``startPlayback(context:attachGeneration:)`` while still awaiting `isPlaybackLikelyToKeepUp`.
-    /// - SeeAlso: ``shouldPublishAuthoritativePlayingForAudibleItem(canProceedWithPlayback:isStreamSwitchPrePlayHoldActive:attachedItemLanguageCode:destinationLanguageCode:attachGenerationSnapshot:currentAttachGeneration:)``,
+    /// - SeeAlso: ``admitAuthoritativePlayingPublish(inFlight:generation:currentGeneration:nextTicketID:)``,
+    ///   ``releaseAuthoritativePlayingPublish(inFlight:ticketID:)``,
+    ///   ``shouldPublishAuthoritativePlayingForAudibleItem(canProceedWithPlayback:isStreamSwitchPrePlayHoldActive:attachedItemLanguageCode:destinationLanguageCode:attachGenerationSnapshot:currentAttachGeneration:)``,
     ///   ``SharedPlayerManager/setPlaying(audibleAttachedLanguage:enforceAttachingDestination:)``,
     ///   ``shouldAllowAudiblePlaybackKick(startedAt:)``,
     ///   ``RadioLiveActivityManager/pushSettledLanguageAcceptanceContentIfNeeded()``,
@@ -1334,7 +1474,53 @@ extension DirectStreamingPlayer {
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (connecting chrome vs audible start),
     ///   ``MediaTransportLatencyTimeline`` (DEBUG first-audio milestone).
     @MainActor
-    func publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot: UInt64? = nil) async {
+    @discardableResult
+    func publishAuthoritativePlayingIfNeeded(
+        attachGenerationSnapshot: UInt64? = nil
+    ) async -> AuthoritativePlayingPublishResult {
+        let generation = attachGenerationSnapshot ?? playbackAttachGeneration
+        let nextTicketID = authoritativePlayingPublishTicketSerial &+ 1
+        let decision = Self.admitAuthoritativePlayingPublish(
+            inFlight: authoritativePlayingPublishInFlight,
+            generation: generation,
+            currentGeneration: playbackAttachGeneration,
+            nextTicketID: nextTicketID
+        )
+        let ownedTicketID: UInt64
+        switch decision.admission {
+        case .joinInFlight:
+            #if DEBUG
+            print("[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded joined in-flight publish")
+            MediaTransportLatencyTimeline.mark(
+                .authoritativePlayingSkipped,
+                detail: "reason=inFlightPublish"
+            )
+            #endif
+            return .joinedInFlight
+        case .refuseStaleGeneration:
+            #if DEBUG
+            print(
+                "[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded skipped — " +
+                "attach generation snapshot is not playbackAttachGeneration"
+            )
+            MediaTransportLatencyTimeline.mark(
+                .authoritativePlayingSkipped,
+                detail: "reason=staleGeneration"
+            )
+            #endif
+            return .skipped
+        case .begin(let claim):
+            authoritativePlayingPublishTicketSerial = claim.ticketID
+            authoritativePlayingPublishInFlight = decision.inFlight
+            ownedTicketID = claim.ticketID
+        }
+        defer {
+            authoritativePlayingPublishInFlight = Self.releaseAuthoritativePlayingPublish(
+                inFlight: authoritativePlayingPublishInFlight,
+                ticketID: ownedTicketID
+            )
+        }
+
         let canProceed = await SharedPlayerManager.shared.canProceedWithPlayback()
         guard canProceed else {
             #if DEBUG
@@ -1344,7 +1530,7 @@ extension DirectStreamingPlayer {
                 detail: "reason=stickyPauseOrLock"
             )
             #endif
-            return
+            return .skipped
         }
         let holdActive = await SharedPlayerManager.shared.isStreamSwitchPrePlayHoldActive
         let destination = await SharedPlayerManager.shared.streamSwitchConnectingLanguageCode
@@ -1366,7 +1552,7 @@ extension DirectStreamingPlayer {
                 detail: "reason=staleAttachingItem"
             )
             #endif
-            return
+            return .skipped
         }
         let visual = await SharedPlayerManager.shared.currentVisualState
         guard visual != .playing else {
@@ -1388,7 +1574,7 @@ extension DirectStreamingPlayer {
                     detail: "reason=unconfirmedPlayingApply"
                 )
                 #endif
-                return
+                return .alreadyPlaying
             }
             #if DEBUG
             print("[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded no-op — already .playing")
@@ -1406,7 +1592,7 @@ extension DirectStreamingPlayer {
             await RadioLiveActivityManager.shared.pushSettledLanguageAcceptanceContentIfNeeded()
             await RadioLiveActivityManager.shared.pushSettledPlayingAcceptanceContentIfNeeded()
             await RadioLiveActivityManager.shared.ensureAuthoritativePlayingContentIfNeeded()
-            return
+            return .alreadyPlaying
         }
         // `playbackAttachGeneration` lives on this type. Re-read it on this turn,
         // immediately before the actor hop. The visual sample above can suspend, and
@@ -1423,7 +1609,7 @@ extension DirectStreamingPlayer {
                 detail: "reason=staleAttachingItem"
             )
             #endif
-            return
+            return .skipped
         }
         let audibleLanguage = attachedItemLanguageCode
         await SharedPlayerManager.shared.setPlaying(
@@ -1434,6 +1620,7 @@ extension DirectStreamingPlayer {
         print("[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded → setPlaying after audible start")
         MediaTransportLatencyTimeline.mark(.authoritativePlayingPublished)
         #endif
+        return .published
     }
 
     #if DEBUG
@@ -1498,6 +1685,51 @@ extension DirectStreamingPlayer {
     @MainActor
     func test_publishAuthoritativePlayingIfNeeded() async {
         await publishAuthoritativePlayingIfNeeded()
+    }
+
+    /// Stores one in-flight publish claim for `generation` in the same storage ``admitAuthoritativePlayingPublish`` writes.
+    ///
+    /// - Parameter generation: Must equal ``playbackAttachGeneration`` when the test expects `.begin`.
+    /// - Returns: Ticket id to pass to ``test_releaseAuthoritativePlayingPublishClaim(ticketID:)``.
+    ///   `0` when admission was not `.begin` (nothing was stored).
+    /// - SeeAlso: ``admitAuthoritativePlayingPublish(inFlight:generation:currentGeneration:nextTicketID:)``.
+    @MainActor
+    @discardableResult
+    func test_holdAuthoritativePlayingPublishClaim(generation: UInt64) -> UInt64 {
+        let nextTicketID = authoritativePlayingPublishTicketSerial &+ 1
+        let decision = Self.admitAuthoritativePlayingPublish(
+            inFlight: authoritativePlayingPublishInFlight,
+            generation: generation,
+            currentGeneration: playbackAttachGeneration,
+            nextTicketID: nextTicketID
+        )
+        guard case .begin(let claim) = decision.admission else {
+            return 0
+        }
+        authoritativePlayingPublishTicketSerial = claim.ticketID
+        authoritativePlayingPublishInFlight = decision.inFlight
+        return claim.ticketID
+    }
+
+    /// Releases one publish claim by ticket id. A mismatched id leaves a newer claim stored.
+    ///
+    /// - Parameter ticketID: Value returned by ``test_holdAuthoritativePlayingPublishClaim(generation:)``.
+    /// - SeeAlso: ``releaseAuthoritativePlayingPublish(inFlight:ticketID:)``.
+    @MainActor
+    func test_releaseAuthoritativePlayingPublishClaim(ticketID: UInt64) {
+        authoritativePlayingPublishInFlight = Self.releaseAuthoritativePlayingPublish(
+            inFlight: authoritativePlayingPublishInFlight,
+            ticketID: ticketID
+        )
+    }
+
+    /// Drops a leaked in-flight publish claim between tests.
+    ///
+    /// Production release is ticket-id only. This seam exists so one case cannot
+    /// leave ``authoritativePlayingPublishInFlight`` set for the shared engine.
+    @MainActor
+    func test_clearAuthoritativePlayingPublishClaim() {
+        authoritativePlayingPublishInFlight = nil
     }
 
     /// Test seam: await hard-teardown completion (production ``stopAndWait``).

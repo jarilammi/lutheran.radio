@@ -472,6 +472,22 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// ``playbackAttachGeneration``.
     var playbackAttachGeneration: UInt64 = 0
 
+    /// In-flight authoritative `.playing` publish for one ``playbackAttachGeneration``.
+    ///
+    /// Stored before the first `await` inside
+    /// ``publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``.
+    /// A same-generation caller joins this claim. A newer generation replaces it.
+    /// Release clears it only when the ticket id still matches, so the older call
+    /// cannot drop the replacement. Main-actor instance storage — not static.
+    ///
+    /// - SeeAlso: ``admitAuthoritativePlayingPublish(inFlight:generation:currentGeneration:nextTicketID:)``,
+    ///   ``releaseAuthoritativePlayingPublish(inFlight:ticketID:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    var authoritativePlayingPublishInFlight: AuthoritativePlayingPublishClaim?
+
+    /// Next ticket id passed to ``admitAuthoritativePlayingPublish``. Advanced only on `.begin`.
+    var authoritativePlayingPublishTicketSerial: UInt64 = 0
+
 
     // MARK: - Playback attach / recovery / observers (domain files)
     // PlaybackAttachState, prepareStreamChoice, attachAndPlay, startPlayback, generation → +PlaybackAttach

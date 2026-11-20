@@ -91,7 +91,12 @@ enum MediaTransportLatencyTimeline: Sendable {
 
         /// ``publishAuthoritativePlayingIfNeeded`` called ``setPlaying()`` after audible start.
         case authoritativePlayingPublished
-        /// Authoritative playing publish skipped (sticky pause or already playing).
+        /// Authoritative playing publish skipped.
+        ///
+        /// Detail `reason=` is `stickyPauseOrLock`, `alreadyPlaying`, or `inFlightPublish`
+        /// when a same-generation publish is already inside
+        /// ``DirectStreamingPlayer/publishAuthoritativePlayingIfNeeded(attachGenerationSnapshot:)``.
+        /// Attaching-item and generation mismatches use `staleAttachingItem` or `staleGeneration`.
         case authoritativePlayingSkipped
         /// In-app chrome applied `.playing` while SPM still held deferred Connecting (`.prePlay`).
         /// Marks coordinator chrome catch-up after engine `status_playing` / audible rate
