@@ -1,6 +1,6 @@
 # ``Lutheran_Radio``
 
-Lutheran Radio is a security-first iOS streaming application for Lutheran Radio, with UI in 59 languages and five playback streams (en, de, fi, sv, et).
+Lutheran Radio is a security-first iOS streaming application for Lutheran Radio, with UI in 60 languages and five playback streams (en, de, fi, sv, et).
 
 ## Overview
 

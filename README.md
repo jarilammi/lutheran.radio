@@ -60,6 +60,7 @@ The app is fully localized in the following languages:
 - Icelandic (is)
 - Indonesian (id)
 - Italian (it)
+- Japanese (ja)
 - Kalaallisut (kl)
 - Latvian (lv)
 - Lithuanian (lt)
