@@ -692,6 +692,30 @@ final class AppShortcutsLocalizationTests: XCTestCase {
         )
     }
 
+    /// Compiled Japanese phrases stay standard Japanese and keep the Siri tokens.
+    ///
+    /// The every-language check only rejects an English fallback. These strings
+    /// are the catalog values for locale `ja`. The request form is the spoken
+    /// command. Sleep-timer phrases stay the English fallback.
+    func testCompiledJapanesePlayAndPausePhrasesAreNative() {
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName}", language: "ja"),
+            "${applicationName}を再生して"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Pause ${applicationName}", language: "ja"),
+            "${applicationName}を一時停止して"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName} in ${language}", language: "ja"),
+            "${language}で${applicationName}を再生して"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Switch ${applicationName} to ${language}", language: "ja"),
+            "${applicationName}を${language}に切り替えて"
+        )
+    }
+
     /// Compiled sleep-timer phrases for the five spoken languages.
     ///
     /// German, Finnish, Swedish, and Estonian are native-review candidates.
