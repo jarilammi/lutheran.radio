@@ -767,7 +767,7 @@ This table is the source of truth for the historical record of security models (
 | `sunshinecoast`     | November 5, 2026   | (ongoing)          | 27.2.1                 |
 | `maryborough`       | November 12, 2026  | (ongoing)          | 27.2.2                 |
 | `goombungee`        | November 19, 2026  | (ongoing)          | 27.2.3                 |
-| `toowoomba`         | (pending)          | (pending)          | 27.2.4                 |
+| `toowoomba`         | November 27, 2026  | (ongoing)          | 27.2.4                 |
 
 **Notes:**
 - **Valid From:** The App Store publication date for this name. Stays `(pending)` until that publication commit. A DNS listing is not this date.
@@ -789,7 +789,7 @@ See also: ``<doc:Security-Invariants>`` (Invariant 1 and "Enforcement"), "Verify
 
 ### Why Track Security Model Names?
 
-Security model names (e.g., ```dallas```, ```montereypark```, ```kailuakona```, ```sunshinecoast```, ```maryborough```) are embedded in the app and validated against the DNS TXT record before any streaming is permitted. Once a name is used, it becomes part of the app's permanent history and may still exist in older App Store versions. Reusing a name could allow an older version to pass validation in some cases.
+Security model names (e.g., ```dallas```, ```montereypark```, ```kailuakona```, ```sunshinecoast```, ```maryborough```, ```goombungee```, ```toowoomba```) are embedded in the app and validated against the DNS TXT record before any streaming is permitted. Once a name is used, it becomes part of the app's permanent history and may still exist in older App Store versions. Reusing a name could allow an older version to pass validation in some cases.
 
 **Why this matters (explicit invariant):** The DNS TXT mechanism plus the history table together provide a forward-only, collision-resistant way to rotate the approved security implementation without breaking the "no bypass" rule or requiring clients to trust arbitrary future names.
 
