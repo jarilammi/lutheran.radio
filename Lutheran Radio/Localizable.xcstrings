@@ -159,6 +159,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -849,6 +855,18 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld lingue"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld言語"
                 }
               }
             }
@@ -1674,6 +1692,12 @@
             "value" : "Tocca due volte per selezionare il dispositivo di uscita audio"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダブルタップして音声出力機器を選択します"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2030,6 +2054,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mostra informazioni sul programma radiofonico in corso"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在のラジオ番組の情報を表示します"
           }
         },
         "kl" : {
@@ -2390,6 +2420,12 @@
             "value" : "Attiva o disattiva la riproduzione del flusso radio"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ラジオ放送を再生または一時停止します"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2746,6 +2782,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Scegli dopo quanto tempo interrompere la riproduzione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生が停止するまでの時間を選びます"
           }
         },
         "kl" : {
@@ -3106,6 +3148,12 @@
             "value" : "Regola il volume di riproduzione"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生の音量を調節します"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3459,6 +3507,12 @@
           }
         },
         "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "ja" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -3823,6 +3877,12 @@
             "value" : "Logo Lutheran Radio"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioのロゴ"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4179,6 +4239,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一時停止"
           }
         },
         "kl" : {
@@ -4540,6 +4606,12 @@
             "value" : "Foto di %@"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@の写真"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4896,6 +4968,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Riproduci"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生"
           }
         },
         "kl" : {
@@ -5256,6 +5334,12 @@
             "value" : "Timer di spegnimento"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スリープタイマー"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5612,6 +5696,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volume"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音量"
           }
         },
         "kl" : {
@@ -6304,6 +6394,18 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld percento"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lldパーセント"
                 }
               }
             }
@@ -7129,6 +7231,12 @@
             "value" : "Continua"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "続ける"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7485,6 +7593,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Riprova"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再試行"
           }
         },
         "kl" : {
@@ -7845,6 +7959,12 @@
             "value" : "Consenti per questa sessione"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このセッションのみ許可"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8201,6 +8321,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Consenti sempre"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常に許可"
           }
         },
         "kl" : {
@@ -8561,6 +8687,12 @@
             "value" : "Non ora"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今はしない"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8917,6 +9049,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cancella"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "消去"
           }
         },
         "kl" : {
@@ -9277,6 +9415,12 @@
             "value" : "Cancellato"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "消去しました"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9633,6 +9777,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Questo interromperà la riproduzione, rimuoverà i dati del widget e dell’Attività in tempo reale e cancellerà lo stato di ascolto recente da questo dispositivo. L’azione non può essere annullata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生を停止し、WidgetとLive Activityのデータを削除して、このデバイスの最近の再生状態を消去します。この操作は取り消せません。"
           }
         },
         "kl" : {
@@ -9993,6 +10143,12 @@
             "value" : "Cancella lo stato di riproduzione locale"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ローカルの再生状態を消去"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10349,6 +10505,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Configurazione del widget Lutheran Radio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio Widgetの構成。"
           }
         },
         "kl" : {
@@ -10710,6 +10872,12 @@
             "value" : "Errore di connessione"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接続エラー"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11069,6 +11237,12 @@
             "value" : "Controlla la riproduzione di Lutheran Radio e vedi la stazione attuale."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioの再生を操作し、現在の放送局を表示します。"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11425,6 +11599,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Controlla la riproduzione e passa da un flusso linguistico all’altro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生を操作し、言語の放送を切り替えます。"
           }
         },
         "kl" : {
@@ -11786,6 +11966,12 @@
             "value" : "Riduci il volume"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音量を下げる"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12145,6 +12331,12 @@
             "value" : "Aumenta il volume"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音量を上げる"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12501,6 +12693,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "In riproduzione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生中"
           }
         },
         "kl" : {
@@ -12862,6 +13060,12 @@
             "value" : "Lingua"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "言語"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13218,6 +13422,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Codice lingua"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "言語コード"
           }
         },
         "kl" : {
@@ -13579,6 +13789,12 @@
             "value" : "Inglese"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "英語"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13936,6 +14152,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estone"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エストニア語"
           }
         },
         "kl" : {
@@ -14297,6 +14519,12 @@
             "value" : "Finlandese"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フィンランド語"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14654,6 +14882,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tedesco"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ドイツ語"
           }
         },
         "kl" : {
@@ -15015,6 +15249,12 @@
             "value" : "Svedese"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スウェーデン語"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15372,6 +15612,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Diretta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 生放送"
           }
         },
         "kl" : {
@@ -15733,6 +15979,12 @@
             "value" : "Solo locale"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ローカルのみ"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16087,6 +16339,12 @@
           }
         },
         "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "ja" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -16451,6 +16709,12 @@
             "value" : "Lingua successiva"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次の言語"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16808,6 +17072,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Riproduci/Pausa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生/一時停止"
           }
         },
         "kl" : {
@@ -17169,6 +17439,12 @@
             "value" : "Riproduzione"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17526,6 +17802,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lingua precedente"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前の言語"
           }
         },
         "kl" : {
@@ -17886,6 +18168,12 @@
             "value" : "L’app sta usando i dati cellulare, il che può comportare costi in base al tuo piano dati."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアプリはモバイルデータを使用しています。料金プランによっては通信料が発生する場合があります。"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18242,6 +18530,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uso dei dati cellulare"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モバイルデータ通信"
           }
         },
         "kl" : {
@@ -18602,6 +18896,12 @@
             "value" : "Nessuna informazione sul brano"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "曲の情報はありません"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18960,6 +19260,12 @@
             "value" : "Ora in riproduzione"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在再生中"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19313,6 +19619,12 @@
           }
         },
         "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "ja" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -19677,6 +19989,12 @@
             "value" : "Apri prima l’app"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先にアプリを開く"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20035,6 +20353,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mettere in pausa Lutheran Radio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioを一時停止"
           }
         },
         "kl" : {
@@ -20396,6 +20720,12 @@
             "value" : "Mettere in pausa la riproduzione di Lutheran Radio."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioの再生を一時停止します。"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20752,6 +21082,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Riproduci"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生"
           }
         },
         "kl" : {
@@ -21113,6 +21449,12 @@
             "value" : "Riproduci Lutheran Radio"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioを再生"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21469,6 +21811,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Riprodurre o mettere in pausa Lutheran Radio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioを再生または一時停止します。"
           }
         },
         "kl" : {
@@ -21830,6 +22178,12 @@
             "value" : "Riprodurre o riprendere Lutheran Radio."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioを再生または再開します。"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22186,6 +22540,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Impossibile avviare la riproduzione a causa di un errore di convalida della sicurezza. Controlla la connessione Internet e assicurati che l’app sia aggiornata. Se il problema persiste, riavvia l’app e riprova."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "セキュリティの確認に失敗したため、再生を開始できません。インターネット接続を確認し、アプリが最新であることを確かめてください。問題が続く場合は、アプリを再起動してからやり直してください。"
           }
         },
         "kl" : {
@@ -22546,6 +22906,12 @@
             "value" : "Convalida della sicurezza non riuscita"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "セキュリティの確認に失敗しました"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22903,6 +23269,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Seleziona %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@を選択"
           }
         },
         "kl" : {
@@ -23595,6 +23967,18 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld minuti rimanenti"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "残り%lld分"
                 }
               }
             }
@@ -24420,6 +24804,12 @@
             "value" : "Annulla timer"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タイマーをキャンセル"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -24776,6 +25166,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minuti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15分"
           }
         },
         "kl" : {
@@ -25136,6 +25532,12 @@
             "value" : "30 minuti"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30分"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25492,6 +25894,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 minuti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45分"
           }
         },
         "kl" : {
@@ -25852,6 +26260,12 @@
             "value" : "60 minuti"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60分"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26208,6 +26622,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Timer di spegnimento"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スリープタイマー"
           }
         },
         "kl" : {
@@ -26568,6 +26988,12 @@
             "value" : "I server di streaming hanno rinnovato i certificati SSL. L’app funziona in modalità di compatibilità. Aggiorna all’ultima versione non appena disponibile per una sicurezza ottimale."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ストリーミングサーバーがSSL証明書を更新しました。アプリは互換モードで動作しています。最適なセキュリティのため、新しいバージョンが公開されたら更新してください。"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26924,6 +27350,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Certificato aggiornato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "証明書を更新しました"
           }
         },
         "kl" : {
@@ -27285,6 +27717,12 @@
             "value" : "Avviare o riprendere la riproduzione di Lutheran Radio."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioの再生を開始または再開します。"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27641,6 +28079,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Avviare o interrompere la riproduzione di Lutheran Radio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioの再生を開始または停止します。"
           }
         },
         "kl" : {
@@ -28001,6 +28445,12 @@
             "value" : "Buffer"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バッファ"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28357,6 +28807,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Connessione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接続"
           }
         },
         "kl" : {
@@ -28717,6 +29173,12 @@
             "value" : "Errore"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失敗"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29075,6 +29537,12 @@
             "value" : "Offline"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフライン"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29431,6 +29899,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pausa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一時停止"
           }
         },
         "kl" : {
@@ -29792,6 +30266,12 @@
             "value" : "In pausa – Chiamata in corso"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一時停止 – 通話中"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30149,6 +30629,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Riproduzione non riuscita: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生に失敗しました：%@"
           }
         },
         "kl" : {
@@ -30510,6 +30996,12 @@
             "value" : "Riproduzione"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30866,6 +31358,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sicurezza"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "セキュリティ"
           }
         },
         "kl" : {
@@ -31226,6 +31724,12 @@
             "value" : "Certificato SSL rinnovato – aggiorna l’app a breve"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL証明書を更新済み - すぐにアプリを更新"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31582,6 +32086,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fermato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止"
           }
         },
         "kl" : {
@@ -31942,6 +32452,12 @@
             "value" : "Spento"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフ"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32298,6 +32814,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dispositivo caldo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端末が熱い"
           }
         },
         "kl" : {
@@ -32658,6 +33180,12 @@
             "value" : "La trasmissione non è temporaneamente disponibile. Riprova più tardi."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放送は一時的に利用できません。しばらくしてからやり直してください。"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -33014,6 +33542,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Trasmissione non disponibile"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放送を利用できません"
           }
         },
         "kl" : {
@@ -33375,6 +33909,12 @@
             "value" : "Cambiare il flusso linguistico di Lutheran Radio."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioの言語の放送を切り替えます。"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -33731,6 +34271,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cambia flusso"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放送を切り替え"
           }
         },
         "kl" : {
@@ -34092,6 +34638,12 @@
             "value" : "Passa a %@"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@に切り替え"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -34448,6 +35000,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Passa a un altro flusso linguistico dall’Attività in tempo reale."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activityから別の言語の放送に切り替えます。"
           }
         },
         "kl" : {
@@ -34808,6 +35366,12 @@
             "value" : "Passa a un altro flusso linguistico."
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別の言語の放送に切り替えます。"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -35165,6 +35729,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Passato a %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@に切り替えました"
           }
         },
         "kl" : {
@@ -35527,6 +36097,12 @@
             "value" : "Tocca per aprire"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タップして開く"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -35884,6 +36460,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Attiva/disattiva Lutheran Radio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioを切り替え"
           }
         },
         "kl" : {
@@ -36244,6 +36826,12 @@
             "value" : "Attiva/disattiva la riproduzione di Lutheran Radio"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radioの再生を切り替え"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -36600,6 +37188,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Attiva/disattiva riproduzione/pausa dall’Attività in tempo reale."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activityから再生または一時停止します。"
           }
         },
         "kl" : {
@@ -36959,6 +37553,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Attiva/disattiva riproduzione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生または一時停止"
           }
         },
         "kl" : {
@@ -37651,6 +38251,18 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "Volume impostato al %lld percento"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "音量を%lldパーセントに設定しました"
                 }
               }
             }
@@ -38474,6 +39086,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Configurazione del widget"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Widgetの構成"
           }
         },
         "kl" : {

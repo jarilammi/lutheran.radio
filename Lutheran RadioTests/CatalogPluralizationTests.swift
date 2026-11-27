@@ -8,8 +8,8 @@
 //  ("1 minutes remaining"). Production uses String(localized:defaultValue:)
 //  interpolation so Foundation can select the CLDR category.
 //
-//  Coverage is both catalog structure and compiled runtime for every README
-//  Localizations language (59 codes), not a 10-locale subset. A missing or
+//  Coverage is both catalog structure and compiled runtime for every language
+//  this gate lists (60 codes, including Japanese), not a 10-locale subset. A missing or
 //  wrong Slovak `few` string, a dropped Northern Sami `two`, or a missing
 //  Latvian `zero` must fail CI. Integer-unreachable `many` (cs, sk, lt) and
 //  decimal-only `other` (be, pl, ru, uk) are catalog-gated; integer probes skip them.
@@ -36,11 +36,11 @@ final class CatalogPluralizationTests: XCTestCase {
     /// a Polish `.lproj` without `locale: "pl"` still applies Finnish one/other rules.
     private let appBundle = Bundle(for: PlayerViewModel.self)
 
-    /// UI catalog languages: README Localizations / Localizable coverage (the 59
-    /// language codes). Playback catalog remains the five radio streams.
+    /// UI catalog languages this plural gate checks (60 codes, including `ja`).
+    /// Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "af", "am", "be", "bem", "bg", "bn", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
-        "fo", "fr", "gag", "ha", "haw", "hi", "hr", "hu", "id", "is", "it", "kl", "lt",
+        "fo", "fr", "gag", "ha", "haw", "hi", "hr", "hu", "id", "is", "it", "ja", "kl", "lt",
         "lv", "mg", "mk", "nb", "ng", "nl", "nn", "ny", "om", "pl", "pt", "pt-BR", "ro", "ru",
         "se", "sk", "sl", "sq", "sr", "sv", "sw", "ta", "te", "ti", "to", "tr", "uk", "yo", "zu",
         "zh-Hans", "zh-Hant",
@@ -87,6 +87,7 @@ final class CatalogPluralizationTests: XCTestCase {
         "id": ["other"],
         "is": ["one", "other"],
         "it": ["one", "other"],
+        "ja": ["other"],
         "kl": ["one", "other"],
         "lt": ["one", "few", "many", "other"],
         "lv": ["zero", "one", "other"],
@@ -140,7 +141,7 @@ final class CatalogPluralizationTests: XCTestCase {
         XCTAssertEqual(
             Set(requiredCatalogCategories.keys),
             Set(supportedLanguages),
-            "requiredCatalogCategories must list exactly the 59 UI catalog languages"
+            "requiredCatalogCategories must list exactly the 60 plural-gate languages"
         )
 
         let catalog = try loadLocalizableCatalog()
@@ -391,9 +392,9 @@ final class CatalogPluralizationTests: XCTestCase {
     /// four tables. `testRuntimeProbesCoverEveryLocaleAndIntegerReachableCategory`
     /// is the completeness gate — listing the code in `supportedLanguages` alone
     /// is not enough. Yoruba (`yo`), Chinese Simplified (`zh-Hans`), Chinese
-    /// Traditional (`zh-Hant`), and Tongan (`to`) are `other` only, same slot as
-    /// `id` and `ng`. Tongan has no `one`; the probe is count 2. The okina is
-    /// U+02BB, and `pēseti` uses macron U+0113.
+    /// Traditional (`zh-Hant`), Tongan (`to`), and Japanese (`ja`) are `other`
+    /// only, same slot as `id` and `ng`. Tongan and Japanese have no `one`; the
+    /// probe is count 2. The Tongan okina is U+02BB, and `pēseti` uses macron U+0113.
     /// Serbian (`sr`) follows Croatian: `one` is integers ending in 1 except 11,
     /// `few` is 2–4 except 12–14, and 5 and 11 are `other`. Belarusian (`be`)
     /// follows Russian, so 11 is `many` and fractional `other` is not probed.
@@ -474,6 +475,7 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("it", 1, "one", "1 minuto rimanente"),
         .init("it", 2, "other", "2 minuti rimanenti"),
         .init("it", 12, "other", "12 minuti rimanenti"),
+        .init("ja", 2, "other", "残り2分"),
         // Geminated participle.
         .init("kl", 1, "one", "1 minutsi sinneruttoq"),
         .init("kl", 2, "other", "2 minutit sinneruttut"),
@@ -621,6 +623,7 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("it", 1, "one", "1 lingua"),
         .init("it", 2, "other", "2 lingue"),
         .init("it", 12, "other", "12 lingue"),
+        .init("ja", 2, "other", "2言語"),
         .init("kl", 1, "one", "1 oqaaseq"),
         .init("kl", 2, "other", "2 oqaatsit"),
         .init("lt", 1, "one", "1 kalba"),
@@ -767,6 +770,7 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("it", 1, "one", "1 percento"),
         .init("it", 2, "other", "2 percento"),
         .init("it", 12, "other", "12 percento"),
+        .init("ja", 2, "other", "2パーセント"),
         // Absolutive.
         .init("kl", 1, "one", "1 procenti"),
         .init("kl", 2, "other", "2 procentit"),
@@ -914,6 +918,7 @@ final class CatalogPluralizationTests: XCTestCase {
         .init("it", 1, "one", "Volume impostato al 1 percento"),
         .init("it", 2, "other", "Volume impostato al 2 percento"),
         .init("it", 12, "other", "Volume impostato al 12 percento"),
+        .init("ja", 2, "other", "音量を2パーセントに設定しました"),
         // Allative.
         .init("kl", 1, "one", "Nipitussuseq 1 procentimut inissinneqarpoq"),
         .init("kl", 2, "other", "Nipitussuseq 2 procentinut inissinneqarpoq"),

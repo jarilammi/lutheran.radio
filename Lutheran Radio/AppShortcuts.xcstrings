@@ -195,6 +195,12 @@
             "value" : "Metti in pausa ${applicationName}"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}を一時停止して"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -554,6 +560,12 @@
             "value" : "Riproduci ${applicationName}"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}を再生して"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -911,6 +923,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Riproduci ${applicationName} in ${language}"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${language}で${applicationName}を再生して"
           }
         },
         "kl" : {
@@ -1307,6 +1325,12 @@
             "value" : "Avvia ${applicationName}"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}を開始して"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1666,6 +1690,12 @@
             "value" : "Ferma ${applicationName}"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}を停止して"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2023,6 +2053,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Passa ${applicationName} a ${language}"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}を${language}に切り替えて"
           }
         },
         "kl" : {
