@@ -8,8 +8,8 @@
 //
 //  Invariant: every play / pause / language phrase in `LutheranRadioShortcuts`
 //  is extracted as `Play ${applicationName}` (etc.) and `AppShortcuts.xcstrings`
-//  ships a translated value for every UI language this gate lists (61 language
-//  codes, including Korean). Sleep-timer phrases are native in en, de, fi, sv, and et
+//  ships a translated value for every UI language this gate lists (62 language
+//  codes, including Odia). Sleep-timer phrases are native in en, de, fi, sv, and et
 //  only; other languages fall back to English. Every value keeps
 //  `${applicationName}`; parameterized phrases also keep `${language}` or
 //  `${duration}`. Xcode binds only the first phrase of each `AppShortcut`
@@ -29,12 +29,12 @@ import XCTest
 
 final class AppShortcutsLocalizationTests: XCTestCase {
 
-    /// UI catalog languages this Siri gate checks (61 codes, including `ko`).
+    /// UI catalog languages this Siri gate checks (62 codes, including `or`).
     /// Playback catalog remains the five radio streams.
     private let supportedLanguages: [String] = [
         "af", "am", "be", "bem", "bg", "bn", "cs", "da", "de", "el", "en", "es", "et", "fi", "fit",
         "fo", "fr", "gag", "ha", "haw", "hi", "hr", "hu", "id", "is", "it", "ja", "kl", "ko", "lt",
-        "lv", "mg", "mk", "nb", "ng", "nl", "nn", "ny", "om", "pl", "pt", "pt-BR", "ro", "ru",
+        "lv", "mg", "mk", "nb", "ng", "nl", "nn", "ny", "om", "or", "pl", "pt", "pt-BR", "ro", "ru",
         "se", "sk", "sl", "sq", "sr", "sv", "sw", "ta", "te", "ti", "to", "tr", "uk", "yo", "zu",
         "zh-Hans", "zh-Hant",
     ]
@@ -51,7 +51,7 @@ final class AppShortcutsLocalizationTests: XCTestCase {
     /// Sleep-timer utterances. Native in en, de, fi, sv, and et only.
     /// Other UI languages fall back to the English phrase. Siri may not speak
     /// Estonian yet; the et strings are still required here.
-    /// One parameterized set phrase and one cancel phrase. The other 56 UI
+    /// One parameterized set phrase and one cancel phrase. The other 57 UI
     /// languages are not translated here.
     private let sleepTimerPhraseKeys: [String] = [
         "Set a ${duration} sleep timer in ${applicationName}",
@@ -738,6 +738,30 @@ final class AppShortcutsLocalizationTests: XCTestCase {
         XCTAssertEqual(
             compiledPhrase("Switch ${applicationName} to ${language}", language: "ko"),
             "${applicationName}를 ${language}로 전환해 줘"
+        )
+    }
+
+    /// Compiled Odia phrases stay standard Odia and keep the Siri tokens.
+    ///
+    /// The every-language check only rejects an English fallback. These strings
+    /// are the catalog values for locale `or`. Case endings sit on ଭାଷା, not on
+    /// `${applicationName}` or `${language}`. Sleep-timer phrases stay the English fallback.
+    func testCompiledOdiaPlayAndPausePhrasesAreNative() {
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName}", language: "or"),
+            "${applicationName} ଚଳାନ୍ତୁ"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Pause ${applicationName}", language: "or"),
+            "${applicationName} ବିରତ କରନ୍ତୁ"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Play ${applicationName} in ${language}", language: "or"),
+            "${applicationName} ${language} ଭାଷାରେ ଚଳାନ୍ତୁ"
+        )
+        XCTAssertEqual(
+            compiledPhrase("Switch ${applicationName} to ${language}", language: "or"),
+            "${applicationName} ${language} ଭାଷାକୁ ବଦଳାନ୍ତୁ"
         )
     }
 

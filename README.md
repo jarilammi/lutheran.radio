@@ -72,6 +72,7 @@ The app is fully localized in the following languages:
 - Norwegian Bokmål (nb)
 - Norwegian Nynorsk (nn)
 - Nyanja (ny)
+- Odia (or)
 - Oromo (om)
 - Polish (pl)
 - Portuguese (pt)

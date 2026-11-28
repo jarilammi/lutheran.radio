@@ -273,6 +273,12 @@
             "value" : "${applicationName} yeroof dhaabi"
           }
         },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ବିରତ କରନ୍ତୁ"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -644,6 +650,12 @@
             "value" : "${applicationName} taphachiisi"
           }
         },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ଚଳାନ୍ତୁ"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1013,6 +1025,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} afaan ${language} taphachiisi"
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ${language} ଭାଷାରେ ଚଳାନ୍ତୁ"
           }
         },
         "pl" : {
@@ -1421,6 +1439,12 @@
             "value" : "${applicationName} jalqabi"
           }
         },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ଆରମ୍ଭ କରନ୍ତୁ"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1792,6 +1816,12 @@
             "value" : "${applicationName} dhaabi"
           }
         },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ବନ୍ଦ କରନ୍ତୁ"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2161,6 +2191,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} gara ${language} jijjiiri"
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ${language} ଭାଷାକୁ ବଦଳାନ୍ତୁ"
           }
         },
         "pl" : {
