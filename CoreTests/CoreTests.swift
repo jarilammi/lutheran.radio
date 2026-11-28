@@ -176,6 +176,14 @@ struct CoreTests {
 
     /// DNSSEC host policy must cover the sole media apex (bare + subdomain) and
     /// must **not** treat retired `lutheran.radio` media hosts as protected streaming.
+    ///
+    /// Protects Invariant 2 host membership. `URL.host` keeps a trailing dot on an
+    /// absolute name, and the resource loader passes that string into
+    /// ``SecurityConfiguration/hostRequiresDNSSECValidation(_:)``. Leading and trailing
+    /// dots are the same name. An empty name, or only dots, stays unprotected. A name
+    /// that only contains the apex text, or that continues past the apex, stays
+    /// unprotected with or without a trailing dot. The loader resumes a data task on
+    /// the protected path, so this test stops at the host string and does not open a stream.
     @Test func securityConfigurationHostRequiresDNSSECValidationCoversSiikkariOnly() {
         let policy = SecurityConfiguration.current
 
@@ -184,6 +192,24 @@ struct CoreTests {
         #expect(policy.isProtectedStreamingHost("european.siikkari.net"))
         #expect(SecurityConfiguration.hostRequiresDNSSECValidation("livestream.siikkari.net"))
         #expect(SecurityConfiguration.hostRequiresDNSSECValidation("SIIKKARI.NET"))
+
+        #expect(policy.isProtectedStreamingHost("livestream.siikkari.net."))
+        #expect(policy.isProtectedStreamingHost("siikkari.net."))
+        #expect(policy.isProtectedStreamingHost("LIVESTREAM.SIIKKARI.NET."))
+        #expect(policy.isProtectedStreamingHost(".livestream.siikkari.net."))
+        #expect(SecurityConfiguration.hostRequiresDNSSECValidation("livestream.siikkari.net."))
+        #expect(SecurityConfiguration.hostRequiresDNSSECValidation("siikkari.net."))
+        #expect(SecurityConfiguration.hostRequiresDNSSECValidation("LIVESTREAM.SIIKKARI.NET."))
+        let absoluteStation = URL(string: "https://livestream.siikkari.net./stream")
+        #expect(absoluteStation?.host == "livestream.siikkari.net.")
+        #expect(SecurityConfiguration.hostRequiresDNSSECValidation(absoluteStation?.host))
+
+        #expect(policy.isProtectedStreamingHost("") == false)
+        #expect(policy.isProtectedStreamingHost(".") == false)
+        #expect(policy.isProtectedStreamingHost("..") == false)
+        #expect(SecurityConfiguration.hostRequiresDNSSECValidation("") == false)
+        #expect(SecurityConfiguration.hostRequiresDNSSECValidation(".") == false)
+        #expect(SecurityConfiguration.hostRequiresDNSSECValidation("..") == false)
 
         #expect(policy.isProtectedStreamingHost("lutheran.radio") == false)
         #expect(policy.isProtectedStreamingHost("english-eu.lutheran.radio") == false)
@@ -194,6 +220,14 @@ struct CoreTests {
         #expect(policy.isProtectedStreamingHost("notsiikkari.net") == false)
         #expect(SecurityConfiguration.hostRequiresDNSSECValidation(nil) == false)
         #expect(SecurityConfiguration.hostRequiresDNSSECValidation("example.com") == false)
+
+        #expect(policy.isProtectedStreamingHost("lutheran.radio.") == false)
+        #expect(policy.isProtectedStreamingHost("english-eu.lutheran.radio.") == false)
+        #expect(SecurityConfiguration.hostRequiresDNSSECValidation("livestream.lutheran.radio.") == false)
+        #expect(policy.isProtectedStreamingHost("evil-siikkari.net.") == false)
+        #expect(policy.isProtectedStreamingHost("siikkari.net.evil.example.") == false)
+        #expect(policy.isProtectedStreamingHost("notsiikkari.net.") == false)
+        #expect(SecurityConfiguration.hostRequiresDNSSECValidation("example.com.") == false)
     }
 
     /// Candidate host builder emits the sole media apex without hard-coded strings.

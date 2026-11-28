@@ -5,7 +5,7 @@
 //  Single source of truth for every security constant and networking policy.
 //
 //  This file owns:
-//  - The embedded `expectedSecurityModel` ("toowoomba")
+//  - The embedded `expectedSecurityModel` ("brisbane")
 //  - Authoritative certificate fingerprints (DER digest form)
 //  - Transition window + time-skew parameters
 //  - Distinct cache durations: `modelCacheDuration` (DNS TXT success, 1 h) and
@@ -67,7 +67,7 @@ public struct SecurityConfiguration: Sendable {
     ///
     /// - SeeAlso: ``<doc:Security-Invariants>``, ``SecurityModelValidator/validateSecurityModel()``,
     ///   README Security Model History
-    public let expectedSecurityModel: String = "toowoomba"
+    public let expectedSecurityModel: String = "brisbane"
     
     /// Primary domain queried for TXT record containing valid models (comma-separated).
     ///
@@ -159,11 +159,28 @@ public struct SecurityConfiguration: Sendable {
     
     /// Whether `host` is a bare apex or subdomain under any preferred streaming suffix.
     ///
-    /// - Parameter host: Hostname (comparison is case-insensitive).
+    /// Leading and trailing `.` are removed before the comparison. The resource loader
+    /// reads `URL.host`, which keeps a trailing dot on an absolute name, and passes that
+    /// string to ``hostRequiresDNSSECValidation(_:)``. Without this trim the name missed
+    /// the DNSSEC session and the certificate check.
+    ///
+    /// An empty name, or a name that is only dots, is not protected. A label that merely
+    /// ends with the apex text (`evil-siikkari.net`) or that continues past it
+    /// (`siikkari.net.evil.example`) is not protected, with or without a trailing dot.
+    ///
+    /// - Parameter host: Hostname. Comparison is case-insensitive after the dot trim.
     /// - Returns: `true` if the host is covered by streaming DNSSEC / secure-session policy.
-    /// - SeeAlso: ``hostRequiresDNSSECValidation(_:)``, ``preferredStreamingDomainSuffixes``
+    /// - Important: The media public-key check trims the same characters before it calls
+    ///   this method. Keep the two trims identical. An empty host is not the DNS root.
+    /// - SeeAlso: ``hostRequiresDNSSECValidation(_:)``, ``preferredStreamingDomainSuffixes``,
+    ///   ``<doc:Security-Invariants>``
     public func isProtectedStreamingHost(_ host: String) -> Bool {
-        let h = host.lowercased()
+        // SECURITY: Same leading/trailing "." trim as AppTransportSecurityPins
+        // (CharacterSet of "." only). No shared helper. Blank or dots-only stays
+        // unprotected. Do not reuse DNSName: an empty presentation name is the DNS root.
+        let normalized = host.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        guard !normalized.isEmpty else { return false }
+        let h = normalized.lowercased()
         for suffix in preferredStreamingDomainSuffixes {
             if h == suffix || h.hasSuffix("." + suffix) {
                 return true
@@ -478,11 +495,14 @@ public struct SecurityConfiguration: Sendable {
     /// Used by call sites to decide whether to obtain a secure session configuration.
     /// Matches bare apex and any subdomain under **every** entry of
     /// ``preferredStreamingDomainSuffixes`` (today `siikkari.net` only).
-    /// Never hard-code apex strings at call sites.
+    /// ``isProtectedStreamingHost(_:)`` removes leading and trailing dots first, so an
+    /// absolute hostname still takes the DNSSEC session. Never hard-code apex strings
+    /// at call sites.
     ///
-    /// - Parameter host: A hostname (case-insensitive comparison performed).
+    /// - Parameter host: A hostname. Comparison is case-insensitive after the dot trim.
     /// - Returns: `true` for hosts whose DNS answers should be required to be DNSSEC-validated.
-    /// - SeeAlso: ``isProtectedStreamingHost(_:)``, ``preferredStreamingDomainSuffixes``
+    /// - SeeAlso: ``isProtectedStreamingHost(_:)``, ``preferredStreamingDomainSuffixes``,
+    ///   ``<doc:Security-Invariants>``
     public static func hostRequiresDNSSECValidation(_ host: String?) -> Bool {
         guard let h = host else { return false }
         return current.isProtectedStreamingHost(h)
