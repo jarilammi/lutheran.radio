@@ -207,6 +207,12 @@
             "value" : "Unitsitsillugu ${applicationName}"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}를 일시 정지해 줘"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -265,6 +271,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} yeroof dhaabi"
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ବିରତ କରନ୍ତୁ"
           }
         },
         "pl" : {
@@ -572,6 +584,12 @@
             "value" : "Tusarnaarlugit ${applicationName}"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}를 재생해 줘"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -630,6 +648,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} taphachiisi"
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ଚଳାନ୍ତୁ"
           }
         },
         "pl" : {
@@ -937,6 +961,12 @@
             "value" : "Tusarnaarlugit ${applicationName} ${language}"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${language}로 ${applicationName}를 재생해 줘"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -995,6 +1025,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} afaan ${language} taphachiisi"
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ${language} ଭାଷାରେ ଚଳାନ୍ତୁ"
           }
         },
         "pl" : {
@@ -1337,6 +1373,12 @@
             "value" : "Aallartillugu ${applicationName}"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}를 시작해 줘"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1395,6 +1437,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} jalqabi"
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ଆରମ୍ଭ କରନ୍ତୁ"
           }
         },
         "pl" : {
@@ -1702,6 +1750,12 @@
             "value" : "Unitsillugu ${applicationName}"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}를 정지해 줘"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1760,6 +1814,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} dhaabi"
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ବନ୍ଦ କରନ୍ତୁ"
           }
         },
         "pl" : {
@@ -2067,6 +2127,12 @@
             "value" : "Allanngortiguk ${applicationName} ${language}"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}를 ${language}로 전환해 줘"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2125,6 +2191,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "${applicationName} gara ${language} jijjiiri"
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} ${language} ଭାଷାକୁ ବଦଳାନ୍ତୁ"
           }
         },
         "pl" : {
