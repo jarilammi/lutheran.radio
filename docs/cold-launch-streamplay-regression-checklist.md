@@ -177,7 +177,7 @@ End with security impact, build status, localization needed.
 9. **Guard cleared on attach** — `clearPlaybackTeardownGuard()` in `preparePlayerItem`, `createAndStartPlayer`, `startPlayback`, successful recreate; successful recreate restarts the loading-grace clock.
 10. **No recreate during switch stop** — Zero `Cannot recreate` and zero duplicate secured-item recreate during switch teardown.
 11. **Transient status_stopped** — `transient status_stopped while visualState .playing → suppress pipeline` during ICY bursts.
-12. **Item failure handling** — `status_stream_unavailable` / `status_failed` → `markPlaybackStoppedByStreamFailure()`, not `setUserPaused()`; intent stays `.shouldBePlaying` (or `.sleepTimer`) unless user explicitly paused.
+12. **Item failure handling** — `status_stream_unavailable` / `status_failed` → `markPlaybackStoppedByStreamFailure()`, not `setUserPaused()`; intent stays `.shouldBePlaying` (or `.sleepTimer`) unless user explicitly paused. Crowded (`status_crowded`) and resource (`status_resource`) call `markPlaybackStoppedByStreamFailure(.permanentFailure)` after at most one other-region attach and do not enter early-window recovery. HTTP 403 stays the embedded-model walk. HTTP 500 stays transient.
 13. **Observer invalidation** — Stop invalidates item observers and sets `playerItem = nil`.
 
 ---

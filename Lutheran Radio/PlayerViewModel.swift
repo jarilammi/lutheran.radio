@@ -302,6 +302,20 @@ final class PlayerViewModel {
         }
     }
 
+    /// Crowded or resource pill while visual stays ``PlayerVisualState/userPaused``.
+    ///
+    /// The word replaces `status_paused` text only. Colors and the pause glyph stay
+    /// the user-paused presentation. Widget and Live Activity chrome do not read this.
+    /// A dismissed alert leaves the word. Playing, an explicit pause, security lock,
+    /// thermal pause, privacy clear, and a new attach clear it.
+    ///
+    /// - SeeAlso: ``noteStationTerminalStatusReason(_:)``,
+    ///   ``shouldClearStationTerminalStatus(reasonKey:visualState:)``,
+    ///   ``DirectStreamingPlayer/finishStationCapacityAttempt()``
+    var stationTerminalStatusKey: String? {
+        didSet { recomputePresentation() }
+    }
+
     // MARK: - Cached narrow presentation (derived)
 
     // The three narrow presentation surfaces cached on this model.
@@ -483,8 +497,116 @@ final class PlayerViewModel {
 
     // MARK: - Presentation recompute (kept out of view bodies)
 
+    /// Records `status_crowded` or `status_resource` for the main-player pill.
+    ///
+    /// Other keys are ignored. Call after ``RadioPlayerCoordinator/updateUI(for:)``
+    /// so a Connecting paint in the same turn does not clear the word.
+    ///
+    /// - Parameter key: `status_crowded` or `status_resource`.
+    /// - SeeAlso: ``stationTerminalStatusKey``, ``clearStationTerminalStatusReason()``
+    func noteStationTerminalStatusReason(_ key: String) {
+        switch key {
+        case "status_crowded", "status_resource":
+            stationTerminalStatusKey = key
+        default:
+            break
+        }
+    }
+
+    /// Removes the crowded or resource word so the visual's own status text shows.
+    ///
+    /// - SeeAlso: ``shouldClearStationTerminalStatus(reasonKey:visualState:)``
+    func clearStationTerminalStatusReason() {
+        stationTerminalStatusKey = nil
+    }
+
+    /// Whether this status key or visual ends the crowded or resource pill.
+    ///
+    /// `status_stopped`, ``PlayerVisualState/userPaused``, and ``PlayerVisualState/prePlay``
+    /// do not clear it. A failure can still be Connecting when the word is recorded,
+    /// and a silent stop must not replace the word with `status_stopped`.
+    ///
+    /// - Parameters:
+    ///   - reasonKey: Engine status key, or nil when only the visual changed.
+    ///   - visualState: Chrome visual being applied, or nil when only the key arrived.
+    /// - Returns: `true` when the pill word should be removed.
+    /// - SeeAlso: ``stationTerminalStatusKey``
+    static func shouldClearStationTerminalStatus(
+        reasonKey: String?,
+        visualState: PlayerVisualState?
+    ) -> Bool {
+        switch reasonKey {
+        case "status_playing", "status_paused", "status_paused_call",
+             "status_connecting", "status_security_failed":
+            return true
+        default:
+            break
+        }
+        switch visualState {
+        case .playing, .securityLocked, .thermalPaused, .cleared:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Alert catalog keys for a finished capacity attempt. Nil for every other status.
+    ///
+    /// - Parameter reasonKey: Engine status key.
+    /// - Returns: Title and message keys, or nil when this is not crowded or resource.
+    /// - SeeAlso: ``stationTerminalStatusKey``
+    static func stationCapacityAlertLocalizationKeys(
+        for reasonKey: String?
+    ) -> (title: String, message: String)? {
+        switch reasonKey {
+        case "status_crowded":
+            return ("crowded_title", "crowded_message")
+        case "status_resource":
+            return ("resource_title", "resource_message")
+        default:
+            return nil
+        }
+    }
+
+    /// The one word VoiceOver speaks for a capacity pill. Nil for every other key.
+    ///
+    /// - Parameter reasonKey: Engine status key.
+    /// - Returns: The localized pill word, or nil.
+    /// - SeeAlso: ``stationTerminalStatusKey``
+    static func stationTerminalStatusAnnouncement(for reasonKey: String) -> String? {
+        switch reasonKey {
+        case "status_crowded":
+            return String(localized: "status_crowded", table: "Localizable")
+        case "status_resource":
+            return String(localized: "status_resource", table: "Localizable")
+        default:
+            return nil
+        }
+    }
+
     private func recomputePresentation() {
-        statusPresentation = visualState.makeStatusPresentation()
+        let base = visualState.makeStatusPresentation()
+        if visualState == .userPaused, let key = stationTerminalStatusKey {
+            let text: String
+            switch key {
+            case "status_crowded":
+                text = String(localized: "status_crowded", table: "Localizable")
+            case "status_resource":
+                text = String(localized: "status_resource", table: "Localizable")
+            default:
+                statusPresentation = base
+                controlPresentation = visualState.makeControlPresentation()
+                return
+            }
+            statusPresentation = PlayerStatusPresentation(
+                background: base.background,
+                foreground: base.foreground,
+                text: text,
+                systemImage: base.systemImage
+            )
+        } else {
+            statusPresentation = base
+        }
         controlPresentation = visualState.makeControlPresentation()
     }
 

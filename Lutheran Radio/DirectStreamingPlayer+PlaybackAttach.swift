@@ -639,6 +639,9 @@ extension DirectStreamingPlayer {
     @MainActor
     func beginInFlightPlaybackAttach() -> UInt64 {
         isCurrentlyAttemptingPlayback = true
+        // Same generation keeps answers already recorded. A stop advanced the
+        // generation first, so this opens a fresh one-region budget.
+        adoptStationCapacityGeneration(playbackAttachGeneration, acceptingResponses: true)
         return playbackAttachGeneration
     }
 
@@ -659,6 +662,7 @@ extension DirectStreamingPlayer {
         let bump: @MainActor () -> Void = { [weak self] in
             guard let self else { return }
             self.playbackAttachGeneration &+= 1
+            self.adoptStationCapacityGeneration(self.playbackAttachGeneration, acceptingResponses: false)
             self.syncExplicitBackgroundPlayHold(
                 signal: .attachDiscarded,
                 itemAttached: self.player?.currentItem != nil,

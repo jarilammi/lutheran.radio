@@ -702,6 +702,83 @@ final class StreamingSessionDelegateTests: XCTestCase {
         let request = try XCTUnwrap(box.request, "The custom scheme did not offer a loading request")
         return (StreamingSessionDelegate(loadingRequest: request), request)
     }
+
+    /// Protects: production HTTP 500 still calls onError as a plain transient response.
+    /// HTTP 503 cancels without onError, without a security lock, and records crowded.
+    ///
+    /// The custom-scheme URL is not a production region, so the 503 finishes the
+    /// attempt instead of opening another host.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/noteStationCapacityHTTPResponse(url:statusCode:)``,
+    ///   ``DirectStreamingPlayer/stationCapacityURLError(statusCode:)``
+    func testProductionHTTP500CallsOnErrorAnd503DoesNot() async throws {
+        let player = DirectStreamingPlayer.shared
+        player.test_resetStationCapacityAttempt()
+        player.test_resetEmbeddedSecurityModelClusterRejections()
+        defer {
+            player.test_resetStationCapacityAttempt()
+            player.test_resetEmbeddedSecurityModelClusterRejections()
+        }
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let task = session.dataTask(with: try XCTUnwrap(URL(string: "https://unit.test.invalid/")))
+
+        let (delegate500, _) = try await makeProductionDelegate()
+        var received500: URLError?
+        delegate500.onError = { error in
+            received500 = error as? URLError
+        }
+        let done500 = expectation(description: "HTTP 500 cancelled")
+        delegate500.urlSession(
+            session,
+            dataTask: task,
+            didReceive: httpStatus(500),
+            completionHandler: { disposition in
+                XCTAssertEqual(disposition, .cancel)
+                done500.fulfill()
+            }
+        )
+        await fulfillment(of: [done500], timeout: 1)
+        XCTAssertEqual(received500?.code, .badServerResponse)
+        XCTAssertNil(received500?.userInfo[DirectStreamingPlayer.stationCapacityResourceUserInfoKey])
+        XCTAssertNil(player.test_lastStationCapacityReasonKey)
+        XCTAssertTrue(player.embeddedSecurityModelRejectedSubdomains().isEmpty)
+
+        let (delegate503, _) = try await makeProductionDelegate()
+        var called503 = false
+        delegate503.onError = { _ in
+            called503 = true
+        }
+        let done503 = expectation(description: "HTTP 503 cancelled")
+        delegate503.urlSession(
+            session,
+            dataTask: task,
+            didReceive: httpStatus(503),
+            completionHandler: { disposition in
+                XCTAssertEqual(disposition, .cancel)
+                done503.fulfill()
+            }
+        )
+        await fulfillment(of: [done503], timeout: 1)
+        XCTAssertFalse(called503)
+        let deadline = Date().addingTimeInterval(2)
+        while player.test_lastStationCapacityReasonKey == nil, Date() < deadline {
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(player.test_lastStationCapacityReasonKey, "status_crowded")
+        XCTAssertTrue(player.embeddedSecurityModelRejectedSubdomains().isEmpty)
+    }
+
+    private func httpStatus(_ statusCode: Int) -> HTTPURLResponse {
+        let url = URL(string: "lutheranradio://unit.test/icecast")!
+        return HTTPURLResponse(
+            url: url,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: nil
+        )!
+    }
 }
 
 // MARK: - Mock Classes and Protocol Extensions
@@ -800,14 +877,16 @@ final class TestableStreamingSessionDelegate: NSObject, URLSessionDataDelegate, 
         
         if (400...599).contains(statusCode) {
             print("🔍 [TestDelegate] Error status code \(statusCode)")
-            let error: URLError.Code
-            switch statusCode {
-            case 502: error = .badServerResponse
-            case 404: error = .fileDoesNotExist
-            case 429: error = .resourceUnavailable
-            case 503: error = .resourceUnavailable
-            default: error = .badServerResponse
+            // Same status map as production. This double still calls onError so the
+            // existing code assertions stay on the callback. Production does not call
+            // onError for these statuses.
+            if let capacityError = DirectStreamingPlayer.stationCapacityURLError(statusCode: statusCode) {
+                onError?(capacityError)
+                mockLoadingRequest.finishLoading(with: capacityError)
+                completionHandler(.cancel)
+                return
             }
+            let error: URLError.Code = statusCode == 404 ? .fileDoesNotExist : .badServerResponse
             onError?(URLError(error))
             mockLoadingRequest.finishLoading(with: URLError(error))
             completionHandler(.cancel)

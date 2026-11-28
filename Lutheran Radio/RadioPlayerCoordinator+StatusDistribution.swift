@@ -107,6 +107,14 @@ extension RadioPlayerCoordinator {
         let previousVisualState = lastAppliedVisualState
         lastAppliedVisualState = visualState
 
+        // Playing, security lock, thermal pause, and privacy clear end the
+        // crowded/resource word. userPaused and prePlay do not: the word is
+        // recorded while chrome can still be Connecting, then shown on the
+        // failure pause glyph.
+        if PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: nil, visualState: visualState) {
+            viewModel?.clearStationTerminalStatusReason()
+        }
+
         // Pure SwiftUI views are driven via viewModel (pushed below).
         // // playbackControlsView.applyVisualState was UIKit path.
 
@@ -223,6 +231,8 @@ extension RadioPlayerCoordinator {
 
             let importantStatuses: Set<String> = [
                 String(localized: "status_connecting", table: "Localizable"),
+                String(localized: "status_crowded", table: "Localizable"),
+                String(localized: "status_resource", table: "Localizable"),
                 String(localized: "status_playing", table: "Localizable"),
                 String(localized: "status_paused", table: "Localizable"),
                 String(localized: "status_paused_call", table: "Localizable"),
@@ -235,6 +245,8 @@ extension RadioPlayerCoordinator {
             ]
 
             if importantStatuses.contains(text) {
+                // SAFETY: UIAccessibility.post is the VoiceOver announcement API for
+                // important status strings. The argument is one localized catalog string.
                 unsafe UIAccessibility.post(notification: .announcement, argument: text)
             }
         }
@@ -273,6 +285,46 @@ extension RadioPlayerCoordinator {
         // SAFETY: UIAccessibility.post is the established VoiceOver announcement API
         // (same pattern as `announceSwitchedToLanguage` and post-clear `clear_local_state_done`).
         unsafe UIAccessibility.post(notification: .announcement, argument: message)
+    }
+
+    /// Speaks the crowded or resource pill once when the attempt finishes.
+    ///
+    /// The SwiftUI status path does not call ``safeUpdateStatusLabel(text:backgroundColor:textColor:isPermanentError:)``
+    /// for this failure, so the important-status set there would not run.
+    ///
+    /// - Parameter reasonKey: `status_crowded` or `status_resource`.
+    /// - SeeAlso: ``PlayerViewModel/stationTerminalStatusAnnouncement(for:)``
+    private func announceStationTerminalStatus(reasonKey: String) {
+        guard let message = PlayerViewModel.stationTerminalStatusAnnouncement(for: reasonKey),
+              !message.isEmpty else {
+            return
+        }
+        // SAFETY: UIAccessibility.post is the VoiceOver announcement API
+        // (same pattern as `announceThermalVisualTransition`). One post here matches
+        // the single word on the pill.
+        unsafe UIAccessibility.post(notification: .announcement, argument: message)
+    }
+
+    /// Localized title and message for the capacity alert. Nil for every other key.
+    ///
+    /// String literals stay visible to the catalog extractor.
+    private func stationCapacityAlertCopy(
+        for reasonKey: String
+    ) -> (title: String, message: String)? {
+        switch reasonKey {
+        case "status_crowded":
+            return (
+                String(localized: "crowded_title", table: "Localizable"),
+                String(localized: "crowded_message", table: "Localizable")
+            )
+        case "status_resource":
+            return (
+                String(localized: "resource_title", table: "Localizable"),
+                String(localized: "resource_message", table: "Localizable")
+            )
+        default:
+            return nil
+        }
     }
 
     // MARK: - Visual SSOT chrome observation (primary paint for visual transitions)
@@ -522,6 +574,13 @@ extension RadioPlayerCoordinator {
 
         // Status is not sole visual SSOT: skip chrome paint when settled SSOT already matches
         // SPM and pure policy would diverge without race-lead authority.
+        // Explicit pause, play, Connecting, and security failure end the capacity
+        // word even when updateUI dedupes and does not see a visual change.
+        // status_stopped does not: a silent stop after the failure must leave the word.
+        if PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: reasonKey, visualState: nil) {
+            viewModel?.clearStationTerminalStatusReason()
+        }
+
         let shouldPaintChrome = RadioPlayerChromeVisualResolver.shouldApplyStatusPathChromePaint(
             policyResult: effectiveVisualState,
             latestVisual: visualState,
@@ -534,6 +593,14 @@ extension RadioPlayerCoordinator {
             #if DEBUG
             print("[RadioPlayerCoordinator] status path skipped chrome paint (superseded by settled SSOT lastApplied=\(String(describing: lastAppliedVisualState)) spm=\(visualState) policy=\(effectiveVisualState))")
             #endif
+        }
+
+        // After updateUI, so a Connecting paint in this turn cannot clear the word.
+        // The SwiftUI pill does not call safeUpdateStatusLabel for this failure.
+        if let reasonKey,
+           PlayerViewModel.stationCapacityAlertLocalizationKeys(for: reasonKey) != nil {
+            viewModel?.noteStationTerminalStatusReason(reasonKey)
+            announceStationTerminalStatus(reasonKey: reasonKey)
         }
 
         // If we had to correct the UI to .userPaused for a real sticky user pause (despite the
@@ -613,6 +680,28 @@ extension RadioPlayerCoordinator {
                         alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .cancel, handler: nil))
                         presentAlert?(alert)
                     }
+                }
+            } else if let alertCopy = stationCapacityAlertCopy(for: reasonKey) {
+                // Not gated by isInInitialRecoveryWindow. That window only suppresses
+                // status_failed and status_stream_unavailable. One alert per finished
+                // attempt: failover does not emit these keys. Security lock keeps its
+                // own alert.
+                let vsForCheck = await SharedPlayerManager.shared.currentVisualState
+                if vsForCheck != .securityLocked,
+                   let vc = viewController,
+                   vc.presentedViewController == nil {
+                    let alert = UIAlertController(
+                        title: alertCopy.title,
+                        message: alertCopy.message,
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: String(localized: "alert_retry", table: "Localizable"), style: .default) { _ in
+                        Task { @MainActor in
+                            await SharedPlayerManager.shared.userRequestedPlay()
+                        }
+                    })
+                    alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .cancel, handler: nil))
+                    presentAlert?(alert)
                 }
             }
         }

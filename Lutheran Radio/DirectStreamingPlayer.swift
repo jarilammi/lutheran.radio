@@ -238,6 +238,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // | Audio interruption | DirectStreamingPlayer+AudioSessionInterruption.swift | AVAudioSession interruption / route |
     // | Resource loader | DirectStreamingPlayer+ResourceLoader.swift | AVAssetResourceLoaderDelegate + Icecast + load timeout |
     // | Error classification | DirectStreamingPlayer+StreamErrorClassification.swift | StreamErrorType.from |
+    // | Station capacity | DirectStreamingPlayer+StationCapacity.swift | One other-region attach for HTTP 503/429 (crowded) or 404/502/504 and played-resource loss (resource). Not ``embeddedSecurityModelClusterRejections``. HTTP 403 stays the embedded-model walk. HTTP 500 stays early-window recreate. |
     // | Visual state bridge | DirectStreamingPlayer+PlayerVisualState.swift | Thin façade → SPM setUserPaused / publish playing (not SSOT storage) |
     // | Widget stub | DirectStreamingPlayer+WidgetStub.swift | Extension-only type surface (`#if !LUTHERAN_MAIN_APP`) |
     //
@@ -539,6 +540,22 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     var test_recreatePlayerItemEntryCount = 0
     /// Test seam: URL the one embedded-model failover would open. Nil until that path runs.
     var test_lastEmbeddedSecurityModelFailoverURL: URL?
+    /// Capacity answers for the current ``playbackAttachGeneration``.
+    ///
+    /// Process memory only. Not ``embeddedSecurityModelClusterRejections`` and not
+    /// UserDefaults. A 403 is not inserted here, and a later 503 does not clear the
+    /// security-model set. ``invalidateInFlightPlaybackAttach()`` closes the record.
+    /// ``beginInFlightPlaybackAttach()`` accepts responses again. One other region
+    /// may be attached, then the attempt stops.
+    ///
+    /// - SeeAlso: ``noteStationCapacityHTTPResponse(url:statusCode:)``,
+    ///   ``StationCapacityAttemptState``,
+    ///   ``noteEmbeddedSecurityModelRejection(url:statusCode:)``
+    let stationCapacityAttempt = Mutex(StationCapacityAttemptState())
+    /// Test seam: URL the one capacity failover would open. Nil until that path runs.
+    var test_lastStationCapacityFailoverURL: URL?
+    /// Test seam: pill key a finished capacity attempt recorded. Nil until finish runs.
+    var test_lastStationCapacityReasonKey: String?
     /// Wall-clock stamp of the last **measured** cluster (a valid ping RTT). Dual timeout
     /// must not stamp — that would make ``serverSelectionThrottleInterval`` treat “we learned
     /// nothing” as a real selection. ``selectOptimalServer`` throttles every context for

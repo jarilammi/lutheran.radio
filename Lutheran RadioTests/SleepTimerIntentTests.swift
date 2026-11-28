@@ -242,8 +242,9 @@ final class SleepTimerIntentTests: XCTestCase {
         }
     }
 
-    /// Working-tree `Localizable.xcstrings` matches HEAD. Sleep-timer intent
-    /// chrome must not add, remove, or edit a catalog key.
+    /// Working-tree `Localizable.xcstrings` matches HEAD except the six station
+    /// capacity keys. Sleep-timer intent chrome must not add, remove, or edit
+    /// any other catalog key.
     func testLocalizableCatalogMatchesHEAD() throws {
         let working = try loadLocalizableCatalog()
         let head = try HeadStringCatalog.strings(
@@ -251,9 +252,17 @@ final class SleepTimerIntentTests: XCTestCase {
             path: ["Lutheran Radio", "Localizable.xcstrings"]
         )
         let workingStrings = try XCTUnwrap(working["strings"] as? [String: Any])
-        let added = Set(workingStrings.keys).subtracting(head.keys).sorted()
+        let added = Set(workingStrings.keys).subtracting(head.keys)
+        let allowedAdditions: Set<String> = [
+            "crowded_message",
+            "crowded_title",
+            "resource_message",
+            "resource_title",
+            "status_crowded",
+            "status_resource",
+        ]
+        XCTAssertEqual(added, allowedAdditions, "Localizable.xcstrings added keys: \(added.sorted())")
         let removed = Set(head.keys).subtracting(workingStrings.keys).sorted()
-        XCTAssertTrue(added.isEmpty, "Localizable.xcstrings added keys: \(added)")
         XCTAssertTrue(removed.isEmpty, "Localizable.xcstrings removed keys: \(removed)")
         var edited: [String] = []
         for key in head.keys.sorted() {

@@ -26,7 +26,14 @@ import Core
 /// - Logs debug information in DEBUG builds for troubleshooting.
 /// - Handles HTTP responses, content types, and errors appropriately for streaming.
 ///
+/// HTTP 403 stays the embedded-model walk and never selects crowded or resource.
+/// HTTP 503, 429, 404, 502, and 504 are capacity answers: the delegate does not
+/// call `onError` for those, so the early-window recreate does not reopen the URL
+/// that just refused. HTTP 500 still uses that recreate.
+///
 /// - SeeAlso: ``CertificateValidator/validateStreamingServerTrust(_:host:)``,
+///   ``DirectStreamingPlayer/noteStationCapacityHTTPResponse(url:statusCode:)``,
+///   ``DirectStreamingPlayer/noteEmbeddedSecurityModelRejection(url:statusCode:)``,
 ///   ``<doc:Security-Invariants>`` Invariant 3
 ///
 /// Usage:
@@ -161,6 +168,11 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
                 url: requestURL,
                 statusCode: statusCode
             )
+            // A real embedded-model 403 owns the next attach. Drop the capacity
+            // join window without clearing the one-failover flag or the answers.
+            if disposition != .notThisFailure {
+                DirectStreamingPlayer.shared.stationCapacitySecurityModelTookOver()
+            }
             switch disposition {
             case .notThisFailure:
                 if requestURL.query?.contains("security_model=") == true {
@@ -205,6 +217,45 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
         }
         
         if (400...599).contains(statusCode) {
+            // Status line only. 403 already returned above. 500 stays the generic
+            // transient path. Capacity statuses must not call onError: a 502 would
+            // otherwise look like HTTP 500 and recreate the URL that just refused.
+            if let capacityError = DirectStreamingPlayer.stationCapacityURLError(statusCode: statusCode) {
+                let disposition: StationCapacityDisposition
+                if let requestURL = loadingRequest.request.url {
+                    disposition = DirectStreamingPlayer.shared.noteStationCapacityHTTPResponse(
+                        url: requestURL,
+                        statusCode: statusCode
+                    )
+                } else {
+                    disposition = .notThisResponse
+                }
+                switch disposition {
+                case .ignored, .joinInFlight:
+                    loadingRequest.finishLoading(with: capacityError)
+                    completionHandler(.cancel)
+                    return
+                case .failoverOnce:
+                    loadingRequest.finishLoading(with: capacityError)
+                    completionHandler(.cancel)
+                    Task { @MainActor in
+                        await DirectStreamingPlayer.shared.performStationCapacityFailover()
+                    }
+                    return
+                case .terminal:
+                    loadingRequest.finishLoading(with: capacityError)
+                    completionHandler(.cancel)
+                    Task { @MainActor in
+                        await DirectStreamingPlayer.shared.finishStationCapacityAttempt()
+                    }
+                    return
+                case .notThisResponse:
+                    onError?(capacityError)
+                    loadingRequest.finishLoading(with: capacityError)
+                    completionHandler(.cancel)
+                    return
+                }
+            }
             let error: URLError.Code = statusCode == 404 ? .fileDoesNotExist : .badServerResponse
             onError?(URLError(error))
             loadingRequest.finishLoading(with: URLError(error))

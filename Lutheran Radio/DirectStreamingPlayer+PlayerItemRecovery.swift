@@ -590,6 +590,13 @@ extension DirectStreamingPlayer {
                 #endif
                 return
             }
+            // The other region's URL is not in this map until that region answers.
+            if let candidateURL, self.stationCapacityRegionAlreadyAnswered(candidateURL) {
+                #if DEBUG
+                print("[DirectStreamingPlayer] recreatePlayerItem: suppressed — region already answered a capacity status")
+                #endif
+                return
+            }
             self.test_recreatePlayerItemEntryCount += 1
             self.recreateInFlight = true
             defer { self.recreateInFlight = false }
@@ -678,6 +685,14 @@ extension DirectStreamingPlayer {
         }
     }
     func handleLoadingError(_ error: Error) async {
+        // Crowded and resource stop on this URL. They must not enter the
+        // buffering / early-window branch below. HTTP 500 has no capacity
+        // condition and still may recreate.
+        if let condition = Self.stationCapacityCondition(for: error) {
+            absorbUnscopedStationCapacity(condition)
+            await finishStationCapacityAttempt()
+            return
+        }
         let errorType = StreamErrorType.from(error: error)
         hasPermanentError = errorType.isPermanent
         
@@ -693,12 +708,6 @@ extension DirectStreamingPlayer {
                 print("[DirectStreamingPlayer] [Loading Error] SSL/Certificate error detected")
                 #endif
                 safeOnStatusChange(isPlaying: false, reasonKey: "status_security_failed")
-                
-            case .fileDoesNotExist:
-                #if DEBUG
-                print("[DirectStreamingPlayer] [Loading Error] Hard server error (resource missing)")
-                #endif
-                safeOnStatusChange(isPlaying: false, reasonKey: "status_failed")
                 
             case .cannotFindHost, .dnsLookupFailed:
                 #if DEBUG
@@ -787,6 +796,9 @@ extension DirectStreamingPlayer {
     /// give the new item a clean budget so prior-stream noise cannot poison the first attempt.
     /// Terminal failure preserves playback intent (typically `.shouldBePlaying`) so a language
     /// switch can auto-resume without an extra play tap.
+    /// Crowded and resource finish through ``finishStationCapacityAttempt()`` and do not
+    /// enter ``attemptEarlyWindowTransientRecovery(reason:allowWhileDeferringFirstPlayKick:)``.
+    /// HTTP 403 stays on the embedded-model walk above this branch.
     ///
     /// - Precondition: Called on a `.failed` KVO delivery for the current `playerItem`.
     /// - Postcondition: Either ``recreatePlayerItem()`` was scheduled (transient) or a terminal
@@ -809,6 +821,24 @@ extension DirectStreamingPlayer {
             if !hasEligibleProductionCluster() {
                 await finishBecauseEveryProductionClusterRejectedEmbeddedSecurityModel()
             }
+            return
+        }
+        if let asset = item.asset as? AVURLAsset,
+           stationCapacityRegionAlreadyAnswered(asset.url) {
+            // The resource-loader task owns finish for this region.
+            return
+        }
+        if let error = item.error, Self.isPlayedResourceUnavailable(error) {
+            // Headers already arrived. Do not open the other region.
+            let disposition = noteStationContentUnavailable(url: (item.asset as? AVURLAsset)?.url)
+            if case .terminal = disposition {
+                await finishStationCapacityAttempt()
+            }
+            return
+        }
+        if let error = item.error, let condition = Self.stationCapacityCondition(for: error) {
+            absorbUnscopedStationCapacity(condition)
+            await finishStationCapacityAttempt()
             return
         }
         let error = item.error

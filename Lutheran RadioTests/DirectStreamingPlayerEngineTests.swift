@@ -1651,4 +1651,400 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
             "A later 403 on a refused cluster must not schedule another stream URL"
         )
     }
+
+    /// Protects: HTTP 503 and 429 are crowded, 404/502/504 are resource, and HTTP 500
+    /// stays a transient `badServerResponse` with no capacity condition.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/stationCapacityURLError(statusCode:)``,
+    ///   ``DirectStreamingPlayer/stationCapacityCondition(for:)``,
+    ///   ``StreamErrorType/from(error:)``
+    func testStationCapacityStatusMapLeavesHTTP500Transient() {
+        let resourceKey = DirectStreamingPlayer.stationCapacityResourceUserInfoKey
+        let crowded503 = DirectStreamingPlayer.stationCapacityURLError(statusCode: 503)
+        let crowded429 = DirectStreamingPlayer.stationCapacityURLError(statusCode: 429)
+        XCTAssertEqual(crowded503?.code, .resourceUnavailable)
+        XCTAssertEqual(crowded429?.code, .resourceUnavailable)
+        XCTAssertEqual(DirectStreamingPlayer.stationCapacityCondition(statusCode: 503), .crowded)
+        XCTAssertEqual(DirectStreamingPlayer.stationCapacityCondition(statusCode: 429), .crowded)
+        XCTAssertEqual(DirectStreamingPlayer.stationCapacityCondition(for: URLError(.resourceUnavailable)), .crowded)
+
+        let missing = DirectStreamingPlayer.stationCapacityURLError(statusCode: 404)
+        XCTAssertEqual(missing?.code, .fileDoesNotExist)
+        XCTAssertEqual(DirectStreamingPlayer.stationCapacityCondition(for: URLError(.fileDoesNotExist)), .resource)
+
+        for status in [502, 504] {
+            let error = DirectStreamingPlayer.stationCapacityURLError(statusCode: status)
+            XCTAssertEqual(error?.code, .badServerResponse)
+            XCTAssertEqual(error?.userInfo[resourceKey] as? Bool, true)
+            if let error {
+                XCTAssertEqual(DirectStreamingPlayer.stationCapacityCondition(for: error), .resource)
+            }
+        }
+
+        XCTAssertNil(DirectStreamingPlayer.stationCapacityURLError(statusCode: 500))
+        XCTAssertNil(DirectStreamingPlayer.stationCapacityURLError(statusCode: 403))
+        XCTAssertNil(DirectStreamingPlayer.stationCapacityCondition(statusCode: 500))
+        XCTAssertNil(DirectStreamingPlayer.stationCapacityCondition(statusCode: 403))
+        XCTAssertNil(DirectStreamingPlayer.stationCapacityCondition(for: URLError(.badServerResponse)))
+        XCTAssertEqual(StreamErrorType.from(error: URLError(.badServerResponse)), .transientFailure)
+        XCTAssertEqual(StreamErrorType.from(error: URLError(.resourceUnavailable)), .permanentFailure)
+        let contentUnavailable = NSError(
+            domain: AVFoundationErrorDomain,
+            code: AVError.Code.contentIsUnavailable.rawValue
+        )
+        XCTAssertEqual(DirectStreamingPlayer.stationCapacityCondition(for: contentUnavailable), .resource)
+        XCTAssertTrue(DirectStreamingPlayer.isPlayedResourceUnavailable(contentUnavailable))
+    }
+
+    /// Protects: one 503 moves to the other region, a duplicate of that region joins,
+    /// and Europe 503 plus US 502 selects resource. The refused URL is not recreated.
+    func testStationCapacityOneFailoverThenResourceStops() async {
+        let player = DirectStreamingPlayer.shared
+        let previous = player.currentSelectedServer
+        player.test_resetStationCapacityAttempt()
+        player.test_resetEmbeddedSecurityModelClusterRejections()
+        defer {
+            player.currentSelectedServer = previous
+            player.test_resetStationCapacityAttempt()
+            player.test_resetEmbeddedSecurityModelClusterRejections()
+        }
+        let finnishEU = stationCapacityFinnishURL(region: "eu")
+        let recreatesBefore = player.test_recreatePlayerItemEntryCount
+
+        let first = player.noteStationCapacityHTTPResponse(url: finnishEU, statusCode: 503)
+        XCTAssertEqual(first, .failoverOnce("us"))
+        XCTAssertTrue(player.embeddedSecurityModelRejectedSubdomains().isEmpty)
+
+        player.recreatePlayerItem(securedURL: finnishEU)
+        await Task.yield()
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(player.test_recreatePlayerItemEntryCount, recreatesBefore)
+
+        await player.performStationCapacityFailover()
+        let failoverHost = player.test_lastStationCapacityFailoverURL?.host ?? ""
+        XCTAssertEqual(
+            DirectStreamingPlayer.productionClusterSubdomain(
+                host: failoverHost,
+                apex: SecurityConfiguration.current.preferredStreamingDomainSuffix,
+                productionSubdomains: DirectStreamingPlayer.servers.map(\.subdomain)
+            ),
+            "us"
+        )
+        XCTAssertEqual(player.test_recreatePlayerItemEntryCount, recreatesBefore)
+
+        let duplicate = player.noteStationCapacityHTTPResponse(url: finnishEU, statusCode: 503)
+        XCTAssertEqual(duplicate, .joinInFlight)
+
+        let unitedStates = stationCapacityFinnishURL(region: "us")
+        let second = player.noteStationCapacityHTTPResponse(url: unitedStates, statusCode: 502)
+        XCTAssertEqual(second, .terminal(.resource))
+        await player.finishStationCapacityAttempt()
+        XCTAssertEqual(player.test_lastStationCapacityReasonKey, "status_resource")
+        XCTAssertNotEqual(player.test_lastStationCapacityReasonKey, "status_security_failed")
+        XCTAssertTrue(player.embeddedSecurityModelRejectedSubdomains().isEmpty)
+    }
+
+    /// Protects: both regions answering 503 selects crowded, and the attempt does not loop.
+    func testStationCapacityBothRegionsCrowded() async {
+        let player = DirectStreamingPlayer.shared
+        player.test_resetStationCapacityAttempt()
+        defer { player.test_resetStationCapacityAttempt() }
+        let first = player.noteStationCapacityHTTPResponse(url: stationCapacityFinnishURL(region: "eu"), statusCode: 503)
+        XCTAssertEqual(first, .failoverOnce("us"))
+        let second = player.noteStationCapacityHTTPResponse(url: stationCapacityFinnishURL(region: "us"), statusCode: 503)
+        XCTAssertEqual(second, .terminal(.crowded))
+        await player.finishStationCapacityAttempt()
+        XCTAssertEqual(player.test_lastStationCapacityReasonKey, "status_crowded")
+        let again = player.noteStationCapacityHTTPResponse(url: stationCapacityFinnishURL(region: "eu"), statusCode: 429)
+        if case .failoverOnce = again {
+            XCTFail("A spent generation must not open another capacity attach")
+        }
+    }
+
+    /// Protects: a 503 or 502 whose query is the embedded model does not security-lock
+    /// and does not enter the rejection set. HTTP 403 with that query still failovers once.
+    func testStationCapacityDoesNotTreatEmbeddedModelQueryAsSecurityFailure() async {
+        let player = DirectStreamingPlayer.shared
+        player.test_resetStationCapacityAttempt()
+        player.test_resetEmbeddedSecurityModelClusterRejections()
+        defer {
+            player.test_resetStationCapacityAttempt()
+            player.test_resetEmbeddedSecurityModelClusterRejections()
+        }
+        let finnishEU = stationCapacityFinnishURL(region: "eu")
+        XCTAssertEqual(
+            player.noteEmbeddedSecurityModelRejection(url: finnishEU, statusCode: 503),
+            .notThisFailure
+        )
+        XCTAssertEqual(
+            player.noteEmbeddedSecurityModelRejection(url: finnishEU, statusCode: 502),
+            .notThisFailure
+        )
+        XCTAssertTrue(player.embeddedSecurityModelRejectedSubdomains().isEmpty)
+        let capacity = player.noteStationCapacityHTTPResponse(url: finnishEU, statusCode: 503)
+        XCTAssertEqual(capacity, .failoverOnce("us"))
+        XCTAssertTrue(player.embeddedSecurityModelRejectedSubdomains().isEmpty)
+        XCTAssertNotEqual(player.test_lastStationCapacityReasonKey, "status_security_failed")
+
+        player.test_resetStationCapacityAttempt()
+        player.test_resetEmbeddedSecurityModelClusterRejections()
+        let security = player.noteEmbeddedSecurityModelRejection(url: finnishEU, statusCode: 403)
+        XCTAssertEqual(security, .failoverOnce("us"))
+        XCTAssertEqual(
+            player.noteStationCapacityHTTPResponse(url: finnishEU, statusCode: 403),
+            .notThisResponse
+        )
+        XCTAssertEqual(player.embeddedSecurityModelRejectedSubdomains(), ["eu"])
+    }
+
+    /// Protects: content unavailable after headers is resource and does not open the other region.
+    func testStationCapacityContentUnavailableDoesNotFailover() async {
+        let player = DirectStreamingPlayer.shared
+        player.test_resetStationCapacityAttempt()
+        defer { player.test_resetStationCapacityAttempt() }
+        let disposition = player.noteStationContentUnavailable(url: stationCapacityFinnishURL(region: "eu"))
+        XCTAssertEqual(disposition, .terminal(.resource))
+        await player.finishStationCapacityAttempt()
+        XCTAssertEqual(player.test_lastStationCapacityReasonKey, "status_resource")
+        XCTAssertNil(player.test_lastStationCapacityFailoverURL)
+        let later = player.noteStationCapacityHTTPResponse(url: stationCapacityFinnishURL(region: "us"), statusCode: 503)
+        XCTAssertEqual(later, .terminal(.resource))
+    }
+
+    /// Protects: a region already refused for the embedded model is not used as the capacity failover.
+    func testStationCapacitySkipsSecurityRejectedRegion() {
+        let player = DirectStreamingPlayer.shared
+        player.test_resetStationCapacityAttempt()
+        player.test_resetEmbeddedSecurityModelClusterRejections()
+        defer {
+            player.test_resetStationCapacityAttempt()
+            player.test_resetEmbeddedSecurityModelClusterRejections()
+        }
+        let rejection = player.noteEmbeddedSecurityModelRejection(
+            url: stationCapacityFinnishURL(region: "eu"),
+            statusCode: 403
+        )
+        XCTAssertEqual(rejection, .failoverOnce("us"))
+        let crowded = player.noteStationCapacityHTTPResponse(
+            url: stationCapacityFinnishURL(region: "us"),
+            statusCode: 503
+        )
+        XCTAssertEqual(crowded, .terminal(.crowded))
+        XCTAssertNil(player.test_lastStationCapacityFailoverURL)
+    }
+
+    /// Protects: after one capacity move, a 403 on the destination uses only the
+    /// embedded-model walk. A later 503 stops instead of opening another capacity attach.
+    func testStationCapacitySecurityTakeoverDoesNotLoop() async {
+        let player = DirectStreamingPlayer.shared
+        let previous = player.currentSelectedServer
+        player.test_resetStationCapacityAttempt()
+        player.test_resetEmbeddedSecurityModelClusterRejections()
+        defer {
+            player.currentSelectedServer = previous
+            player.test_resetStationCapacityAttempt()
+            player.test_resetEmbeddedSecurityModelClusterRejections()
+        }
+        let first = player.noteStationCapacityHTTPResponse(
+            url: stationCapacityFinnishURL(region: "eu"),
+            statusCode: 503
+        )
+        XCTAssertEqual(first, .failoverOnce("us"))
+        await player.performStationCapacityFailover()
+        let security = player.noteEmbeddedSecurityModelRejection(
+            url: stationCapacityFinnishURL(region: "us"),
+            statusCode: 403
+        )
+        XCTAssertEqual(security, .failoverOnce("eu"))
+        player.stationCapacitySecurityModelTookOver()
+        let later = player.noteStationCapacityHTTPResponse(
+            url: stationCapacityFinnishURL(region: "eu"),
+            statusCode: 503
+        )
+        XCTAssertEqual(later, .terminal(.crowded))
+        XCTAssertEqual(player.embeddedSecurityModelRejectedSubdomains(), ["us"])
+        await player.finishStationCapacityAttempt()
+        XCTAssertEqual(player.test_lastStationCapacityReasonKey, "status_crowded")
+        XCTAssertNotEqual(player.test_lastStationCapacityReasonKey, "status_security_failed")
+    }
+
+    /// Protects: a new attach generation can failover once after the previous attempt stopped.
+    func testStationCapacityNewGenerationCanFailoverAgain() async {
+        let player = DirectStreamingPlayer.shared
+        player.test_resetStationCapacityAttempt()
+        defer { player.test_resetStationCapacityAttempt() }
+        let first = player.noteStationCapacityHTTPResponse(
+            url: stationCapacityFinnishURL(region: "eu"),
+            statusCode: 503
+        )
+        XCTAssertEqual(first, .failoverOnce("us"))
+        player.test_invalidateInFlightPlaybackAttach()
+        let late = player.noteStationCapacityHTTPResponse(
+            url: stationCapacityFinnishURL(region: "eu"),
+            statusCode: 503
+        )
+        XCTAssertEqual(late, .ignored)
+        player.test_resetStationCapacityAttempt()
+        let again = player.noteStationCapacityHTTPResponse(
+            url: stationCapacityFinnishURL(region: "eu"),
+            statusCode: 503
+        )
+        XCTAssertEqual(again, .failoverOnce("us"))
+    }
+
+    /// Protects: loading errors for crowded and resource do not recreate or spend the early-window budget.
+    func testHandleLoadingErrorCapacityDoesNotRecreate() async {
+        let player = DirectStreamingPlayer.shared
+        player.test_resetStationCapacityAttempt()
+        defer { player.test_resetStationCapacityAttempt() }
+        let recreatesBefore = player.test_recreatePlayerItemEntryCount
+        let retriesBefore = player.initialPlaybackRetryCount
+
+        await player.handleLoadingError(URLError(.resourceUnavailable))
+        XCTAssertEqual(player.test_lastStationCapacityReasonKey, "status_crowded")
+        XCTAssertEqual(player.test_recreatePlayerItemEntryCount, recreatesBefore)
+        XCTAssertEqual(player.initialPlaybackRetryCount, retriesBefore)
+
+        player.test_resetStationCapacityAttempt()
+        await player.handleLoadingError(URLError(.fileDoesNotExist))
+        XCTAssertEqual(player.test_lastStationCapacityReasonKey, "status_resource")
+        XCTAssertEqual(player.test_recreatePlayerItemEntryCount, recreatesBefore)
+        XCTAssertEqual(player.initialPlaybackRetryCount, retriesBefore)
+
+        player.test_resetStationCapacityAttempt()
+        let upstream = URLError(
+            .badServerResponse,
+            userInfo: [DirectStreamingPlayer.stationCapacityResourceUserInfoKey: true]
+        )
+        await player.handleLoadingError(upstream)
+        XCTAssertEqual(player.test_lastStationCapacityReasonKey, "status_resource")
+        XCTAssertEqual(player.test_recreatePlayerItemEntryCount, recreatesBefore)
+        XCTAssertEqual(player.initialPlaybackRetryCount, retriesBefore)
+    }
+
+    /// Protects: the pill is one word on failure chrome, and the alert keys are the sentences.
+    /// Playing and an explicit clear hide the word. `status_stopped` does not.
+    func testStationCapacityPillKeepsFailureChromeAndAlertKeysAreSentences() throws {
+        let model = PlayerViewModel()
+        model.visualState = .userPaused
+        let paused = PlayerVisualState.userPaused.makeStatusPresentation()
+        model.noteStationTerminalStatusReason("status_crowded")
+        XCTAssertEqual(model.statusPresentation.background, paused.background)
+        XCTAssertEqual(model.statusPresentation.foreground, paused.foreground)
+        XCTAssertEqual(model.statusPresentation.systemImage, paused.systemImage)
+        let crowdedWord = String(localized: "status_crowded", table: "Localizable")
+        XCTAssertEqual(model.statusPresentation.text, crowdedWord)
+        XCTAssertNotEqual(model.statusPresentation.text, paused.text)
+        XCTAssertNil(crowdedWord.rangeOfCharacter(from: .whitespacesAndNewlines))
+
+        model.visualState = .playing
+        let playing = PlayerVisualState.playing.makeStatusPresentation()
+        XCTAssertEqual(model.statusPresentation.text, playing.text)
+
+        model.clearStationTerminalStatusReason()
+        model.visualState = .userPaused
+        XCTAssertEqual(model.statusPresentation.text, paused.text)
+
+        XCTAssertEqual(
+            PlayerViewModel.stationCapacityAlertLocalizationKeys(for: "status_crowded")?.title,
+            "crowded_title"
+        )
+        XCTAssertEqual(
+            PlayerViewModel.stationCapacityAlertLocalizationKeys(for: "status_crowded")?.message,
+            "crowded_message"
+        )
+        XCTAssertEqual(
+            PlayerViewModel.stationCapacityAlertLocalizationKeys(for: "status_resource")?.title,
+            "resource_title"
+        )
+        XCTAssertNil(PlayerViewModel.stationCapacityAlertLocalizationKeys(for: "status_failed"))
+
+        XCTAssertTrue(PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: "status_playing", visualState: nil))
+        XCTAssertTrue(PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: "status_paused", visualState: nil))
+        XCTAssertTrue(PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: "status_paused_call", visualState: nil))
+        XCTAssertTrue(PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: "status_connecting", visualState: nil))
+        XCTAssertTrue(PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: "status_security_failed", visualState: nil))
+        XCTAssertFalse(PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: "status_crowded", visualState: nil))
+        XCTAssertFalse(PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: "status_stopped", visualState: nil))
+        XCTAssertTrue(PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: nil, visualState: .playing))
+        XCTAssertTrue(PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: nil, visualState: .securityLocked))
+        XCTAssertTrue(PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: nil, visualState: .thermalPaused))
+        XCTAssertTrue(PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: nil, visualState: .cleared))
+        XCTAssertFalse(PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: nil, visualState: .userPaused))
+        XCTAssertFalse(PlayerViewModel.shouldClearStationTerminalStatus(reasonKey: nil, visualState: .prePlay))
+
+        let catalog = try stationCapacityCatalogStrings()
+        let failedLanguages = try XCTUnwrap(catalog["status_failed"])
+        for key in ["status_crowded", "status_resource"] {
+            let entry = try XCTUnwrap(catalog[key])
+            XCTAssertEqual(Set(entry.keys), Set(failedLanguages.keys))
+            for (language, word) in entry {
+                XCTAssertNil(
+                    word.rangeOfCharacter(from: .whitespacesAndNewlines),
+                    "\(key) \(language) must be one word"
+                )
+            }
+        }
+        XCTAssertEqual(
+            catalog["crowded_message"]?["en"],
+            "The station is full of people listening together right now. There will be room for you in a few minutes."
+        )
+        XCTAssertTrue(
+            (catalog["crowded_message"]?["en"] ?? "").hasPrefix("The station is full of people listening together")
+        )
+        XCTAssertEqual(catalog["crowded_title"]?["en"], "Station is full")
+        XCTAssertEqual(catalog["resource_title"]?["en"], "Station unavailable")
+        XCTAssertEqual(
+            catalog["resource_message"]?["en"],
+            "This station is not being sent from the server right now. Please try again later."
+        )
+        for key in ["crowded_message", "resource_message", "crowded_title", "resource_title"] {
+            let entry = try XCTUnwrap(catalog[key])
+            XCTAssertEqual(Set(entry.keys), Set(failedLanguages.keys), key)
+            if key.hasSuffix("message") {
+                for (language, sentence) in entry {
+                    let hasSpace = sentence.rangeOfCharacter(from: .whitespaces) != nil
+                    let hasStop = sentence.contains("。") || sentence.contains("।") || sentence.contains("።")
+                    XCTAssertTrue(hasSpace || hasStop, "\(key) \(language) must be a sentence")
+                }
+            }
+        }
+        let spoken = PlayerViewModel.stationTerminalStatusAnnouncement(for: "status_crowded")
+        XCTAssertEqual(spoken, crowdedWord)
+    }
+
+    private func stationCapacityFinnishURL(region: String) -> URL {
+        let apex = SecurityConfiguration.current.preferredStreamingDomainSuffix
+        let model = SecurityConfiguration.current.expectedSecurityModel
+        return URL(string: "https://finnish-\(region).\(apex)/lutheranradio.mp3?security_model=\(model)")!
+    }
+
+    /// Language code → translated value for the capacity catalog keys.
+    private func stationCapacityCatalogStrings() throws -> [String: [String: String]] {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Lutheran Radio/Localizable.xcstrings")
+        let data = try Data(contentsOf: url)
+        let object = try JSONSerialization.jsonObject(with: data)
+        let catalog = try XCTUnwrap(object as? [String: Any])
+        let strings = try XCTUnwrap(catalog["strings"] as? [String: Any])
+        var flattened: [String: [String: String]] = [:]
+        for key in [
+            "status_failed", "status_crowded", "status_resource",
+            "crowded_title", "crowded_message", "resource_title", "resource_message",
+        ] {
+            let entry = try XCTUnwrap(strings[key] as? [String: Any])
+            let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any])
+            var values: [String: String] = [:]
+            for (language, payload) in localizations {
+                let unit = try XCTUnwrap(payload as? [String: Any])
+                let stringUnit = try XCTUnwrap(unit["stringUnit"] as? [String: Any])
+                values[language] = try XCTUnwrap(stringUnit["value"] as? String)
+            }
+            flattened[key] = values
+        }
+        return flattened
+    }
 }

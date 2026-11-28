@@ -187,6 +187,15 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
                 
                 // Early-window transients recover via secured recreate without full stop.
                 // Permanent and post-window failures go through handleLoadingError.
+                // Capacity statuses must not recreate the URL that just refused.
+                // `badServerResponse` alone is HTTP 500 and stays on the transient path.
+                if DirectStreamingPlayer.stationCapacityCondition(for: error) != nil {
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        await self.handleLoadingError(error)
+                    }
+                    return
+                }
                 let errType = StreamErrorType.from(error: error)
                 if !errType.isPermanent {
                     Task { @MainActor [weak self] in

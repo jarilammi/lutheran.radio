@@ -12179,6 +12179,758 @@
         }
       }
     },
+    "crowded_message" : {
+      "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die stasie is vol mense wat nou saam luister. Oor ’n paar minute is daar plek vir jou."
+          }
+        },
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ጣቢያው አሁን አብረው በሚያዳምጡ ሰዎች ተሞልቷል። በጥቂት ደቂቃዎች ውስጥ ለእርስዎ ቦታ ይኖራል።"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станцыя поўная людзей, якія зараз слухаюць разам. Праз некалькі хвілін для вас знойдзецца месца."
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Istationi yaisula abantu abaleumfwa pamo pali ino nshita. Mu miniti iinono kukaba umwanya pali iwe."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станцията е пълна с хора, които слушат заедно в момента. След няколко минути ще има място за вас."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "স্টেশনটি এখন একসঙ্গে শুনছেন এমন মানুষে ভর্তি। কয়েক মিনিটের মধ্যে আপনার জন্য জায়গা হবে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stanice je plná lidí, kteří právě poslouchají společně. Za několik minut pro vás bude místo."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stationen er fuld af mennesker, der lytter sammen lige nu. Om et par minutter er der plads til dig."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Sender ist voll mit Menschen, die gerade gemeinsam zuhören. In ein paar Minuten ist Platz für Sie."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ο σταθμός είναι γεμάτος από ανθρώπους που ακούν μαζί αυτή τη στιγμή. Σε λίγα λεπτά θα υπάρχει θέση για εσάς."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The station is full of people listening together right now. There will be room for you in a few minutes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La estación está llena de personas que escuchan juntas ahora mismo. En unos minutos habrá sitio para ti."
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jaam on täis inimesi, kes kuulavad praegu koos. Mõne minuti pärast on sinu jaoks ruumi."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asema on täynnä ihmisiä, jotka kuuntelevat yhdessä juuri nyt. Sinulle on tilaa muutaman minuutin kuluttua."
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asema on täynä ihmisiä, jokka kuuntelevat yhteen juuri nyt. Sinule on tilaa muutaman minuutin päästä."
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Støðin er full av fólki, sum lurta saman júst nú. Um fáar minuttir er pláss til tín."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La station est pleine de personnes qui écoutent ensemble en ce moment. Dans quelques minutes, il y aura de la place pour vous."
+          }
+        },
+        "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stansiya dolu insanlarla ani şindi birlikte diiler. Birkaç dakika sonra sana er olacek."
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tasha ta cika da mutane da ke saurare tare a yanzu. Ba da ɗan lokaci ba za a samu wurin ku."
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Piha ke kikowaena i nā kānaka e hoʻolohe pū ana i kēia manawa. He wahi āu ma hope o kekahi mau minuke."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्टेशन अभी साथ सुन रहे लोगों से भरा है। कुछ मिनटों में आपके लिए जगह होगी।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stanica je puna ljudi koji sada slušaju zajedno. Za nekoliko minuta bit će mjesta za vas."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az állomás tele van emberekkel, akik most együtt hallgatják. Néhány perc múlva lesz hely az Ön számára."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stasiun penuh dengan orang yang sedang mendengarkan bersama. Dalam beberapa menit akan ada tempat untuk Anda."
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stöðin er full af fólki sem hlustar saman núna. Eftir nokkrar mínútur verður pláss fyrir þig."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La stazione è piena di persone che ascoltano insieme in questo momento. Tra qualche minuto ci sarà posto per te."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "局は今、一緒に聴いている人でいっぱいです。数分すればあなたのための席ができます。"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radio ulippoq inuit tamarmik tusarnaartut. Minutsit qulit qaangiuppata inissaqassaaq."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "방송이 지금 함께 듣는 사람들로 가득합니다. 몇 분이면 당신을 위한 자리가 납니다."
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stotis pilna žmonių, kurie dabar klauso kartu. Po kelių minučių atsiras vietos jums."
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stacija ir pilna ar cilvēkiem, kuri šobrīd klausās kopā. Pēc dažām minūtēm būs vieta jums."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feno olona mihaino miaraka izao ny fantsakana. Hisy toerana ho anao afaka minitra vitsy."
+          }
+        },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станицата е полна со луѓе што сега слушаат заедно. За неколку минути ќе има место за вас."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stasjonen er full av mennesker som lytter sammen akkurat nå. Om noen minutter er det plass til deg."
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ostationa oshi li ezimo noshi na aantu taya pungula pamwe. Otaku ka kala oshipundi shoye momaminute gamwe."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De zender is vol met mensen die nu samen luisteren. Over een paar minuten is er plaats voor je."
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stasjonen er full av menneske som lyttar saman no. Om nokre minutt er det plass til deg."
+          }
+        },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wailesi yadzaza ndi anthu omwe akumvetsera limodzi panopa. Pambuyo pa mphindi zingapo padzakhala malo anu."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teessoon namoota amma waliin dhaggeeffatan guutameera. Daqiiqaa muraasa booda bakki keef ni bana."
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ଷ୍ଟେସନଟି ଏବେ ଏକାଠି ଶୁଣୁଥିବା ଲୋକଙ୍କରେ ଭର୍ତ୍ତି। କିଛି ମିନିଟ୍ ଭିତରେ ଆପଣଙ୍କ ପାଇଁ ସ୍ଥାନ ହେବ।"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stacja jest pełna ludzi, którzy teraz słuchają razem. Za kilka minut znajdzie się dla ciebie miejsce."
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A estação está cheia de pessoas que estão a ouvir juntas agora. Dentro de alguns minutos haverá lugar para si."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A estação está cheia de pessoas que estão ouvindo juntas agora. Em alguns minutos haverá lugar para você."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stația este plină de oameni care ascultă împreună chiar acum. În câteva minute va fi loc pentru tine."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станция заполнена людьми, которые сейчас слушают вместе. Через несколько минут для вас найдётся место."
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sáddan lea dievva olbmuin geat guldalit ovttas dál. Moadde minuhta geahčen lea saji dutnje."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stanica je plná ľudí, ktorí práve počúvajú spolu. O niekoľko minút bude pre vás miesto."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Postaja je polna ljudi, ki zdaj poslušajo skupaj. Čez nekaj minut bo prostor za vas."
+          }
+        },
+        "sq" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stacioni është plot me njerëz që po dëgjojnë së bashku tani. Pas disa minutash do të ketë vend për ju."
+          }
+        },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станица је пуна људи који сада слушају заједно. За неколико минута биће места за вас."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stationen är full av människor som lyssnar tillsammans just nu. Om några minuter finns det plats för dig."
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kituo kimejaa watu wanaosikiliza pamoja sasa. Baada ya dakika chache kutakuwa na nafasi yako."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "நிலையம் இப்போது ஒன்றாகக் கேட்டுக்கொண்டிருக்கும் மக்களால் நிறைந்துள்ளது. சில நிமிடங்களில் உங்களுக்கு இடம் கிடைக்கும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "స్టేషన్ ఇప్పుడు కలిసి వింటున్న వారితో నిండి ఉంది. కొన్ని నిమిషాల్లో మీకు చోటు దొరుకుతుంది."
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "እቲ ጣቢያ ሕጂ ብሓባር ዝሰምዑ ሰባት መሊኡ ኣሎ። ድሕሪ ደቓይቕ ክንደይ ቦታ ክህልወካ እዩ።"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻOku fonu ʻa e letaio ʻi he kakai ʻoku nau fanongo fakataha he taimí ni. ʻE ʻi ai ha potu mou ki ha miniti siʻi."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "İstasyon şu anda birlikte dinleyen insanlarla dolu. Birkaç dakika içinde size yer olacak."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станція повна людей, які зараз слухають разом. За кілька хвилин для вас буде місце."
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rédíò ti kún pẹ̀lú àwọn ènìyàn tó ń gbọ́ papọ̀ báyìí. Ní ìṣẹ́jú díẹ̀ yóò sí ààyè fún ọ."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "电台里现在坐满了一起收听的人。几分钟后就会有你的位置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電台裡現在坐滿了一起收聽的人。幾分鐘後就會有你的位置。"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isiteshi sigcwele abantu abalalele ndawonye manje. Emaminithini ambalwa kuzoba nendawo yakho."
+          }
+        }
+      }
+    },
+    "crowded_title" : {
+      "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stasie is vol"
+          }
+        },
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ጣቢያው ሞልቷል"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станцыя поўная"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Istationi yaisula"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станцията е пълна"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "স্টেশন ভর্তি"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stanice je plná"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stationen er fuld"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sender ist voll"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ο σταθμός είναι γεμάτος"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Station is full"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La estación está llena"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jaam on täis"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asema on täynnä"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asema on täynä"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Støðin er full"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La station est pleine"
+          }
+        },
+        "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stansiya dolu"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tasha ta cika"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Piha ke kikowaena"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्टेशन भरा है"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stanica je puna"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az állomás tele van"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stasiun penuh"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stöðin er full"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La stazione è piena"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "局は満員です"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radio ulippoq"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "방송이 만원입니다"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stotis pilna"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stacija ir pilna"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feno ny fantsakana"
+          }
+        },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станицата е полна"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stasjonen er full"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ostationa oshi li ezimo"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zender is vol"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stasjonen er full"
+          }
+        },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wailesi yadzaza"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teessoon guutameera"
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ଷ୍ଟେସନ ଭର୍ତ୍ତି"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stacja jest pełna"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A estação está cheia"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A estação está cheia"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stația este plină"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станция заполнена"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sáddan dievvá"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stanica je plná"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Postaja je polna"
+          }
+        },
+        "sq" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stacioni është plot"
+          }
+        },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станица је пуна"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stationen är full"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kituo kimejaa"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "நிலையம் நெரிசலில்"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "స్టేషన్ నిండింది"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "እቲ ጣቢያ መሊኡ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fonu ʻa e letaio"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "İstasyon dolu"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станція повна"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rédíò ti kún"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "电台已满"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電台已滿"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isiteshi sigcwele"
+          }
+        }
+      }
+    },
     "decrease_volume" : {
       "comment" : "Accessibility action to decrease volume",
       "localizations" : {
@@ -23104,6 +23856,758 @@
         }
       }
     },
+    "resource_message" : {
+      "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hierdie stasie word nie nou van die bediener gestuur nie. Probeer later weer."
+          }
+        },
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ይህ ጣቢያ አሁን ከአገልጋዩ አይላክም። እባክዎ በኋላ እንደገና ይሞክሩ።"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Гэтая станцыя зараз не перадаецца з сервера. Калі ласка, паспрабуйце пазней."
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iyi istationi tayatumwa ukufuma ku server pali ino nshita. Napapata esheni nakabili panuma."
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тази станция не се изпраща от сървъра в момента. Моля, опитайте отново по-късно."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই স্টেশনটি এখন সার্ভার থেকে পাঠানো হচ্ছে না। অনুগ্রহ করে পরে আবার চেষ্টা করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tato stanice se teď ze serveru nevysílá. Zkuste to prosím později."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denne station bliver ikke sendt fra serveren lige nu. Prøv igen senere."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Sender wird gerade nicht vom Server gesendet. Bitte versuchen Sie es später erneut."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αυτός ο σταθμός δεν αποστέλλεται από τον διακομιστή αυτή τη στιγμή. Δοκιμάστε ξανά αργότερα."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This station is not being sent from the server right now. Please try again later."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta estación no se está enviando desde el servidor ahora mismo. Inténtalo de nuevo más tarde."
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seda jaama ei saadeta praegu serverist. Proovi hiljem uuesti."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tätä asemaa ei lähetetä palvelimelta juuri nyt. Yritä uudelleen myöhemmin."
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tätä asemaa ei lähetetä palvelimelta juuri nyt. Koeta uuestansa jälkhiin."
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Henda støðin verður ikki send frá ambætaranum júst nú. Royn aftur seinni."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette station n’est pas envoyée par le serveur en ce moment. Veuillez réessayer plus tard."
+          }
+        },
+        "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu stansiya şindi serverdan gönderilmeer. Lütfen taa sora gene dene."
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wannan tashar ba a aika ta daga uwar garken a yanzu. Da fatan za a sake gwadawa daga baya."
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻAʻole e hoʻouna ʻia kēia kikowaena mai ke kikowaena pūnaewele i kēia manawa. E hoʻāʻo hou ma hope."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "यह स्टेशन अभी सर्वर से नहीं भेजा जा रहा है। कृपया बाद में फिर कोशिश करें।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ova se stanica trenutačno ne šalje s poslužitelja. Pokušajte ponovno kasnije."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ezt az állomást most nem küldi a kiszolgáló. Próbálja meg később újra."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stasiun ini tidak sedang dikirim dari server saat ini. Silakan coba lagi nanti."
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Þessi stöð er ekki send frá netþjóninum núna. Reyndu aftur síðar."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa stazione non viene inviata dal server in questo momento. Riprova più tardi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この局は今サーバーから送られていません。しばらくしてからやり直してください。"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radio manna maanna serverimit nassiunneqanngilaq. Sioqqutsisoq tuppilaaruk."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 방송은 지금 서버에서 보내지고 있지 않습니다. 나중에 다시 시도해 주세요."
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ši stotis dabar nesiunčiama iš serverio. Bandykite dar kartą vėliau."
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Šī stacija šobrīd netiek sūtīta no servera. Mēģiniet vēlreiz vēlāk."
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy alefa avy amin'ny mpizara izao ity fantsakana ity. Andramo indray any aoriana."
+          }
+        },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оваа станица моментално не се испраќа од серверот. Обидете се повторно подоцна."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denne stasjonen sendes ikke fra serveren akkurat nå. Prøv igjen senere."
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ostationa ka yi tumwa okudja koserver nena. Kambadhala ishewe konima."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit station wordt nu niet vanaf de server verzonden. Probeer het later opnieuw."
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denne stasjonen blir ikkje send frå tenaren no. Prøv igjen seinare."
+          }
+        },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wailesiyi sikutumizidwa kuchokera ku seva panopa. Chonde yesaninso nthawi ina."
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teessoon kun amma kaadima irraa hin ergamu. Maaloo booda irra deebi'ii yaali."
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ଏହି ଷ୍ଟେସନଟି ଏବେ ସର୍ଭରରୁ ପଠାଯାଉନାହିଁ। ଦୟାକରି ପରେ ପୁଣି ଚେଷ୍ଟା କରନ୍ତୁ।"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ta stacja nie jest teraz wysyłana z serwera. Spróbuj ponownie później."
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta estação não está a ser enviada pelo servidor neste momento. Tente novamente mais tarde."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta estação não está sendo enviada pelo servidor agora. Tente de novo mais tarde."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Această stație nu este trimisă de pe server chiar acum. Încearcă din nou mai târziu."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эта станция сейчас не передаётся с сервера. Попробуйте снова позже."
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dát sáddan ii leat dál sáddejuvvon serveris. Geahčal ođđasit maŋŋá."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Táto stanica sa teraz zo servera nevysiela. Skúste to prosím neskôr."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ta postaja se trenutno ne pošilja s strežnika. Poskusite znova pozneje."
+          }
+        },
+        "sq" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ky stacion nuk po dërgohet nga serveri tani. Ju lutemi provoni përsëri më vonë."
+          }
+        },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ова станица се тренутно не шаље са сервера. Молимо вас, покушајте поново касније."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Den här stationen sänds inte från servern just nu. Försök igen senare."
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kituo hiki hakitumwi kutoka kwenye seva kwa sasa. Tafadhali jaribu tena baadaye."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்த நிலையம் இப்போது சேவையகத்திலிருந்து அனுப்பப்படவில்லை. பின்னர் மீண்டும் முயற்சிக்கவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ స్టేషన్ ఇప్పుడు సర్వర్ నుండి పంపబడటం లేదు. దయచేసి తర్వాత మళ్లీ ప్రయత్నించండి."
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "እዚ ጣቢያ እዚ ሕጂ ካብ ሰርቨር ኣይለኣኽን። በይኻ ድሕሪኡ እንደገና ፈትን።"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻOku ʻikai ke ʻave ʻa e letaio ni mei he server he taimí ni. Kataki toe feinga ʻamui ange."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu istasyon şu anda sunucudan gönderilmiyor. Lütfen daha sonra yeniden deneyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цю станцію зараз не передають із сервера. Спробуйте знову пізніше."
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rédíò yìí kò ń jáde láti ori apèsè báyìí. Jọ̀wọ́ gbìyànjú lẹ́ẹ̀kan si lẹ́yìn."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个电台现在没有从服务器发送。请稍后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這個電台現在沒有從伺服器送出。請稍後再試。"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le siteshi ayithunyelwa kuseva manje. Sicela uzame futhi kamuva."
+          }
+        }
+      }
+    },
+    "resource_title" : {
+      "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stasie onbeskikbaar"
+          }
+        },
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ጣቢያው የለም"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станцыя недаступная"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Istationi tayapo"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станцията липсва"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "স্টেশন নেই"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stanice chybí"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stationen mangler"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sender nicht verfügbar"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ο σταθμός λείπει"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Station unavailable"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estación no disponible"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jaam ei ole saadaval"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asema ei kuulu"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asema ei kuulu"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Støðin burtur"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Station indisponible"
+          }
+        },
+        "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stansiya yok"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tasha ba ta samuwa"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻAʻole loaʻa ke kikowaena"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "स्टेशन उपलब्ध नहीं"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stanica nije dostupna"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az állomás nem elérhető"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stasiun tidak tersedia"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stöðin vantar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stazione non disponibile"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "局がありません"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radio ajortoq"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "방송을 보낼 수 없음"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stotis nepasiekiama"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stacija nav pieejama"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tsy azo ny fantsakana"
+          }
+        },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станицата не е достапна"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stasjonen mangler"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ostationa inali"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zender niet beschikbaar"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stasjonen er borte"
+          }
+        },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wailesi palibe"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teessoon hin jiru"
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ଷ୍ଟେସନ ନାହିଁ"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stacja niedostępna"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estação indisponível"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estação indisponível"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stația nu este disponibilă"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станция недоступна"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sáddan váilu"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stanica chýba"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Postaja ni na voljo"
+          }
+        },
+        "sq" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stacioni mungon"
+          }
+        },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станица није доступна"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stationen saknas"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kituo hakipatikani"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "நிலையம் இல்லை"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "స్టేషన్ లేదు"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "እቲ ጣቢያ የለን"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ʻOku ʻikai ke ʻave ʻa e letaio"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "İstasyon yok"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Станція недоступна"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rédíò kò jáde"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "电台无源"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電台無源"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isiteshi asitholakali"
+          }
+        }
+      }
+    },
     "security_model_error_message" : {
       "localizations" : {
         "af" : {
@@ -29945,6 +31449,382 @@
         }
       }
     },
+    "status_crowded" : {
+      "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vol"
+          }
+        },
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ሙሉ"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поўна"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caisula"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пълно"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ভর্তি"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plno"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fuldt"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voll"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Γεμάτο"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crowded"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lleno"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Täis"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Täynnä"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Täynä"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fult"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Complet"
+          }
+        },
+        "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dolu"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cika"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Piha"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "भरा"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puno"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tele"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Penuh"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fullt"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pieno"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "満員"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ulippoq"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "만원"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pilna"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pilns"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feno"
+          }
+        },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Полно"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fullt"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ezimo"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vol"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fullt"
+          }
+        },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wodzaza"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guutuu"
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ଭର୍ତ୍ତି"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pełno"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheio"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cheio"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plin"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Полно"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dievva"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plno"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Polno"
+          }
+        },
+        "sq" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plotë"
+          }
+        },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пуно"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fullt"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imejaa"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "நெரிசல்"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "నిండు"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "መሊኡ"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fonu"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dolu"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повно"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kún"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拥挤"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "擁擠"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gcwele"
+          }
+        }
+      }
+    },
     "status_failed" : {
       "localizations" : {
         "af" : {
@@ -32200,6 +34080,382 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dlala"
+          }
+        }
+      }
+    },
+    "status_resource" : {
+      "localizations" : {
+        "af" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weg"
+          }
+        },
+        "am" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የለም"
+          }
+        },
+        "be" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Няма"
+          }
+        },
+        "bem" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tapali"
+          }
+        },
+        "bg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Липсва"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "নেই"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chybí"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mangler"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fehlt"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Λείπει"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resource"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausente"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puudu"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puuttuu"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puuttuu"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Burtur"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Absent"
+          }
+        },
+        "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yok"
+          }
+        },
+        "ha" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Babu"
+          }
+        },
+        "haw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nalo"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "गायब"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nema"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nincs"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hilang"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vantar"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Assente"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無し"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajortoq"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "없음"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nėra"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nav"
+          }
+        },
+        "mg" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lany"
+          }
+        },
+        "mk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нема"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mangler"
+          }
+        },
+        "ng" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kepi"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weg"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borte"
+          }
+        },
+        "ny" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Palibe"
+          }
+        },
+        "om" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dhabame"
+          }
+        },
+        "or" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ନାହିଁ"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brak"
+          }
+        },
+        "pt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausente"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausente"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lipsă"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Váilo"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chýba"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ni"
+          }
+        },
+        "sq" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mungon"
+          }
+        },
+        "sr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нема"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saknas"
+          }
+        },
+        "sw" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haipo"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இல்லை"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "లేదు"
+          }
+        },
+        "ti" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "የለን"
+          }
+        },
+        "to" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ngalo"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yok"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Немає"
+          }
+        },
+        "yo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sọnù"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无源"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無源"
+          }
+        },
+        "zu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akekho"
           }
         }
       }
