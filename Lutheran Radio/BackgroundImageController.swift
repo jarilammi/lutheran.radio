@@ -7,13 +7,20 @@
 //  is stable + live ICY metadata received), energy efficiency (LPM parallax removal + raw path),
 //  and parallax motion effects.
 //
-//  All observable behavior (image choice per language, filter chains for dark/light, downscaling
-//  caps, deferral timing, cross-dissolve vs immediate, small-screen scaling, cache coalescing,
-//  memory warning clearing, debug output) must remain pixel- and timing-identical.
+//  For a display request that is still current, observable behavior (image choice per language,
+//  filter chains for dark/light, downscaling caps, deferral timing, cross-dissolve vs immediate,
+//  small-screen scaling, cache coalescing, memory warning clearing, debug output) must remain
+//  pixel- and timing-identical.
+//
+//  Generation invariant: the controller has one desired display request. Publishing a new
+//  request supersedes every earlier request, including a Core Image job that has already
+//  passed the deferred flush. A superseded request may store its bitmap in the processed-image
+//  cache and must not change backgroundImageView.
 //
 //  Owner (ViewController) supplies streams at the right moments via the public hooks and
 //  performs layout (addSubview + constraints) of the vended backgroundImageView.
 //  Owner retains all playback intent, streaming, and visual state decisions.
+//  Paint legality is the ledger, not lastRequestedStream and not the player.
 //
 //  Created by Jari Lammi on 13.6.2026.
 //
@@ -21,11 +28,73 @@
 import UIKit
 import CoreImage
 
+/// Identity of one desired background image.
+///
+/// Equality includes ``generation`` and ``languageCode``. A later publish of the same
+/// language code is a different request.
+///
+/// - Important: A view write is legal only when ``BackgroundImageDisplayLedger/mayPaint(_:)``
+///   is true for the request captured at publish time.
+/// - SeeAlso: ``BackgroundImageDisplayLedger``, ``BackgroundImageController``,
+///   CODING_AGENT.md
+struct BackgroundImageDisplayRequest: Equatable, Sendable {
+    /// Monotonic id from ``BackgroundImageDisplayLedger/publish(languageCode:)``.
+    /// A later publish never reuses it.
+    let generation: UInt64
+
+    /// Station language code this request wants on screen.
+    let languageCode: String
+}
+
+/// Sole current background display request for ``BackgroundImageController``.
+///
+/// Publishing replaces the current request. ``mayPaint(_:)`` is true only for that
+/// request. An older generation with the same language code does not paint.
+/// The ledger does not start or cancel Core Image work.
+///
+/// - SeeAlso: ``BackgroundImageDisplayRequest``, ``BackgroundImageController``,
+///   CODING_AGENT.md
+@MainActor
+struct BackgroundImageDisplayLedger {
+    private var nextGeneration: UInt64 = 0
+    private var current: BackgroundImageDisplayRequest?
+
+    /// Increments the generation and installs that request as the only one that may paint.
+    ///
+    /// - Parameter languageCode: Station language the controller now wants on screen.
+    /// - Returns: The request a view write must capture and pass to ``mayPaint(_:)``.
+    /// - Postcondition: ``mayPaint(_:)`` is true for the returned value and false for every earlier publish.
+    /// - SeeAlso: ``BackgroundImageController/update(for:skipCrossDissolve:)``,
+    ///   ``BackgroundImageController``
+    mutating func publish(languageCode: String) -> BackgroundImageDisplayRequest {
+        nextGeneration &+= 1
+        let request = BackgroundImageDisplayRequest(
+            generation: nextGeneration,
+            languageCode: languageCode
+        )
+        current = request
+        return request
+    }
+
+    /// Whether `request` is still the sole current display request.
+    ///
+    /// - Parameter request: Value previously returned by ``publish(languageCode:)``.
+    /// - Returns: `true` only when `request` is equal to the current publish.
+    /// - SeeAlso: ``publish(languageCode:)``, ``BackgroundImageController``
+    func mayPaint(_ request: BackgroundImageDisplayRequest) -> Bool {
+        current == request
+    }
+}
+
 /// Self-contained controller for the decorative background layer.
-/// - Owns the UIImageView (full-bleed with negative insets for parallax bleed).
-/// - Owns all CIContext, queues, NSCache, in-flight task coalescing, and deferral state machine.
-/// - Drives low-efficiency (raw image, no filters, no parallax) vs normal processed path.
-/// - Exposes narrow API for the orchestrator to call at the correct lifecycle points.
+///
+/// Owns the image view, Core Image context, processed-image cache, in-flight coalescing,
+/// and the deferral state machine. One ``BackgroundImageDisplayLedger`` is the display
+/// request. A job that loses that request may fill the cache and must not paint.
+///
+/// - SeeAlso: ``BackgroundImageDisplayLedger``, ``BackgroundImageDisplayRequest``,
+///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority),
+///   CODING_AGENT.md
 @MainActor
 final class BackgroundImageController {
 
@@ -50,28 +119,52 @@ final class BackgroundImageController {
     private let imageProcessingContext = CIContext(options: [.useSoftwareRenderer: false])
     /// Cache for processed background images (limited to 5 — one per supported background language).
     private var processedImageCache = NSCache<NSString, UIImage>()
-    /// Coalesces overlapping processing work for the same cache key.
-    private var inFlightImageProcessing: [String: Task<UIImage?, Never>] = [:]
+    /// One Core Image fill per cache key. Cleanup removes the entry only when the stored id is still that job.
+    private var inFlightImageProcessing: [String: InFlightBackgroundImageJob] = [:]
+    /// Monotonic id for ``InFlightBackgroundImageJob``. Independent of the display-request generation.
+    private var nextInFlightImageJobID: UInt64 = 0
     private let cacheQueue = DispatchQueue(label: "radio.lutheran.imageCache", qos: .utility)
+
+    /// One in-flight fill. Interested generations share the bitmap. Only a generation that
+    /// ``BackgroundImageDisplayLedger/mayPaint(_:)`` still accepts may change the view.
+    private struct InFlightBackgroundImageJob {
+        let id: UInt64
+        let languageCode: String
+        let task: Task<UIImage?, Never>
+        var interestedGenerations: Set<UInt64>
+    }
+
+    // MARK: - Display request
+
+    /// Sole request that may paint ``backgroundImageView``.
+    private var displayLedger = BackgroundImageDisplayLedger()
 
     // MARK: - Deferral state (cold launch + stream switch)
 
     /// When true, heavy CIFilter work + main-thread apply is deferred until
     /// DirectStreamingPlayer reports stable attach + has received live ICY metadata.
     /// This prevents HAL/main-thread contention on first play and early gestures.
+    /// Deferral pauses the flush. It does not by itself retire the current display request.
     private var deferBackgroundImageUntilPlaybackStable = false
     private var pendingBackgroundStream: DirectStreamingPlayer.Stream?
     private var deferredBackgroundFlushTask: Task<Void, Never>?
 
-    /// Remembers the last stream we were asked to display so that energy-efficiency
-    /// changes (LPM on/off) can re-apply the correct image without requiring the
-    /// owner to pass the stream on every notification.
+    /// Last station a drive method was asked to show.
+    ///
+    /// ``scheduleDeferredForStreamSwitch(_:)`` sets this so ``updateForEnergyEfficiency()``
+    /// re-enters ``update(for:skipCrossDissolve:)`` for the deferred station.
+    /// During deferral that re-entry only replaces the pending stream and returns.
+    /// This is not the display request: it still names the previous station through Connecting
+    /// until ``scheduleDeferredForStreamSwitch(_:)`` runs.
     private var lastRequestedStream: DirectStreamingPlayer.Stream?
 
     // MARK: - Energy / LPM
 
     private var isLowEfficiencyMode: Bool {
-        ProcessInfo.processInfo.isLowPowerModeEnabled
+        #if DEBUG
+        if test_usesProcessedImagePath { return false }
+        #endif
+        return ProcessInfo.processInfo.isLowPowerModeEnabled
     }
 
     // MARK: - Init
@@ -99,11 +192,31 @@ final class BackgroundImageController {
         )
     }
 
+    deinit {
+        // Selector observation does not retain the controller. Remove it before the object is gone.
+        NotificationCenter.default.removeObserver(self)
+    }
+
     // MARK: - Public drive API (called by ViewController at appropriate times)
 
-    /// Primary entry point. Respects any active deferral, low-efficiency mode, cache, and performs
-    /// async CI processing + cross-dissolve (or immediate) apply when appropriate.
+    /// Publishes one display request for `stream` and paints it only while that request stays current.
+    ///
+    /// The publish is synchronous, before any queue hop. That includes the deferral early-return
+    /// and the unknown-language clear. While deferral is active this replaces the pending stream
+    /// and returns without starting Core Image. The flush's later call publishes the request that
+    /// may paint for the station the flush stored.
+    ///
+    /// - Parameters:
+    ///   - stream: Station whose background is desired.
+    ///   - skipCrossDissolve: Passed through on a processed-image cache hit. The async filter
+    ///     completion keeps its historical cross-dissolve so a request that is still current
+    ///     does not change animation timing.
+    /// - Important: A view write calls ``BackgroundImageDisplayLedger/mayPaint(_:)`` immediately
+    ///   before it touches ``backgroundImageView``.
+    /// - SeeAlso: ``BackgroundImageDisplayLedger``, ``scheduleDeferredForStreamSwitch(_:)``,
+    ///   ``cancelPendingDeferral()``, ``BackgroundImageController``, CODING_AGENT.md
     func update(for stream: DirectStreamingPlayer.Stream, skipCrossDissolve: Bool = false) {
+        let request = displayLedger.publish(languageCode: stream.languageCode)
         lastRequestedStream = stream
 
         if deferBackgroundImageUntilPlaybackStable {
@@ -116,7 +229,9 @@ final class BackgroundImageController {
 
         guard let imageName = backgroundImages[stream.languageCode] else {
             DispatchQueue.main.async { [weak self] in
-                self?.backgroundImageView.image = nil
+                guard let self else { return }
+                guard self.displayLedger.mayPaint(request) else { return }
+                self.backgroundImageView.image = nil
             }
             return
         }
@@ -130,7 +245,8 @@ final class BackgroundImageController {
             // Load raw image directly (lightweight) and apply without filters.
             if let rawImage = UIImage(named: imageName) {
                 DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
+                    guard let self else { return }
+                    guard self.displayLedger.mayPaint(request) else { return }
                     self.backgroundImageView.image = rawImage
                     UIView.transition(with: self.backgroundImageView, duration: 0.5, options: .transitionCrossDissolve) {
                         self.backgroundImageView.image = rawImage
@@ -142,11 +258,11 @@ final class BackgroundImageController {
 
         // Normal mode: cache + full processing path
         cacheQueue.async { [weak self] in
-            guard let self = self else { return }
+            guard let self else { return }
 
             DispatchQueue.main.async {
                 if let cachedImage = self.processedImageCache.object(forKey: cacheKey as NSString) {
-                    self.applyProcessedImage(cachedImage, for: stream, skipCrossDissolve: skipCrossDissolve)
+                    self.applyProcessedImage(cachedImage, for: request, skipCrossDissolve: skipCrossDissolve)
                     return
                 }
 
@@ -154,6 +270,7 @@ final class BackgroundImageController {
                     imageName: imageName,
                     cacheKey: cacheKey,
                     stream: stream,
+                    request: request,
                     isDarkMode: isDarkMode,
                     maxPixelDimension: maxPixelDimension
                 )
@@ -161,17 +278,32 @@ final class BackgroundImageController {
         }
     }
 
-    /// Called on language selection / stream switch while playback may be active.
-    /// Defers the heavy work for the *new* stream until attach is stable.
+    /// Publishes `stream` as the desired background and defers Core Image until attach is stable.
+    ///
+    /// Also stores `stream` as the last requested stream so an energy-efficiency re-entry updates
+    /// the deferred station. Cancelling the flush task does not cancel a filter job that has
+    /// already started. This publish supersedes that job's request. The flush's
+    /// ``update(for:skipCrossDissolve:)`` publishes the request that may paint.
+    ///
+    /// - Parameter stream: Station chosen while playback may still be attaching.
+    /// - Postcondition: Deferral is armed. No new Core Image work starts in this call.
+    /// - SeeAlso: ``update(for:skipCrossDissolve:)``, ``cancelPendingDeferral()``,
+    ///   ``BackgroundImageDisplayLedger``, ``BackgroundImageController``, CODING_AGENT.md
     func scheduleDeferredForStreamSwitch(_ stream: DirectStreamingPlayer.Stream) {
         deferredBackgroundFlushTask?.cancel()
         deferredBackgroundFlushTask = nil
         deferBackgroundImageUntilPlaybackStable = true
         pendingBackgroundStream = stream
+        lastRequestedStream = stream
+        _ = displayLedger.publish(languageCode: stream.languageCode)
     }
 
     /// Called from streaming status callback when we see a "status_playing" (or equivalent)
     /// to give the HAL/ICY metadata a chance to settle before kicking off CI work.
+    ///
+    /// Does not publish. The ``update(for:skipCrossDissolve:)`` at the end of the flush publishes
+    /// the station this call stored. Modal cancel pauses this task and does not change the
+    /// desired station.
     func scheduleDeferredFlushIfNeeded() {
         guard deferBackgroundImageUntilPlaybackStable,
               let stream = pendingBackgroundStream else { return }
@@ -201,23 +333,42 @@ final class BackgroundImageController {
         }
     }
 
+    /// Pauses the deferred flush until ``rescheduleDeferredAfterModalIfNeeded()``.
+    ///
+    /// Does not publish. The current display request stays paintable, including an in-flight
+    /// filter for that station.
     func cancelDeferredForModalInteraction() {
         deferredBackgroundFlushTask?.cancel()
         deferredBackgroundFlushTask = nil
     }
 
+    /// Restarts the deferred flush when a modal interaction ends and a stream is still pending.
+    ///
+    /// Does not publish. ``scheduleDeferredFlushIfNeeded()`` keeps the station it already stored.
     func rescheduleDeferredAfterModalIfNeeded() {
         guard deferBackgroundImageUntilPlaybackStable, pendingBackgroundStream != nil else { return }
         scheduleDeferredFlushIfNeeded()
     }
 
-    /// Explicitly clears any active deferral state and tasks (used in userPaused early-return
-    /// paths during stream switch so we can immediately show the background for the new stream).
+    /// Clears deferral and publishes a superseding request for the station already chosen.
+    ///
+    /// The following ``update(for:skipCrossDissolve:)`` publishes again. That later request is
+    /// the one that may paint, so sticky pause still shows the destination without waiting for
+    /// attach. This call does not start Core Image.
+    ///
+    /// - Postcondition: Deferral is off. Any request published before this call fails
+    ///   ``BackgroundImageDisplayLedger/mayPaint(_:)``.
+    /// - SeeAlso: ``update(for:skipCrossDissolve:)``, ``scheduleDeferredForStreamSwitch(_:)``,
+    ///   ``BackgroundImageDisplayLedger``, ``BackgroundImageController``, CODING_AGENT.md
     func cancelPendingDeferral() {
+        let languageCode = pendingBackgroundStream?.languageCode ?? lastRequestedStream?.languageCode
         deferBackgroundImageUntilPlaybackStable = false
         pendingBackgroundStream = nil
         deferredBackgroundFlushTask?.cancel()
         deferredBackgroundFlushTask = nil
+        if let languageCode {
+            _ = displayLedger.publish(languageCode: languageCode)
+        }
     }
 
     /// Applies the current LPM vs normal decision to the background view (parallax on/off)
@@ -288,18 +439,27 @@ final class BackgroundImageController {
         return (image.transformed(by: CGAffineTransform(scaleX: scale, y: scale)), scale)
     }
 
-    /// Processes and applies background image filters asynchronously.
+    /// Starts or joins the fill for `cacheKey`.
+    ///
+    /// The dictionary insert happens before this method returns. The job body must not run
+    /// before that insert. A coalesced caller records `request.generation` on the existing job
+    /// and paints only if ``mayPaint(_:)`` still holds when the bitmap arrives.
+    /// The producer's cleanup removes the entry only when the stored id is still this job.
     private func processImageAsync(
         imageName: String,
         cacheKey: String,
         stream: DirectStreamingPlayer.Stream,
+        request: BackgroundImageDisplayRequest,
         isDarkMode: Bool,
         maxPixelDimension: CGFloat
     ) {
-        if let inFlight = inFlightImageProcessing[cacheKey] {
+        if var existing = inFlightImageProcessing[cacheKey] {
+            existing.interestedGenerations.insert(request.generation)
+            inFlightImageProcessing[cacheKey] = existing
+            let sharedTask = existing.task
             Task { @MainActor [weak self] in
-                guard let self, let image = await inFlight.value else { return }
-                self.applyProcessedImage(image, for: stream)
+                guard let self, let image = await sharedTask.value else { return }
+                self.applyProcessedImage(image, for: request)
             }
             #if DEBUG
             print("Background image processing coalesced for \(stream.languageCode), cacheKey=\(cacheKey)")
@@ -307,75 +467,151 @@ final class BackgroundImageController {
             return
         }
 
-        guard let baseImage = UIImage(named: imageName) else {
+        let baseImage: UIImage?
+        #if DEBUG
+        if test_filterOverride != nil {
+            baseImage = UIImage()
+        } else {
+            baseImage = UIImage(named: imageName)
+        }
+        #else
+        baseImage = UIImage(named: imageName)
+        #endif
+        guard let baseImage else {
+            guard displayLedger.mayPaint(request) else { return }
             backgroundImageView.image = nil
             return
         }
 
+        nextInFlightImageJobID &+= 1
+        let jobID = nextInFlightImageJobID
+        let languageCode = stream.languageCode
+
         let task = Task<UIImage?, Never> { @MainActor [weak self] in
             guard let self else { return nil }
+            defer { self.removeInFlightJob(cacheKey: cacheKey, ifIDMatches: jobID) }
 
-            let finalImage: UIImage? = await withCheckedContinuation { continuation in
-                self.imageProcessingQueue.async { [weak self] in
-                    guard let self else {
-                        continuation.resume(returning: nil)
-                        return
-                    }
-
-                    let result = autoreleasepool { () -> UIImage? in
-                        guard let ciImage = CIImage(image: baseImage) else {
-                            return baseImage
-                        }
-
-                        let (scaledImage, processingScale) = self.downscaledForProcessing(ciImage, maxPixelDimension: maxPixelDimension)
-                        var processedImage = scaledImage
-
-                        #if DEBUG
-                        print(
-                            "Processing image for \(stream.languageCode), mode: \(isDarkMode ? "dark" : "light"), "
-                                + "sourceExtent=\(ciImage.extent.integral), processingExtent=\(scaledImage.extent.integral), "
-                                + "maxPx=\(Int(maxPixelDimension)), scale=\(unsafe String(format: "%.3f", processingScale))"
-                        )
-                        #endif
-
-                        // Apply filters based on interface style.
-                        // Methods are pure CPU transforms (no actor state) → nonisolated for Swift 6.
-                        if isDarkMode {
-                            processedImage = self.applyDarkModeFilters(to: processedImage, morphologyScale: processingScale)
-                        } else {
-                            processedImage = self.applyLightModeFilters(to: processedImage, morphologyScale: processingScale)
-                        }
-
-                        guard let cgImage = self.imageProcessingContext.createCGImage(processedImage, from: processedImage.extent) else {
-                            #if DEBUG
-                            print("Failed to convert CIImage to CGImage - using base image as fallback")
-                            #endif
-                            return baseImage
-                        }
-
-                        let converted = UIImage(cgImage: cgImage)
-                        #if DEBUG
-                        print("Successfully converted processed image to UIImage - size: \(converted.size)")
-                        #endif
-                        return converted
-                    }
-                    continuation.resume(returning: result)
-                }
+            // Already on the main actor, before Core Image is enqueued. The utility queue
+            // does not read the ledger. A synchronous hop from that queue back to a main
+            // actor waiting on this task would deadlock.
+            guard self.interestedGenerationMayPaint(cacheKey: cacheKey, jobID: jobID, languageCode: languageCode) else {
+                self.removeInFlightJob(cacheKey: cacheKey, ifIDMatches: jobID)
+                return nil
             }
 
-            defer { self.inFlightImageProcessing.removeValue(forKey: cacheKey) }
+            let finalImage = await self.renderProcessedBackgroundImage(
+                baseImage: baseImage,
+                languageCode: languageCode,
+                isDarkMode: isDarkMode,
+                maxPixelDimension: maxPixelDimension
+            )
 
+            // Cache fill is not a view write. A superseded job still stores its bitmap.
             if let finalImage {
                 self.processedImageCache.setObject(finalImage, forKey: cacheKey as NSString)
             }
             return finalImage
         }
 
-        inFlightImageProcessing[cacheKey] = task
+        inFlightImageProcessing[cacheKey] = InFlightBackgroundImageJob(
+            id: jobID,
+            languageCode: languageCode,
+            task: task,
+            interestedGenerations: [request.generation]
+        )
 
         Task { @MainActor [weak self] in
             guard let self, let image = await task.value else { return }
-            self.applyProcessedImage(image, for: stream)
+            self.applyProcessedImage(image, for: request)
+        }
+    }
+
+    /// True when this job is still the dictionary entry and any interested generation may paint.
+    ///
+    /// A waiter that arrived before this check is already in the set and keeps the fill alive.
+    /// No interested generation means the job is abandoned.
+    private func interestedGenerationMayPaint(
+        cacheKey: String,
+        jobID: UInt64,
+        languageCode: String
+    ) -> Bool {
+        guard let job = inFlightImageProcessing[cacheKey], job.id == jobID else { return false }
+        return job.interestedGenerations.contains { generation in
+            displayLedger.mayPaint(
+                BackgroundImageDisplayRequest(generation: generation, languageCode: languageCode)
+            )
+        }
+    }
+
+    /// Removes the fill only when `jobID` is still the entry for `cacheKey`.
+    /// A newer fill for the same key keeps its entry.
+    private func removeInFlightJob(cacheKey: String, ifIDMatches jobID: UInt64) {
+        guard inFlightImageProcessing[cacheKey]?.id == jobID else { return }
+        inFlightImageProcessing.removeValue(forKey: cacheKey)
+    }
+
+    /// Runs the filter chain, or the DEBUG bitmap substitute when a test installed one.
+    ///
+    /// The substitute is not a second paint policy. ``applyProcessedImage(_:for:skipCrossDissolve:)``
+    /// still decides the view write.
+    private func renderProcessedBackgroundImage(
+        baseImage: UIImage,
+        languageCode: String,
+        isDarkMode: Bool,
+        maxPixelDimension: CGFloat
+    ) async -> UIImage? {
+        #if DEBUG
+        if let test_filterOverride {
+            return await test_filterOverride(languageCode)
+        }
+        #endif
+
+        return await withCheckedContinuation { continuation in
+            self.imageProcessingQueue.async { [weak self] in
+                guard let self else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                let result = autoreleasepool { () -> UIImage? in
+                    guard let ciImage = CIImage(image: baseImage) else {
+                        return baseImage
+                    }
+
+                    let (scaledImage, processingScale) = self.downscaledForProcessing(ciImage, maxPixelDimension: maxPixelDimension)
+                    var processedImage = scaledImage
+
+                    #if DEBUG
+                    print(
+                        "Processing image for \(languageCode), mode: \(isDarkMode ? "dark" : "light"), "
+                            + "sourceExtent=\(ciImage.extent.integral), processingExtent=\(scaledImage.extent.integral), "
+                            + "maxPx=\(Int(maxPixelDimension)), scale=\(unsafe String(format: "%.3f", processingScale))"
+                    )
+                    #endif
+
+                    // Apply filters based on interface style.
+                    // Methods are pure CPU transforms (no actor state) → nonisolated for Swift 6.
+                    if isDarkMode {
+                        processedImage = self.applyDarkModeFilters(to: processedImage, morphologyScale: processingScale)
+                    } else {
+                        processedImage = self.applyLightModeFilters(to: processedImage, morphologyScale: processingScale)
+                    }
+
+                    guard let cgImage = self.imageProcessingContext.createCGImage(processedImage, from: processedImage.extent) else {
+                        #if DEBUG
+                        print("Failed to convert CIImage to CGImage - using base image as fallback")
+                        #endif
+                        return baseImage
+                    }
+
+                    let converted = UIImage(cgImage: cgImage)
+                    #if DEBUG
+                    print("Successfully converted processed image to UIImage - size: \(converted.size)")
+                    #endif
+                    return converted
+                }
+                continuation.resume(returning: result)
+            }
         }
     }
 
@@ -465,11 +701,20 @@ final class BackgroundImageController {
         return processedImage
     }
 
+    /// Assigns a processed bitmap when `request` is still the current display request.
+    ///
+    /// Cache hits and finished filter jobs both come here. The check is the last read
+    /// before any mutation of ``backgroundImageView``.
     private func applyProcessedImage(
         _ image: UIImage,
-        for stream: DirectStreamingPlayer.Stream,
+        for request: BackgroundImageDisplayRequest,
         skipCrossDissolve: Bool = false
     ) {
+        #if DEBUG
+        test_applyProcessedImageEntries += 1
+        #endif
+        guard displayLedger.mayPaint(request) else { return }
+
         // This runs on main thread
         let screen = backgroundImageView.window?.windowScene?.screen
         let screenSize = screen?.bounds.size ?? CGSize(width: 375, height: 667) // Fallback to default iPhone size if nil
@@ -515,6 +760,32 @@ final class BackgroundImageController {
     @objc private func energyEfficiencyChanged() {
         updateForEnergyEfficiency()
     }
+
+    // MARK: - DEBUG test seam
+
+    #if DEBUG
+    /// When true, tests stay on the processed-image path while Low Power Mode is on.
+    /// Production leaves this false. It does not decide whether a request may paint.
+    var test_usesProcessedImagePath = false
+
+    /// Replaces the Core Image filter block with a caller-supplied bitmap.
+    ///
+    /// The interest check, cache store, id-matched cleanup, and ``mayPaint(_:)`` gate stay
+    /// on the production path. `nil` runs Core Image.
+    var test_filterOverride: (@MainActor (String) async -> UIImage?)?
+
+    /// Fills currently in ``inFlightImageProcessing``.
+    var test_inFlightImageJobCount: Int { inFlightImageProcessing.count }
+
+    /// Entries into ``applyProcessedImage(_:for:skipCrossDissolve:)``, including requests
+    /// ``mayPaint(_:)`` rejects. Observation only.
+    var test_applyProcessedImageEntries = 0
+
+    /// Generations recorded on the in-flight fill for `languageCode`, or zero when none exists.
+    func test_interestedGenerationCount(for languageCode: String) -> Int {
+        inFlightImageProcessing.values.first { $0.languageCode == languageCode }?.interestedGenerations.count ?? 0
+    }
+    #endif
 }
 
 // MARK: - Parallax Effect Extension (moved with the background feature)
