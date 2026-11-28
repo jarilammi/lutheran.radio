@@ -207,6 +207,12 @@
             "value" : "Unitsitsillugu ${applicationName}"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}를 일시 정지해 줘"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -572,6 +578,12 @@
             "value" : "Tusarnaarlugit ${applicationName}"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}를 재생해 줘"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -935,6 +947,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tusarnaarlugit ${applicationName} ${language}"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${language}로 ${applicationName}를 재생해 줘"
           }
         },
         "lt" : {
@@ -1337,6 +1355,12 @@
             "value" : "Aallartillugu ${applicationName}"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}를 시작해 줘"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1702,6 +1726,12 @@
             "value" : "Unitsillugu ${applicationName}"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}를 정지해 줘"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2065,6 +2095,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Allanngortiguk ${applicationName} ${language}"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName}를 ${language}로 전환해 줘"
           }
         },
         "lt" : {

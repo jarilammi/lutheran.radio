@@ -62,6 +62,7 @@ The app is fully localized in the following languages:
 - Italian (it)
 - Japanese (ja)
 - Kalaallisut (kl)
+- Korean (ko)
 - Latvian (lv)
 - Lithuanian (lt)
 - Macedonian (mk)

@@ -171,6 +171,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -885,6 +891,18 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld oqaatsit"
+                }
+              }
+            }
+          }
+        },
+        "ko" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld개 언어"
                 }
               }
             }
@@ -1704,6 +1722,12 @@
             "value" : "Peqatigiilluni uunga nassiussanik toqqaruk"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이중 탭하여 오디오 출력 기기를 선택합니다"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2066,6 +2090,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Paasissutissat tusarnaarniaraluarneq massakkut erinarsuutip ilaatigut"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "현재 라디오 프로그램 정보를 표시합니다"
           }
         },
         "lt" : {
@@ -2432,6 +2462,12 @@
             "value" : "Radiostream-ip qarusaataa pissaarneqarpoq"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "라디오 방송을 재생하거나 일시 정지합니다"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2794,6 +2830,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toqqar sukumut nalunaaquttap naqinnera"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재생이 멈출 때까지 시간을 선택합니다"
           }
         },
         "lt" : {
@@ -3160,6 +3202,12 @@
             "value" : "Qarusaataa iliuuseqarpoq"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재생 음량을 조절합니다"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3519,6 +3567,12 @@
           }
         },
         "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "ko" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -3889,6 +3943,12 @@
             "value" : "Lutheran Radio logo"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio 로고"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4251,6 +4311,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uninnganeq"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "일시 정지"
           }
         },
         "lt" : {
@@ -4618,6 +4684,12 @@
             "value" : "Assiliaq %@"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@의 사진"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4980,6 +5052,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aallaat"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재생"
           }
         },
         "lt" : {
@@ -5346,6 +5424,12 @@
             "value" : "Sinersuut tamersat"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "취침 타이머"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5708,6 +5792,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nipitussuseq"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "음량"
           }
         },
         "lt" : {
@@ -6424,6 +6514,18 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld procentit"
+                }
+              }
+            }
+          }
+        },
+        "ko" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld퍼센트"
                 }
               }
             }
@@ -7243,6 +7345,12 @@
             "value" : "Atorlugu"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "계속"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7605,6 +7713,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Misile"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다시 시도"
           }
         },
         "lt" : {
@@ -7971,6 +8085,12 @@
             "value" : "Atorfiit taama"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이번 세션만 허용"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8333,6 +8453,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atorfiit"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "항상 허용"
           }
         },
         "lt" : {
@@ -8699,6 +8825,12 @@
             "value" : "Maannakkut"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지금 안 함"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9061,6 +9193,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nungortiguk"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지우기"
           }
         },
         "lt" : {
@@ -9427,6 +9565,12 @@
             "value" : "Nungortigineqarpoq"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지웠습니다"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9789,6 +9933,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Una playback nungortippaa, widget aamma Live Activity data peerpai, uani device-mi kingullermik tusarnaarneq nungortippaa. Suliaq anguniagassanngilaq."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재생을 멈추고, Widget 및 Live Activity 데이터를 삭제한 다음, 이 기기의 최근 재생 상태를 지웁니다. 이 작업은 되돌릴 수 없습니다."
           }
         },
         "lt" : {
@@ -10155,6 +10305,12 @@
             "value" : "Nungortiguk lokal afspilingsstatus"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기기의 재생 상태 지우기"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10517,6 +10673,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio widget-imi akuerineq."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio Widget의 구성."
           }
         },
         "lt" : {
@@ -10884,6 +11046,12 @@
             "value" : "Attavineq ajorpoq"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "연결 오류"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11249,6 +11417,12 @@
             "value" : "Lutheran Radio tusarnaarniaraluarneq qinertoq aammalu nammineq takunnartarpai."
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio 재생을 조작하고 현재 방송국을 봅니다."
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11611,6 +11785,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tusarnaarniaraluarneq qinertoq aammalu oqaatsit atortussat qallunaatut."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재생을 조작하고 언어 방송을 전환합니다."
           }
         },
         "lt" : {
@@ -11978,6 +12158,12 @@
             "value" : "Nipitussutsip annikillisitsinera"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "음량 낮추기"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12343,6 +12529,12 @@
             "value" : "Nipitussutsip qaffaanera"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "음량 높이기"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12705,6 +12897,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tusarnaa"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재생 중"
           }
         },
         "lt" : {
@@ -13072,6 +13270,12 @@
             "value" : "Oqaatsit"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "언어"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13434,6 +13638,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oqaatsit kode"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "언어 코드"
           }
         },
         "lt" : {
@@ -13801,6 +14011,12 @@
             "value" : "Tuluttut"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "영어"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14164,6 +14380,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estlandimiutut"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "에스토니아어"
           }
         },
         "lt" : {
@@ -14531,6 +14753,12 @@
             "value" : "Finnimiutut"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "핀란드어"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14894,6 +15122,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tyskimiutut"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "독일어"
           }
         },
         "lt" : {
@@ -15261,6 +15495,12 @@
             "value" : "Svenskisut"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스웨덴어"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15624,6 +15864,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · Suulluinermut"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 생방송"
           }
         },
         "lt" : {
@@ -15991,6 +16237,12 @@
             "value" : "Inuusuttut kissaat"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "로컬 전용"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16351,6 +16603,12 @@
           }
         },
         "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "ko" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -16721,6 +16979,12 @@
             "value" : "Tullinnguuttut oqaatsit"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다음 언어"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17084,6 +17348,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ingerlatit/Unipit"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재생/일시 정지"
           }
         },
         "lt" : {
@@ -17451,6 +17721,12 @@
             "value" : "Ingerlatsineq"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재생"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -17814,6 +18090,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Siulii oqaatsit"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이전 언어"
           }
         },
         "lt" : {
@@ -18180,6 +18462,12 @@
             "value" : "Appi mobil data aningaasat atortorpai, taamaalilluni aningaasat iluarsaassaanngortinneqarsinnaavoq."
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "앱이 셀룰러 데이터를 사용하고 있습니다. 요금제에 따라 요금이 부과될 수 있습니다."
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -18542,6 +18830,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobil data aningaasat"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "셀룰러 데이터 사용"
           }
         },
         "lt" : {
@@ -18908,6 +19202,12 @@
             "value" : "Erinarsuutip paasissutissartai soqanngillat"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "곡 정보가 없습니다"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19270,6 +19570,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Massakkut tusarnaa"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지금 재생 중"
           }
         },
         "lt" : {
@@ -19636,6 +19942,12 @@
             "value" : "Aap"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19999,6 +20311,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Appi siullerpaat ammassaruk"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "앱을 먼저 열기"
           }
         },
         "lt" : {
@@ -20367,6 +20685,12 @@
             "value" : "Lutheran Radio unitsitsillugu"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio 일시 정지"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20732,6 +21056,12 @@
             "value" : "Unitsitsiguk Lutheran Radio."
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio 재생을 일시 정지합니다."
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21094,6 +21424,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tusarnaarlugit"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재생"
           }
         },
         "lt" : {
@@ -21461,6 +21797,12 @@
             "value" : "Tusarnaarlugit Lutheran Radio"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio 재생"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21823,6 +22165,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio tusarnaa unippoq."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio를 재생하거나 일시 정지합니다."
           }
         },
         "lt" : {
@@ -22190,6 +22538,12 @@
             "value" : "Tusarnaarlugit imaluunniit Lutheran Radio."
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio를 재생하거나 재개합니다."
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22552,6 +22906,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nipilersorneq atorlugu siumut qanoq iliuuseq ajorpoq. Internettit atungaata toqqammavigit aammalu appi nutartertariaqarnera iliuusigit. Naak ajornartorpoq, appi nutaaq alerfigit naammit naammagunarpat."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "보안 확인에 실패하여 재생을 시작할 수 없습니다. 인터넷 연결을 확인하고, 앱이 최신 버전인지 확인해 주세요. 문제가 계속되면 앱을 다시 시작한 뒤 다시 시도해 주세요."
           }
         },
         "lt" : {
@@ -22918,6 +23278,12 @@
             "value" : "Illersuisarneq ajorpoq"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "보안 확인에 실패했습니다"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -23281,6 +23647,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toqqar %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 선택"
           }
         },
         "lt" : {
@@ -23997,6 +24369,18 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld minutit sinneruttut"
+                }
+              }
+            }
+          }
+        },
+        "ko" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld분 남음"
                 }
               }
             }
@@ -24816,6 +25200,12 @@
             "value" : "Naamagit tamersat"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "타이머 취소"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25178,6 +25568,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "15 minutit"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15분"
           }
         },
         "lt" : {
@@ -25544,6 +25940,12 @@
             "value" : "30 minutit"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30분"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25906,6 +26308,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "45 minutit"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "45분"
           }
         },
         "lt" : {
@@ -26272,6 +26680,12 @@
             "value" : "60 minutit"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "60분"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -26634,6 +27048,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sinersuut tamersat"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "취침 타이머"
           }
         },
         "lt" : {
@@ -27000,6 +27420,12 @@
             "value" : "Streaming-servit SSL nalunaasuutinnik nutaallatippaat. App-ip ataatsimoorsinnaasumik suliarpoq. Immikkoortoq piqqusivippat nutaallatitse immikkoortoormut."
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스트리밍 서버가 SSL 인증서를 갱신했습니다. 앱은 호환 모드로 동작하고 있습니다. 최상의 보안을 위해 새 버전이 나오면 업데이트해 주세요."
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27362,6 +27788,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nalunaasuut nutaallatipput"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "인증서가 갱신되었습니다"
           }
         },
         "lt" : {
@@ -27729,6 +28161,12 @@
             "value" : "Lutheran Radio tusarnaarniaraluarneq aallartippaat aallarteqqippallu."
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio 재생을 시작하거나 재개합니다."
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28091,6 +28529,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio tusarnaarniaraluarneq aallartippaat unippaat."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio 재생을 시작하거나 정지합니다."
           }
         },
         "lt" : {
@@ -28457,6 +28901,12 @@
             "value" : "Utaqqi"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "버퍼"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -28819,6 +29269,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Attaviler"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "연결"
           }
         },
         "lt" : {
@@ -29185,6 +29641,12 @@
             "value" : "Ajutoorpoq"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "실패"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29549,6 +30011,12 @@
             "value" : "Attaveqanngi"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "오프라인"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -29911,6 +30379,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uninnga"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "일시 정지"
           }
         },
         "lt" : {
@@ -30278,6 +30752,12 @@
             "value" : "Toqunngilaq – Qarasaasiaq qanoq ililluni"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "일시 정지 – 통화 중"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30641,6 +31121,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tusarnaarniaraluarneq ajutoorpoq: %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재생 실패: %@"
           }
         },
         "lt" : {
@@ -31008,6 +31494,12 @@
             "value" : "Tusarnaa"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재생"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31370,6 +31862,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nakkutilliissuseq"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "보안"
           }
         },
         "lt" : {
@@ -31736,6 +32234,12 @@
             "value" : "SSL nalunaasuut nutaallatipput - app-imik nutaallatsuk"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL 인증서 갱신됨 - 곧 앱 업데이트"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32098,6 +32602,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unippoq"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "정지"
           }
         },
         "lt" : {
@@ -32464,6 +32974,12 @@
             "value" : "Aallakaatitsisoqanngi"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "꺼짐"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32826,6 +33342,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uunaa"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기기 과열"
           }
         },
         "lt" : {
@@ -33192,6 +33714,12 @@
             "value" : "Ussarissoq meeqqanngitsoq atuutilaarpoq. Sioqqutsisoq tuppilaaruk."
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "방송을 일시적으로 이용할 수 없습니다. 나중에 다시 시도해 주세요."
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -33554,6 +34082,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ussarissoq atuutilaarpoq"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "방송을 이용할 수 없음"
           }
         },
         "lt" : {
@@ -33921,6 +34455,12 @@
             "value" : "Allanngortiguk Lutheran Radio oqaatsit."
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio의 언어 방송을 전환합니다."
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -34283,6 +34823,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sivinngornerpaat allannguarsi"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "방송 전환"
           }
         },
         "lt" : {
@@ -34650,6 +35196,12 @@
             "value" : "Allanngortiguk %@"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@로 전환"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -35012,6 +35564,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oqaatsit atortussat allanut Live-piqqusivimmit qallunaat."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity에서 다른 언어 방송으로 전환합니다."
           }
         },
         "lt" : {
@@ -35378,6 +35936,12 @@
             "value" : "Allanut oqaatsit atortussat qallunaatut allannguarsi."
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다른 언어 방송으로 전환합니다."
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -35741,6 +36305,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Allagarsorneq %@ -mut"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@로 전환했습니다"
           }
         },
         "lt" : {
@@ -36109,6 +36679,12 @@
             "value" : "Ammassallugu tooruk"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "탭하여 열기"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -36472,6 +37048,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio allannguarsi"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio 전환"
           }
         },
         "lt" : {
@@ -36838,6 +37420,12 @@
             "value" : "Lutheran Radio tusarnaarniaraluarneq allannguarsi"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio 재생 또는 일시 정지"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -37200,6 +37788,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tusarnaarniaraluarneq/uninnganeq Live-piqqusivimmit allannguarsi."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Activity에서 재생하거나 일시 정지합니다."
           }
         },
         "lt" : {
@@ -37565,6 +38159,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tusarnaarniaraluarneq allannguarsi"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재생 또는 일시 정지"
           }
         },
         "lt" : {
@@ -38281,6 +38881,18 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "Nipitussuseq %lld procentinut inissinneqarpoq"
+                }
+              }
+            }
+          }
+        },
+        "ko" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "음량을 %lld퍼센트로 설정했습니다"
                 }
               }
             }
@@ -39098,6 +39710,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget akuerineq"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Widget 구성"
           }
         },
         "lt" : {

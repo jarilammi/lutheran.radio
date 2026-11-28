@@ -172,6 +172,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -538,6 +544,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -899,6 +911,12 @@
           }
         },
         "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "© 2025-2026 Jari Lammi"
+          }
+        },
+        "ko" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "© 2025-2026 Jari Lammi"
